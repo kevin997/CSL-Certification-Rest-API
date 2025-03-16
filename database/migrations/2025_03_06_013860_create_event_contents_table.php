@@ -17,8 +17,8 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->string('event_type'); // physical, online, hybrid
             $table->string('location')->nullable();
-            $table->timestamp('start_date');
-            $table->timestamp('end_date');
+            $table->timestamp('start_date')->useCurrent();
+            $table->timestamp('end_date')->useCurrent();
             $table->string('timezone')->default('UTC');
             $table->integer('max_participants')->nullable();
             $table->timestamp('registration_deadline')->nullable();

@@ -18,14 +18,14 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->string('presenter_name')->nullable();
             $table->text('presenter_bio')->nullable();
-            $table->timestamp('start_time');
-            $table->timestamp('end_time');
+            $table->timestamp('start_time')->useCurrent();
+            $table->timestamp('end_time')->nullable();
             $table->string('location')->nullable();
             $table->boolean('is_mandatory')->default(false);
             $table->foreignId('created_by')->constrained('users');
             $table->timestamps();
             $table->softDeletes();
-            
+
             // Indexes
             $table->index('event_content_id');
             $table->index(['start_time', 'end_time']);
