@@ -17,7 +17,7 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->unsignedBigInteger('course_id')->nullable(); // Changed to unsignedBigInteger without foreign key constraint
             $table->string('certificate_number')->unique();
-            $table->timestamp('issued_date');
+            $table->timestamp('issued_date')->nullable();
             $table->timestamp('expiry_date')->nullable();
             $table->string('file_path');
             $table->string('status')->default('active'); // active, expired, revoked
