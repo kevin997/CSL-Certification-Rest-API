@@ -1710,6 +1710,431 @@
                 ]
             }
         },
+        "/api/tokens": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "User login",
+                "operationId": "a8652519a1ceb8f0d220e65810876a77",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "email",
+                                    "password",
+                                    "device_name"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "user@example.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "password"
+                                    },
+                                    "device_name": {
+                                        "type": "string",
+                                        "example": "iPhone 13"
+                                    },
+                                    "environment_id": {
+                                        "description": "Optional environment ID for environment-specific authentication",
+                                        "type": "integer",
+                                        "example": 1
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Login successful",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "token": {
+                                            "type": "string",
+                                            "example": "1|laravel_sanctum_NvGqIuUGK6Vj5AEDlxSNRgVuIJxBMpLK4ryhfnLq"
+                                        },
+                                        "user": {
+                                            "properties": {
+                                                "id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "name": {
+                                                    "type": "string",
+                                                    "example": "John Doe"
+                                                },
+                                                "email": {
+                                                    "type": "string",
+                                                    "format": "email",
+                                                    "example": "user@example.com"
+                                                },
+                                                "role": {
+                                                    "type": "string",
+                                                    "example": "learner"
+                                                },
+                                                "created_at": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "updated_at": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "environment_id": {
+                                            "description": "The environment ID used for authentication, if applicable",
+                                            "type": "integer",
+                                            "example": 1
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid credentials"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "User logout",
+                "operationId": "4eac88c29e3604e1d3edb5290bdd008c",
+                "responses": {
+                    "200": {
+                        "description": "Logout successful",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "All tokens revoked successfully"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/register": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Register a new user",
+                "operationId": "8e4e3cb7b46126f4696379d3c7eeb4ad",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "name",
+                                    "email",
+                                    "password",
+                                    "password_confirmation"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "John Doe"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "user@example.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "password"
+                                    },
+                                    "password_confirmation": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "password"
+                                    },
+                                    "role": {
+                                        "type": "string",
+                                        "enum": [
+                                            "learner",
+                                            "individual_teacher",
+                                            "company_teacher"
+                                        ],
+                                        "example": "learner"
+                                    },
+                                    "company_name": {
+                                        "type": "string",
+                                        "example": "Acme Corp"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "User registered successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "token": {
+                                            "type": "string",
+                                            "example": "1|laravel_sanctum_NvGqIuUGK6Vj5AEDlxSNRgVuIJxBMpLK4ryhfnLq"
+                                        },
+                                        "user": {
+                                            "properties": {
+                                                "id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "name": {
+                                                    "type": "string",
+                                                    "example": "John Doe"
+                                                },
+                                                "email": {
+                                                    "type": "string",
+                                                    "format": "email",
+                                                    "example": "user@example.com"
+                                                },
+                                                "role": {
+                                                    "type": "string",
+                                                    "example": "learner"
+                                                },
+                                                "created_at": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "updated_at": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                }
+            }
+        },
+        "/api/user": {
+            "get": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Get authenticated user details",
+                "operationId": "961ad57987905b44ae2e2f40b82e76de",
+                "responses": {
+                    "200": {
+                        "description": "User details",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "id": {
+                                            "type": "integer",
+                                            "example": 1
+                                        },
+                                        "name": {
+                                            "type": "string",
+                                            "example": "John Doe"
+                                        },
+                                        "email": {
+                                            "type": "string",
+                                            "format": "email",
+                                            "example": "user@example.com"
+                                        },
+                                        "role": {
+                                            "type": "string",
+                                            "example": "learner"
+                                        },
+                                        "company_name": {
+                                            "type": "string",
+                                            "example": "Acme Corp",
+                                            "nullable": true
+                                        },
+                                        "created_at": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "updated_at": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/forgot-password": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Send password reset link",
+                "operationId": "20d78161b19ac6afb56924e74974ec46",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "email"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "user@example.com"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Password reset link sent",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Password reset link sent to your email"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                }
+            }
+        },
+        "/api/reset-password": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Reset password",
+                "operationId": "0a6624b616e4ba5a310a61d9f7418c35",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "token",
+                                    "email",
+                                    "password",
+                                    "password_confirmation"
+                                ],
+                                "properties": {
+                                    "token": {
+                                        "type": "string",
+                                        "example": "1234567890abcdef"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "user@example.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "newpassword"
+                                    },
+                                    "password_confirmation": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "newpassword"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Password reset successful",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Password has been reset successfully"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                }
+            }
+        },
         "/api/templates/{templateId}/blocks": {
             "get": {
                 "tags": [
@@ -4972,6 +5397,948 @@
                 ]
             }
         },
+        "/api/environments": {
+            "get": {
+                "tags": [
+                    "Environments"
+                ],
+                "summary": "Get all environments for the authenticated user",
+                "operationId": "42c6e24bf79441a8d987d9bb56e7e144",
+                "responses": {
+                    "200": {
+                        "description": "List of environments",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "properties": {
+                                            "id": {
+                                                "type": "integer",
+                                                "format": "int64",
+                                                "example": 1
+                                            },
+                                            "name": {
+                                                "type": "string",
+                                                "example": "Acme Corp Training"
+                                            },
+                                            "primary_domain": {
+                                                "type": "string",
+                                                "example": "training.acmecorp.com"
+                                            },
+                                            "additional_domains": {
+                                                "type": "string",
+                                                "example": "learn.acmecorp.com,edu.acmecorp.com",
+                                                "nullable": true
+                                            },
+                                            "theme_color": {
+                                                "type": "string",
+                                                "example": "#4F46E5"
+                                            },
+                                            "logo_url": {
+                                                "type": "string",
+                                                "example": "https://acmecorp.com/logo.png",
+                                                "nullable": true
+                                            },
+                                            "favicon_url": {
+                                                "type": "string",
+                                                "example": "https://acmecorp.com/favicon.ico",
+                                                "nullable": true
+                                            },
+                                            "is_active": {
+                                                "type": "boolean",
+                                                "example": true
+                                            },
+                                            "owner_id": {
+                                                "type": "integer",
+                                                "format": "int64",
+                                                "example": 1
+                                            },
+                                            "description": {
+                                                "type": "string",
+                                                "example": "Corporate training environment for Acme Corp employees",
+                                                "nullable": true
+                                            },
+                                            "created_at": {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            "updated_at": {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            "deleted_at": {
+                                                "type": "string",
+                                                "format": "date-time",
+                                                "nullable": true
+                                            }
+                                        },
+                                        "type": "object"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Environments"
+                ],
+                "summary": "Create a new environment",
+                "operationId": "075c0c7fa697cdc55709d0b5bc900566",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "name",
+                                    "primary_domain"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "Acme Corp Training"
+                                    },
+                                    "primary_domain": {
+                                        "type": "string",
+                                        "example": "training.acmecorp.com"
+                                    },
+                                    "additional_domains": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "example": [
+                                            "learn.acmecorp.com",
+                                            "edu.acmecorp.com"
+                                        ]
+                                    },
+                                    "theme_color": {
+                                        "type": "string",
+                                        "example": "#4F46E5"
+                                    },
+                                    "logo_url": {
+                                        "type": "string",
+                                        "example": "https://acmecorp.com/logo.png"
+                                    },
+                                    "favicon_url": {
+                                        "type": "string",
+                                        "example": "https://acmecorp.com/favicon.ico"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "example": "Corporate training environment for Acme Corp employees"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Environment created successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "id": {
+                                            "type": "integer",
+                                            "format": "int64",
+                                            "example": 1
+                                        },
+                                        "name": {
+                                            "type": "string",
+                                            "example": "Acme Corp Training"
+                                        },
+                                        "primary_domain": {
+                                            "type": "string",
+                                            "example": "training.acmecorp.com"
+                                        },
+                                        "additional_domains": {
+                                            "type": "string",
+                                            "example": "learn.acmecorp.com,edu.acmecorp.com",
+                                            "nullable": true
+                                        },
+                                        "theme_color": {
+                                            "type": "string",
+                                            "example": "#4F46E5"
+                                        },
+                                        "logo_url": {
+                                            "type": "string",
+                                            "example": "https://acmecorp.com/logo.png",
+                                            "nullable": true
+                                        },
+                                        "favicon_url": {
+                                            "type": "string",
+                                            "example": "https://acmecorp.com/favicon.ico",
+                                            "nullable": true
+                                        },
+                                        "is_active": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "owner_id": {
+                                            "type": "integer",
+                                            "format": "int64",
+                                            "example": 1
+                                        },
+                                        "description": {
+                                            "type": "string",
+                                            "example": "Corporate training environment for Acme Corp employees",
+                                            "nullable": true
+                                        },
+                                        "created_at": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "updated_at": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "deleted_at": {
+                                            "type": "string",
+                                            "format": "date-time",
+                                            "nullable": true
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/environments/{id}": {
+            "get": {
+                "tags": [
+                    "Environments"
+                ],
+                "summary": "Get a specific environment",
+                "operationId": "53a927a009f583a41cf54fa268463a01",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Environment details",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "id": {
+                                            "type": "integer",
+                                            "format": "int64",
+                                            "example": 1
+                                        },
+                                        "name": {
+                                            "type": "string",
+                                            "example": "Acme Corp Training"
+                                        },
+                                        "primary_domain": {
+                                            "type": "string",
+                                            "example": "training.acmecorp.com"
+                                        },
+                                        "additional_domains": {
+                                            "type": "string",
+                                            "example": "learn.acmecorp.com,edu.acmecorp.com",
+                                            "nullable": true
+                                        },
+                                        "theme_color": {
+                                            "type": "string",
+                                            "example": "#4F46E5"
+                                        },
+                                        "logo_url": {
+                                            "type": "string",
+                                            "example": "https://acmecorp.com/logo.png",
+                                            "nullable": true
+                                        },
+                                        "favicon_url": {
+                                            "type": "string",
+                                            "example": "https://acmecorp.com/favicon.ico",
+                                            "nullable": true
+                                        },
+                                        "is_active": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "owner_id": {
+                                            "type": "integer",
+                                            "format": "int64",
+                                            "example": 1
+                                        },
+                                        "description": {
+                                            "type": "string",
+                                            "example": "Corporate training environment for Acme Corp employees",
+                                            "nullable": true
+                                        },
+                                        "created_at": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "updated_at": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "deleted_at": {
+                                            "type": "string",
+                                            "format": "date-time",
+                                            "nullable": true
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Environment not found"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Environments"
+                ],
+                "summary": "Update an environment",
+                "operationId": "dd86ffcee20c0951dbe5ef480776601e",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "name",
+                                    "primary_domain"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "Acme Corp Training"
+                                    },
+                                    "primary_domain": {
+                                        "type": "string",
+                                        "example": "training.acmecorp.com"
+                                    },
+                                    "additional_domains": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "example": [
+                                            "learn.acmecorp.com",
+                                            "edu.acmecorp.com"
+                                        ]
+                                    },
+                                    "theme_color": {
+                                        "type": "string",
+                                        "example": "#4F46E5"
+                                    },
+                                    "logo_url": {
+                                        "type": "string",
+                                        "example": "https://acmecorp.com/logo.png"
+                                    },
+                                    "favicon_url": {
+                                        "type": "string",
+                                        "example": "https://acmecorp.com/favicon.ico"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "example": "Corporate training environment for Acme Corp employees"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Environment updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "id": {
+                                            "type": "integer",
+                                            "format": "int64",
+                                            "example": 1
+                                        },
+                                        "name": {
+                                            "type": "string",
+                                            "example": "Acme Corp Training"
+                                        },
+                                        "primary_domain": {
+                                            "type": "string",
+                                            "example": "training.acmecorp.com"
+                                        },
+                                        "additional_domains": {
+                                            "type": "string",
+                                            "example": "learn.acmecorp.com,edu.acmecorp.com",
+                                            "nullable": true
+                                        },
+                                        "theme_color": {
+                                            "type": "string",
+                                            "example": "#4F46E5"
+                                        },
+                                        "logo_url": {
+                                            "type": "string",
+                                            "example": "https://acmecorp.com/logo.png",
+                                            "nullable": true
+                                        },
+                                        "favicon_url": {
+                                            "type": "string",
+                                            "example": "https://acmecorp.com/favicon.ico",
+                                            "nullable": true
+                                        },
+                                        "is_active": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "owner_id": {
+                                            "type": "integer",
+                                            "format": "int64",
+                                            "example": 1
+                                        },
+                                        "description": {
+                                            "type": "string",
+                                            "example": "Corporate training environment for Acme Corp employees",
+                                            "nullable": true
+                                        },
+                                        "created_at": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "updated_at": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "deleted_at": {
+                                            "type": "string",
+                                            "format": "date-time",
+                                            "nullable": true
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Environment not found"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Environments"
+                ],
+                "summary": "Delete an environment",
+                "operationId": "be22f93af0d3adb13fedd4283a6bb5f5",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Environment deleted successfully"
+                    },
+                    "404": {
+                        "description": "Environment not found"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/current-environment": {
+            "get": {
+                "tags": [
+                    "Environments"
+                ],
+                "summary": "Get the current environment based on domain",
+                "operationId": "c61877d536af578153b7df5d95e86303",
+                "responses": {
+                    "200": {
+                        "description": "Current environment details",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "id": {
+                                            "type": "integer",
+                                            "format": "int64",
+                                            "example": 1
+                                        },
+                                        "name": {
+                                            "type": "string",
+                                            "example": "Acme Corp Training"
+                                        },
+                                        "primary_domain": {
+                                            "type": "string",
+                                            "example": "training.acmecorp.com"
+                                        },
+                                        "additional_domains": {
+                                            "type": "string",
+                                            "example": "learn.acmecorp.com,edu.acmecorp.com",
+                                            "nullable": true
+                                        },
+                                        "theme_color": {
+                                            "type": "string",
+                                            "example": "#4F46E5"
+                                        },
+                                        "logo_url": {
+                                            "type": "string",
+                                            "example": "https://acmecorp.com/logo.png",
+                                            "nullable": true
+                                        },
+                                        "favicon_url": {
+                                            "type": "string",
+                                            "example": "https://acmecorp.com/favicon.ico",
+                                            "nullable": true
+                                        },
+                                        "is_active": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "owner_id": {
+                                            "type": "integer",
+                                            "format": "int64",
+                                            "example": 1
+                                        },
+                                        "description": {
+                                            "type": "string",
+                                            "example": "Corporate training environment for Acme Corp employees",
+                                            "nullable": true
+                                        },
+                                        "created_at": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "updated_at": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "deleted_at": {
+                                            "type": "string",
+                                            "format": "date-time",
+                                            "nullable": true
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No environment found for this domain"
+                    }
+                }
+            }
+        },
+        "/api/environments/{id}/users": {
+            "get": {
+                "tags": [
+                    "Environments"
+                ],
+                "summary": "Get all users in an environment",
+                "operationId": "a39ee94970a70c26762d24deb62e46b5",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of users in the environment",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/User"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Environment not found"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Environments"
+                ],
+                "summary": "Add a user to an environment",
+                "operationId": "b29ba1b6d13ae490e8f9949153bc24f9",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "user_id": {
+                                        "type": "integer",
+                                        "example": 1
+                                    },
+                                    "role": {
+                                        "type": "string",
+                                        "example": "instructor"
+                                    },
+                                    "permissions": {
+                                        "type": "object",
+                                        "example": {
+                                            "create_course": true,
+                                            "manage_users": false
+                                        }
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "User added to environment successfully"
+                    },
+                    "403": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Environment or user not found"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/environments/{id}/users/{userId}": {
+            "delete": {
+                "tags": [
+                    "Environments"
+                ],
+                "summary": "Remove a user from an environment",
+                "operationId": "2d65a0a79fdfe00cdcd0a3ed0cd0f7ba",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "userId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User removed from environment successfully"
+                    },
+                    "403": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Environment or user not found"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/environment-credentials/{environmentId}": {
+            "get": {
+                "tags": [
+                    "Environment Credentials"
+                ],
+                "summary": "Get environment-specific credentials",
+                "description": "Returns whether the user has environment-specific credentials for the specified environment",
+                "operationId": "getEnvironmentCredentials",
+                "parameters": [
+                    {
+                        "name": "environmentId",
+                        "in": "path",
+                        "description": "Environment ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "has_environment_credentials": {
+                                                    "type": "boolean",
+                                                    "example": true
+                                                },
+                                                "environment_email": {
+                                                    "type": "string",
+                                                    "example": "user@company.com"
+                                                },
+                                                "email_verified": {
+                                                    "type": "boolean",
+                                                    "example": true
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Environment not found or user not associated with environment"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Environment Credentials"
+                ],
+                "summary": "Update environment-specific credentials",
+                "description": "Updates the environment-specific credentials for the current user",
+                "operationId": "updateEnvironmentCredentials",
+                "parameters": [
+                    {
+                        "name": "environmentId",
+                        "in": "path",
+                        "description": "Environment ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Credential data",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "environment_email",
+                                    "password"
+                                ],
+                                "properties": {
+                                    "environment_email": {
+                                        "type": "string",
+                                        "example": "user@company.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "example": "new-password"
+                                    },
+                                    "use_environment_credentials": {
+                                        "type": "boolean",
+                                        "example": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Credentials updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Environment credentials updated successfully"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Environment not found or user not associated with environment"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Environment Credentials"
+                ],
+                "summary": "Disable environment-specific credentials",
+                "description": "Disables the environment-specific credentials for the current user",
+                "operationId": "disableEnvironmentCredentials",
+                "parameters": [
+                    {
+                        "name": "environmentId",
+                        "in": "path",
+                        "description": "Environment ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Credentials disabled successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Environment credentials disabled successfully"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Environment not found or user not associated with environment"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
         "/activities/{activityId}/event-content": {
             "get": {
                 "tags": [
@@ -6116,6 +7483,483 @@
                         "bearerAuth": []
                     }
                 ]
+            }
+        },
+        "/api/onboarding/business-learner": {
+            "post": {
+                "tags": [
+                    "Onboarding"
+                ],
+                "summary": "Onboard a batch of business learners",
+                "description": "Create multiple user accounts for business learners and associate them with an environment",
+                "operationId": "onboardBusinessLearners",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "environment_id",
+                                    "learners"
+                                ],
+                                "properties": {
+                                    "environment_id": {
+                                        "type": "integer",
+                                        "example": 1
+                                    },
+                                    "learners": {
+                                        "type": "array",
+                                        "items": {
+                                            "required": [
+                                                "name",
+                                                "email"
+                                            ],
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string",
+                                                    "example": "John Doe"
+                                                },
+                                                "email": {
+                                                    "type": "string",
+                                                    "format": "email",
+                                                    "example": "john@example.com"
+                                                },
+                                                "employee_id": {
+                                                    "type": "string",
+                                                    "example": "EMP123"
+                                                },
+                                                "department": {
+                                                    "type": "string",
+                                                    "example": "Engineering"
+                                                },
+                                                "position": {
+                                                    "type": "string",
+                                                    "example": "Software Developer"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "send_invitations": {
+                                        "type": "boolean",
+                                        "example": true
+                                    },
+                                    "custom_message": {
+                                        "type": "string",
+                                        "example": "Welcome to our learning platform!"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Business learners onboarded successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Business learners onboarded successfully"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "environment_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "learners_created": {
+                                                    "type": "integer",
+                                                    "example": 5
+                                                },
+                                                "learner_ids": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "integer"
+                                                    }
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    },
+                    "500": {
+                        "description": "Server error"
+                    }
+                }
+            }
+        },
+        "/api/onboarding/business-teacher": {
+            "post": {
+                "tags": [
+                    "Onboarding"
+                ],
+                "summary": "Onboard a new business teacher",
+                "description": "Create a new user account, environment, and subscription for a business teacher",
+                "operationId": "onboardBusinessTeacher",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "name",
+                                    "email",
+                                    "password",
+                                    "company_name",
+                                    "environment_name",
+                                    "domain",
+                                    "plan_id",
+                                    "billing_cycle"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "John Doe"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "john@example.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "password123"
+                                    },
+                                    "company_name": {
+                                        "type": "string",
+                                        "example": "ABC Corporation"
+                                    },
+                                    "environment_name": {
+                                        "type": "string",
+                                        "example": "ABC Training Academy"
+                                    },
+                                    "domain": {
+                                        "type": "string",
+                                        "example": "abc-training.csl-cert.com"
+                                    },
+                                    "plan_id": {
+                                        "type": "integer",
+                                        "example": 2
+                                    },
+                                    "billing_cycle": {
+                                        "type": "string",
+                                        "enum": [
+                                            "monthly",
+                                            "annual"
+                                        ],
+                                        "example": "annual"
+                                    },
+                                    "theme_color": {
+                                        "type": "string",
+                                        "example": "#3366FF"
+                                    },
+                                    "logo_url": {
+                                        "type": "string",
+                                        "example": "https://example.com/logo.png"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "example": "Corporate training platform for ABC Corp"
+                                    },
+                                    "additional_admins": {
+                                        "type": "array",
+                                        "items": {
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string",
+                                                    "example": "Jane Smith"
+                                                },
+                                                "email": {
+                                                    "type": "string",
+                                                    "format": "email",
+                                                    "example": "jane@example.com"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Business teacher onboarded successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Business teacher onboarded successfully"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "user_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "environment_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "subscription_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "additional_admins": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "integer"
+                                                    }
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    },
+                    "500": {
+                        "description": "Server error"
+                    }
+                }
+            }
+        },
+        "/api/onboarding/learner": {
+            "post": {
+                "tags": [
+                    "Onboarding"
+                ],
+                "summary": "Onboard a new individual learner",
+                "description": "Create a new user account for an individual learner and associate them with an environment",
+                "operationId": "onboardLearner",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "name",
+                                    "email",
+                                    "password",
+                                    "environment_id"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "John Doe"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "john@example.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "password123"
+                                    },
+                                    "environment_id": {
+                                        "type": "integer",
+                                        "example": 1
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Learner onboarded successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Learner onboarded successfully"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "user_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "environment_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    },
+                    "500": {
+                        "description": "Server error"
+                    }
+                }
+            }
+        },
+        "/api/onboarding/teacher": {
+            "post": {
+                "tags": [
+                    "Onboarding"
+                ],
+                "summary": "Onboard a new individual teacher",
+                "description": "Create a new user account, environment, and subscription for an individual teacher",
+                "operationId": "onboardTeacher",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "name",
+                                    "email",
+                                    "password",
+                                    "environment_name",
+                                    "domain",
+                                    "plan_id",
+                                    "billing_cycle"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "John Doe"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "john@example.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "password123"
+                                    },
+                                    "environment_name": {
+                                        "type": "string",
+                                        "example": "John's Academy"
+                                    },
+                                    "domain": {
+                                        "type": "string",
+                                        "example": "johns-academy.csl-cert.com"
+                                    },
+                                    "plan_id": {
+                                        "type": "integer",
+                                        "example": 1
+                                    },
+                                    "billing_cycle": {
+                                        "type": "string",
+                                        "enum": [
+                                            "monthly",
+                                            "annual"
+                                        ],
+                                        "example": "monthly"
+                                    },
+                                    "theme_color": {
+                                        "type": "string",
+                                        "example": "#FF5733"
+                                    },
+                                    "logo_url": {
+                                        "type": "string",
+                                        "example": "https://example.com/logo.png"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "example": "A platform for teaching computer science"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Teacher onboarded successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Teacher onboarded successfully"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "user_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "environment_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "subscription_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    },
+                    "500": {
+                        "description": "Server error"
+                    }
+                }
             }
         },
         "/orders": {
@@ -10850,6 +12694,72 @@
                     }
                 },
                 "type": "object"
+            },
+            "Environment": {
+                "title": "Environment",
+                "description": "Environment model",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64",
+                        "example": 1
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Acme Corp Training"
+                    },
+                    "primary_domain": {
+                        "type": "string",
+                        "example": "training.acmecorp.com"
+                    },
+                    "additional_domains": {
+                        "type": "string",
+                        "example": "learn.acmecorp.com,edu.acmecorp.com",
+                        "nullable": true
+                    },
+                    "theme_color": {
+                        "type": "string",
+                        "example": "#4F46E5"
+                    },
+                    "logo_url": {
+                        "type": "string",
+                        "example": "https://acmecorp.com/logo.png",
+                        "nullable": true
+                    },
+                    "favicon_url": {
+                        "type": "string",
+                        "example": "https://acmecorp.com/favicon.ico",
+                        "nullable": true
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "owner_id": {
+                        "type": "integer",
+                        "format": "int64",
+                        "example": 1
+                    },
+                    "description": {
+                        "type": "string",
+                        "example": "Corporate training environment for Acme Corp employees",
+                        "nullable": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "deleted_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
             }
         },
         "securitySchemes": {
@@ -10861,6 +12771,10 @@
         }
     },
     "tags": [
+        {
+            "name": "Authentication",
+            "description": "API Endpoints for user authentication. The system supports environment-specific authentication, allowing users to have different credentials for different environments. When logging in, you can optionally specify an environment_id to use environment-specific credentials."
+        },
         {
             "name": "Templates",
             "description": "API endpoints for template management"
@@ -10898,12 +12812,24 @@
             "description": "API endpoints for branding management"
         },
         {
+            "name": "Environments",
+            "description": "API Endpoints for managing environments"
+        },
+        {
             "name": "Content Types",
             "description": "Content Types"
         },
         {
             "name": "Course Sections",
             "description": "Course Sections"
+        },
+        {
+            "name": "Environment Credentials",
+            "description": "Environment Credentials"
+        },
+        {
+            "name": "Onboarding",
+            "description": "Onboarding"
         }
     ]
 }

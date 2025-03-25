@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToEnvironment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Course extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, BelongsToEnvironment;
 
     /**
      * The attributes that are mass assignable.
@@ -22,6 +23,7 @@ class Course extends Model
         'title',
         'description',
         'template_id',
+        'environment_id',
         'created_by',
         'status', // draft, published, archived
         'start_date',
@@ -49,7 +51,7 @@ class Course extends Model
     }
 
     /**
-     * Get the template that this course is based on.
+     * Get the template that the course is based on.
      */
     public function template(): BelongsTo
     {

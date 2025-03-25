@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToEnvironment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,7 +10,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class IssuedCertificate extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, BelongsToEnvironment;
 
     /**
      * The attributes that are mass assignable.
@@ -19,6 +20,7 @@ class IssuedCertificate extends Model
     protected $fillable = [
         'certificate_content_id',
         'user_id',
+        'environment_id',
         'course_id',
         'certificate_number',
         'issued_date',
@@ -55,7 +57,7 @@ class IssuedCertificate extends Model
     }
 
     /**
-     * Get the user who received this certificate.
+     * Get the user who this certificate was issued to.
      */
     public function user(): BelongsTo
     {

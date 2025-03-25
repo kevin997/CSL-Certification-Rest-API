@@ -3,6 +3,9 @@
 use App\Http\Controllers\Api\ActivityCompletionController;
 use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\AssignmentContentController;
+use App\Http\Controllers\Api\Auth\ForgotPasswordController;
+use App\Http\Controllers\Api\Auth\RegisterController;
+use App\Http\Controllers\Api\Auth\ResetPasswordController;
 use App\Http\Controllers\Api\BlockController;
 use App\Http\Controllers\Api\BrandingController;
 use App\Http\Controllers\Api\CertificateContentController;
@@ -11,6 +14,8 @@ use App\Http\Controllers\Api\CourseSectionController;
 use App\Http\Controllers\Api\DocumentationContentController;
 use App\Http\Controllers\Api\EnrollmentController;
 use App\Http\Controllers\Api\EventContentController;
+use App\Http\Controllers\Api\EnvironmentController;
+use App\Http\Controllers\Api\EnvironmentCredentialsController;
 use App\Http\Controllers\Api\FeedbackContentController;
 use App\Http\Controllers\Api\LessonContentController;
 use App\Http\Controllers\Api\OrderController;
@@ -19,14 +24,65 @@ use App\Http\Controllers\Api\QuizContentController;
 use App\Http\Controllers\Api\ReferralController;
 use App\Http\Controllers\Api\TemplateController;
 use App\Http\Controllers\Api\TextContentController;
+use App\Http\Controllers\Api\TokenController;
 use App\Http\Controllers\Api\VideoContentController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 // User authentication routes
 Route::get('/user', function (Request $request) {
-    return $request->user();
+    $user = $request->user();
+    $response = $user->toArray();
+    
+    // Extract environment ID from token abilities
+    $token = $request->bearerToken();
+    $tokenId = explode('|', $token)[0];
+    $tokenModel = $user->tokens()->find($tokenId);
+    
+    if ($tokenModel) {
+        $abilities = $tokenModel->abilities;
+        $environmentId = null;
+        
+        // Find environment_id in abilities
+        foreach ($abilities as $ability) {
+            if (strpos($ability, 'environment_id:') === 0) {
+                $environmentId = (int) substr($ability, strlen('environment_id:'));
+                break;
+            }
+        }
+        
+        $response['environment_id'] = $environmentId;
+    } else {
+        $response['environment_id'] = null;
+    }
+    
+    return response()->json($response);
 })->middleware('auth:sanctum');
+
+// API Authentication Routes
+Route::post('/register', [RegisterController::class, 'register']);
+Route::post('/forgot-password', [ForgotPasswordController::class, 'sendResetLinkEmail']);
+Route::post('/reset-password', [ResetPasswordController::class, 'reset']);
+
+// Token management routes
+Route::post('/tokens', [TokenController::class, 'createToken']);
+Route::delete('/tokens', [TokenController::class, 'revokeTokens'])->middleware('auth:sanctum');
+
+// Environment routes
+Route::get('/current-environment', [EnvironmentController::class, 'getCurrentEnvironment']);
+
+// Environment management routes
+Route::middleware('auth:sanctum')->group(function () {
+    Route::apiResource('environments', EnvironmentController::class);
+    Route::get('environments/{id}/users', [EnvironmentController::class, 'getUsers']);
+    Route::post('environments/{id}/users', [EnvironmentController::class, 'addUser']);
+    Route::delete('environments/{id}/users/{userId}', [EnvironmentController::class, 'removeUser']);
+    
+    // Environment credentials routes
+    Route::get('environment-credentials/{environmentId}', [EnvironmentCredentialsController::class, 'show']);
+    Route::put('environment-credentials/{environmentId}', [EnvironmentCredentialsController::class, 'update']);
+    Route::delete('environment-credentials/{environmentId}', [EnvironmentCredentialsController::class, 'destroy']);
+});
 
 // Template Management Routes
 Route::middleware('auth:sanctum')->group(function () {
