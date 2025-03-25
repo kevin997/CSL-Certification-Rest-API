@@ -21,41 +21,13 @@ jobs:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
         run: |
           sshpass -p "$SSH_PASSWORD" ssh -p 5022 -o StrictHostKeyChecking=no cfpcwjwg@185.221.182.234 << 'EOSSH'
-          # Verify we're in the correct base directory
-          if [ ! -d "/home/cfpcwjwg/certification-api" ]; then
-            echo "Creating base directory /home/cfpcwjwg/certification-api"
-            mkdir -p /home/cfpcwjwg/certification-api
-          fi
-          
-          cd /home/cfpcwjwg/certification-api/
-          
-          # Check if the directory is a git repository
-          if [ ! -d "/home/cfpcwjwg/certification-api/.git" ]; then
-            echo "Setting up new Git repository in certification-api directory..."
-
-            # Initialize git in directory
-            git init
-            git remote add origin git@github.com:kevin997/CSL-Certification-Rest-API.git
+            # Verify we're in the correct base directory
+            if [ ! -d "/home/cfpcwjwg/certification-api" ]; then
+              echo "Creating base directory /home/cfpcwjwg/certification-api"
+              mkdir -p /home/cfpcwjwg/certification-api
+            fi
             
-            # Set up SSH for GitHub access
-            mkdir -p ~/.ssh
-            ssh-keyscan github.com >> ~/.ssh/known_hosts
-            
-            # Try to fetch and reset
-            git fetch || echo "Failed to fetch from GitHub, check SSH keys"
-            git reset --hard origin/main || echo "Failed to reset to origin/main"
-            
-            FIRST_TIME_SETUP=true
-          else
-            echo "Updating existing Git repository in certification-api directory..."
             cd /home/cfpcwjwg/certification-api/
-            rm -fr ".git/rebase-merge" || true
-            git config user.email "kevinliboire@gmail.com"
-            git config user.name "Kevin"
-            git config pull.rebase true
-            git add .
-            git commit -m "Server changes before pull" || true
-            git pull origin main || echo "Failed to pull from GitHub, check SSH keys"
             
             FIRST_TIME_SETUP=false
           fi
