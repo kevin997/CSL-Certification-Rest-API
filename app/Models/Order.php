@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToEnvironment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Order extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, BelongsToEnvironment;
 
     /**
      * The attributes that are mass assignable.
@@ -19,6 +20,7 @@ class Order extends Model
      */
     protected $fillable = [
         'user_id',
+        'environment_id',
         'order_number',
         'status', // pending, completed, failed, refunded
         'total_amount',
@@ -49,7 +51,7 @@ class Order extends Model
     }
 
     /**
-     * Get the user who placed this order.
+     * Get the user who placed the order.
      */
     public function user(): BelongsTo
     {

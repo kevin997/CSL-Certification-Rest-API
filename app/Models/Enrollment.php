@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToEnvironment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Enrollment extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, BelongsToEnvironment;
 
     /**
      * The attributes that are mass assignable.
@@ -20,6 +21,7 @@ class Enrollment extends Model
     protected $fillable = [
         'course_id',
         'user_id',
+        'environment_id',
         'status', // enrolled, in-progress, completed, dropped
         'enrolled_at',
         'completed_at',

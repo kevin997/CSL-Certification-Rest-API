@@ -15,6 +15,7 @@ use Illuminate\Http\Response;
 use App\Models\Enrollment;
 use App\Models\User;
 use Illuminate\Support\Facades\Str;
+use App\Models\Environment;
 
 /**
  * @OA\Schema(
@@ -741,6 +742,24 @@ class OrderController extends Controller
     {
         $user = User::findOrFail($order->user_id);
         
+        // Ensure the user is associated with the environment where the order was placed
+        if ($order->environment_id) {
+            $environment = Environment::find($order->environment_id);
+            if ($environment) {
+                // Check if the user is already associated with this environment
+                $existingAssociation = $user->environments()
+                    ->where('environment_id', $environment->id)
+                    ->exists();
+                
+                // If not, create the association
+                if (!$existingAssociation) {
+                    $user->environments()->attach($environment->id, [
+                        'joined_at' => now(),
+                    ]);
+                }
+            }
+        }
+        
         foreach ($order->items as $item) {
             $product = $item->product;
             
@@ -767,12 +786,14 @@ class OrderController extends Controller
                     $enrollment = new Enrollment();
                     $enrollment->user_id = $user->id;
                     $enrollment->course_id = $course->id;
+                    $enrollment->environment_id = $order->environment_id;
                     $enrollment->status = 'active';
+                    $enrollment->enrolled_at = now();
                     
                     // Set expiration date for subscription products
                     if ($product->is_subscription) {
                         $interval = $product->subscription_interval;
-                        $count = $product->subscription_interval_count;
+                        $count = (int) $product->subscription_interval_count;
                         
                         switch ($interval) {
                             case 'daily':
@@ -803,9 +824,40 @@ class OrderController extends Controller
      */
     private function generateOrderNumber()
     {
-        $prefix = 'CSL-';
+        // Get the current environment
+        $environmentId = session('current_environment_id');
+        $prefix = 'CSL-'; // Default prefix
+        
+        if ($environmentId) {
+            // Try to get branding from the environment
+            $environment = Environment::find($environmentId);
+            if ($environment) {
+                // Get the active branding for this environment
+                $branding = $environment->brandings()->where('is_active', true)->first();
+                
+                if ($branding && !empty($branding->company_name)) {
+                    // Use first letters of company name as prefix
+                    $words = explode(' ', $branding->company_name);
+                    $prefix = '';
+                    
+                    foreach ($words as $word) {
+                        if (!empty($word)) {
+                            $prefix .= strtoupper(substr($word, 0, 1));
+                        }
+                    }
+                    
+                    // Ensure prefix is at least 2 characters
+                    if (strlen($prefix) < 2) {
+                        $prefix = strtoupper(substr($branding->company_name, 0, 2));
+                    }
+                    
+                    $prefix .= '-';
+                }
+            }
+        }
+        
         $date = now()->format('Ymd');
-        $random = strtoupper(Str::random(4));
+        $random = strtoupper(\Illuminate\Support\Str::random(4));
         
         return $prefix . $date . '-' . $random;
     }

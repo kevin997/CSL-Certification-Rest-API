@@ -29,88 +29,46 @@ jobs:
             
             cd /home/cfpcwjwg/certification-api/
             
-            # Check if the directory is a git repository
-            if [ ! -d "/home/cfpcwjwg/certification-api/.git" ]; then
-              echo "Setting up new Git repository in certification-api directory..."
-
-              # Initialize git in directory
-              git init
-              git remote add origin git@github.com:kevin997/CSL-Certification-Rest-API.git
-              
-              # Set up SSH for GitHub access
-              mkdir -p ~/.ssh
-              ssh-keyscan github.com >> ~/.ssh/known_hosts
-              
-              # Try to fetch and reset
-              git fetch || echo "Failed to fetch from GitHub, check SSH keys"
-              git reset --hard origin/main || echo "Failed to reset to origin/main"
-              
-              FIRST_TIME_SETUP=true
-            else
-              echo "Updating existing Git repository in certification-api directory..."
-              cd /home/cfpcwjwg/certification-api/
-              rm -fr ".git/rebase-merge" || true
-              git config user.email "kevinliboire@gmail.com"
-              git config user.name "Kevin"
-              git config pull.rebase true
-              git add .
-              git commit -m "Server changes before pull" || true
-              git pull origin main || echo "Failed to pull from GitHub, check SSH keys"
-              
-              FIRST_TIME_SETUP=false
-            fi
-            
-            # Copy .env.example to .env if .env doesn't exist
-            if [ ! -f "/home/cfpcwjwg/certification-api/.env" ]; then
-              echo "Creating .env file from .env.example"
-              cp /home/cfpcwjwg/certification-api/.env.example /home/cfpcwjwg/certification-api/.env
-            fi
-            
-            # Create necessary directories if they don't exist
-            mkdir -p /home/cfpcwjwg/certification-api/storage/app/public
-            mkdir -p /home/cfpcwjwg/certification-api/storage/framework/cache
-            mkdir -p /home/cfpcwjwg/certification-api/storage/framework/sessions
-            mkdir -p /home/cfpcwjwg/certification-api/storage/framework/views
-            mkdir -p /home/cfpcwjwg/certification-api/storage/logs
-            mkdir -p /home/cfpcwjwg/certification-api/bootstrap/cache
-            
-            # Install Composer dependencies
-            cd /home/cfpcwjwg/certification-api
-            php /home/cfpcwjwg/composer.phar install --no-dev --optimize-autoloader
-            
-            # Generate application key if needed
-            if [ "$FIRST_TIME_SETUP" = true ]; then
-              echo "Generating application key..."
-              php artisan key:generate
-            fi
-            
-            # Run migrations
-            echo "Running database migrations..."
-            php artisan migrate --force
-            
-            # Clear caches
-            php artisan config:clear
-            php artisan cache:clear
-            php artisan view:clear
-            php artisan route:clear
-            
-            # Generate API documentation
-            php artisan l5-swagger:generate
-            
-            # Link storage
-            php artisan storage:link
-            
-            # Copy public directory to public_html for web access
-            cp -r /home/cfpcwjwg/certification-api/public/* /home/cfpcwjwg/public_html/certification-api/
-            
-            # Set correct permissions
-            find /home/cfpcwjwg/certification-api -type f -exec chmod 644 {} \;
-            find /home/cfpcwjwg/certification-api -type d -exec chmod 755 {} \;
-            chmod -R 775 /home/cfpcwjwg/certification-api/storage
-            chmod -R 775 /home/cfpcwjwg/certification-api/bootstrap/cache
-            
-            # Create symbolic links for storage
-            ln -sf /home/cfpcwjwg/certification-api/storage/app/public /home/cfpcwjwg/public_html/certification-api/storage
-            
-            echo "Deployment completed successfully!"
+            FIRST_TIME_SETUP=false
+          fi
+          
+          # Copy .env.example to .env if .env doesn't exist
+          if [ ! -f "/home/cfpcwjwg/certification-api/.env" ]; then
+            echo "Creating .env file from .env.example"
+            cp /home/cfpcwjwg/certification-api/.env.example /home/cfpcwjwg/certification-api/.env
+          fi
+          
+          # Install Composer dependencies
+          cd /home/cfpcwjwg/certification-api
+          php /home/cfpcwjwg/composer.phar install --no-dev --optimize-autoloader
+          
+          # Generate application key if needed
+          if [ "$FIRST_TIME_SETUP" = true ]; then
+            echo "Generating application key..."
+            php artisan key:generate
+          fi
+          
+          # Run migrations
+          echo "Running database migrations..."
+          php artisan migrate:fresh --seed --force
+          
+          # Clear caches
+          php artisan config:clear
+          php artisan cache:clear
+          php artisan view:clear
+          php artisan route:clear
+          
+          # Generate API documentation
+          php artisan l5-swagger:generate
+          
+          # Link storage
+          php artisan storage:link
+          
+          # Set correct permissions
+          find /home/cfpcwjwg/certification-api -type f -exec chmod 644 {} \;
+          find /home/cfpcwjwg/certification-api -type d -exec chmod 755 {} \;
+          chmod -R 775 /home/cfpcwjwg/certification-api/storage
+          chmod -R 775 /home/cfpcwjwg/certification-api/bootstrap/cache
+          
+          echo "Deployment completed successfully!"
           EOSSH

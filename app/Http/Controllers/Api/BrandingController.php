@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Branding;
+use App\Models\Environment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -426,9 +427,48 @@ class BrandingController extends Controller
      */
     public function getPublicBranding(Request $request)
     {
-        $domain = $request->header('Host');
+        $domain = $request->query('domain') ?: $request->header('Host');
 
-        // Find branding by custom domain
+        // First try to find environment by domain
+        $environment = null;
+        if ($domain) {
+            $environment = Environment::where('primary_domain', $domain)
+                ->orWhere(function($query) use ($domain) {
+                    $query->whereNotNull('additional_domains')
+                        ->whereJsonContains('additional_domains', $domain);
+                })
+                ->where('is_active', true)
+                ->first();
+        }
+
+        // If environment found, get branding by environment_id
+        if ($environment) {
+            $branding = Branding::where('environment_id', $environment->id)
+                ->where('is_active', true)
+                ->first();
+                
+            if ($branding) {
+                // Format branding data for public use
+                $publicBranding = [
+                    'company_name' => $branding->company_name,
+                    'logo_url' => $branding->logo_path ? Storage::url($branding->logo_path) : null,
+                    'favicon_url' => $branding->favicon_path ? Storage::url($branding->favicon_path) : null,
+                    'primary_color' => $branding->primary_color,
+                    'secondary_color' => $branding->secondary_color,
+                    'accent_color' => $branding->accent_color,
+                    'font_family' => $branding->font_family,
+                    'custom_css' => $branding->custom_css,
+                    'custom_js' => $branding->custom_js,
+                ];
+
+                return response()->json([
+                    'status' => 'success',
+                    'data' => $publicBranding,
+                ]);
+            }
+        }
+
+        // Fallback: Find branding by custom domain (legacy approach)
         $branding = Branding::where('custom_domain', $domain)
             ->where('is_active', true)
             ->first();
@@ -438,10 +478,10 @@ class BrandingController extends Controller
             return response()->json([
                 'status' => 'success',
                 'data' => [
-                    'company_name' => 'CSL Certification Platform',
+                    'company_name' => 'CSL',
                     'logo_url' => null,
                     'favicon_url' => null,
-                    'primary_color' => '#3490dc',
+                    'primary_color' => '#0db002',
                     'secondary_color' => '#38c172',
                     'accent_color' => '#e3342f',
                     'font_family' => 'Roboto, sans-serif',

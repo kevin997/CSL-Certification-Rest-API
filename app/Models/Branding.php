@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToEnvironment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,7 +10,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Branding extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, BelongsToEnvironment;
 
     /**
      * The attributes that are mass assignable.
@@ -18,6 +19,7 @@ class Branding extends Model
      */
     protected $fillable = [
         'user_id',
+        'environment_id',
         'company_name',
         'logo_path',
         'favicon_path',
@@ -49,5 +51,13 @@ class Branding extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the environment this branding belongs to.
+     */
+    public function environment(): BelongsTo
+    {
+        return $this->belongsTo(Environment::class);
     }
 }
