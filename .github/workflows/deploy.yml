@@ -68,7 +68,7 @@ jobs:
           
           # Install Composer dependencies
           cd /home/cfpcwjwg/certification-api
-          php /home/cfpcwjwg/composer.phar install --no-dev --optimize-autoloader
+          php /home/cfpcwjwg/composer.phar install --optimize-autoloader
           
           # Generate application key if needed
           if [ "$FIRST_TIME_SETUP" = true ]; then
@@ -78,7 +78,7 @@ jobs:
           
           # Run migrations
           echo "Running database migrations..."
-          php artisan migrate:fresh --seed --force
+          php artisan migrate --force
           
           # Clear caches
           php artisan config:clear
