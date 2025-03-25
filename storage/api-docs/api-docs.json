@@ -6065,6 +6065,18 @@
                                         "type": "string",
                                         "example": "instructor"
                                     },
+                                    "environment_email": {
+                                        "type": "string",
+                                        "example": "test.example@csl.com"
+                                    },
+                                    "environment_password": {
+                                        "type": "string",
+                                        "example": "Passowrd123!"
+                                    },
+                                    "use_environment_credentials": {
+                                        "type": "boolean",
+                                        "example": "true"
+                                    },
                                     "permissions": {
                                         "type": "object",
                                         "example": {

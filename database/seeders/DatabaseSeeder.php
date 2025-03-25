@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\User;
 use Database\Seeders\AdminSeeder;
 use Database\Seeders\PlanSeeder;
+use Database\Seeders\EnvironmentUsersSeeder;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -19,6 +20,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             AdminSeeder::class,
             PlanSeeder::class,
+            EnvironmentUsersSeeder::class,
         ]);
 
         // Development test user

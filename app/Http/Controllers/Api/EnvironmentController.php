@@ -419,9 +419,9 @@ class EnvironmentController extends Controller
      *         @OA\JsonContent(
      *             @OA\Property(property="user_id", type="integer", example=1),
      *             @OA\Property(property="role", type="string", example="instructor"),
-     *             @OA\Property(property="environment_email", type="string", example="test.example@csl.com")
-     *             @OA\Property(property="environment_password", type="string", example="Passowrd123!")
-     *             @OA\Property(property="use_environment_credentials", type="boolean", example="true")
+     *             @OA\Property(property="environment_email", type="string", example="test.example@csl.com"),
+     *             @OA\Property(property="environment_password", type="string", example="Passowrd123!"),
+     *             @OA\Property(property="use_environment_credentials", type="boolean", example="true"),
      *             @OA\Property(property="permissions", type="object", example={"create_course": true, "manage_users": false})
      *         )
      *     ),
