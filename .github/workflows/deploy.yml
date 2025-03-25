@@ -76,7 +76,8 @@ jobs:
             
             # Install Composer dependencies
             cd /home/cfpcwjwg/certification-api
-            php /home/cfpcwjwg/composer.phar install --no-dev --optimize-autoloader
+            php /home/cfpcwjwg/composer.phar update 
+            php /home/cfpcwjwg/composer.phar install
             
             # Generate application key if needed
             if [ "$FIRST_TIME_SETUP" = true ]; then
@@ -114,45 +115,5 @@ jobs:
             
             echo "Deployment completed successfully!"
             FIRST_TIME_SETUP=false
-          fi
-          
-          # Copy .env.example to .env if .env doesn't exist
-          if [ ! -f "/home/cfpcwjwg/certification-api/.env" ]; then
-            echo "Creating .env file from .env.example"
-            cp /home/cfpcwjwg/certification-api/.env.example /home/cfpcwjwg/certification-api/.env
-          fi
-          
-          # Install Composer dependencies
-          cd /home/cfpcwjwg/certification-api
-          php /home/cfpcwjwg/composer.phar install --no-dev --optimize-autoloader
-          
-          # Generate application key if needed
-          if [ "$FIRST_TIME_SETUP" = true ]; then
-            echo "Generating application key..."
-            php artisan key:generate
-          fi
-          
-          # Run migrations
-          echo "Running database migrations..."
-          php artisan migrate:fresh --seed --force
-          
-          # Clear caches
-          php artisan config:clear
-          php artisan cache:clear
-          php artisan view:clear
-          php artisan route:clear
-          
-          # Generate API documentation
-          php artisan l5-swagger:generate
-          
-          # Link storage
-          php artisan storage:link
-          
-          # Set correct permissions
-          find /home/cfpcwjwg/certification-api -type f -exec chmod 644 {} \;
-          find /home/cfpcwjwg/certification-api -type d -exec chmod 755 {} \;
-          chmod -R 775 /home/cfpcwjwg/certification-api/storage
-          chmod -R 775 /home/cfpcwjwg/certification-api/bootstrap/cache
-          
-          echo "Deployment completed successfully!"
+            fi
           EOSSH
