@@ -68,8 +68,7 @@ jobs:
           
           # Install Composer dependencies
           cd /home/cfpcwjwg/certification-api
-          php /home/cfpcwjwg/composer.phar install --no-dev --optimize-autoloader
-          php /home/cfpcwjwg/composer.phar update
+          php /home/cfpcwjwg/composer.phar install --optimize-autoloader
           
           # Generate application key if needed
           if [ "$FIRST_TIME_SETUP" = true ]; then
