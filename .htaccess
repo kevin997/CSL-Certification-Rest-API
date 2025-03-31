@@ -1,0 +1,63 @@
+<IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
+
+    RewriteEngine On
+
+    # Handle Authorization Header
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Redirect Trailing Slashes If Not A Folder...
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} (.+)/$
+    RewriteRule ^ %1 [L,R=301]
+
+    # Send Requests To Front Controller...
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# Root Directory .htaccess
+# ========================
+# This file should be placed in: /home/cfpcwjwg/certification-api/.htaccess
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^$ public/ [L]
+    RewriteRule (.*) public/$1 [L]
+</IfModule>
+
+# Public HTML Root Directory .htaccess
+# ===================================
+# This file should be placed in: /home/cfpcwjwg/public_html/.htaccess
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Redirect all requests to the certification-api subdirectory
+    RewriteCond %{REQUEST_URI} !^/certification-api/
+    RewriteRule ^(.*)$ certification-api/$1 [L]
+</IfModule>
+
+# Public HTML Certification API Directory .htaccess
+# ===============================================
+# This file should be placed in: /home/cfpcwjwg/public_html/certification-api/.htaccess
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Handle Authorization Header
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+    
+    # Redirect to public directory
+    RewriteRule ^$ public/index.php [L]
+    
+    # If the requested file or directory exists in the public directory, serve it directly
+    RewriteCond %{DOCUMENT_ROOT}/public/$1 -f [OR]
+    RewriteCond %{DOCUMENT_ROOT}/public/$1 -d
+    RewriteRule ^(.*)$ public/$1 [L]
+    
+    # Otherwise, route all requests to the Laravel front controller
+    RewriteRule ^(.*)$ public/index.php [L]
+</IfModule>
