@@ -145,7 +145,7 @@ class LessonContentController extends Controller
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'content' => 'required|string',
-            'format' => 'required|string|in:plain,markdown,html',
+            'format' => 'required|string|in:plain,markdown,html,wysiwyg',
             'estimated_duration' => 'nullable|integer', // in minutes
             'resources' => 'nullable|array',
             'resources.*.title' => 'required_with:resources|string|max:255',
@@ -343,7 +343,7 @@ class LessonContentController extends Controller
             'title' => 'string|max:255',
             'description' => 'nullable|string',
             'content' => 'string',
-            'format' => 'string|in:plain,markdown,html',
+            'format' => 'string|in:plain,markdown,html,wysiwyg',
             'estimated_duration' => 'nullable|integer',
             'resources' => 'nullable|array',
             'resources.*.title' => 'required_with:resources|string|max:255',

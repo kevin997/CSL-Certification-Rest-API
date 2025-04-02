@@ -17,14 +17,18 @@ use App\Http\Controllers\Api\EventContentController;
 use App\Http\Controllers\Api\EnvironmentController;
 use App\Http\Controllers\Api\EnvironmentCredentialsController;
 use App\Http\Controllers\Api\FeedbackContentController;
+use App\Http\Controllers\Api\FileController;
 use App\Http\Controllers\Api\LessonContentController;
 use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\PaymentGatewayController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\QuestionController;
 use App\Http\Controllers\Api\QuizContentController;
 use App\Http\Controllers\Api\ReferralController;
 use App\Http\Controllers\Api\TemplateController;
 use App\Http\Controllers\Api\TextContentController;
 use App\Http\Controllers\Api\TokenController;
+use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\VideoContentController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -105,9 +109,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // Activity routes
     Route::get('/blocks/{blockId}/activities', [ActivityController::class, 'index']);
     Route::post('/blocks/{blockId}/activities', [ActivityController::class, 'store']);
-    Route::get('/activities/{id}', [ActivityController::class, 'show']);
-    Route::put('/activities/{id}', [ActivityController::class, 'update']);
-    Route::delete('/activities/{id}', [ActivityController::class, 'destroy']);
+    Route::get('/blocks/activities/{id}', [ActivityController::class, 'show']);
+    Route::put('/blocks/activities/{id}', [ActivityController::class, 'update']);
+    Route::delete('/blocks/activities/{id}', [ActivityController::class, 'destroy']);
     Route::post('/blocks/{blockId}/activities/reorder', [ActivityController::class, 'reorder']);
     
     // Content Type routes
@@ -128,6 +132,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/activities/{activityId}/quiz', [QuizContentController::class, 'show']);
     Route::put('/activities/{activityId}/quiz', [QuizContentController::class, 'update']);
     Route::delete('/activities/{activityId}/quiz', [QuizContentController::class, 'destroy']);
+    
+    // Question routes for individual question management
+    Route::get('/activities/{activityId}/questions', [QuestionController::class, 'index']);
+    Route::post('/activities/{activityId}/questions', [QuestionController::class, 'store']);
+    Route::put('/activities/{activityId}/questions/{questionId}', [QuestionController::class, 'update']);
+    Route::delete('/activities/{activityId}/questions/{questionId}', [QuestionController::class, 'destroy']);
     
     // Lesson Content routes
     Route::post('/activities/{activityId}/lesson', [LessonContentController::class, 'store']);
@@ -217,6 +227,24 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/orders/{id}/status', [OrderController::class, 'updateStatus']);
     Route::get('/my-orders', [OrderController::class, 'myOrders']);
     
+    // Payment Gateway routes
+    Route::get('/payment-gateways', [PaymentGatewayController::class, 'index']);
+    Route::post('/payment-gateways', [PaymentGatewayController::class, 'store']);
+    Route::get('/payment-gateways/{id}', [PaymentGatewayController::class, 'show']);
+    Route::put('/payment-gateways/{id}', [PaymentGatewayController::class, 'update']);
+    Route::delete('/payment-gateways/{id}', [PaymentGatewayController::class, 'destroy']);
+    Route::get('/payment-gateway-types', [PaymentGatewayController::class, 'getTypes']);
+    
+    // Transaction routes
+    Route::get('/transactions', [TransactionController::class, 'index']);
+    Route::post('/transactions', [TransactionController::class, 'store']);
+    Route::get('/transactions/{id}', [TransactionController::class, 'show']);
+    Route::put('/transactions/{id}/status', [TransactionController::class, 'updateStatus']);
+    Route::post('/transactions/{id}/process', [TransactionController::class, 'process']);
+    Route::post('/transactions/callback/success', [TransactionController::class, 'callbackSuccess'])->name('api.transactions.callback.success');
+    Route::post('/transactions/callback/failure', [TransactionController::class, 'callbackFailure'])->name('api.transactions.callback.failure');
+    Route::post('/transactions/webhook/{gateway}', [TransactionController::class, 'webhook'])->name('api.transactions.webhook');
+    
     // Marketing routes
     // Referral routes
     Route::get('/referrals', [ReferralController::class, 'index']);
@@ -232,6 +260,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/branding', [BrandingController::class, 'store']);
     Route::post('/branding/reset', [BrandingController::class, 'reset']);
     Route::post('/branding/preview', [BrandingController::class, 'preview']);
+    
+    // File routes
+    Route::post('/files', [FileController::class, 'store']);
+    Route::get('/environments/{environmentId}/files', [FileController::class, 'getByEnvironment']);
+    Route::get('/files/{id}', [FileController::class, 'show']);
+    Route::put('/files/{id}', [FileController::class, 'update']);
+    Route::delete('/files/{id}', [FileController::class, 'destroy']);
 });
 
 // Public routes

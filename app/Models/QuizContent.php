@@ -18,11 +18,15 @@ class QuizContent extends Model
      * @var array<int, string>
      */
     protected $fillable = [
+        'title',
+        'description',
         'instructions',
         'passing_score',
         'time_limit',
         'max_attempts',
         'randomize_questions',
+        'show_correct_answers',
+        'questions',  // JSON field for storing questions directly
         'created_by',
     ];
 
@@ -35,6 +39,8 @@ class QuizContent extends Model
     {
         return [
             'randomize_questions' => 'boolean',
+            'show_correct_answers' => 'boolean',
+            'questions' => 'array',
         ];
     }
 

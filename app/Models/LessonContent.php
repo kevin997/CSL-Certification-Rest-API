@@ -4,8 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class LessonContent extends Model
@@ -18,6 +18,13 @@ class LessonContent extends Model
      * @var array<int, string>
      */
     protected $fillable = [
+        'activity_id',
+        'title',
+        'description',
+        'content',
+        'format',
+        'estimated_duration',
+        'resources',
         'introduction',
         'conclusion',
         'enable_discussion',
@@ -39,15 +46,17 @@ class LessonContent extends Model
             'enable_instructor_feedback' => 'boolean',
             'enable_questions' => 'boolean',
             'show_results' => 'boolean',
+            'resources' => 'json',
+            'estimated_duration' => 'integer',
         ];
     }
 
     /**
-     * Get the activity that owns this content.
+     * Get the activity that owns this lesson content.
      */
-    public function activity(): MorphOne
+    public function activity(): BelongsTo
     {
-        return $this->morphOne(Activity::class, 'content');
+        return $this->belongsTo(Activity::class);
     }
 
     /**

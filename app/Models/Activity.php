@@ -6,6 +6,7 @@ use App\Enums\ActivityType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -28,6 +29,9 @@ class Activity extends Model
         'created_by',
         'content_type',
         'content_id',
+        'settings',
+        'learning_objectives',
+        'conditions',
     ];
 
     /**
@@ -39,6 +43,9 @@ class Activity extends Model
     {
         return [
             'type' => ActivityType::class,
+            'settings' => 'json',
+            'learning_objectives' => 'json',
+            'conditions' => 'json',
         ];
     }
 
@@ -64,5 +71,13 @@ class Activity extends Model
     public function content(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    /**
+     * Get the lesson content associated with this activity.
+     */
+    public function lessonContent(): HasOne
+    {
+        return $this->hasOne(LessonContent::class);
     }
 }

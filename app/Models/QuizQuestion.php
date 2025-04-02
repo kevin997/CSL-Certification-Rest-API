@@ -20,10 +20,33 @@ class QuizQuestion extends Model
     protected $fillable = [
         'quiz_content_id',
         'question',
-        'question_type', // multiple_choice, true_false, short_answer, etc.
+        'title',
+        'question_text',
+        'question_type', // multiple_choice, multiple_response, true_false, text, fill_blanks_text, fill_blanks_drag, matching, hotspot, essay, questionnaire, matrix
+        'options',
+        'blanks',
+        'matrix_rows',
+        'matrix_columns',
+        'matrix_options',
+        'explanation',
         'points',
+        'is_scorable',
         'order',
         'created_by',
+    ];
+
+    /**
+     * The attributes that should be cast.
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'options' => 'array',
+        'blanks' => 'array',
+        'matrix_rows' => 'array',
+        'matrix_columns' => 'array',
+        'matrix_options' => 'array',
+        'is_scorable' => 'boolean',
     ];
 
     /**

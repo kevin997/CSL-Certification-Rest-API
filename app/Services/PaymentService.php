@@ -3,6 +3,9 @@
 namespace App\Services;
 
 use App\Models\Order;
+use App\Models\Transaction;
+use App\Models\PaymentGatewaySetting;
+use App\Services\PaymentGateways\PaymentGatewayFactory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -70,11 +73,130 @@ class PaymentService
             case 'manual':
                 return $this->processManualPayment($order, $paymentData);
                 
+            case 'stripe':
+                return $this->processGatewayPayment($order, 'stripe', $paymentData);
+                
+            case 'lygos':
+                return $this->processGatewayPayment($order, 'lygos', $paymentData);
+                
             default:
+                // Check if this is a registered gateway
+                if (PaymentGatewayFactory::isSupported($paymentData['payment_method'])) {
+                    return $this->processGatewayPayment($order, $paymentData['payment_method'], $paymentData);
+                }
+                
                 return [
                     'success' => false,
                     'message' => 'Unsupported payment method'
                 ];
+        }
+    }
+    
+    /**
+     * Process payment using a payment gateway
+     *
+     * @param Order $order
+     * @param string $gatewayCode
+     * @param array $paymentData
+     * @return array
+     */
+    protected function processGatewayPayment(Order $order, string $gatewayCode, array $paymentData): array
+    {
+        try {
+            // Get the payment gateway settings
+            $gatewaySettings = PaymentGatewaySetting::where('gateway_code', $gatewayCode)
+                ->where('environment_id', $paymentData['environment_id'] ?? null)
+                ->where('status', true)
+                ->first();
+            
+            if (!$gatewaySettings) {
+                return [
+                    'success' => false,
+                    'message' => 'Payment gateway settings not found'
+                ];
+            }
+            
+            // Create a new transaction
+            $transaction = new Transaction();
+            $transaction->order_id = $order->id;
+            $transaction->environment_id = $paymentData['environment_id'] ?? $gatewaySettings->environment_id;
+            $transaction->payment_gateway_setting_id = $gatewaySettings->id;
+            $transaction->gateway_code = $gatewayCode;
+            $transaction->transaction_id = 'TXN-' . Str::random(16);
+            $transaction->customer_name = $order->customer_name;
+            $transaction->customer_email = $order->customer_email;
+            $transaction->total_amount = $order->total;
+            $transaction->currency = $order->currency ?? 'USD';
+            $transaction->description = 'Payment for order #' . $order->order_number;
+            $transaction->status = 'pending';
+            $transaction->metadata = json_encode([
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+                'payment_data' => $paymentData
+            ]);
+            $transaction->save();
+            
+            // Process the payment using the gateway
+            $gateway = PaymentGatewayFactory::create($gatewayCode, $gatewaySettings);
+            
+            if (!$gateway) {
+                return [
+                    'success' => false,
+                    'message' => 'Failed to initialize payment gateway'
+                ];
+            }
+            
+            $paymentResponse = $gateway->processPayment($transaction, $paymentData);
+            
+            // Update the transaction with the gateway response
+            $transaction->gateway_transaction_id = $paymentResponse['transaction_id'] ?? null;
+            $transaction->status = $paymentResponse['success'] ? ($paymentResponse['status'] ?? 'pending') : 'failed';
+            $transaction->response_data = json_encode($paymentResponse);
+            $transaction->processed_at = now();
+            $transaction->save();
+            
+            // Update the order payment status if payment was successful
+            if ($paymentResponse['success']) {
+                // If the payment is completed immediately (not a redirect-based flow)
+                if (($paymentResponse['status'] ?? '') === 'succeeded' || ($paymentResponse['status'] ?? '') === 'COMPLETED') {
+                    $this->orderService->updatePaymentStatus($order->id, 'paid', [
+                        'transaction_id' => $transaction->transaction_id,
+                        'gateway_transaction_id' => $transaction->gateway_transaction_id,
+                        'payment_method' => $gatewayCode,
+                        'payment_date' => now()->format('Y-m-d H:i:s')
+                    ]);
+                    
+                    // Update order status
+                    $this->orderService->updateOrderStatus($order->id, 'processing');
+                }
+                
+                return [
+                    'success' => true,
+                    'message' => $paymentResponse['message'] ?? 'Payment processed successfully',
+                    'transaction_id' => $transaction->transaction_id,
+                    'gateway_transaction_id' => $transaction->gateway_transaction_id,
+                    'order_number' => $order->order_number,
+                    'amount' => $order->total,
+                    'currency' => $transaction->currency,
+                    'status' => $transaction->status,
+                    'checkout_url' => $paymentResponse['checkout_url'] ?? null,
+                    'payment_date' => $transaction->processed_at->format('Y-m-d H:i:s')
+                ];
+            } else {
+                return [
+                    'success' => false,
+                    'message' => $paymentResponse['message'] ?? 'Payment processing failed',
+                    'error' => $paymentResponse['error'] ?? null,
+                    'error_code' => $paymentResponse['error_code'] ?? null
+                ];
+            }
+        } catch (\Exception $e) {
+            Log::error('Payment gateway error: ' . $e->getMessage());
+            
+            return [
+                'success' => false,
+                'message' => 'Payment processing failed: ' . $e->getMessage()
+            ];
         }
     }
     
@@ -287,6 +409,90 @@ class PaymentService
      */
     public function verifyPayment(string $transactionId): array
     {
+        // Find transaction with this ID
+        $transaction = Transaction::where('transaction_id', $transactionId)
+            ->orWhere('gateway_transaction_id', $transactionId)
+            ->first();
+        
+        if (!$transaction) {
+            return [
+                'success' => false,
+                'message' => 'Transaction not found'
+            ];
+        }
+        
+        try {
+            // Get the payment gateway settings
+            $gatewaySettings = PaymentGatewaySetting::where('id', $transaction->payment_gateway_setting_id)->first();
+            
+            if (!$gatewaySettings) {
+                // Fall back to legacy verification method
+                return $this->verifyLegacyPayment($transactionId);
+            }
+            
+            // Verify the payment using the gateway
+            $gateway = PaymentGatewayFactory::create($transaction->gateway_code, $gatewaySettings);
+            
+            if (!$gateway) {
+                return [
+                    'success' => false,
+                    'message' => 'Failed to initialize payment gateway'
+                ];
+            }
+            
+            $verificationResponse = $gateway->verifyPayment($transaction->gateway_transaction_id);
+            
+            // Update the transaction status based on verification
+            if ($verificationResponse['success'] && ($verificationResponse['status'] === 'succeeded' || $verificationResponse['status'] === 'completed' || $verificationResponse['status'] === 'COMPLETED')) {
+                $transaction->status = 'completed';
+                $transaction->verified_at = now();
+                $transaction->save();
+                
+                // Update the order if not already paid
+                $order = Order::find($transaction->order_id);
+                if ($order && $order->payment_status !== 'paid') {
+                    $this->orderService->updatePaymentStatus($order->id, 'paid', [
+                        'transaction_id' => $transaction->transaction_id,
+                        'gateway_transaction_id' => $transaction->gateway_transaction_id,
+                        'payment_method' => $transaction->gateway_code,
+                        'payment_date' => now()->format('Y-m-d H:i:s')
+                    ]);
+                    
+                    // Update order status
+                    $this->orderService->updateOrderStatus($order->id, 'processing');
+                }
+            }
+            
+            return [
+                'success' => $verificationResponse['success'],
+                'message' => $verificationResponse['message'],
+                'transaction_id' => $transaction->transaction_id,
+                'gateway_transaction_id' => $transaction->gateway_transaction_id,
+                'order_id' => $transaction->order_id,
+                'payment_status' => $transaction->status,
+                'amount' => $transaction->total_amount,
+                'currency' => $transaction->currency,
+                'payment_date' => $transaction->processed_at ? $transaction->processed_at->format('Y-m-d H:i:s') : null,
+                'verification_date' => $transaction->verified_at ? $transaction->verified_at->format('Y-m-d H:i:s') : null
+            ];
+        } catch (\Exception $e) {
+            Log::error('Payment verification error: ' . $e->getMessage());
+            
+            return [
+                'success' => false,
+                'message' => 'Payment verification failed: ' . $e->getMessage()
+            ];
+        }
+    }
+    
+    /**
+     * Verify legacy payment status (for backward compatibility)
+     *
+     * @param string $transactionId
+     * @return array
+     */
+    protected function verifyLegacyPayment(string $transactionId): array
+    {
         // In a real application, this would check with the payment gateway
         // For this demo, we'll simulate a verification process
         
@@ -370,6 +576,143 @@ class PaymentService
             ];
         }
         
+        // Find the transaction for this order
+        $transaction = Transaction::where('order_id', $order->id)
+            ->where('status', 'completed')
+            ->first();
+        
+        if ($transaction && $transaction->gateway_transaction_id) {
+            // Process refund through the payment gateway
+            return $this->processGatewayRefund($transaction, $amount, $reason);
+        } else {
+            // Fall back to legacy refund method
+            return $this->processLegacyRefund($order, $amount, $reason);
+        }
+    }
+    
+    /**
+     * Process refund through a payment gateway
+     *
+     * @param Transaction $transaction
+     * @param float $amount
+     * @param string $reason
+     * @return array
+     */
+    protected function processGatewayRefund(Transaction $transaction, float $amount, string $reason): array
+    {
+        try {
+            // Get the payment gateway settings
+            $gatewaySettings = PaymentGatewaySetting::where('id', $transaction->payment_gateway_setting_id)->first();
+            
+            if (!$gatewaySettings) {
+                return [
+                    'success' => false,
+                    'message' => 'Payment gateway settings not found'
+                ];
+            }
+            
+            // Process the refund using the gateway
+            $gateway = PaymentGatewayFactory::create($transaction->gateway_code, $gatewaySettings);
+            
+            if (!$gateway) {
+                return [
+                    'success' => false,
+                    'message' => 'Failed to initialize payment gateway'
+                ];
+            }
+            
+            $refundResponse = $gateway->processRefund($transaction, $amount, $reason);
+            
+            if ($refundResponse['success']) {
+                // Create a refund transaction
+                $refundTransaction = new Transaction();
+                $refundTransaction->order_id = $transaction->order_id;
+                $refundTransaction->environment_id = $transaction->environment_id;
+                $refundTransaction->payment_gateway_setting_id = $transaction->payment_gateway_setting_id;
+                $refundTransaction->gateway_code = $transaction->gateway_code;
+                $refundTransaction->transaction_id = 'REF-' . Str::random(16);
+                $refundTransaction->parent_transaction_id = $transaction->transaction_id;
+                $refundTransaction->gateway_transaction_id = $refundResponse['refund_id'];
+                $refundTransaction->customer_name = $transaction->customer_name;
+                $refundTransaction->customer_email = $transaction->customer_email;
+                $refundTransaction->total_amount = -$amount; // Negative amount for refunds
+                $refundTransaction->currency = $transaction->currency;
+                $refundTransaction->description = 'Refund for transaction ' . $transaction->transaction_id . ($reason ? ': ' . $reason : '');
+                $refundTransaction->status = 'completed';
+                $refundTransaction->type = 'refund';
+                $refundTransaction->metadata = json_encode([
+                    'original_transaction_id' => $transaction->transaction_id,
+                    'reason' => $reason,
+                    'refund_data' => $refundResponse
+                ]);
+                $refundTransaction->processed_at = now();
+                $refundTransaction->verified_at = now();
+                $refundTransaction->save();
+                
+                // Update the order
+                $order = Order::find($transaction->order_id);
+                if ($order) {
+                    // Get existing payment data
+                    $metadata = json_decode($order->metadata ?? '{}', true);
+                    $paymentData = $metadata['payment_data'] ?? [];
+                    
+                    // Add refund data
+                    $paymentData['refund_id'] = $refundTransaction->transaction_id;
+                    $paymentData['refund_amount'] = $amount;
+                    $paymentData['refund_date'] = now()->format('Y-m-d H:i:s');
+                    $paymentData['refund_reason'] = $reason;
+                    
+                    // Update metadata
+                    $metadata['payment_data'] = $paymentData;
+                    
+                    // Update order payment status
+                    $order->update([
+                        'payment_status' => 'refunded',
+                        'status' => 'refunded',
+                        'metadata' => json_encode($metadata),
+                        'notes' => $order->notes . "\nRefund processed: $amount. Reason: $reason"
+                    ]);
+                }
+                
+                return [
+                    'success' => true,
+                    'message' => 'Refund processed successfully',
+                    'refund_id' => $refundTransaction->transaction_id,
+                    'gateway_refund_id' => $refundTransaction->gateway_transaction_id,
+                    'original_transaction_id' => $transaction->transaction_id,
+                    'order_id' => $transaction->order_id,
+                    'amount' => $amount,
+                    'currency' => $transaction->currency,
+                    'refund_date' => $refundTransaction->processed_at->format('Y-m-d H:i:s')
+                ];
+            } else {
+                return [
+                    'success' => false,
+                    'message' => $refundResponse['message'] ?? 'Refund processing failed',
+                    'error' => $refundResponse['error'] ?? null,
+                    'error_code' => $refundResponse['error_code'] ?? null
+                ];
+            }
+        } catch (\Exception $e) {
+            Log::error('Refund processing error: ' . $e->getMessage());
+            
+            return [
+                'success' => false,
+                'message' => 'Failed to process refund: ' . $e->getMessage()
+            ];
+        }
+    }
+    
+    /**
+     * Process legacy refund (for backward compatibility)
+     *
+     * @param Order $order
+     * @param float $amount
+     * @param string $reason
+     * @return array
+     */
+    protected function processLegacyRefund(Order $order, float $amount, string $reason): array
+    {
         // In a real application, this would integrate with a payment gateway
         // For this demo, we'll simulate a successful refund
         
@@ -480,36 +823,85 @@ class PaymentService
     /**
      * Get payment methods
      *
+     * @param int|null $environmentId
      * @return array
      */
-    public function getPaymentMethods(): array
+    public function getPaymentMethods(?int $environmentId = null): array
     {
-        // In a real application, this would be configured in the database or config
-        return [
-            [
-                'id' => 'credit_card',
-                'name' => 'Credit Card',
-                'description' => 'Pay with Visa, Mastercard, or American Express',
-                'is_enabled' => true
-            ],
-            [
-                'id' => 'paypal',
-                'name' => 'PayPal',
-                'description' => 'Pay with your PayPal account',
-                'is_enabled' => true
-            ],
-            [
-                'id' => 'bank_transfer',
-                'name' => 'Bank Transfer',
-                'description' => 'Pay directly from your bank account',
-                'is_enabled' => true
-            ],
-            [
-                'id' => 'manual',
-                'name' => 'Manual Payment',
-                'description' => 'Pay via other methods and provide a reference number',
-                'is_enabled' => true
-            ]
-        ];
+        // Get active payment gateways from the database
+        $query = PaymentGatewaySetting::where('status', true);
+        
+        // Filter by environment if specified
+        if ($environmentId !== null) {
+            $query->where(function($q) use ($environmentId) {
+                $q->where('environment_id', $environmentId)
+                  ->orWhereNull('environment_id');
+            });
+        }
+        
+        $gatewaySettings = $query->get();
+        
+        $paymentMethods = [];
+        
+        // Add configured payment gateways
+        foreach ($gatewaySettings as $setting) {
+            // Initialize the gateway to get its configuration
+            $gateway = PaymentGatewayFactory::create($setting->gateway_code, $setting);
+            
+            if ($gateway) {
+                $config = $gateway->getConfig();
+                
+                $paymentMethods[] = [
+                    'id' => $setting->gateway_code,
+                    'name' => $config['name'] ?? $setting->name,
+                    'description' => $config['description'] ?? $setting->description,
+                    'is_enabled' => $setting->status,
+                    'environment_id' => $setting->environment_id,
+                    'mode' => $setting->mode,
+                    'supports' => $config['supports'] ?? [],
+                    'countries' => $config['countries'] ?? [],
+                    'currencies' => $config['currencies'] ?? [],
+                    'requires_redirect' => $config['redirect_based'] ?? false,
+                    'client_side' => $config['client_side'] ?? false,
+                    'config' => $setting->is_default ? [
+                        'publishable_key' => $setting->getSetting('publishable_key'),
+                        'client_id' => $setting->getSetting('client_id'),
+                        'webhook_url' => $setting->webhook_url
+                    ] : []
+                ];
+            }
+        }
+        
+        // Add legacy payment methods if no gateways are configured
+        if (empty($paymentMethods)) {
+            $paymentMethods = [
+                [
+                    'id' => 'credit_card',
+                    'name' => 'Credit Card',
+                    'description' => 'Pay with Visa, Mastercard, or American Express',
+                    'is_enabled' => true
+                ],
+                [
+                    'id' => 'paypal',
+                    'name' => 'PayPal',
+                    'description' => 'Pay with your PayPal account',
+                    'is_enabled' => true
+                ],
+                [
+                    'id' => 'bank_transfer',
+                    'name' => 'Bank Transfer',
+                    'description' => 'Pay directly from your bank account',
+                    'is_enabled' => true
+                ],
+                [
+                    'id' => 'manual',
+                    'name' => 'Manual Payment',
+                    'description' => 'Pay via other methods and provide a reference number',
+                    'is_enabled' => true
+                ]
+            ];
+        }
+        
+        return $paymentMethods;
     }
 }

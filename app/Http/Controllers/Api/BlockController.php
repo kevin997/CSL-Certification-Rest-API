@@ -492,6 +492,7 @@ class BlockController extends Controller
 
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
+            'title' => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'is_required' => 'boolean',
             'order' => 'nullable|integer',
@@ -512,10 +513,12 @@ class BlockController extends Controller
 
         $block = Block::create([
             'template_id' => $templateId,
-            'name' => $request->name,
+            'title' => $request->title,
             'description' => $request->description,
             'is_required' => $request->is_required ?? false,
             'order' => $request->order,
+            'created_by' => Auth::id(),
+            'status' => 'active',
         ]);
 
         return response()->json([
