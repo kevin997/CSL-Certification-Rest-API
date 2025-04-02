@@ -17,6 +17,8 @@ use Illuminate\Support\Facades\Validator;
  *     @OA\Property(property="title", type="string", example="CSL Certification Course Template"),
  *     @OA\Property(property="description", type="string", example="A template for creating certification courses"),
  *     @OA\Property(property="is_public", type="boolean", example=true),
+ *     @OA\Property(property="thumbnail_path", type="string", example="path/to/thumbnail", nullable=true),
+ *     @OA\Property(property="settings", type="object", nullable=true),
  *     @OA\Property(property="created_by", type="integer", format="int64", example=1),
  *     @OA\Property(property="created_at", type="string", format="date-time"),
  *     @OA\Property(property="updated_at", type="string", format="date-time"),
@@ -117,7 +119,8 @@ class TemplateController extends Controller
      *             @OA\Property(property="description", type="string", example="A template for creating certification courses"),
      *             @OA\Property(property="is_public", type="boolean", example=true),
      *             @OA\Property(property="status", type="string", example="draft"),
-     *             @OA\Property(property="thumbnail_path", type="string", example="path/to/thumbnail")
+     *             @OA\Property(property="thumbnail_path", type="string", example="path/to/thumbnail"),
+     *             @OA\Property(property="settings", type="object", example={"widgets": {"calendar": true, "progress": false}})
      *         )
      *     ),
      *     @OA\Response(
@@ -143,10 +146,12 @@ class TemplateController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
+            'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'is_public' => 'boolean',
             'status' => 'required|string|in:draft,published,archived',
             'thumbnail_path' => 'nullable|string',
+            'settings' => 'nullable|array',
         ]);
 
         if ($validator->fails()) {
@@ -158,10 +163,12 @@ class TemplateController extends Controller
 
         $template = Template::create([
             'name' => $request->name,
+            'title' => $request->title,
             'description' => $request->description,
             'is_public' => $request->is_public ?? false,
             'status' => $request->status,
             'thumbnail_path' => $request->thumbnail_path,
+            'settings' => $request->settings,
             'created_by' => Auth::id(),
         ]);
 
@@ -260,7 +267,8 @@ class TemplateController extends Controller
      *             @OA\Property(property="description", type="string", example="A template for creating certification courses"),
      *             @OA\Property(property="is_public", type="boolean", example=true),
      *             @OA\Property(property="status", type="string", example="draft"),
-     *             @OA\Property(property="thumbnail_path", type="string", example="path/to/thumbnail")
+     *             @OA\Property(property="thumbnail_path", type="string", example="path/to/thumbnail"),
+     *             @OA\Property(property="settings", type="object", example={"widgets": {"calendar": true, "progress": false}})
      *         )
      *     ),
      *     @OA\Response(
@@ -300,10 +308,12 @@ class TemplateController extends Controller
 
         $validator = Validator::make($request->all(), [
             'name' => 'string|max:255',
+            'title' => 'string|max:255',
             'description' => 'nullable|string',
             'is_public' => 'boolean',
             'status' => 'string|in:draft,published,archived',
             'thumbnail_path' => 'nullable|string',
+            'settings' => 'nullable|array',
         ]);
 
         if ($validator->fails()) {
