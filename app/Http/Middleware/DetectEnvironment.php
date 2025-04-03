@@ -17,17 +17,34 @@ class DetectEnvironment
     {
         // First try to get domain from Origin or Referer header (for cross-domain requests)
         $domain = null;
-        $apiDomain = $request->header('X-Frontend-Domain'); // The API server domain
+        $apiDomain = $request->getHost(); // The API server domain
         
         // Try to get the frontend domain from headers
-        $domain = $apiDomain;
+        $origin = $request->header('Origin');
+        $referer = $request->header('Referer');
         
-        // Log::info('DetectEnvironment: Processing request', [
-        //     'api_domain' => $apiDomain,
-        //     'detected_domain' => $domain,
-        //     'url' => $request->fullUrl(),
-        //     'headers' => $request->headers->all()
-        // ]);
+        if ($origin) {
+            // Extract domain from Origin
+            $parsedOrigin = parse_url($origin);
+            $domain = $parsedOrigin['host'] ?? null;
+        } elseif ($referer) {
+            // Extract domain from Referer as fallback
+            $parsedReferer = parse_url($referer);
+            $domain = $parsedReferer['host'] ?? null;
+        }
+        
+        // If no origin/referer, fall back to the API domain
+        if (!$domain) {
+            $domain = $apiDomain;
+        }
+        
+        Log::info('DetectEnvironment: Processing request', [
+            'api_domain' => $apiDomain,
+            'detected_domain' => $domain,
+            'origin' => $origin,
+            'referer' => $referer,
+            'url' => $request->fullUrl()
+        ]);
         
         // Find the environment that matches the domain
         $environment = Environment::where('primary_domain', $domain)
@@ -60,6 +77,28 @@ class DetectEnvironment
             }
         }
         
+        // If still no environment, try a fallback
+        if (!$environment) {
+            Log::warning('DetectEnvironment: No environment found for domain', [
+                'domain' => $domain
+            ]);
+            
+            // Fallback to first active environment
+            $environment = Environment::where('is_active', true)->first();
+            if ($environment) {
+                Log::info('DetectEnvironment: Using fallback environment', [
+                    'environment_id' => $environment->id,
+                    'environment_name' => $environment->name
+                ]);
+            }
+        } else {
+            Log::info('DetectEnvironment: Environment found', [
+                'environment_id' => $environment->id,
+                'environment_name' => $environment->name,
+                'matched_domain' => $domain
+            ]);
+        }
+        
         if ($environment) {
             // Share the environment with all views
             view()->share('environment', $environment);
@@ -84,6 +123,10 @@ class DetectEnvironment
                 if (!$existingAssociation) {
                     $request->user()->environments()->attach($environment->id, [
                         'joined_at' => now(),
+                    ]);
+                    Log::info('DetectEnvironment: Associated user with environment', [
+                        'user_id' => $request->user()->id,
+                        'environment_id' => $environment->id
                     ]);
                 }
                 
@@ -114,6 +157,7 @@ class DetectEnvironment
                     'name' => $environment->name,
                     'primary_domain' => $environment->primary_domain,
                     'detected_domain' => $domain,
+                    'origin_header' => $origin
                 ];
                 
                 if (is_array($data)) {
@@ -126,6 +170,8 @@ class DetectEnvironment
                     $data['_debug'] = [
                         'message' => 'No environment found for this domain',
                         'requested_domain' => $domain,
+                        'origin' => $origin,
+                        'referer' => $referer,
                         'api_domain' => $apiDomain
                     ];
                     $response->setData($data);
