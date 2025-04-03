@@ -51,7 +51,7 @@ class BrandingMiddleware
         
         // If no environment found in token, try to get it from the domain
         if (!$environmentId) {
-            $domain = $request->getHost();
+            $domain = $request->header('X-Frontend-Domain');
             $environment = Environment::where('primary_domain', $domain)
         ->orWhere(function($query) use ($domain) {
             $query->whereNotNull('additional_domains')
