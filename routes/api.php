@@ -33,6 +33,17 @@ use App\Http\Controllers\Api\VideoContentController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
+
+Route::get('/debug/environments', function() {
+    $environments = \App\Models\Environment::where('is_active', true)
+        ->get(['id', 'name', 'primary_domain', 'additional_domains']);
+    
+    return response()->json([
+        'current_domain' => request()->getHost(),
+        'environments' => $environments,
+    ]);
+});
+
 // User authentication routes
 Route::get('/user', function (Request $request) {
     $user = $request->user();
