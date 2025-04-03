@@ -459,6 +459,7 @@ class BrandingController extends Controller
                     'font_family' => $branding->font_family,
                     'custom_css' => $branding->custom_css,
                     'custom_js' => $branding->custom_js,
+                    'environment_id' => $environment->id,
                 ];
 
                 return response()->json([
@@ -487,6 +488,7 @@ class BrandingController extends Controller
                     'font_family' => 'Roboto, sans-serif',
                     'custom_css' => null,
                     'custom_js' => null,
+                    'environment_id' => null,
                 ],
             ]);
         }
@@ -502,6 +504,7 @@ class BrandingController extends Controller
             'font_family' => $branding->font_family,
             'custom_css' => $branding->custom_css,
             'custom_js' => $branding->custom_js,
+            'environment_id' => $environment->id,
         ];
 
         return response()->json([
