@@ -15,15 +15,21 @@ class DetectEnvironment
      */
     public function handle(Request $request, Closure $next): Response
     {
-        // First try to get domain from Origin or Referer header (for cross-domain requests)
+        // Try to get domain from headers in priority order
         $domain = null;
         $apiDomain = $request->getHost(); // The API server domain
         
-        // Try to get the frontend domain from headers
+        // First check for the explicit X-Frontend-Domain header
+        $frontendDomainHeader = $request->header('X-Frontend-Domain');
+        
+        // Then try Origin or Referer as fallbacks
         $origin = $request->header('Origin');
         $referer = $request->header('Referer');
         
-        if ($origin) {
+        if ($frontendDomainHeader) {
+            // Use the explicit frontend domain header if provided
+            $domain = $frontendDomainHeader;
+        } elseif ($origin) {
             // Extract domain from Origin
             $parsedOrigin = parse_url($origin);
             $domain = $parsedOrigin['host'] ?? null;
@@ -33,13 +39,14 @@ class DetectEnvironment
             $domain = $parsedReferer['host'] ?? null;
         }
         
-        // If no origin/referer, fall back to the API domain
+        // If still no domain, fall back to the API domain
         if (!$domain) {
             $domain = $apiDomain;
         }
         
         Log::info('DetectEnvironment: Processing request', [
             'api_domain' => $apiDomain,
+            'frontend_domain_header' => $frontendDomainHeader,
             'detected_domain' => $domain,
             'origin' => $origin,
             'referer' => $referer,
@@ -52,17 +59,17 @@ class DetectEnvironment
             ->where('is_active', true)
             ->first();
         
-        // If no environment found with the frontend domain, try with known frontend domains
+        // If no environment found with the detected domain, try with known frontend domains
         if (!$environment) {
             $knownFrontendDomains = [
                 'csl-certification.vercel.app',
                 'csl-certification-git-develop-kevin997s-projects.vercel.app'
             ];
             
+            // First check if detected domain is similar to a known domain (partial match)
             foreach ($knownFrontendDomains as $frontendDomain) {
-                // Check if the request might be coming from this frontend
-                if (strpos($origin ?? '', $frontendDomain) !== false || 
-                    strpos($referer ?? '', $frontendDomain) !== false) {
+                if (strpos($domain, $frontendDomain) !== false || 
+                    strpos($frontendDomain, $domain) !== false) {
                     
                     $environment = Environment::where('primary_domain', $frontendDomain)
                         ->orWhereJsonContains('additional_domains', $frontendDomain)
@@ -70,21 +77,38 @@ class DetectEnvironment
                         ->first();
                     
                     if ($environment) {
-                        $domain = $frontendDomain;
+                        Log::info('DetectEnvironment: Found environment by partial domain match', [
+                            'detected_domain' => $domain,
+                            'matched_domain' => $frontendDomain
+                        ]);
                         break;
                     }
                 }
             }
         }
         
-        // If still no environment, try a fallback
+        // Log the SQL query for debugging
         if (!$environment) {
-            Log::warning('DetectEnvironment: No environment found for domain', [
+            $query = Environment::where('primary_domain', $domain)
+                ->orWhereJsonContains('additional_domains', $domain)
+                ->where('is_active', true)
+                ->toSql();
+            
+            Log::info('DetectEnvironment: Query used', [
+                'sql' => $query,
                 'domain' => $domain
             ]);
             
+            // Check all environments to see if there's any partial match
+            $allEnvironments = Environment::where('is_active', true)->get(['id', 'name', 'primary_domain', 'additional_domains']);
+            
+            Log::info('DetectEnvironment: Available environments', [
+                'count' => $allEnvironments->count(),
+                'environments' => $allEnvironments->toArray()
+            ]);
+            
             // Fallback to first active environment
-            $environment = Environment::where('is_active', true)->first();
+            $environment = $allEnvironments->first();
             if ($environment) {
                 Log::info('DetectEnvironment: Using fallback environment', [
                     'environment_id' => $environment->id,
@@ -106,13 +130,10 @@ class DetectEnvironment
             // Add environment to the request for easy access in controllers
             $request->merge(['environment' => $environment]);
             
-            // Store in request instead of session (Laravel 12 preference)
-            $request->attributes->set('current_environment_id', $environment->id);
-            
-            // Also store in session as fallback (safer option)
+            // Store environment in session for persistence
             session(['current_environment_id' => $environment->id]);
             
-            // User association
+            // If user is authenticated, associate them with this environment if not already
             if ($request->user()) {
                 // Check if the user is already associated with this environment
                 $existingAssociation = $request->user()->environments()
@@ -150,30 +171,21 @@ class DetectEnvironment
         if ($response instanceof \Illuminate\Http\JsonResponse) {
             $data = $response->getData(true);
             
-            // Only add environment info if it's not already there
-            if (!isset($data['environment']) && $environment) {
-                $environmentData = [
+            if (!isset($data['environment'])) {
+                $environmentData = $environment ? [
                     'id' => $environment->id,
                     'name' => $environment->name,
                     'primary_domain' => $environment->primary_domain,
                     'detected_domain' => $domain,
-                    'origin_header' => $origin
+                    'header_domain' => $frontendDomainHeader,
+                ] : [
+                    'message' => 'No environment found',
+                    'detected_domain' => $domain,
+                    'header_domain' => $frontendDomainHeader,
                 ];
                 
                 if (is_array($data)) {
                     $data['environment'] = $environmentData;
-                    $response->setData($data);
-                }
-            } else if (!$environment) {
-                // Add debugging information about why no environment was found
-                if (is_array($data)) {
-                    $data['_debug'] = [
-                        'message' => 'No environment found for this domain',
-                        'requested_domain' => $domain,
-                        'origin' => $origin,
-                        'referer' => $referer,
-                        'api_domain' => $apiDomain
-                    ];
                     $response->setData($data);
                 }
             }
