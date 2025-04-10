@@ -8555,6 +8555,465 @@
                 ]
             }
         },
+        "/api/payment-gateways": {
+            "get": {
+                "tags": [
+                    "Payment Gateways"
+                ],
+                "summary": "Get all payment gateways",
+                "description": "Returns a list of all payment gateways with optional filtering",
+                "operationId": "getPaymentGateways",
+                "parameters": [
+                    {
+                        "name": "environment_id",
+                        "in": "query",
+                        "description": "Filter by environment ID",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter by status (true/false)",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "name": "mode",
+                        "in": "query",
+                        "description": "Filter by mode (sandbox/live)",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "sandbox",
+                                "live"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/PaymentGateway"
+                                            }
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Payment Gateways"
+                ],
+                "summary": "Create a new payment gateway",
+                "description": "Creates a new payment gateway setting",
+                "operationId": "storePaymentGateway",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "gateway_code",
+                                    "name",
+                                    "status",
+                                    "mode"
+                                ],
+                                "properties": {
+                                    "environment_id": {
+                                        "type": "integer",
+                                        "example": 1,
+                                        "nullable": true
+                                    },
+                                    "gateway_code": {
+                                        "type": "string",
+                                        "example": "stripe"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "example": "Stripe Payment Gateway"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "example": "Process payments with Stripe",
+                                        "nullable": true
+                                    },
+                                    "status": {
+                                        "type": "boolean",
+                                        "example": true
+                                    },
+                                    "mode": {
+                                        "type": "string",
+                                        "enum": [
+                                            "sandbox",
+                                            "live"
+                                        ],
+                                        "example": "sandbox"
+                                    },
+                                    "is_default": {
+                                        "type": "boolean",
+                                        "example": false
+                                    },
+                                    "webhook_url": {
+                                        "type": "string",
+                                        "example": "https://example.com/webhook/stripe",
+                                        "nullable": true
+                                    },
+                                    "settings": {
+                                        "type": "object",
+                                        "example": {
+                                            "api_key": "sk_test_123",
+                                            "publishable_key": "pk_test_123"
+                                        }
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Payment gateway created successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Payment gateway created successfully"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/PaymentGateway"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/payment-gateways/{id}": {
+            "get": {
+                "tags": [
+                    "Payment Gateways"
+                ],
+                "summary": "Get a specific payment gateway",
+                "description": "Returns details of a specific payment gateway",
+                "operationId": "getPaymentGateway",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Payment gateway ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/PaymentGateway"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "404": {
+                        "description": "Payment gateway not found"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Payment Gateways"
+                ],
+                "summary": "Update a payment gateway",
+                "description": "Updates an existing payment gateway",
+                "operationId": "updatePaymentGateway",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Payment gateway ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "environment_id": {
+                                        "type": "integer",
+                                        "example": 1,
+                                        "nullable": true
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "example": "Updated Stripe Gateway"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "example": "Updated description",
+                                        "nullable": true
+                                    },
+                                    "status": {
+                                        "type": "boolean",
+                                        "example": true
+                                    },
+                                    "mode": {
+                                        "type": "string",
+                                        "enum": [
+                                            "sandbox",
+                                            "live"
+                                        ],
+                                        "example": "live"
+                                    },
+                                    "is_default": {
+                                        "type": "boolean",
+                                        "example": true
+                                    },
+                                    "webhook_url": {
+                                        "type": "string",
+                                        "example": "https://example.com/updated-webhook",
+                                        "nullable": true
+                                    },
+                                    "settings": {
+                                        "type": "object",
+                                        "example": {
+                                            "api_key": "sk_live_123",
+                                            "publishable_key": "pk_live_123"
+                                        }
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Payment gateway updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Payment gateway updated successfully"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/PaymentGateway"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "404": {
+                        "description": "Payment gateway not found"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Payment Gateways"
+                ],
+                "summary": "Delete a payment gateway",
+                "description": "Deletes an existing payment gateway",
+                "operationId": "deletePaymentGateway",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Payment gateway ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Payment gateway deleted successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Payment gateway deleted successfully"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "404": {
+                        "description": "Payment gateway not found"
+                    },
+                    "409": {
+                        "description": "Payment gateway is in use and cannot be deleted"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/payment-gateways/types": {
+            "get": {
+                "tags": [
+                    "Payment Gateways"
+                ],
+                "summary": "Get available payment gateway types",
+                "description": "Returns a list of all available payment gateway types",
+                "operationId": "getPaymentGatewayTypes",
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "properties": {
+                                                    "code": {
+                                                        "type": "string",
+                                                        "example": "stripe"
+                                                    },
+                                                    "name": {
+                                                        "type": "string",
+                                                        "example": "Stripe"
+                                                    },
+                                                    "description": {
+                                                        "type": "string",
+                                                        "example": "Process payments with Stripe"
+                                                    }
+                                                },
+                                                "type": "object"
+                                            }
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
         "/products": {
             "get": {
                 "tags": [
@@ -10259,6 +10718,15 @@
                                     "thumbnail_path": {
                                         "type": "string",
                                         "example": "path/to/thumbnail"
+                                    },
+                                    "settings": {
+                                        "type": "object",
+                                        "example": {
+                                            "widgets": {
+                                                "calendar": true,
+                                                "progress": false
+                                            }
+                                        }
                                     }
                                 },
                                 "type": "object"
@@ -10396,6 +10864,15 @@
                                     "thumbnail_path": {
                                         "type": "string",
                                         "example": "path/to/thumbnail"
+                                    },
+                                    "settings": {
+                                        "type": "object",
+                                        "example": {
+                                            "widgets": {
+                                                "calendar": true,
+                                                "progress": false
+                                            }
+                                        }
                                     }
                                 },
                                 "type": "object"
@@ -10825,6 +11302,578 @@
                     },
                     "404": {
                         "description": "Activity not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/transactions": {
+            "get": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Get list of transactions",
+                "description": "Returns paginated list of transactions with optional filtering",
+                "operationId": "getTransactionsList",
+                "parameters": [
+                    {
+                        "name": "environment_id",
+                        "in": "query",
+                        "description": "Filter by environment ID",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "payment_gateway_id",
+                        "in": "query",
+                        "description": "Filter by payment gateway ID",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "order_id",
+                        "in": "query",
+                        "description": "Filter by order ID",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "customer_id",
+                        "in": "query",
+                        "description": "Filter by customer ID",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter by transaction status",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "pending",
+                                "processing",
+                                "completed",
+                                "failed",
+                                "refunded",
+                                "partially_refunded"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "date_from",
+                        "in": "query",
+                        "description": "Filter transactions created after this date (format: Y-m-d)",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "date_to",
+                        "in": "query",
+                        "description": "Filter transactions created before this date (format: Y-m-d)",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "sort_field",
+                        "in": "query",
+                        "description": "Field to sort by",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "created_at",
+                            "enum": [
+                                "created_at",
+                                "amount",
+                                "status"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "sort_direction",
+                        "in": "query",
+                        "description": "Sort direction",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "desc",
+                            "enum": [
+                                "asc",
+                                "desc"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "description": "Number of items per page",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 15
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "current_page": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "data": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/Transaction"
+                                                    }
+                                                },
+                                                "total": {
+                                                    "type": "integer",
+                                                    "example": 50
+                                                },
+                                                "per_page": {
+                                                    "type": "integer",
+                                                    "example": 15
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "403": {
+                        "description": "Forbidden - User does not have permission"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Create a new transaction",
+                "description": "Creates a new transaction with the provided data",
+                "operationId": "storeTransaction",
+                "requestBody": {
+                    "description": "Transaction data",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "environment_id",
+                                    "amount",
+                                    "currency"
+                                ],
+                                "properties": {
+                                    "environment_id": {
+                                        "type": "integer",
+                                        "example": 1
+                                    },
+                                    "payment_gateway_setting_id": {
+                                        "type": "integer",
+                                        "example": 1,
+                                        "nullable": true
+                                    },
+                                    "order_id": {
+                                        "type": "string",
+                                        "example": "ORD-2025-0001",
+                                        "nullable": true
+                                    },
+                                    "invoice_id": {
+                                        "type": "string",
+                                        "example": "INV-2025-0001",
+                                        "nullable": true
+                                    },
+                                    "customer_id": {
+                                        "type": "string",
+                                        "example": "cus_123456",
+                                        "nullable": true
+                                    },
+                                    "customer_email": {
+                                        "type": "string",
+                                        "example": "john@example.com",
+                                        "nullable": true
+                                    },
+                                    "customer_name": {
+                                        "type": "string",
+                                        "example": "John Doe",
+                                        "nullable": true
+                                    },
+                                    "amount": {
+                                        "type": "number",
+                                        "format": "float",
+                                        "example": 99.99
+                                    },
+                                    "fee_amount": {
+                                        "type": "number",
+                                        "format": "float",
+                                        "example": 2.9,
+                                        "nullable": true
+                                    },
+                                    "tax_amount": {
+                                        "type": "number",
+                                        "format": "float",
+                                        "example": 5,
+                                        "nullable": true
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "example": "USD"
+                                    },
+                                    "payment_method": {
+                                        "type": "string",
+                                        "example": "credit_card",
+                                        "nullable": true
+                                    },
+                                    "payment_method_details": {
+                                        "type": "string",
+                                        "example": "Visa **** 4242",
+                                        "nullable": true
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "example": "Payment for order #ORD-2025-0001",
+                                        "nullable": true
+                                    },
+                                    "notes": {
+                                        "type": "string",
+                                        "example": "Customer requested express shipping",
+                                        "nullable": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Transaction created successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Transaction created successfully"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Transaction"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input data"
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/transactions/{id}": {
+            "get": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Get transaction details",
+                "description": "Returns details of a specific transaction",
+                "operationId": "getTransactionById",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Transaction ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Transaction"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - User does not have permission"
+                    },
+                    "404": {
+                        "description": "Transaction not found"
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/transactions/{id}/status": {
+            "put": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Update transaction status",
+                "description": "Updates the status of an existing transaction",
+                "operationId": "updateTransactionStatus",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Transaction ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Transaction status data",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "status"
+                                ],
+                                "properties": {
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "pending",
+                                            "processing",
+                                            "completed",
+                                            "failed",
+                                            "refunded",
+                                            "partially_refunded"
+                                        ],
+                                        "example": "completed"
+                                    },
+                                    "gateway_transaction_id": {
+                                        "type": "string",
+                                        "example": "ch_123456789",
+                                        "nullable": true
+                                    },
+                                    "gateway_status": {
+                                        "type": "string",
+                                        "example": "succeeded",
+                                        "nullable": true
+                                    },
+                                    "gateway_response": {
+                                        "type": "object",
+                                        "nullable": true
+                                    },
+                                    "notes": {
+                                        "type": "string",
+                                        "example": "Payment confirmed",
+                                        "nullable": true
+                                    },
+                                    "refund_reason": {
+                                        "type": "string",
+                                        "example": "Customer requested refund",
+                                        "nullable": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Transaction status updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Transaction status updated successfully"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Transaction"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input data"
+                    },
+                    "404": {
+                        "description": "Transaction not found"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/transactions/{id}/process": {
+            "post": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Process a transaction",
+                "description": "Process a transaction with the associated payment gateway",
+                "operationId": "processTransaction",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Transaction ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Payment processing data",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "payment_method": {
+                                        "type": "string",
+                                        "example": "credit_card"
+                                    },
+                                    "payment_token": {
+                                        "type": "string",
+                                        "example": "tok_visa"
+                                    },
+                                    "payment_details": {
+                                        "type": "object",
+                                        "nullable": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Transaction processed successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Transaction processed successfully"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Transaction"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input data or payment processing error"
+                    },
+                    "404": {
+                        "description": "Transaction not found"
+                    },
+                    "422": {
+                        "description": "Validation error"
                     }
                 },
                 "security": [
@@ -12234,6 +13283,77 @@
                 },
                 "type": "object"
             },
+            "PaymentGateway": {
+                "required": [
+                    "gateway_code",
+                    "name",
+                    "status",
+                    "mode"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64",
+                        "example": 1
+                    },
+                    "environment_id": {
+                        "type": "integer",
+                        "format": "int64",
+                        "example": 1,
+                        "nullable": true
+                    },
+                    "gateway_code": {
+                        "type": "string",
+                        "example": "stripe"
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Stripe Payment Gateway"
+                    },
+                    "description": {
+                        "type": "string",
+                        "example": "Process payments with Stripe",
+                        "nullable": true
+                    },
+                    "status": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": [
+                            "sandbox",
+                            "live"
+                        ],
+                        "example": "sandbox"
+                    },
+                    "is_default": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "webhook_url": {
+                        "type": "string",
+                        "example": "https://example.com/webhook/stripe",
+                        "nullable": true
+                    },
+                    "settings": {
+                        "type": "object",
+                        "example": {
+                            "api_key": "sk_test_123",
+                            "publishable_key": "pk_test_123"
+                        }
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
             "Product": {
                 "required": [
                     "name",
@@ -12531,6 +13651,15 @@
                         "type": "boolean",
                         "example": true
                     },
+                    "thumbnail_path": {
+                        "type": "string",
+                        "example": "path/to/thumbnail",
+                        "nullable": true
+                    },
+                    "settings": {
+                        "type": "object",
+                        "nullable": true
+                    },
                     "created_by": {
                         "type": "integer",
                         "format": "int64",
@@ -12637,6 +13766,148 @@
                             "html"
                         ],
                         "example": "markdown"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
+            "Transaction": {
+                "required": [
+                    "environment_id",
+                    "amount",
+                    "total_amount",
+                    "currency",
+                    "status"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64",
+                        "example": 1
+                    },
+                    "transaction_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "example": "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                    },
+                    "environment_id": {
+                        "type": "integer",
+                        "format": "int64",
+                        "example": 1
+                    },
+                    "payment_gateway_setting_id": {
+                        "type": "integer",
+                        "format": "int64",
+                        "example": 1,
+                        "nullable": true
+                    },
+                    "order_id": {
+                        "type": "string",
+                        "example": "ORD-2025-0001",
+                        "nullable": true
+                    },
+                    "invoice_id": {
+                        "type": "string",
+                        "example": "INV-2025-0001",
+                        "nullable": true
+                    },
+                    "customer_id": {
+                        "type": "string",
+                        "example": "cus_123456",
+                        "nullable": true
+                    },
+                    "customer_email": {
+                        "type": "string",
+                        "example": "john@example.com",
+                        "nullable": true
+                    },
+                    "customer_name": {
+                        "type": "string",
+                        "example": "John Doe",
+                        "nullable": true
+                    },
+                    "amount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 99.99
+                    },
+                    "fee_amount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 2.9
+                    },
+                    "tax_amount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 5
+                    },
+                    "total_amount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 107.89
+                    },
+                    "currency": {
+                        "type": "string",
+                        "example": "USD"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "processing",
+                            "completed",
+                            "failed",
+                            "refunded",
+                            "partially_refunded"
+                        ],
+                        "example": "completed"
+                    },
+                    "payment_method": {
+                        "type": "string",
+                        "example": "credit_card",
+                        "nullable": true
+                    },
+                    "payment_method_details": {
+                        "type": "string",
+                        "example": "Visa **** 4242",
+                        "nullable": true
+                    },
+                    "gateway_transaction_id": {
+                        "type": "string",
+                        "example": "ch_123456789",
+                        "nullable": true
+                    },
+                    "gateway_status": {
+                        "type": "string",
+                        "example": "succeeded",
+                        "nullable": true
+                    },
+                    "description": {
+                        "type": "string",
+                        "example": "Payment for order #ORD-2025-0001",
+                        "nullable": true
+                    },
+                    "notes": {
+                        "type": "string",
+                        "example": "Customer requested express shipping",
+                        "nullable": true
+                    },
+                    "paid_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "refunded_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
                     },
                     "created_at": {
                         "type": "string",
@@ -12842,6 +14113,14 @@
         {
             "name": "Onboarding",
             "description": "Onboarding"
+        },
+        {
+            "name": "Payment Gateways",
+            "description": "Payment Gateways"
+        },
+        {
+            "name": "Transactions",
+            "description": "Transactions"
         }
     ]
 }

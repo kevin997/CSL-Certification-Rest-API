@@ -48,6 +48,13 @@ return [
             'timeout' => null,
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url(env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
+        
+        'mailjet' => [
+            'transport' => 'mailjet',
+            'key' => env('MAILJET_APIKEY'),
+            'secret' => env('MAILJET_APISECRET'),
+            'sandbox' => env('MAILJET_SANDBOX', false),
+        ],
 
         'ses' => [
             'transport' => 'ses',
