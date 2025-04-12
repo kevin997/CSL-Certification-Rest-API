@@ -2,15 +2,17 @@
 
 namespace App\Models;
 
+use App\Traits\HasCreatedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class CourseSection extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, HasCreatedBy;
 
     /**
      * The attributes that are mass assignable.
@@ -47,13 +49,7 @@ class CourseSection extends Model
         return $this->belongsTo(Course::class);
     }
 
-    /**
-     * Get the user who created this section.
-     */
-    public function creator(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'created_by');
-    }
+    // The creator() method is now provided by the HasCreatedBy trait
 
     /**
      * Get the course section items.
@@ -61,5 +57,16 @@ class CourseSection extends Model
     public function items(): HasMany
     {
         return $this->hasMany(CourseSectionItem::class)->orderBy('order');
+    }
+    
+    /**
+     * Get the activities associated with this section through section items.
+     */
+    public function activities(): BelongsToMany
+    {
+        return $this->belongsToMany(Activity::class, 'course_section_items')
+            ->withPivot(['title', 'description', 'order', 'is_published', 'is_required', 'created_by'])
+            ->orderBy('course_section_items.order')
+            ->withTimestamps();
     }
 }

@@ -48,14 +48,14 @@ class EnvironmentUsersSeeder extends Seeder
         // 2. Create environments
         $environment1 = Environment::create([
             'name' => 'Company Environment',
-            'primary_domain' => 'csl-certification.vercel.app',
+            'primary_domain' => 'learning.cfpcsl.com',
             'owner_id' => $companyTeacher->id,
             'is_active' => true,
         ]);
 
         $environment2 = Environment::create([
             'name' => 'Individual Environment',
-            'primary_domain' => 'csl-certification-git-develop-kevin997s-projects.vercel.app',
+            'primary_domain' => 'csl-certification.vercel.app',
             'owner_id' => $individualTeacher->id,
             'is_active' => true,
         ]);

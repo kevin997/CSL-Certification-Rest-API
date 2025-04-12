@@ -244,14 +244,6 @@ class ProductController extends Controller
      */
     public function store(Request $request)
     {
-        // Check if user has permission to create products
-        if (!Auth::user()->is_admin) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'You do not have permission to create products',
-            ], Response::HTTP_FORBIDDEN);
-        }
-
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'description' => 'required|string',
@@ -421,14 +413,6 @@ class ProductController extends Controller
     public function update(Request $request, $id)
     {
         $product = Product::findOrFail($id);
-
-        // Check if user has permission to update this product
-        if (!Auth::user()->is_admin) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'You do not have permission to update products',
-            ], Response::HTTP_FORBIDDEN);
-        }
 
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',

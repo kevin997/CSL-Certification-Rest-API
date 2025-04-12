@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Activity;
 use App\Models\Course;
 use App\Models\Template;
 use Illuminate\Http\Request;
@@ -502,23 +503,17 @@ class CourseController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'template_id' => 'required|integer|exists:templates,id',
             'title' => 'required|string|max:255',
-            'slug' => 'nullable|string|max:255|unique:courses,slug',
             'description' => 'required|string',
-            'short_description' => 'nullable|string|max:500',
+            'template_id' => 'required|integer|exists:templates,id',
+            'environment_id' => 'nullable|integer|exists:environments,id',
             'status' => 'required|string|in:draft,published,archived',
-            'category_id' => 'nullable|integer|exists:categories,id',
-            'featured_image' => 'nullable|string|url',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
-            'enrollment_limit' => 'nullable|integer|min:1',
-            'price' => 'nullable|numeric|min:0',
-            'currency' => 'nullable|string|size:3',
-            'is_featured' => 'boolean',
-            'meta_title' => 'nullable|string|max:255',
-            'meta_description' => 'nullable|string|max:500',
-            'meta_keywords' => 'nullable|string|max:255',
+            'is_self_paced' => 'nullable|boolean',
+            'estimated_duration' => 'nullable|integer|min:1',
+            'difficulty_level' => 'nullable|string|in:beginner,intermediate,advanced',
+            'thumbnail_path' => 'nullable|string',
             'published_at' => 'nullable|date',
         ]);
 
@@ -530,11 +525,11 @@ class CourseController extends Controller
         }
 
         // Check if user has access to the template
-        $template = Template::findOrFail($request->template_id);
-        if (!$template->is_public && $template->created_by !== Auth::id()) {
+        $template = Template::find($request->template_id);
+        if (!$template || (!$template->is_public && $template->created_by !== Auth::id())) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'You do not have permission to use this template',
+                'message' => 'Template not found or you do not have permission to use this template',
             ], Response::HTTP_FORBIDDEN);
         }
 
@@ -555,23 +550,18 @@ class CourseController extends Controller
 
         // Create course
         $course = new Course();
-        $course->template_id = $request->template_id;
         $course->title = $request->title;
-        $course->slug = $slug;
+        $course->slug = $slug; // Set the generated slug
         $course->description = $request->description;
-        $course->short_description = $request->short_description;
+        $course->template_id = $request->template_id;
+        $course->environment_id = $request->environment_id;
         $course->status = $request->status;
-        $course->category_id = $request->category_id;
-        $course->featured_image = $request->featured_image;
         $course->start_date = $request->start_date;
         $course->end_date = $request->end_date;
-        $course->enrollment_limit = $request->enrollment_limit;
-        $course->price = $request->price;
-        $course->currency = $request->currency;
-        $course->is_featured = $request->is_featured ?? false;
-        $course->meta_title = $request->meta_title;
-        $course->meta_description = $request->meta_description;
-        $course->meta_keywords = $request->meta_keywords;
+        $course->is_self_paced = $request->is_self_paced ?? false;
+        $course->estimated_duration = $request->estimated_duration;
+        $course->difficulty_level = $request->difficulty_level ?? 'beginner';
+        $course->thumbnail_path = $request->thumbnail_path;
         $course->published_at = $request->status === 'published' ? now() : $request->published_at;
         $course->created_by = Auth::id();
         $course->save();
@@ -626,51 +616,46 @@ class CourseController extends Controller
                 'message' => 'You do not have permission to update this course',
             ], Response::HTTP_FORBIDDEN);
         }
-
+        
         $validator = Validator::make($request->all(), [
             'title' => 'string|max:255',
-            'slug' => 'nullable|string|max:255|unique:courses,slug,' . $id,
             'description' => 'string',
-            'short_description' => 'nullable|string|max:500',
+            'template_id' => 'integer|exists:templates,id',
+            'environment_id' => 'nullable|integer|exists:environments,id',
             'status' => 'string|in:draft,published,archived',
-            'category_id' => 'nullable|integer|exists:categories,id',
-            'featured_image' => 'nullable|string|url',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
-            'enrollment_limit' => 'nullable|integer|min:1',
-            'price' => 'nullable|numeric|min:0',
-            'currency' => 'nullable|string|size:3',
-            'is_featured' => 'boolean',
-            'meta_title' => 'nullable|string|max:255',
-            'meta_description' => 'nullable|string|max:500',
-            'meta_keywords' => 'nullable|string|max:255',
+            'is_self_paced' => 'nullable|boolean',
+            'estimated_duration' => 'nullable|integer|min:1',
+            'difficulty_level' => 'nullable|string|in:beginner,intermediate,advanced',
+            'thumbnail_path' => 'nullable|string',
+            'published_at' => 'nullable|date',
         ]);
-
+        
         if ($validator->fails()) {
             return response()->json([
                 'status' => 'error',
                 'errors' => $validator->errors(),
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
+        
+        // Generate slug if it doesn't exist or if title is being updated
+        if (empty($course->slug) || ($request->has('title') && $request->title != $course->title)) {
+            $slug = Str::slug($request->title ?? $course->title);
+            $originalSlug = $slug;
+            $count = 1;
 
-        // Generate slug if provided and empty
-        if ($request->has('slug')) {
-            if (empty($request->slug)) {
-                $slug = Str::slug($request->title ?? $course->title);
-                $originalSlug = $slug;
-                $count = 1;
-
-                // Ensure slug is unique
-                while (Course::where('slug', $slug)->where('id', '!=', $id)->exists()) {
-                    $slug = $originalSlug . '-' . $count;
-                    $count++;
-                }
-                $course->slug = $slug;
-            } else {
-                $course->slug = $request->slug;
+            // Ensure slug is unique
+            while (Course::where('slug', $slug)->where('id', '!=', $id)->exists()) {
+                $slug = $originalSlug . '-' . $count;
+                $count++;
             }
+            $course->slug = $slug;
+        } else if ($request->has('slug')) {
+            // If slug is explicitly provided in the request
+            $course->slug = $request->slug;
         }
-
+        
         // Update published_at if status changes to published
         if ($request->has('status') && $request->status === 'published' && $course->status !== 'published') {
             $course->published_at = now();
@@ -679,19 +664,17 @@ class CourseController extends Controller
         // Update course fields
         if ($request->has('title')) $course->title = $request->title;
         if ($request->has('description')) $course->description = $request->description;
-        if ($request->has('short_description')) $course->short_description = $request->short_description;
+        if ($request->has('template_id')) $course->template_id = $request->template_id;
+        if ($request->has('environment_id')) $course->environment_id = $request->environment_id;
         if ($request->has('status')) $course->status = $request->status;
-        if ($request->has('category_id')) $course->category_id = $request->category_id;
-        if ($request->has('featured_image')) $course->featured_image = $request->featured_image;
         if ($request->has('start_date')) $course->start_date = $request->start_date;
         if ($request->has('end_date')) $course->end_date = $request->end_date;
         if ($request->has('enrollment_limit')) $course->enrollment_limit = $request->enrollment_limit;
-        if ($request->has('price')) $course->price = $request->price;
-        if ($request->has('currency')) $course->currency = $request->currency;
-        if ($request->has('is_featured')) $course->is_featured = $request->is_featured;
-        if ($request->has('meta_title')) $course->meta_title = $request->meta_title;
-        if ($request->has('meta_description')) $course->meta_description = $request->meta_description;
-        if ($request->has('meta_keywords')) $course->meta_keywords = $request->meta_keywords;
+        if ($request->has('is_self_paced')) $course->is_self_paced = $request->is_self_paced;
+        if ($request->has('estimated_duration')) $course->estimated_duration = $request->estimated_duration;
+        if ($request->has('difficulty_level')) $course->difficulty_level = $request->difficulty_level;
+        if ($request->has('thumbnail_path')) $course->thumbnail_path = $request->thumbnail_path;
+        if ($request->has('published_at')) $course->published_at = $request->published_at;
 
         $course->save();
 
@@ -867,11 +850,21 @@ class CourseController extends Controller
      * Create course sections from template blocks.
      *
      * @param  \App\Models\Course  $course
-     * @param  \App\Models\Template  $template
+     * @param  \App\Models\Template|\Illuminate\Database\Eloquent\Collection  $template
      * @return void
      */
     private function createCourseSectionsFromTemplate($course, $template)
     {
+        // If $template is a collection, get the first item
+        if ($template instanceof \Illuminate\Database\Eloquent\Collection) {
+            $template = $template->first();
+        }
+        
+        // If template is null, return early
+        if (!$template) {
+            return;
+        }
+        
         // Load template blocks with activities
         $template->load(['blocks.activities']);
 
@@ -886,15 +879,16 @@ class CourseController extends Controller
 
             // Create course activities from template activities
             foreach ($block->activities as $activity) {
-                $section->activities()->create([
-                    'title' => $activity->title,
-                    'description' => $activity->description,
-                    'type' => $activity->type,
+                // Instead of creating a new Activity, let's directly use the existing activity
+                // Associate the activity with the course section using the pivot table
+                $section->items()->create([
+                    'activity_id' => $activity->id,
+                    'title' => $activity->title, // Optional override
+                    'description' => $activity->description, // Optional override
                     'order' => $activity->order,
-                    'is_required' => $activity->is_required,
-                    'points' => $activity->points,
-                    'duration' => $activity->duration,
-                    'template_activity_id' => $activity->id,
+                    'is_published' => true,
+                    'is_required' => $activity->is_required ?? true,
+                    'created_by' => auth()->id(),
                 ]);
             }
         }

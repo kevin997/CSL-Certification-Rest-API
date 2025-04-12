@@ -78,7 +78,7 @@ jobs:
           
           # Run migrations
           echo "Running database migrations..."
-          php artisan migrate --force
+          php artisan migrate:fresh --seed --force
           
           # Clear caches
           php artisan config:clear

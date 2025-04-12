@@ -21,6 +21,7 @@ class Course extends Model
      */
     protected $fillable = [
         'title',
+        'slug',
         'description',
         'template_id',
         'environment_id',
@@ -28,10 +29,16 @@ class Course extends Model
         'status', // draft, published, archived
         'start_date',
         'end_date',
+        'enrollment_limit',
         'is_self_paced',
         'estimated_duration',
         'difficulty_level', // beginner, intermediate, advanced
         'thumbnail_path',
+        'featured_image',
+        'is_featured',
+        'meta_title',
+        'meta_description',
+        'meta_keywords',
         'published_at',
     ];
 
@@ -46,6 +53,7 @@ class Course extends Model
             'start_date' => 'datetime',
             'end_date' => 'datetime',
             'is_self_paced' => 'boolean',
+            'is_featured' => 'boolean',
             'published_at' => 'datetime',
         ];
     }

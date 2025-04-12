@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\FileController;
 use App\Http\Controllers\Api\LessonContentController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PaymentGatewayController;
+use App\Http\Controllers\Api\ProductCategoryController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\QuestionController;
 use App\Http\Controllers\Api\QuizContentController;
@@ -222,6 +223,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/enrollments/{enrollmentId}/activity-completions/reset-all', [ActivityCompletionController::class, 'resetAll']);
     
     // E-commerce routes
+    // Product Category routes
+    Route::get('/product-categories', [ProductCategoryController::class, 'index']);
+    Route::post('/product-categories', [ProductCategoryController::class, 'store']);
+    Route::get('/product-categories/{id}', [ProductCategoryController::class, 'show']);
+    Route::put('/product-categories/{id}', [ProductCategoryController::class, 'update']);
+    Route::delete('/product-categories/{id}', [ProductCategoryController::class, 'destroy']);
+    Route::get('/product-categories/hierarchy', [ProductCategoryController::class, 'hierarchy']);
+    
     // Product routes
     Route::get('/products', [ProductController::class, 'index']);
     Route::post('/products', [ProductController::class, 'store']);
@@ -230,6 +239,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/products/{id}', [ProductController::class, 'destroy']);
     Route::post('/products/{id}/activate', [ProductController::class, 'activate']);
     Route::post('/products/{id}/deactivate', [ProductController::class, 'deactivate']);
+    Route::post('/products/{id}/feature', [ProductController::class, 'feature']);
+    Route::post('/products/{id}/unfeature', [ProductController::class, 'unfeature']);
     
     // Order routes
     Route::get('/orders', [OrderController::class, 'index']);
@@ -282,3 +293,27 @@ Route::middleware('auth:sanctum')->group(function () {
 
 // Public routes
 Route::get('/branding/public', [BrandingController::class, 'getPublicBranding']);
+
+// Storefront routes
+use App\Http\Controllers\Api\StorefrontController;
+
+Route::prefix('storefront')->group(function () {
+    // Public storefront routes that don't require authentication
+    Route::get('/{environment_id}/products/featured', [StorefrontController::class, 'getFeaturedProducts']);
+    Route::get('/{environment_id}/products', [StorefrontController::class, 'getAllProducts']);
+    Route::get('/{environment_id}/products/{slug}', [StorefrontController::class, 'getProductBySlug']);
+    Route::get('/{environment_id}/product/{id}', [StorefrontController::class, 'getProductById']);
+    Route::get('/{environment_id}/categories', [StorefrontController::class, 'getCategories']);
+    Route::get('/{environment_id}/payment-methods', [StorefrontController::class, 'getPaymentMethods']);
+    Route::get('/{environment_id}/payment-gateways', [StorefrontController::class, 'getPaymentGateways']);
+    Route::post('/{environment_id}/checkout', [StorefrontController::class, 'checkout']);
+    
+    // Product review routes
+    Route::get('/{environment_id}/products/{product_id}/reviews', [StorefrontController::class, 'getProductReviews']);
+    Route::post('/{environment_id}/products/{product_id}/reviews', [StorefrontController::class, 'submitProductReview']);
+    
+    // Course routes
+    Route::get('/{environment_id}/courses', [StorefrontController::class, 'getCourses']);
+    Route::get('/{environment_id}/courses/{slug}', [StorefrontController::class, 'getCourseBySlug']);
+    Route::get('/{environment_id}/course/{id}', [StorefrontController::class, 'getCourseById']);
+});

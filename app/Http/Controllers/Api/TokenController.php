@@ -47,8 +47,30 @@ class TokenController extends Controller
         $user = Auth::user();
         $environmentId = $request->environment_id;
         
-        // Create token with environment ID in abilities if provided
+        // Check if environment ID is provided and verify user access
         if ($environmentId) {
+            // Check if user is the owner of the environment or exists in environment_user table
+            $environment = \App\Models\Environment::find($environmentId);
+            
+            if (!$environment) {
+                throw ValidationException::withMessages([
+                    'environment_id' => ['The specified environment does not exist.'],
+                ]);
+            }
+            
+            // Check if user is the owner or has access to this environment
+            $isOwner = $environment->owner_id === $user->id;
+            $hasAccess = \App\Models\EnvironmentUser::where('environment_id', $environmentId)
+                ->where('user_id', $user->id)
+                ->exists();
+                
+            if (!$isOwner && !$hasAccess) {
+                throw ValidationException::withMessages([
+                    'environment_id' => ['You do not have access to this environment.'],
+                ]);
+            }
+            
+            // Create token with environment ID in abilities
             $token = $user->createToken($request->device_name, ['environment_id:' . $environmentId])->plainTextToken;
         } else {
             $token = $user->createToken($request->device_name)->plainTextToken;
