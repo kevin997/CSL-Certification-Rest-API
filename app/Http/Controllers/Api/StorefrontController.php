@@ -640,6 +640,22 @@ class StorefrontController extends Controller
         
         $course->related_courses = $relatedCourses;
         
+        // Get the product that contains this course
+        $productCourse = DB::table('product_courses')
+            ->where('course_id', $course->id)
+            ->first();
+        
+        if ($productCourse) {
+            $product = Product::where('id', $productCourse->product_id)
+                ->where('environment_id', $environment->id)
+                ->first();
+                
+            if ($product) {
+                $course->product_id = $product->id;
+                $course->product_slug = $product->slug;
+            }
+        }
+        
         return response()->json(['data' => $course]);
     }
     
