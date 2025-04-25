@@ -14,6 +14,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Jetstream\HasProfilePhoto;
 use Laravel\Jetstream\HasTeams;
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Support\Facades\Storage;
 
 class User extends Authenticatable
 {
@@ -74,6 +75,25 @@ class User extends Authenticatable
             'role' => UserRole::class,
             'is_admin' => 'boolean',
         ];
+    }
+    
+    /**
+     * Get the URL to the user's profile photo.
+     * This overrides the method from HasProfilePhoto trait to handle Cloudinary URLs.
+     *
+     * @return string
+     */
+    public function getProfilePhotoUrlAttribute()
+    {
+        // If profile_photo_path is a Cloudinary URL, return it directly
+        if ($this->profile_photo_path && strpos($this->profile_photo_path, 'cloudinary.com') !== false) {
+            return $this->profile_photo_path;
+        }
+        
+        // Otherwise, fall back to the default behavior from the trait
+        return $this->profile_photo_path
+            ? Storage::disk($this->profilePhotoDisk())->url($this->profile_photo_path)
+            : $this->defaultProfilePhotoUrl();
     }
 
     /**
