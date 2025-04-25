@@ -11,4 +11,9 @@ enum ActivityType: string
     case LESSON = 'lesson';
     case DOCUMENT = 'document';
     case ASSIGNMENT = 'assignment';
+    case DOCUMENTATION = 'documentation';
+    case EVENT = 'event';
+    case CERTIFICATE = 'certificate';
+    case FEEDBACK = 'feedback';
+    case WEBINAR = 'webinar';
 }

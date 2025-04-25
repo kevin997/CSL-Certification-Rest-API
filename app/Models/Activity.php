@@ -80,4 +80,12 @@ class Activity extends Model
     {
         return $this->hasOne(LessonContent::class);
     }
+
+    /**
+     * Get the quiz content associated with this activity.
+     */
+    public function quizContent(): HasOne
+    {
+        return $this->hasOne(QuizContent::class);
+    }
 }

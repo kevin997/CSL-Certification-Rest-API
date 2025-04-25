@@ -256,22 +256,11 @@ class EnvironmentController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
-        // Validate the request
+        // Validate the request with limited fields
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
-            'primary_domain' => [
-                'sometimes',
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('environments')->ignore($id),
-            ],
             'additional_domains' => 'nullable|array',
             'additional_domains.*' => 'string|max:255',
-            'theme_color' => 'nullable|string|max:7',
-            'logo_url' => 'nullable|string|max:255',
-            'favicon_url' => 'nullable|string|max:255',
-            'is_active' => 'sometimes|boolean',
             'description' => 'nullable|string',
         ]);
 
@@ -279,9 +268,15 @@ class EnvironmentController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // Update the environment
-        $environment->update($request->all());
-
+        // Update environment with limited fields
+        // Removed primary_domain, theme_color, logo_url, favicon_url, is_active from updates
+        $environment->fill($request->only([
+            'name',
+            'additional_domains',
+            'description',
+        ]));
+        $environment->save();
+        
         return $environment;
     }
 

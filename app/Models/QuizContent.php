@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\MorphOne;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class QuizContent extends Model
@@ -18,6 +18,7 @@ class QuizContent extends Model
      * @var array<int, string>
      */
     protected $fillable = [
+        'activity_id',
         'title',
         'description',
         'instructions',
@@ -47,9 +48,9 @@ class QuizContent extends Model
     /**
      * Get the activity that owns this content.
      */
-    public function activity(): MorphOne
+    public function activity(): BelongsTo
     {
-        return $this->morphOne(Activity::class, 'content');
+        return $this->belongsTo(Activity::class, 'activity_id');
     }
 
     /**

@@ -17,9 +17,25 @@ class TextContent extends Model
      * @var array<int, string>
      */
     protected $fillable = [
+        'activity_id',
+        'title',
+        'description',
         'content',
+        'format',
         'created_by',
     ];
+    
+    /**
+     * The attributes that should be cast.
+     *
+     * @var array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'format' => 'string',
+        ];
+    }
 
     /**
      * Get the activity that owns this content.

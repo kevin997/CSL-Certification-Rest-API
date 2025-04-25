@@ -17,12 +17,29 @@ class VideoContent extends Model
      * @var array<int, string>
      */
     protected $fillable = [
-        'url',
-        'provider', // youtube, vimeo, etc.
+        'activity_id',
+        'title',
+        'description',
+        'video_url',
+        'video_type', // youtube, vimeo, mp4, webm
         'duration',
+        'thumbnail_url',
         'transcript',
+        'captions_url',
         'created_by',
     ];
+    
+    /**
+     * The attributes that should be cast.
+     *
+     * @var array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'duration' => 'integer',
+        ];
+    }
 
     /**
      * Get the activity that owns this content.

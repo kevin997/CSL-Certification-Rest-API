@@ -138,8 +138,8 @@ class BrandingController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'company_name' => 'required|string|max:255',
-            'logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
-            'favicon' => 'nullable|image|mimes:ico,png|max:1024',
+            'logo_url' => 'nullable|string|url',
+            'favicon_url' => 'nullable|string|url',
             'primary_color' => 'nullable|string|max:7',
             'secondary_color' => 'nullable|string|max:7',
             'accent_color' => 'nullable|string|max:7',
@@ -161,28 +161,14 @@ class BrandingController extends Controller
         $branding = Branding::firstOrNew(['user_id' => Auth::id()]);
         $branding->company_name = $request->company_name;
 
-        // Handle logo upload
-        if ($request->hasFile('logo')) {
-            // Delete old logo if exists
-            if ($branding->logo_path) {
-                Storage::delete($branding->logo_path);
-            }
-
-            // Store new logo
-            $logoPath = $request->file('logo')->store('branding/logos', 'public');
-            $branding->logo_path = $logoPath;
+        // Handle logo URL
+        if ($request->has('logo_url')) {
+            $branding->logo_path = $request->logo_url;
         }
 
-        // Handle favicon upload
-        if ($request->hasFile('favicon')) {
-            // Delete old favicon if exists
-            if ($branding->favicon_path) {
-                Storage::delete($branding->favicon_path);
-            }
-
-            // Store new favicon
-            $faviconPath = $request->file('favicon')->store('branding/favicons', 'public');
-            $branding->favicon_path = $faviconPath;
+        // Handle favicon URL
+        if ($request->has('favicon_url')) {
+            $branding->favicon_path = $request->favicon_url;
         }
 
         // Update other fields if provided
@@ -367,7 +353,7 @@ class BrandingController extends Controller
         // Handle temporary logo upload
         if ($request->hasFile('logo')) {
             $logoPath = $request->file('logo')->store('branding/previews', 'public');
-            $preview['logo_url'] = Storage::url($logoPath);
+            $preview['logo_url'] = $logoPath;
 
             // Schedule cleanup of temporary file
             Storage::deleteDirectory('branding/previews');
@@ -376,7 +362,7 @@ class BrandingController extends Controller
         // Handle temporary favicon upload
         if ($request->hasFile('favicon')) {
             $faviconPath = $request->file('favicon')->store('branding/previews', 'public');
-            $preview['favicon_url'] = Storage::url($faviconPath);
+            $preview['favicon_url'] = $faviconPath;
         }
 
         return response()->json([
@@ -427,8 +413,35 @@ class BrandingController extends Controller
      */
     public function getPublicBranding(Request $request)
     {
-        $domain = $request->query('domain') ?: $request->header('Host');
-
+        // Try to get domain from headers in priority order, matching DetectEnvironment middleware
+        $domain = null;
+        $apiDomain = $request->getHost(); // The API server domain
+        
+        // First check for the explicit X-Frontend-Domain header
+        $frontendDomainHeader = $request->header('X-Frontend-Domain');
+        
+        // Then try Origin or Referer as fallbacks
+        $origin = $request->header('Origin');
+        $referer = $request->header('Referer');
+        
+        if ($frontendDomainHeader) {
+            // Use the explicit frontend domain header if provided
+            $domain = $frontendDomainHeader;
+        } elseif ($origin) {
+            // Extract domain from Origin
+            $parsedOrigin = parse_url($origin);
+            $domain = $parsedOrigin['host'] ?? null;
+        } elseif ($referer) {
+            // Extract domain from Referer as fallback
+            $parsedReferer = parse_url($referer);
+            $domain = $parsedReferer['host'] ?? null;
+        }
+        
+        // If still no domain, fall back to the API domain or query parameter
+        if (!$domain) {
+            $domain = $request->query('domain') ?: $apiDomain;
+        }
+        
         // First try to find environment by domain
         $environment = null;
         if ($domain) {
@@ -451,8 +464,8 @@ class BrandingController extends Controller
                 // Format branding data for public use
                 $publicBranding = [
                     'company_name' => $branding->company_name,
-                    'logo_url' => $branding->logo_path ? Storage::url($branding->logo_path) : null,
-                    'favicon_url' => $branding->favicon_path ? Storage::url($branding->favicon_path) : null,
+                    'logo_url' => $branding->logo_path ?: null,
+                    'favicon_url' => $branding->favicon_path ?: null,
                     'primary_color' => $branding->primary_color,
                     'secondary_color' => $branding->secondary_color,
                     'accent_color' => $branding->accent_color,
@@ -496,8 +509,8 @@ class BrandingController extends Controller
         // Format branding data for public use
         $publicBranding = [
             'company_name' => $branding->company_name,
-            'logo_url' => $branding->logo_path ? Storage::url($branding->logo_path) : null,
-            'favicon_url' => $branding->favicon_path ? Storage::url($branding->favicon_path) : null,
+            'logo_url' => $branding->logo_path ?: null,
+            'favicon_url' => $branding->favicon_path ?: null,
             'primary_color' => $branding->primary_color,
             'secondary_color' => $branding->secondary_color,
             'accent_color' => $branding->accent_color,

@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\BrandingController;
 use App\Http\Controllers\Api\CertificateContentController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\CourseSectionController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DocumentationContentController;
 use App\Http\Controllers\Api\EnrollmentController;
 use App\Http\Controllers\Api\EventContentController;
@@ -23,6 +24,7 @@ use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PaymentGatewayController;
 use App\Http\Controllers\Api\ProductCategoryController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\QuestionController;
 use App\Http\Controllers\Api\QuizContentController;
 use App\Http\Controllers\Api\ReferralController;
@@ -98,6 +100,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('environment-credentials/{environmentId}', [EnvironmentCredentialsController::class, 'show']);
     Route::put('environment-credentials/{environmentId}', [EnvironmentCredentialsController::class, 'update']);
     Route::delete('environment-credentials/{environmentId}', [EnvironmentCredentialsController::class, 'destroy']);
+});
+
+// Dashboard Routes
+Route::middleware('auth:sanctum')->group(function () {
+    // Dashboard data
+    Route::get('/dashboard', [DashboardController::class, 'getDashboardData']);
 });
 
 // Template Management Routes
@@ -249,6 +257,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/orders/{id}/status', [OrderController::class, 'updateStatus']);
     Route::get('/my-orders', [OrderController::class, 'myOrders']);
     
+    // Profile routes
+    Route::get('/profile', [ProfileController::class, 'getProfile']);
+    Route::put('/profile', [ProfileController::class, 'updateProfile']);
+    Route::put('/profile/photo', [ProfileController::class, 'updateProfilePhoto']);
+
     // Payment Gateway routes
     Route::get('/payment-gateways', [PaymentGatewayController::class, 'index']);
     Route::post('/payment-gateways', [PaymentGatewayController::class, 'store']);
