@@ -18,8 +18,10 @@ use App\Http\Controllers\Api\EventContentController;
 use App\Http\Controllers\Api\EnvironmentController;
 use App\Http\Controllers\Api\EnvironmentCredentialsController;
 use App\Http\Controllers\Api\FeedbackContentController;
+use App\Http\Controllers\Api\FeedbackSubmissionController;
 use App\Http\Controllers\Api\FileController;
 use App\Http\Controllers\Api\LessonContentController;
+use App\Http\Controllers\Api\LessonQuestionResponseController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PaymentGatewayController;
 use App\Http\Controllers\Api\ProductCategoryController;
@@ -165,6 +167,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/activities/{activityId}/lesson', [LessonContentController::class, 'update']);
     Route::delete('/activities/{activityId}/lesson', [LessonContentController::class, 'destroy']);
     
+    // Lesson Question Response routes
+    Route::post('/lessons/{lessonId}/submit-responses', [LessonQuestionResponseController::class, 'submitResponses']);
+    Route::get('/lessons/{lessonId}/responses', [LessonQuestionResponseController::class, 'getResponses']);
+    
     // Assignment Content routes
     Route::post('/activities/{activityId}/assignment', [AssignmentContentController::class, 'store']);
     Route::get('/activities/{activityId}/assignment', [AssignmentContentController::class, 'show']);
@@ -194,6 +200,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/activities/{activityId}/feedback', [FeedbackContentController::class, 'show']);
     Route::put('/activities/{activityId}/feedback', [FeedbackContentController::class, 'update']);
     Route::delete('/activities/{activityId}/feedback', [FeedbackContentController::class, 'destroy']);
+    
+    // Feedback Submission routes
+    Route::get('/feedback/{feedbackContentId}/submissions', [FeedbackSubmissionController::class, 'index']);
+    Route::post('/feedback/{feedbackContentId}/submissions', [FeedbackSubmissionController::class, 'store']);
+    Route::get('/feedback/submissions/{submissionId}', [FeedbackSubmissionController::class, 'show']);
+    Route::put('/feedback/submissions/{submissionId}', [FeedbackSubmissionController::class, 'update']);
+    Route::post('/feedback/submissions/{submissionId}/submit', [FeedbackSubmissionController::class, 'submit']);
+    Route::delete('/feedback/submissions/{submissionId}', [FeedbackSubmissionController::class, 'destroy']);
+    Route::get('/feedback/user/submissions', [FeedbackSubmissionController::class, 'getUserSubmissions']);
+    Route::get('/feedback/user/{userId}/submissions', [FeedbackSubmissionController::class, 'getUserSubmissionsById']);
     
     // Course Delivery routes
     // Course routes

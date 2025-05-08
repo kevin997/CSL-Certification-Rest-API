@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\Block;
 use App\Models\LessonContent;
+use App\Models\LessonContentPart;
+use App\Models\LessonQuestion;
+use App\Models\LessonQuestionOption;
 use App\Models\Template;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -134,10 +137,12 @@ class LessonContentController extends Controller
         }
 
         // Validate activity type
-        if ($activity->type !== 'lesson') {
+        if ($activity->type->value !== 'lesson') {
             return response()->json([
                 'status' => 'error',
                 'message' => 'This activity is not of type lesson',
+                'activity_type' => $activity->type->value,
+                'expected_type' => 'lesson'
             ], Response::HTTP_BAD_REQUEST);
         }
 
@@ -152,6 +157,31 @@ class LessonContentController extends Controller
             'resources.*.url' => 'required_with:resources|string|url',
             'resources.*.type' => 'required_with:resources|string|in:pdf,video,link,image,audio',
             'resources.*.description' => 'nullable|string',
+            'introduction' => 'nullable|string',
+            'conclusion' => 'nullable|string',
+            'enable_discussion' => 'nullable|boolean',
+            'enable_instructor_feedback' => 'nullable|boolean',
+            'enable_questions' => 'nullable|boolean',
+            'show_results' => 'nullable|boolean',
+            'content_parts' => 'nullable|array',
+            'content_parts.*.title' => 'required_with:content_parts|string|max:255',
+            'content_parts.*.content_type' => 'required_with:content_parts|string|in:wysiwyg,video',
+            'content_parts.*.content' => 'nullable|string',
+            'content_parts.*.video_url' => 'nullable|string|url',
+            'content_parts.*.video_provider' => 'nullable|string',
+            'content_parts.*.order' => 'nullable|integer',
+            'questions' => 'nullable|array',
+            'questions.*.question' => 'required_with:questions|string',
+            'questions.*.question_type' => 'required_with:questions|string|in:multiple_choice,true_false,short_answer',
+            'questions.*.is_scorable' => 'nullable|boolean',
+            'questions.*.points' => 'nullable|integer',
+            'questions.*.order' => 'nullable|integer',
+            'questions.*.content_part_id' => 'nullable|integer',
+            'questions.*.options' => 'nullable|array',
+            'questions.*.options.*.option_text' => 'required_with:questions.*.options|string',
+            'questions.*.options.*.is_correct' => 'nullable|boolean',
+            'questions.*.options.*.feedback' => 'nullable|string',
+            'questions.*.options.*.order' => 'nullable|integer',
         ]);
 
         if ($validator->fails()) {
@@ -170,6 +200,7 @@ class LessonContentController extends Controller
             ], Response::HTTP_CONFLICT);
         }
 
+        // Create the lesson content
         $lessonContent = LessonContent::create([
             'activity_id' => $activityId,
             'title' => $request->title,
@@ -178,7 +209,59 @@ class LessonContentController extends Controller
             'format' => $request->format,
             'estimated_duration' => $request->estimated_duration,
             'resources' => $request->has('resources') ? json_encode($request->resources) : null,
+            'introduction' => $request->introduction,
+            'conclusion' => $request->conclusion,
+            'enable_discussion' => $request->enable_discussion ?? false,
+            'enable_instructor_feedback' => $request->enable_instructor_feedback ?? false,
+            'enable_questions' => $request->enable_questions ?? false,
+            'show_results' => $request->show_results ?? false,
         ]);
+        
+        // Create content parts if provided
+        if ($request->has('content_parts') && is_array($request->content_parts)) {
+            foreach ($request->content_parts as $index => $partData) {
+                $lessonContent->contentParts()->create([
+                    'title' => $partData['title'],
+                    'content_type' => $partData['content_type'],
+                    'content' => $partData['content'] ?? null,
+                    'video_url' => $partData['video_url'] ?? null,
+                    'video_provider' => $partData['video_provider'] ?? null,
+                    'order' => $partData['order'] ?? $index,
+                    'created_by' => Auth::id(),
+                ]);
+            }
+        }
+        
+        // Create questions if provided
+        if ($request->has('questions') && is_array($request->questions)) {
+            foreach ($request->questions as $index => $questionData) {
+                $question = $lessonContent->questions()->create([
+                    'question' => $questionData['question'],
+                    'question_type' => $questionData['question_type'],
+                    'is_scorable' => $questionData['is_scorable'] ?? false,
+                    'points' => $questionData['points'] ?? 0,
+                    'order' => $questionData['order'] ?? $index,
+                    'content_part_id' => $questionData['content_part_id'] ?? null,
+                    'created_by' => Auth::id(),
+                ]);
+                
+                // Create options for multiple choice or true/false questions
+                if (in_array($questionData['question_type'], ['multiple_choice', 'true_false']) && 
+                    isset($questionData['options']) && is_array($questionData['options'])) {
+                    foreach ($questionData['options'] as $optIndex => $optionData) {
+                        $question->options()->create([
+                            'option_text' => $optionData['option_text'],
+                            'is_correct' => $optionData['is_correct'] ?? false,
+                            'feedback' => $optionData['feedback'] ?? null,
+                            'order' => $optionData['order'] ?? $optIndex,
+                        ]);
+                    }
+                }
+            }
+        }
+
+        // Load relationships for the response
+        $lessonContent->load(['contentParts', 'questions.options']);
 
         return response()->json([
             'status' => 'success',
@@ -240,7 +323,9 @@ class LessonContentController extends Controller
             ], Response::HTTP_FORBIDDEN);
         }
 
-        $lessonContent = LessonContent::where('activity_id', $activityId)->firstOrFail();
+        $lessonContent = LessonContent::with(['contentParts', 'questions.options'])
+            ->where('activity_id', $activityId)
+            ->firstOrFail();
         
         // Decode the resources JSON for the response
         if ($lessonContent->resources) {
@@ -350,6 +435,37 @@ class LessonContentController extends Controller
             'resources.*.url' => 'required_with:resources|string|url',
             'resources.*.type' => 'required_with:resources|string|in:pdf,video,link,image,audio',
             'resources.*.description' => 'nullable|string',
+            'introduction' => 'nullable|string',
+            'conclusion' => 'nullable|string',
+            'enable_discussion' => 'nullable|boolean',
+            'enable_instructor_feedback' => 'nullable|boolean',
+            'enable_questions' => 'nullable|boolean',
+            'show_results' => 'nullable|boolean',
+            'content_parts' => 'nullable|array',
+            'content_parts.*.id' => 'nullable|integer|exists:lesson_content_parts,id',
+            'content_parts.*.title' => 'required_with:content_parts|string|max:255',
+            'content_parts.*.content_type' => 'required_with:content_parts|string|in:wysiwyg,video',
+            'content_parts.*.content' => 'nullable|string',
+            'content_parts.*.video_url' => 'nullable|string|url',
+            'content_parts.*.video_provider' => 'nullable|string',
+            'content_parts.*.order' => 'nullable|integer',
+            'content_parts.*.deleted' => 'nullable|boolean',
+            'questions' => 'nullable|array',
+            'questions.*.id' => 'nullable|integer|exists:lesson_questions,id',
+            'questions.*.question' => 'required_with:questions|string',
+            'questions.*.question_type' => 'required_with:questions|string|in:multiple_choice,true_false,short_answer',
+            'questions.*.is_scorable' => 'nullable|boolean',
+            'questions.*.points' => 'nullable|integer',
+            'questions.*.order' => 'nullable|integer',
+            'questions.*.content_part_id' => 'nullable|integer',
+            'questions.*.deleted' => 'nullable|boolean',
+            'questions.*.options' => 'nullable|array',
+            'questions.*.options.*.id' => 'nullable|integer|exists:lesson_question_options,id',
+            'questions.*.options.*.option_text' => 'required_with:questions.*.options|string',
+            'questions.*.options.*.is_correct' => 'nullable|boolean',
+            'questions.*.options.*.feedback' => 'nullable|string',
+            'questions.*.options.*.order' => 'nullable|integer',
+            'questions.*.options.*.deleted' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -359,16 +475,150 @@ class LessonContentController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Prepare data for update
-        $updateData = $request->except('resources');
+        // Prepare data for update - exclude relationships
+        $updateData = $request->except(['resources', 'content_parts', 'questions']);
         
         // Handle resources separately to encode as JSON
         if ($request->has('resources')) {
             $updateData['resources'] = json_encode($request->resources);
         }
 
+        // Update the lesson content
         $lessonContent->update($updateData);
 
+        // Handle content parts
+        if ($request->has('content_parts') && is_array($request->content_parts)) {
+            foreach ($request->content_parts as $partData) {
+                // Check if this is an existing content part or a new one
+                if (isset($partData['id'])) {
+                    $contentPart = $lessonContent->contentParts()->find($partData['id']);
+                    
+                    // If marked for deletion, delete it
+                    if (isset($partData['deleted']) && $partData['deleted']) {
+                        if ($contentPart) {
+                            $contentPart->delete();
+                        }
+                        continue;
+                    }
+                    
+                    // Otherwise update it
+                    if ($contentPart) {
+                        $contentPart->update([
+                            'title' => $partData['title'],
+                            'content_type' => $partData['content_type'],
+                            'content' => $partData['content'] ?? $contentPart->content,
+                            'video_url' => $partData['video_url'] ?? $contentPart->video_url,
+                            'video_provider' => $partData['video_provider'] ?? $contentPart->video_provider,
+                            'order' => $partData['order'] ?? $contentPart->order,
+                        ]);
+                    }
+                } else {
+                    // Create new content part
+                    $lessonContent->contentParts()->create([
+                        'title' => $partData['title'],
+                        'content_type' => $partData['content_type'],
+                        'content' => $partData['content'] ?? null,
+                        'video_url' => $partData['video_url'] ?? null,
+                        'video_provider' => $partData['video_provider'] ?? null,
+                        'order' => $partData['order'] ?? 0,
+                        'created_by' => Auth::id(),
+                    ]);
+                }
+            }
+        }
+        
+        // Handle questions
+        if ($request->has('questions') && is_array($request->questions)) {
+            foreach ($request->questions as $questionData) {
+                // Check if this is an existing question or a new one
+                if (isset($questionData['id'])) {
+                    $question = $lessonContent->questions()->find($questionData['id']);
+                    
+                    // If marked for deletion, delete it
+                    if (isset($questionData['deleted']) && $questionData['deleted']) {
+                        if ($question) {
+                            $question->delete();
+                        }
+                        continue;
+                    }
+                    
+                    // Otherwise update it
+                    if ($question) {
+                        $question->update([
+                            'question' => $questionData['question'],
+                            'question_type' => $questionData['question_type'],
+                            'is_scorable' => $questionData['is_scorable'] ?? $question->is_scorable,
+                            'points' => $questionData['points'] ?? $question->points,
+                            'order' => $questionData['order'] ?? $question->order,
+                            'content_part_id' => $questionData['content_part_id'] ?? $question->content_part_id,
+                        ]);
+                        
+                        // Handle options for this question
+                        if (isset($questionData['options']) && is_array($questionData['options'])) {
+                            foreach ($questionData['options'] as $optionData) {
+                                // Check if this is an existing option or a new one
+                                if (isset($optionData['id'])) {
+                                    $option = $question->options()->find($optionData['id']);
+                                    
+                                    // If marked for deletion, delete it
+                                    if (isset($optionData['deleted']) && $optionData['deleted']) {
+                                        if ($option) {
+                                            $option->delete();
+                                        }
+                                        continue;
+                                    }
+                                    
+                                    // Otherwise update it
+                                    if ($option) {
+                                        $option->update([
+                                            'option_text' => $optionData['option_text'],
+                                            'is_correct' => $optionData['is_correct'] ?? $option->is_correct,
+                                            'feedback' => $optionData['feedback'] ?? $option->feedback,
+                                            'order' => $optionData['order'] ?? $option->order,
+                                        ]);
+                                    }
+                                } else {
+                                    // Create new option
+                                    $question->options()->create([
+                                        'option_text' => $optionData['option_text'],
+                                        'is_correct' => $optionData['is_correct'] ?? false,
+                                        'feedback' => $optionData['feedback'] ?? null,
+                                        'order' => $optionData['order'] ?? 0,
+                                    ]);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Create new question
+                    $question = $lessonContent->questions()->create([
+                        'question' => $questionData['question'],
+                        'question_type' => $questionData['question_type'],
+                        'is_scorable' => $questionData['is_scorable'] ?? false,
+                        'points' => $questionData['points'] ?? 0,
+                        'order' => $questionData['order'] ?? 0,
+                        'content_part_id' => $questionData['content_part_id'] ?? null,
+                        'created_by' => Auth::id(),
+                    ]);
+                    
+                    // Create options for this new question
+                    if (isset($questionData['options']) && is_array($questionData['options'])) {
+                        foreach ($questionData['options'] as $optIndex => $optionData) {
+                            $question->options()->create([
+                                'option_text' => $optionData['option_text'],
+                                'is_correct' => $optionData['is_correct'] ?? false,
+                                'feedback' => $optionData['feedback'] ?? null,
+                                'order' => $optionData['order'] ?? $optIndex,
+                            ]);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Reload the lesson content with its relationships
+        $lessonContent->load(['contentParts', 'questions.options']);
+        
         // Decode the resources JSON for the response
         if ($lessonContent->resources) {
             $lessonContent->resources = json_decode($lessonContent->resources);

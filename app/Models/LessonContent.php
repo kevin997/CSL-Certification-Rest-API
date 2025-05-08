@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\HasCreatedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class LessonContent extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, HasCreatedBy;
 
     /**
      * The attributes that are mass assignable.
@@ -31,6 +32,7 @@ class LessonContent extends Model
         'enable_instructor_feedback',
         'enable_questions',
         'show_results',
+        'pass_score',
         'created_by',
     ];
 
@@ -48,6 +50,7 @@ class LessonContent extends Model
             'show_results' => 'boolean',
             'resources' => 'json',
             'estimated_duration' => 'integer',
+            'pass_score' => 'integer',
         ];
     }
 
@@ -73,5 +76,13 @@ class LessonContent extends Model
     public function questions(): HasMany
     {
         return $this->hasMany(LessonQuestion::class)->orderBy('order');
+    }
+    
+    /**
+     * Get the responses for this lesson's questions.
+     */
+    public function questionResponses(): HasMany
+    {
+        return $this->hasMany(LessonQuestionResponse::class);
     }
 }

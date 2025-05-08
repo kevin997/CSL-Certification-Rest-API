@@ -18,10 +18,14 @@ class FeedbackContent extends Model
      * @var array<int, string>
      */
     protected $fillable = [
+        'activity_id',
         'title',
         'description',
+        'instructions',
         'feedback_type', // 360, questionnaire, form, survey
-        'is_anonymous',
+        'allow_anonymous',
+        'completion_message',
+        'resource_files',
         'allow_multiple_submissions',
         'start_date',
         'end_date',
@@ -36,10 +40,11 @@ class FeedbackContent extends Model
     protected function casts(): array
     {
         return [
-            'is_anonymous' => 'boolean',
+            'allow_anonymous' => 'boolean',
             'allow_multiple_submissions' => 'boolean',
             'start_date' => 'datetime',
             'end_date' => 'datetime',
+            'resource_files' => 'json',
         ];
     }
 

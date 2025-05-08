@@ -19,10 +19,11 @@ class FeedbackQuestion extends Model
      */
     protected $fillable = [
         'feedback_content_id',
+        'title',
         'question_text',
-        'question_type', // text, textarea, radio, checkbox, select, rating, scale
-        'options', // JSON array of options for radio, checkbox, select
-        'is_required',
+        'question_type', // text, rating, multiple_choice, checkbox, dropdown
+        'options', // JSON array of options for multiple_choice, checkbox, dropdown
+        'required',
         'order',
         'created_by',
     ];
@@ -36,7 +37,7 @@ class FeedbackQuestion extends Model
     {
         return [
             'options' => 'json',
-            'is_required' => 'boolean',
+            'required' => 'boolean',
             'order' => 'integer',
         ];
     }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\Block;
 use App\Models\FeedbackContent;
+use App\Models\FeedbackQuestion;
 use App\Models\Template;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -154,27 +155,23 @@ class FeedbackContentController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'description' => 'required|string',
+            'instructions' => 'nullable|string',
             'feedback_type' => 'required|string|in:survey,evaluation,rating,open_ended',
-            'is_anonymous' => 'boolean',
-            'is_required' => 'boolean',
-            'show_results_to_participants' => 'boolean',
+            'allow_anonymous' => 'boolean',
+            'completion_message' => 'nullable|string',
+            'resource_files' => 'nullable|array',
             'questions' => 'required|array|min:1',
+            'questions.*.title' => 'required|string|max:255',
             'questions.*.question_text' => 'required|string',
-            'questions.*.question_type' => 'required|string|in:multiple_choice,rating,text,likert_scale,yes_no',
-            'questions.*.is_required' => 'boolean',
-            'questions.*.options' => 'required_if:questions.*.question_type,multiple_choice,likert_scale|array',
-            'questions.*.options.*' => 'required_with:questions.*.options|string',
-            'questions.*.min_rating' => 'required_if:questions.*.question_type,rating|integer|min:1',
-            'questions.*.max_rating' => 'required_if:questions.*.question_type,rating|integer|gt:questions.*.min_rating',
-            'questions.*.min_label' => 'nullable|string|max:50',
-            'questions.*.max_label' => 'nullable|string|max:50',
+            'questions.*.question_type' => 'required|string|in:text,rating,multiple_choice,checkbox,dropdown',
+            'questions.*.required' => 'boolean',
+            'questions.*.order' => 'integer',
+            'questions.*.options' => 'required_if:questions.*.question_type,multiple_choice,checkbox,dropdown|array',
+            'questions.*.options.*.text' => 'required_with:questions.*.options|string',
             'target_activities' => 'nullable|array',
             'target_activities.*' => 'integer|exists:activities,id',
-            'due_days' => 'nullable|integer', // Days from enrollment to complete
-            'reminder_days' => 'nullable|integer', // Days before due date to send reminder
             'allow_multiple_submissions' => 'boolean',
             'submission_limit' => 'required_if:allow_multiple_submissions,true|nullable|integer|min:1',
-            'thank_you_message' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -194,11 +191,11 @@ class FeedbackContentController extends Controller
         }
 
         // Prepare data for storage
-        $data = $request->except(['questions', 'target_activities']);
+        $data = $request->except(['questions', 'target_activities', 'resource_files']);
         
         // Handle arrays that need to be stored as JSON
-        if ($request->has('questions')) {
-            $data['questions'] = json_encode($request->questions);
+        if ($request->has('resource_files')) {
+            $data['resource_files'] = json_encode($request->resource_files);
         }
         
         if ($request->has('target_activities')) {
@@ -207,8 +204,26 @@ class FeedbackContentController extends Controller
         
         // Add activity_id to data
         $data['activity_id'] = $activityId;
+        $data['created_by'] = Auth::id();
 
+        // Create the feedback content
         $feedbackContent = FeedbackContent::create($data);
+        
+        // Create questions separately
+        if ($request->has('questions') && is_array($request->questions)) {
+            foreach ($request->questions as $index => $questionData) {
+                $questionData['feedback_content_id'] = $feedbackContent->id;
+                $questionData['order'] = $index;
+                $questionData['created_by'] = Auth::id();
+                
+                // Handle options as JSON
+                if (isset($questionData['options']) && is_array($questionData['options'])) {
+                    $questionData['options'] = json_encode($questionData['options']);
+                }
+                
+                FeedbackQuestion::create($questionData);
+            }
+        }
 
         return response()->json([
             'status' => 'success',
@@ -272,9 +287,24 @@ class FeedbackContentController extends Controller
 
         $feedbackContent = FeedbackContent::where('activity_id', $activityId)->firstOrFail();
         
-        // Decode JSON fields for the response
-        if ($feedbackContent->questions) {
-            $feedbackContent->questions = json_decode($feedbackContent->questions);
+        // Get questions for this feedback content
+        $questions = FeedbackQuestion::where('feedback_content_id', $feedbackContent->id)
+            ->orderBy('order')
+            ->get()
+            ->map(function ($question) {
+                // Decode options from JSON
+                if ($question->options) {
+                    $question->options = json_decode($question->options);
+                }
+                return $question;
+            });
+            
+        // Add questions to the response
+        $feedbackContent->questions = $questions;
+        
+        // Decode other JSON fields
+        if ($feedbackContent->resource_files) {
+            $feedbackContent->resource_files = json_decode($feedbackContent->resource_files);
         }
         
         if ($feedbackContent->target_activities) {
@@ -381,27 +411,24 @@ class FeedbackContentController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'string|max:255',
             'description' => 'string',
+            'instructions' => 'nullable|string',
             'feedback_type' => 'string|in:survey,evaluation,rating,open_ended',
-            'is_anonymous' => 'boolean',
-            'is_required' => 'boolean',
-            'show_results_to_participants' => 'boolean',
+            'allow_anonymous' => 'boolean',
+            'completion_message' => 'nullable|string',
+            'resource_files' => 'nullable|array',
             'questions' => 'array|min:1',
+            'questions.*.id' => 'nullable|integer',
+            'questions.*.title' => 'required_with:questions|string|max:255',
             'questions.*.question_text' => 'required_with:questions|string',
-            'questions.*.question_type' => 'required_with:questions|string|in:multiple_choice,rating,text,likert_scale,yes_no',
-            'questions.*.is_required' => 'boolean',
-            'questions.*.options' => 'required_if:questions.*.question_type,multiple_choice,likert_scale|array',
-            'questions.*.options.*' => 'required_with:questions.*.options|string',
-            'questions.*.min_rating' => 'required_if:questions.*.question_type,rating|integer|min:1',
-            'questions.*.max_rating' => 'required_if:questions.*.question_type,rating|integer|gt:questions.*.min_rating',
-            'questions.*.min_label' => 'nullable|string|max:50',
-            'questions.*.max_label' => 'nullable|string|max:50',
+            'questions.*.question_type' => 'required_with:questions|string|in:text,rating,multiple_choice,checkbox,dropdown',
+            'questions.*.required' => 'boolean',
+            'questions.*.order' => 'integer',
+            'questions.*.options' => 'required_if:questions.*.question_type,multiple_choice,checkbox,dropdown|array',
+            'questions.*.options.*.text' => 'required_with:questions.*.options|string',
             'target_activities' => 'nullable|array',
             'target_activities.*' => 'integer|exists:activities,id',
-            'due_days' => 'nullable|integer',
-            'reminder_days' => 'nullable|integer',
             'allow_multiple_submissions' => 'boolean',
             'submission_limit' => 'required_if:allow_multiple_submissions,true|nullable|integer|min:1',
-            'thank_you_message' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -412,26 +439,94 @@ class FeedbackContentController extends Controller
         }
 
         // Prepare data for update
-        $updateData = $request->except(['questions', 'target_activities']);
+        $updateData = $request->except(['questions', 'target_activities', 'resource_files']);
         
         // Handle arrays that need to be stored as JSON
-        if ($request->has('questions')) {
-            $updateData['questions'] = json_encode($request->questions);
+        if ($request->has('resource_files')) {
+            $updateData['resource_files'] = json_encode($request->resource_files);
         }
         
         if ($request->has('target_activities')) {
             $updateData['target_activities'] = json_encode($request->target_activities);
         }
 
+        // Update the feedback content
         $feedbackContent->update($updateData);
-
-        // Decode JSON fields for the response
-        if ($feedbackContent->questions) {
-            $feedbackContent->questions = json_decode($feedbackContent->questions);
+        
+        // Update questions if provided
+        if ($request->has('questions') && is_array($request->questions)) {
+            // Get existing question IDs
+            $existingQuestionIds = FeedbackQuestion::where('feedback_content_id', $feedbackContent->id)
+                ->pluck('id')
+                ->toArray();
+            
+            $updatedQuestionIds = [];
+            
+            foreach ($request->questions as $index => $questionData) {
+                // If question has an ID, update it
+                if (isset($questionData['id'])) {
+                    $question = FeedbackQuestion::find($questionData['id']);
+                    
+                    if ($question && $question->feedback_content_id == $feedbackContent->id) {
+                        // Update existing question
+                        $questionData['order'] = $index;
+                        
+                        // Handle options as JSON
+                        if (isset($questionData['options']) && is_array($questionData['options'])) {
+                            $questionData['options'] = json_encode($questionData['options']);
+                        }
+                        
+                        $question->update($questionData);
+                        $updatedQuestionIds[] = $question->id;
+                    }
+                } else {
+                    // Create new question
+                    $questionData['feedback_content_id'] = $feedbackContent->id;
+                    $questionData['order'] = $index;
+                    $questionData['created_by'] = Auth::id();
+                    
+                    // Handle options as JSON
+                    if (isset($questionData['options']) && is_array($questionData['options'])) {
+                        $questionData['options'] = json_encode($questionData['options']);
+                    }
+                    
+                    $newQuestion = FeedbackQuestion::create($questionData);
+                    $updatedQuestionIds[] = $newQuestion->id;
+                }
+            }
+            
+            // Delete questions that weren't included in the update
+            $questionsToDelete = array_diff($existingQuestionIds, $updatedQuestionIds);
+            if (!empty($questionsToDelete)) {
+                FeedbackQuestion::whereIn('id', $questionsToDelete)->delete();
+            }
         }
         
-        if ($feedbackContent->target_activities) {
-            $feedbackContent->target_activities = json_decode($feedbackContent->target_activities);
+        // Get updated feedback content with questions
+        $updatedFeedbackContent = FeedbackContent::where('id', $feedbackContent->id)->first();
+        
+        // Get questions for this feedback content
+        $questions = FeedbackQuestion::where('feedback_content_id', $updatedFeedbackContent->id)
+            ->orderBy('order')
+            ->get()
+            ->map(function ($question) {
+                // Decode options from JSON
+                if ($question->options) {
+                    $question->options = json_decode($question->options);
+                }
+                return $question;
+            });
+            
+        // Add questions to the response
+        $updatedFeedbackContent->questions = $questions;
+        
+        // Decode other JSON fields
+        if ($updatedFeedbackContent->resource_files) {
+            $updatedFeedbackContent->resource_files = json_decode($updatedFeedbackContent->resource_files);
+        }
+        
+        if ($updatedFeedbackContent->target_activities) {
+            $updatedFeedbackContent->target_activities = json_decode($updatedFeedbackContent->target_activities);
         }
 
         return response()->json([
