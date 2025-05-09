@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Traits\HasCreatedBy;
+use App\Traits\HasUpdatedBy;
 use App\Traits\BelongsToEnvironment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +13,7 @@ use Illuminate\Support\Str;
 
 class Transaction extends Model
 {
-    use HasFactory, SoftDeletes, BelongsToEnvironment;
+    use HasFactory, SoftDeletes, BelongsToEnvironment, HasCreatedBy, HasUpdatedBy;
 
     /**
      * The attributes that are mass assignable.

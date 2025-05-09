@@ -126,7 +126,7 @@ class DocumentationContentController extends Controller
         }
 
         // Validate activity type
-        if ($activity->type !== 'documentation') {
+        if ($activity->type->value !== 'documentation') {
             return response()->json([
                 'status' => 'error',
                 'message' => 'This activity is not of type documentation',

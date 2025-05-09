@@ -687,6 +687,56 @@ class ActivityController extends Controller
             'data' => $updatedActivities,
         ]);
     }
+    
+    /**
+     * Duplicate an existing activity.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function duplicate($id)
+    {
+        // Find the activity to duplicate
+        $activity = Activity::findOrFail($id);
+        
+        // Get the block
+        $block = Block::findOrFail($activity->block_id);
+        
+        // Check if user has permission to duplicate this activity
+        $template = Template::findOrFail($block->template_id);
+        if ($template->created_by !== Auth::id()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You do not have permission to duplicate this activity',
+            ], Response::HTTP_FORBIDDEN);
+        }
+        
+        // Create a duplicate activity
+        $newActivity = $activity->replicate();
+        $newActivity->title = $activity->title . ' (Copy)';
+        
+        // Get the highest order in the block and add 1
+        $maxOrder = Activity::where('block_id', $block->id)->max('order');
+        $newActivity->order = $maxOrder + 1;
+        
+        $newActivity->save();
+        
+        // Note: Content duplication would need to be handled separately
+        // depending on the activity type
+        $contentRelationship = $this->getContentRelationship($activity->type);
+        if ($contentRelationship && $activity->$contentRelationship) {
+            $content = $activity->$contentRelationship;
+            $newContent = $content->replicate();
+            $newContent->activity_id = $newActivity->id;
+            $newContent->save();
+        }
+        
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Activity duplicated successfully',
+            'data' => $newActivity->load($contentRelationship ?? []),
+        ]);
+    }
 
     /**
      * Get the content relationship name based on activity type.

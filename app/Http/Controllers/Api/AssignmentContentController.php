@@ -114,7 +114,7 @@ class AssignmentContentController extends Controller
         }
 
         // Validate activity type
-        if ($activity->type !== 'assignment') {
+        if ($activity->type->value !== 'assignment') {
             return response()->json([
                 'status' => 'error',
                 'message' => 'This activity is not of type assignment',

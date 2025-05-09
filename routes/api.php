@@ -134,6 +134,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/blocks/activities/{id}', [ActivityController::class, 'show']);
     Route::put('/blocks/activities/{id}', [ActivityController::class, 'update']);
     Route::delete('/blocks/activities/{id}', [ActivityController::class, 'destroy']);
+    Route::post('/blocks/activities/{id}/duplicate', [ActivityController::class, 'duplicate']);
     Route::post('/blocks/{blockId}/activities/reorder', [ActivityController::class, 'reorder']);
     
     // Content Type routes

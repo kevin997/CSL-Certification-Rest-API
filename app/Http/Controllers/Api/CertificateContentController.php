@@ -134,7 +134,7 @@ class CertificateContentController extends Controller
         }
 
         // Validate activity type
-        if ($activity->type !== 'certificate') {
+        if ($activity->type->value !== 'certificate') {
             return response()->json([
                 'status' => 'error',
                 'message' => 'This activity is not of type certificate',

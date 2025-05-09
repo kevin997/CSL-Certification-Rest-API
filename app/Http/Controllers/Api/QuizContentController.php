@@ -150,7 +150,7 @@ class QuizContentController extends Controller
         }
 
         // Validate activity type
-        if ($activity->type !== 'quiz') {
+        if ($activity->type->valuew !== 'quiz') {
             return response()->json([
                 'status' => 'error',
                 'message' => 'This activity is not of type quiz',

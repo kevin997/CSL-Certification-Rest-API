@@ -145,7 +145,7 @@ class FeedbackContentController extends Controller
         }
 
         // Validate activity type
-        if ($activity->type !== 'feedback') {
+        if ($activity->type->value !== 'feedback') {
             return response()->json([
                 'status' => 'error',
                 'message' => 'This activity is not of type feedback',

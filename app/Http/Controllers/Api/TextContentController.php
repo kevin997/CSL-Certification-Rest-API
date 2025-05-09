@@ -100,7 +100,7 @@ class TextContentController extends Controller
         }
 
         // Validate activity type
-        if ($activity->type !== 'text') {
+        if ($activity->type->value !== 'text') {
             return response()->json([
                 'status' => 'error',
                 'message' => 'This activity is not of type text',
@@ -108,6 +108,8 @@ class TextContentController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
+            'title' => 'sometimes|nullable|string|max:255',
+            'description' => 'sometimes|nullable|string',
             'content' => 'required|string',
             'format' => 'required|string|in:plain,markdown,html',
         ]);
@@ -132,6 +134,8 @@ class TextContentController extends Controller
             'activity_id' => $activityId,
             'content' => $request->content,
             'format' => $request->format,
+            'title' => $request->title,
+            'description' => $request->description,
         ]);
 
         return response()->json([

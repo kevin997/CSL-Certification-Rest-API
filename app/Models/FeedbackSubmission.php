@@ -7,10 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Traits\HasReviewedBy;
 
 class FeedbackSubmission extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, HasReviewedBy;
 
     /**
      * The attributes that are mass assignable.
@@ -55,13 +56,7 @@ class FeedbackSubmission extends Model
         return $this->belongsTo(User::class);
     }
 
-    /**
-     * Get the user who reviewed this submission.
-     */
-    public function reviewedBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'reviewed_by');
-    }
+    // The reviewer() relationship is now provided by the HasReviewedBy trait
 
     /**
      * Get the answers for this submission.

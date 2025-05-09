@@ -106,7 +106,7 @@ class VideoContentController extends Controller
         }
 
         // Validate activity type
-        if ($activity->type !== 'video') {
+        if ($activity->type->value !== 'video') {
             return response()->json([
                 'status' => 'error',
                 'message' => 'This activity is not of type video',
