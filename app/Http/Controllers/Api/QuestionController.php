@@ -96,6 +96,8 @@ class QuestionController extends Controller
             'title' => 'required|string',
             'question_text' => 'required|string',
             'question_type' => 'required|string|in:multiple_choice,multiple_response,true_false,text,fill_blanks_text,fill_blanks_drag,matching,hotspot,essay,questionnaire,matrix',
+            'instructions' => 'nullable|string',
+            'instruction_format' => 'nullable|string|in:plain,markdown,html,wysiwyg',
             'options' => 'required_if:question_type,multiple_choice,multiple_response,matching,hotspot|array',
             'options.*.text' => 'required_if:question_type,multiple_choice,multiple_response,matching|string',
             'options.*.is_correct' => 'required_if:question_type,multiple_choice,multiple_response|boolean',
@@ -160,6 +162,7 @@ class QuestionController extends Controller
         $question = new QuizQuestion([
             'quiz_content_id' => $quizContent->id,
             'title' => $request->title,
+            'question' => $request->question_text, // Set the question field to match question_text
             'question_text' => $request->question_text,
             'question_type' => $request->question_type,
             'options' => $request->options,
@@ -168,6 +171,8 @@ class QuestionController extends Controller
             'matrix_columns' => $request->matrix_columns,
             'matrix_options' => $request->matrix_options,
             'explanation' => $request->explanation,
+            'instructions' => $request->instructions,
+            'instruction_format' => $request->instruction_format ?? 'markdown',
             'points' => $request->points,
             'is_scorable' => $request->is_scorable ?? true,
             'order' => QuizQuestion::where('quiz_content_id', $quizContent->id)->count() + 1,

@@ -156,6 +156,7 @@ class FeedbackContentController extends Controller
             'title' => 'required|string|max:255',
             'description' => 'required|string',
             'instructions' => 'nullable|string',
+            'instruction_format' => 'nullable|string|in:plain,markdown,html,wysiwyg',
             'feedback_type' => 'required|string|in:survey,evaluation,rating,open_ended',
             'allow_anonymous' => 'boolean',
             'completion_message' => 'nullable|string',

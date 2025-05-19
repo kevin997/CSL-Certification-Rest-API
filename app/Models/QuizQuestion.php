@@ -30,6 +30,8 @@ class QuizQuestion extends Model
         'matrix_columns',
         'matrix_options',
         'explanation',
+        'instructions',
+        'instruction_format',
         'points',
         'is_scorable',
         'order',
@@ -48,6 +50,7 @@ class QuizQuestion extends Model
         'matrix_columns' => 'array',
         'matrix_options' => 'array',
         'is_scorable' => 'boolean',
+        'instruction_format' => 'string',
     ];
 
     /**

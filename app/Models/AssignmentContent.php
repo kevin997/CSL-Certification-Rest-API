@@ -20,6 +20,7 @@ class AssignmentContent extends Model
      */
     protected $fillable = [
         'instructions',
+        'instruction_format',
         'due_date',
         'passing_score',
         'max_attempts',
@@ -40,6 +41,7 @@ class AssignmentContent extends Model
             'due_date' => 'datetime',
             'allow_late_submissions' => 'boolean',
             'enable_feedback' => 'boolean',
+            'instruction_format' => 'string',
         ];
     }
 

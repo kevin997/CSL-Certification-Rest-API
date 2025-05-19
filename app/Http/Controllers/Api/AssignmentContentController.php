@@ -125,6 +125,7 @@ class AssignmentContentController extends Controller
             'title' => 'required|string|max:255',
             'description' => 'required|string',
             'instructions' => 'required|string',
+            'instruction_format' => 'required|string|in:plain,markdown,html,wysiwyg',
             'due_days' => 'nullable|integer', // Days from enrollment to complete
             'passing_grade' => 'required|integer|min:0|max:100',
             'max_attempts' => 'nullable|integer|min:1',
