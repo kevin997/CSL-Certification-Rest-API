@@ -12,7 +12,10 @@ class PlanSeeder extends Seeder
      */
     public function run(): void
     {
-        // Individual Teacher Plan
+        // check if Plan exist before seeding the plans, if plan exist don't seed
+        if (Plan::count() > 0) {
+            return;
+        }    
         Plan::create([
             'name' => 'Look And Feel ILT',
             'type' => 'individual_teacher',

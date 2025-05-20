@@ -225,11 +225,38 @@ class FeedbackContentController extends Controller
                 FeedbackQuestion::create($questionData);
             }
         }
+        
+        // Get the created feedback content with questions
+        $createdFeedbackContent = FeedbackContent::where('id', $feedbackContent->id)->first();
+        
+        // Get questions for this feedback content
+        $questions = FeedbackQuestion::where('feedback_content_id', $createdFeedbackContent->id)
+            ->orderBy('order')
+            ->get()
+            ->map(function ($question) {
+                // Decode options from JSON
+                if ($question->options) {
+                    $question->options = json_decode($question->options);
+                }
+                return $question;
+            });
+            
+        // Add questions to the response
+        $createdFeedbackContent->questions = $questions;
+        
+        // Decode other JSON fields
+        if ($createdFeedbackContent->resource_files) {
+            $createdFeedbackContent->resource_files = json_decode($createdFeedbackContent->resource_files);
+        }
+        
+        if ($createdFeedbackContent->target_activities) {
+            $createdFeedbackContent->target_activities = json_decode($createdFeedbackContent->target_activities);
+        }
 
         return response()->json([
             'status' => 'success',
             'message' => 'Feedback content created successfully',
-            'data' => $feedbackContent,
+            'data' => $createdFeedbackContent,
         ], Response::HTTP_CREATED);
     }
 
@@ -533,7 +560,7 @@ class FeedbackContentController extends Controller
         return response()->json([
             'status' => 'success',
             'message' => 'Feedback content updated successfully',
-            'data' => $feedbackContent,
+            'data' => $updatedFeedbackContent,
         ]);
     }
 

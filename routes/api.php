@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\ActivityCompletionController;
 use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\AssignmentContentController;
+use App\Http\Controllers\Api\AssignmentSubmissionController;
 use App\Http\Controllers\Api\Auth\ForgotPasswordController;
 use App\Http\Controllers\Api\Auth\RegisterController;
 use App\Http\Controllers\Api\Auth\ResetPasswordController;
@@ -177,6 +178,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/activities/{activityId}/assignment', [AssignmentContentController::class, 'show']);
     Route::put('/activities/{activityId}/assignment', [AssignmentContentController::class, 'update']);
     Route::delete('/activities/{activityId}/assignment', [AssignmentContentController::class, 'destroy']);
+    
+    // Assignment Submission routes
+    Route::get('/activities/{activityId}/submissions', [AssignmentSubmissionController::class, 'index']);
+    Route::post('/activities/{activityId}/submissions', [AssignmentSubmissionController::class, 'store']);
+    Route::get('/activities/{activityId}/submissions/{submissionId}', [AssignmentSubmissionController::class, 'show']);
+    Route::put('/activities/{activityId}/submissions/{submissionId}/grade', [AssignmentSubmissionController::class, 'grade']);
     
     // Documentation Content routes
     Route::post('/activities/{activityId}/documentation', [DocumentationContentController::class, 'store']);

@@ -127,7 +127,9 @@ class AssignmentContentController extends Controller
             'instructions' => 'required|string',
             'instruction_format' => 'required|string|in:plain,markdown,html,wysiwyg',
             'due_days' => 'nullable|integer', // Days from enrollment to complete
-            'passing_grade' => 'required|integer|min:0|max:100',
+            'max_points' => 'required|integer|min:1',
+            'passing_score' => 'nullable|integer|min:0',
+            'passing_grade' => 'nullable|integer|min:0',
             'max_attempts' => 'nullable|integer|min:1',
             'allow_late_submissions' => 'boolean',
             'late_submission_penalty' => 'nullable|integer|min:0|max:100',
@@ -135,10 +137,10 @@ class AssignmentContentController extends Controller
             'allowed_file_types' => 'nullable|array',
             'allowed_file_types.*' => 'string',
             'max_file_size' => 'nullable|integer', // in MB
-            'rubric' => 'nullable|array',
-            'rubric.*.criteria' => 'required_with:rubric|string',
-            'rubric.*.description' => 'nullable|string',
-            'rubric.*.points' => 'required_with:rubric|integer|min:0',
+            'criteria' => 'nullable|array',
+            'criteria.*.title' => 'required_with:criteria|string',
+            'criteria.*.description' => 'nullable|string',
+            'criteria.*.points' => 'required_with:criteria|integer|min:0',
         ]);
 
         if ($validator->fails()) {
@@ -160,20 +162,59 @@ class AssignmentContentController extends Controller
         // Prepare data for storage
         $data = $request->except(['allowed_file_types', 'rubric']);
         
+        // Handle passing_grade/passing_score compatibility
+        if ($request->has('max_points')) {
+            // Check for passing_score first (new field name)
+            if ($request->has('passing_score')) {
+                $data['passing_score'] = $request->passing_score;
+            } 
+            // Then check for passing_grade (old field name for backward compatibility)
+            else if ($request->has('passing_grade')) {
+                $data['passing_score'] = $request->passing_grade;
+            }
+            // Default to max_points if neither is provided
+            else {
+                $data['passing_score'] = $request->max_points;
+            }
+        }
+        
         // Handle arrays that need to be stored as JSON
         if ($request->has('allowed_file_types')) {
             $data['allowed_file_types'] = json_encode($request->allowed_file_types);
         }
         
-        if ($request->has('rubric')) {
-            $data['rubric'] = json_encode($request->rubric);
+        // Remove criteria from data as we'll handle it separately
+        $criteria = $request->has('criteria') ? $request->criteria : [];
+        if (isset($data['criteria'])) {
+            unset($data['criteria']);
         }
         
         // Add activity_id to data
         $data['activity_id'] = $activityId;
 
         $assignmentContent = AssignmentContent::create($data);
+        
+        // Save criteria if provided
+        if (!empty($criteria)) {
+            $order = 1;
+            foreach ($criteria as $criterion) {
+                $assignmentContent->criteria()->create([
+                    'title' => $criterion['title'],
+                    'description' => $criterion['description'] ?? null,
+                    'points' => $criterion['points'],
+                    'order' => $order++,
+                ]);
+            }
+        }
 
+        // Load the criteria relationship for the response
+        $assignmentContent->load('criteria');
+        
+        // Decode JSON fields for the response
+        if ($assignmentContent->allowed_file_types) {
+            $assignmentContent->allowed_file_types = json_decode($assignmentContent->allowed_file_types);
+        }
+        
         return response()->json([
             'status' => 'success',
             'message' => 'Assignment content created successfully',
@@ -234,15 +275,13 @@ class AssignmentContentController extends Controller
             ], Response::HTTP_FORBIDDEN);
         }
 
-        $assignmentContent = AssignmentContent::where('activity_id', $activityId)->firstOrFail();
+        $assignmentContent = AssignmentContent::with('criteria')
+            ->where('activity_id', $activityId)
+            ->firstOrFail();
         
         // Decode JSON fields for the response
         if ($assignmentContent->allowed_file_types) {
             $assignmentContent->allowed_file_types = json_decode($assignmentContent->allowed_file_types);
-        }
-        
-        if ($assignmentContent->rubric) {
-            $assignmentContent->rubric = json_decode($assignmentContent->rubric);
         }
 
         return response()->json([
@@ -331,8 +370,11 @@ class AssignmentContentController extends Controller
             'title' => 'string|max:255',
             'description' => 'string',
             'instructions' => 'string',
+            'instruction_format' => 'string|in:plain,markdown,html,wysiwyg',
             'due_days' => 'nullable|integer',
-            'passing_grade' => 'integer|min:0|max:100',
+            'max_points' => 'integer|min:1',
+            'passing_score' => 'nullable|integer|min:0',
+            'passing_grade' => 'nullable|integer|min:0',
             'max_attempts' => 'nullable|integer|min:1',
             'allow_late_submissions' => 'boolean',
             'late_submission_penalty' => 'nullable|integer|min:0|max:100',
@@ -340,10 +382,10 @@ class AssignmentContentController extends Controller
             'allowed_file_types' => 'nullable|array',
             'allowed_file_types.*' => 'string',
             'max_file_size' => 'nullable|integer',
-            'rubric' => 'nullable|array',
-            'rubric.*.criteria' => 'required_with:rubric|string',
-            'rubric.*.description' => 'nullable|string',
-            'rubric.*.points' => 'required_with:rubric|integer|min:0',
+            'criteria' => 'nullable|array',
+            'criteria.*.title' => 'required_with:criteria|string',
+            'criteria.*.description' => 'nullable|string',
+            'criteria.*.points' => 'required_with:criteria|integer|min:0',
         ]);
 
         if ($validator->fails()) {
@@ -354,26 +396,60 @@ class AssignmentContentController extends Controller
         }
 
         // Prepare data for update
-        $updateData = $request->except(['allowed_file_types', 'rubric']);
+        $data = $request->except(['allowed_file_types', 'rubric']);
+        
+        // Handle passing_grade/passing_score compatibility
+        if ($request->has('max_points')) {
+            // Check for passing_score first (new field name)
+            if ($request->has('passing_score')) {
+                $data['passing_score'] = $request->passing_score;
+            } 
+            // Then check for passing_grade (old field name for backward compatibility)
+            else if ($request->has('passing_grade')) {
+                $data['passing_score'] = $request->passing_grade;
+            }
+            // Default to max_points if neither is provided
+            else {
+                $data['passing_score'] = $request->max_points;
+            }
+        }
         
         // Handle arrays that need to be stored as JSON
         if ($request->has('allowed_file_types')) {
-            $updateData['allowed_file_types'] = json_encode($request->allowed_file_types);
+            $data['allowed_file_types'] = json_encode($request->allowed_file_types);
         }
         
-        if ($request->has('rubric')) {
-            $updateData['rubric'] = json_encode($request->rubric);
+        // Remove criteria from data as we'll handle it separately
+        $criteria = $request->has('criteria') ? $request->criteria : [];
+        if (isset($data['criteria'])) {
+            unset($data['criteria']);
         }
 
-        $assignmentContent->update($updateData);
+        $assignmentContent->update($data);
+        
+        // Update criteria if provided
+        if (!empty($criteria)) {
+            // Delete existing criteria
+            $assignmentContent->criteria()->delete();
+            
+            // Create new criteria
+            $order = 1;
+            foreach ($criteria as $criterion) {
+                $assignmentContent->criteria()->create([
+                    'title' => $criterion['title'],
+                    'description' => $criterion['description'] ?? null,
+                    'points' => $criterion['points'],
+                    'order' => $order++,
+                ]);
+            }
+        }
 
+        // Load the criteria relationship for the response
+        $assignmentContent->load('criteria');
+        
         // Decode JSON fields for the response
         if ($assignmentContent->allowed_file_types) {
             $assignmentContent->allowed_file_types = json_decode($assignmentContent->allowed_file_types);
-        }
-        
-        if ($assignmentContent->rubric) {
-            $assignmentContent->rubric = json_decode($assignmentContent->rubric);
         }
 
         return response()->json([
