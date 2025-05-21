@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\Block;
 use App\Models\CertificateContent;
+use App\Models\CertificateTemplate;
 use App\Models\Template;
+use App\Services\CertificateGenerationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
@@ -44,6 +46,22 @@ use Illuminate\Support\Facades\Validator;
 
 class CertificateContentController extends Controller
 {
+    /**
+     * Certificate generation service
+     * 
+     * @var CertificateGenerationService
+     */
+    protected $certificateGenerationService;
+    
+    /**
+     * Constructor
+     * 
+     * @param CertificateGenerationService $certificateGenerationService
+     */
+    public function __construct(CertificateGenerationService $certificateGenerationService)
+    {
+        $this->certificateGenerationService = $certificateGenerationService;
+    }
     /**
      * Store a newly created certificate content in storage.
      *
@@ -146,6 +164,7 @@ class CertificateContentController extends Controller
             'description' => 'required|string',
             'certificate_type' => 'required|string|in:completion,achievement,participation,custom',
             'template_design' => 'required|string|in:standard,premium,custom',
+            'certificate_template_id' => 'nullable|exists:certificate_templates,id',
             'background_image_url' => 'nullable|string|url',
             'logo_url' => 'nullable|string|url',
             'signature_image_url' => 'nullable|string|url',

@@ -10,6 +10,8 @@ use App\Http\Controllers\Api\Auth\ResetPasswordController;
 use App\Http\Controllers\Api\BlockController;
 use App\Http\Controllers\Api\BrandingController;
 use App\Http\Controllers\Api\CertificateContentController;
+use App\Http\Controllers\Api\CertificateController;
+use App\Http\Controllers\Api\CertificateTemplateController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\CourseSectionController;
 use App\Http\Controllers\Api\DashboardController;
@@ -188,6 +190,16 @@ Route::middleware('auth:sanctum')->group(function () {
     // Documentation Content routes
     Route::post('/activities/{activityId}/documentation', [DocumentationContentController::class, 'store']);
     Route::get('/activities/{activityId}/documentation', [DocumentationContentController::class, 'show']);
+    
+    // Certificate Template routes
+    Route::get('/certificate-templates', [CertificateTemplateController::class, 'index']);
+    Route::post('/certificate-templates', [CertificateTemplateController::class, 'store']);
+    Route::get('/certificate-templates/{id}', [CertificateTemplateController::class, 'show']);
+    Route::put('/certificate-templates/{id}/set-default', [CertificateTemplateController::class, 'setDefault']);
+    Route::delete('/certificate-templates/{id}', [CertificateTemplateController::class, 'destroy']);
+    
+    // Certificate Generation routes
+    Route::post('/activities/{activityId}/certificate-content/{id}/generate', [CertificateController::class, 'generate']);
     Route::put('/activities/{activityId}/documentation', [DocumentationContentController::class, 'update']);
     Route::delete('/activities/{activityId}/documentation', [DocumentationContentController::class, 'destroy']);
     
@@ -330,6 +342,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
 // Public routes
 Route::get('/branding/public', [BrandingController::class, 'getPublicBranding']);
+
+// Certificate verification (public)
+Route::post('/certificates/verify', [CertificateController::class, 'verify']);
 
 // Storefront routes
 use App\Http\Controllers\Api\StorefrontController;
