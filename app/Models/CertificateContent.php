@@ -20,11 +20,16 @@ class CertificateContent extends Model
      */
     protected $fillable = [
         'title',
+        'activity_id',
         'description',
         'template_path',
+        'certificate_template_id', // Foreign key to the certificate_templates table
         'fields_config', // JSON configuration for modifiable fields
+        'completion_criteria', // JSON configuration for completion criteria
         'auto_issue', // Whether to automatically issue when course is completed
-        'expiry_days', // Number of days after which the certificate expires (null for never)
+        'expiry_period', // Number of days/months/years after which the certificate expires (null for never)
+        'expiry_period_unit', // Unit for expiry period (days, months, years)
+        'metadata', // JSON metadata for the certificate (e.g., generated certificates, user data)
         'created_by',
     ];
 
@@ -37,8 +42,11 @@ class CertificateContent extends Model
     {
         return [
             'fields_config' => 'json',
+            'completion_criteria' => 'json',
             'auto_issue' => 'boolean',
-            'expiry_days' => 'integer',
+            'expiry_period' => 'integer',
+            'certificate_template_id' => 'integer',
+            'metadata' => 'json',
         ];
     }
 

@@ -8,6 +8,7 @@ use App\Services\CertificateGenerationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class CertificateTemplateController extends Controller
@@ -135,16 +136,22 @@ class CertificateTemplateController extends Controller
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        // Create template record in database
+        // Log the response from certificate service for debugging
+        Log::info('Certificate service response', ['result' => $result]);
+        
+        // Extract data from the nested response structure
+        $templateData = $result['data'] ?? $result;
+        
+        // Create template record in database with correct data structure
         $template = CertificateTemplate::create([
             'name' => $request->name,
             'description' => $request->description,
-            'filename' => $result['filename'],
-            'file_path' => $result['path'],
+            'filename' => $templateData['filename'] ?? $request->name . '.pdf',
+            'file_path' => $templateData['path'] ?? null,
             'template_type' => $request->template_type,
             'is_default' => false,
             'created_by' => Auth::id(),
-            'remote_id' => $result['id'] ?? null,
+            'remote_id' => $templateData['id'] ?? null,
         ]);
 
         return response()->json([

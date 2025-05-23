@@ -27,6 +27,60 @@ class CertificateController extends Controller
     {
         $this->certificateGenerationService = $certificateGenerationService;
     }
+    
+    /**
+     * Download a certificate
+     * 
+     * @param Request $request
+     * @param string $path
+     * @return Response
+     */
+    public function download(Request $request, string $path)
+    {
+        // Verify that the request has a valid signature
+        if (!$request->hasValidSignature()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Invalid signature',
+            ], Response::HTTP_UNAUTHORIZED);
+        }
+        
+        // Proxy the request to the certificate service
+        $serviceUrl = $this->certificateGenerationService->getServiceUrl('/api/certificates/download/' . $path);
+        
+        if (!$serviceUrl) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Certificate service not configured',
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+        
+        // Redirect to the certificate service URL
+        return redirect()->away($serviceUrl);
+    }
+    
+    /**
+     * Preview a certificate
+     * 
+     * @param Request $request
+     * @param string $path
+     * @return Response
+     */
+    public function preview(Request $request, string $path)
+    {
+        // Proxy the request to the certificate service
+        $serviceUrl = $this->certificateGenerationService->getServiceUrl('/api/certificates/preview/' . $path);
+        
+        if (!$serviceUrl) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Certificate service not configured',
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+        
+        // Redirect to the certificate service URL
+        return redirect()->away($serviceUrl);
+    }
 
     /**
      * Generate a certificate for a user
@@ -91,12 +145,22 @@ class CertificateController extends Controller
      *     )
      * )
      */
-    public function generate(Request $request, $activityId, $id)
+    public function generate(Request $request, $activityId, $id = null)
     {
         // Find certificate content
-        $certificateContent = CertificateContent::where('activity_id', $activityId)
-            ->where('id', $id)
-            ->firstOrFail();
+        // If ID is provided, try to find by both activity_id and id
+        if ($id) {
+            $certificateContent = CertificateContent::where('activity_id', $activityId)
+                ->where('id', $id)
+                ->first();
+        }
+        
+        // If no certificate content found or ID not provided, find by activity_id only
+        if (empty($certificateContent)) {
+            $certificateContent = CertificateContent::where('activity_id', $activityId)
+                ->latest()
+                ->firstOrFail();
+        }
 
         // Validate request
         $validator = Validator::make($request->all(), [
@@ -124,8 +188,13 @@ class CertificateController extends Controller
             $userData = array_merge($userData, $request->additionalData);
         }
 
-        // Generate certificate
-        $result = $this->certificateGenerationService->generateCertificate($certificateContent, $userData);
+        // Generate certificate through the certificate generation service
+        $templateName = $certificateContent->template_name;
+        $result = $this->certificateGenerationService->generateCertificate(
+            $certificateContent,
+            $userData,
+            $templateName
+        );
 
         if (!$result) {
             return response()->json([
@@ -133,14 +202,17 @@ class CertificateController extends Controller
                 'message' => 'Failed to generate certificate',
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
+        
+        // We'll use the original certificate content object since it's already been updated in the database
+        // The metadata is stored in the database but not in our current object, so we need to refresh it
+        $certificateContent->refresh();
 
-        // Return success response with certificate data
         return response()->json([
             'status' => 'success',
             'message' => 'Certificate generated successfully',
             'data' => [
-                'fileUrl' => $this->certificateGenerationService->getCertificateDownloadUrl($result['accessCode']),
-                'previewUrl' => $this->certificateGenerationService->getCertificatePreviewUrl($result['accessCode']),
+                'fileUrl' => $this->certificateGenerationService->getCertificateDownloadUrl($certificateContent),
+                'previewUrl' => $this->certificateGenerationService->getCertificatePreviewUrl($certificateContent),
                 'accessCode' => $result['accessCode'],
             ],
         ]);

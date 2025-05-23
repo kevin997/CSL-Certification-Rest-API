@@ -38,6 +38,7 @@ use App\Http\Controllers\Api\TextContentController;
 use App\Http\Controllers\Api\TokenController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\VideoContentController;
+use App\Http\Controllers\Api\TemplateActivityQuestionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -164,6 +165,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/activities/{activityId}/questions', [QuestionController::class, 'store']);
     Route::put('/activities/{activityId}/questions/{questionId}', [QuestionController::class, 'update']);
     Route::delete('/activities/{activityId}/questions/{questionId}', [QuestionController::class, 'destroy']);
+    
+    // Template activity question routes for browsing and importing questions
+    Route::get('/templates/{templateId}/questions', [TemplateActivityQuestionController::class, 'getTemplateQuestions']);
+    Route::post('/activities/{activityId}/import-questions', [TemplateActivityQuestionController::class, 'importQuestions']);
     
     // Lesson Content routes
     Route::post('/activities/{activityId}/lesson', [LessonContentController::class, 'store']);
@@ -342,6 +347,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
 // Public routes
 Route::get('/branding/public', [BrandingController::class, 'getPublicBranding']);
+
+// Certificate public routes
+Route::get('/certificates/download/{path}', [CertificateController::class, 'download'])->name('api.certificates.download');
+Route::get('/certificates/preview/{path}', [CertificateController::class, 'preview'])->name('api.certificates.preview');
 
 // Certificate verification (public)
 Route::post('/certificates/verify', [CertificateController::class, 'verify']);
