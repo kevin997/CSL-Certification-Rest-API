@@ -378,3 +378,6 @@ Route::prefix('storefront')->group(function () {
     Route::get('/{environment_id}/courses/{slug}', [StorefrontController::class, 'getCourseBySlug']);
     Route::get('/{environment_id}/course/{id}', [StorefrontController::class, 'getCourseById']);
 });
+
+// Include the learner routes
+require __DIR__ . '/learner.php';
