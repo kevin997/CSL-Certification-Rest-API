@@ -139,6 +139,9 @@ class TemplateActivityQuestionController extends Controller
                 $newQuestion = new QuizQuestion([
                     'quiz_content_id' => $quizContent->id,
                     'title' => $sourceQuestion->title,
+                    // Include both question and question_text fields
+                    // If source has question, use it, otherwise use question_text
+                    'question' => $sourceQuestion->question ?? $sourceQuestion->question_text,
                     'question_text' => $sourceQuestion->question_text,
                     'question_type' => $sourceQuestion->question_type,
                     'explanation' => $sourceQuestion->explanation,
