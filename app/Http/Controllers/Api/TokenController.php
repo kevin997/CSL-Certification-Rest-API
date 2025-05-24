@@ -96,17 +96,21 @@ class TokenController extends Controller
             $userRole = $user->role;
             $environmentRole = $environmentUser ? $environmentUser->role : null;
             
+            // Convert enum values to strings if needed
+            $userRoleValue = $userRole instanceof UserRole ? $userRole->value : $userRole;
+            $environmentRoleValue = $environmentRole instanceof UserRole ? $environmentRole->value : $environmentRole;
+            
             // Create abilities array for the token
             $abilities = ['environment_id:' . $environmentId];
             
             // Add user's system role
-            if ($userRole) {
-                $abilities[] = 'role:' . $userRole;
+            if ($userRoleValue) {
+                $abilities[] = 'role:' . $userRoleValue;
             }
             
             // Add environment-specific role if applicable
-            if ($environmentRole) {
-                $abilities[] = 'env_role:' . $environmentRole;
+            if ($environmentRoleValue) {
+                $abilities[] = 'env_role:' . $environmentRoleValue;
             }
             
             // Create token with abilities
@@ -114,30 +118,44 @@ class TokenController extends Controller
             
             // Determine the primary role for the response
             if ($isOwner) {
-                $role = $userRole === UserRole::COMPANY_TEACHER->value ? 'company_teacher' : 'individual_teacher';
+                // Convert enum to string value before comparison
+                $userRoleValue = $userRole instanceof UserRole ? $userRole->value : $userRole;
+                $role = $userRoleValue === UserRole::COMPANY_TEACHER->value ? 'company_teacher' : 'individual_teacher';
             } else {
-                $role = $environmentRole ?: $userRole;
+                // Ensure we're using string values
+                $envRoleValue = $environmentRole instanceof UserRole ? $environmentRole->value : $environmentRole;
+                $userRoleValue = $userRole instanceof UserRole ? $userRole->value : $userRole;
+                $role = $envRoleValue ?: $userRoleValue;
             }
         } else {
             // No environment specified, regular user access
             $userRole = $user->role;
             $abilities = [];
             
-            if ($userRole) {
-                $abilities[] = 'role:' . $userRole;
+            // Ensure we get string value from enum if needed
+            $userRoleValue = $userRole instanceof UserRole ? $userRole->value : $userRole;
+            
+            if ($userRoleValue) {
+                $abilities[] = 'role:' . $userRoleValue;
             }
             
             $token = $user->createToken($request->device_name, $abilities)->plainTextToken;
-            $role = $userRole ?: 'user';
+            $role = $userRoleValue ?: 'user';
         }
 
+        // Ensure we're returning string values for roles in the response
+        $userRoleForResponse = $user->role instanceof UserRole ? $user->role->value : $user->role;
+        $environmentRoleForResponse = isset($environmentUser->role) ? 
+            ($environmentUser->role instanceof UserRole ? $environmentUser->role->value : $environmentUser->role) : 
+            null;
+            
         return response()->json([
             'token' => $token,
             'user' => $user,
             'environment_id' => $environmentId,
             'role' => $role,
-            'user_role' => $user->role,
-            'environment_role' => $environmentUser->role ?? null
+            'user_role' => $userRoleForResponse,
+            'environment_role' => $environmentRoleForResponse
         ]);
     }
     
@@ -165,32 +183,36 @@ class TokenController extends Controller
         $userRole = $user->role;  // System-level role
         $environmentRole = $environmentUser->role;  // Environment-specific role
         
+        // Convert enum values to strings if needed
+        $userRoleValue = $userRole instanceof UserRole ? $userRole->value : $userRole;
+        $environmentRoleValue = $environmentRole instanceof UserRole ? $environmentRole->value : $environmentRole;
+        
         // Create abilities array for the token
         $abilities = ['environment_id:' . $environmentId];
         
         // Add user's system role
-        if ($userRole) {
-            $abilities[] = 'role:' . $userRole;
+        if ($userRoleValue) {
+            $abilities[] = 'role:' . $userRoleValue;
         }
         
         // Add environment-specific role
-        if ($environmentRole) {
-            $abilities[] = 'env_role:' . $environmentRole;
+        if ($environmentRoleValue) {
+            $abilities[] = 'env_role:' . $environmentRoleValue;
         }
         
         // Create token with abilities
         $token = $user->createToken($request->device_name, $abilities)->plainTextToken;
         
         // Use environment role as primary role for the response, or fallback to system role
-        $role = $environmentRole ?: $userRole;
+        $role = $environmentRoleValue ?: $userRoleValue;
         
         return response()->json([
             'token' => $token,
             'user' => $user,
             'environment_id' => $environmentId,
             'role' => $role,
-            'user_role' => $userRole,
-            'environment_role' => $environmentRole
+            'user_role' => $userRoleValue,
+            'environment_role' => $environmentRoleValue
         ]);
     }
 
