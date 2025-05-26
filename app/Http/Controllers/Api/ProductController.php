@@ -138,7 +138,7 @@ class ProductController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Product::query();
+        $query = Product::query()->with('category');
         
         // Apply filters
         if ($request->has('search')) {
@@ -258,6 +258,12 @@ class ProductController extends Controller
             'thumbnail_path' => 'nullable|string',
             'courses' => 'nullable|array',
             'courses.*' => 'exists:courses,id',
+            'is_featured' => 'nullable|boolean',
+            'category_id' => 'required|exists:product_categories,id',
+            'sku' => 'required|string|max:255',
+            'meta_title' => 'nullable|string|max:255',
+            'meta_description' => 'nullable|string',
+            'meta_keywords' => 'nullable|string|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -281,6 +287,12 @@ class ProductController extends Controller
         $product->status = $request->status;
         $product->thumbnail_path = $request->thumbnail_path;
         $product->created_by = Auth::id();
+        $product->is_featured = $request->is_featured;
+        $product->category_id = $request->category_id;
+        $product->sku = $request->sku;
+        $product->meta_title = $request->meta_title;
+        $product->meta_description = $request->meta_description;
+        $product->meta_keywords = $request->meta_keywords;
         $product->save();
 
         // Attach courses if provided
@@ -288,11 +300,14 @@ class ProductController extends Controller
             $product->courses()->attach($request->courses);
         }
 
+        // Load the category relationship
+        $product->load('category');
+
         return response()->json([
             'status' => 'success',
             'message' => 'Product created successfully',
-            'data' => $product->load('courses'),
-        ], Response::HTTP_CREATED);
+            'data' => $product
+        ], 201);
     }
 
     /**
@@ -336,7 +351,7 @@ class ProductController extends Controller
      */
     public function show($id)
     {
-        $product = Product::with(['courses'])->findOrFail($id);
+        $product = Product::with(['courses', 'category'])->find($id);
 
         return response()->json([
             'status' => 'success',
@@ -426,8 +441,14 @@ class ProductController extends Controller
             'trial_days' => 'nullable|integer|min:0',
             'status' => 'sometimes|required|string|in:draft,active,inactive',
             'thumbnail_path' => 'nullable|string',
+            'is_featured' => 'nullable|boolean',
+            'category_id' => 'required|exists:product_categories,id',
             'courses' => 'nullable|array',
             'courses.*' => 'exists:courses,id',
+            'sku' => 'required|string|max:255',
+            'meta_title' => 'nullable|string|max:255',
+            'meta_description' => 'nullable|string',
+            'meta_keywords' => 'nullable|string|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -482,6 +503,30 @@ class ProductController extends Controller
             $product->thumbnail_path = $request->thumbnail_path;
         }
         
+        if ($request->has('category_id')) {
+            $product->category_id = $request->category_id;
+        }
+        
+        if ($request->has('is_featured')) {
+            $product->is_featured = $request->is_featured;
+        }
+
+        if ($request->has('sku')) {
+            $product->sku = $request->sku;
+        }
+
+        if ($request->has('meta_title')) {
+            $product->meta_title = $request->meta_title;
+        }
+
+        if ($request->has('meta_description')) {
+            $product->meta_description = $request->meta_description;
+        }
+
+        if ($request->has('meta_keywords')) {
+            $product->meta_keywords = $request->meta_keywords;
+        }
+        
         $product->save();
 
         // Update courses if provided
@@ -489,10 +534,13 @@ class ProductController extends Controller
             $product->courses()->sync($request->courses);
         }
 
+        // Load the category relationship
+        $product->load('category');
+
         return response()->json([
             'status' => 'success',
             'message' => 'Product updated successfully',
-            'data' => $product->load('courses'),
+            'data' => $product,
         ]);
     }
 

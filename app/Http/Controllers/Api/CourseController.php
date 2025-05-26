@@ -513,7 +513,12 @@ class CourseController extends Controller
             'is_self_paced' => 'nullable|boolean',
             'estimated_duration' => 'nullable|integer|min:1',
             'difficulty_level' => 'nullable|string|in:beginner,intermediate,advanced',
-            'thumbnail_path' => 'nullable|string',
+            'thumbnail_url' => 'nullable|string|url',
+            'featured_image' => 'nullable|string|url',
+            'is_featured' => 'nullable|boolean',
+            'meta_title' => 'nullable|string|max:255',
+            'meta_description' => 'nullable|string',
+            'meta_keywords' => 'nullable|string',
             'published_at' => 'nullable|date',
         ]);
 
@@ -561,7 +566,17 @@ class CourseController extends Controller
         $course->is_self_paced = $request->is_self_paced ?? false;
         $course->estimated_duration = $request->estimated_duration;
         $course->difficulty_level = $request->difficulty_level ?? 'beginner';
-        $course->thumbnail_path = $request->thumbnail_path;
+        
+        // Store image URLs
+        $course->thumbnail_url = $request->thumbnail_url;
+        $course->featured_image = $request->featured_image;
+        
+        // Store meta information
+        $course->is_featured = $request->is_featured ?? false;
+        $course->meta_title = $request->meta_title;
+        $course->meta_description = $request->meta_description;
+        $course->meta_keywords = $request->meta_keywords;
+        
         $course->published_at = $request->status === 'published' ? now() : $request->published_at;
         $course->created_by = Auth::id();
         $course->save();
@@ -628,7 +643,12 @@ class CourseController extends Controller
             'is_self_paced' => 'nullable|boolean',
             'estimated_duration' => 'nullable|integer|min:1',
             'difficulty_level' => 'nullable|string|in:beginner,intermediate,advanced',
-            'thumbnail_path' => 'nullable|string',
+            'thumbnail_url' => 'nullable|string',
+            'featured_image' => 'nullable|string',
+            'is_featured' => 'nullable|boolean',
+            'meta_title' => 'nullable|string|max:255',
+            'meta_description' => 'nullable|string',
+            'meta_keywords' => 'nullable|string',
             'published_at' => 'nullable|date',
         ]);
         
@@ -673,7 +693,12 @@ class CourseController extends Controller
         if ($request->has('is_self_paced')) $course->is_self_paced = $request->is_self_paced;
         if ($request->has('estimated_duration')) $course->estimated_duration = $request->estimated_duration;
         if ($request->has('difficulty_level')) $course->difficulty_level = $request->difficulty_level;
-        if ($request->has('thumbnail_path')) $course->thumbnail_path = $request->thumbnail_path;
+        if ($request->has('thumbnail_url')) $course->thumbnail_url = $request->thumbnail_url;
+        if ($request->has('featured_image')) $course->featured_image = $request->featured_image;
+        if ($request->has('is_featured')) $course->is_featured = $request->is_featured;
+        if ($request->has('meta_title')) $course->meta_title = $request->meta_title;
+        if ($request->has('meta_description')) $course->meta_description = $request->meta_description;
+        if ($request->has('meta_keywords')) $course->meta_keywords = $request->meta_keywords;
         if ($request->has('published_at')) $course->published_at = $request->published_at;
 
         $course->save();

@@ -316,7 +316,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/transactions', [TransactionController::class, 'store']);
     Route::get('/transactions/{id}', [TransactionController::class, 'show']);
     Route::put('/transactions/{id}/status', [TransactionController::class, 'updateStatus']);
-    Route::post('/transactions/{id}/process', [TransactionController::class, 'process']);
+    Route::post('/transactions/{id}/process', [TransactionController::class, 'process'])->name('api.transactions.process');
     Route::post('/transactions/callback/success', [TransactionController::class, 'callbackSuccess'])->name('api.transactions.callback.success');
     Route::post('/transactions/callback/failure', [TransactionController::class, 'callbackFailure'])->name('api.transactions.callback.failure');
     Route::post('/transactions/webhook/{gateway}', [TransactionController::class, 'webhook'])->name('api.transactions.webhook');

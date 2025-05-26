@@ -34,7 +34,7 @@ class Course extends Model
         'is_self_paced',
         'estimated_duration',
         'difficulty_level', // beginner, intermediate, advanced
-        'thumbnail_path',
+        'thumbnail_url',  // Changed from thumbnail_path to thumbnail_url
         'featured_image',
         'is_featured',
         'meta_title',
