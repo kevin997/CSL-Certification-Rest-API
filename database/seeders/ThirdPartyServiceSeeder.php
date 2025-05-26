@@ -19,7 +19,7 @@ class ThirdPartyServiceSeeder extends Seeder
             [
                 'name' => 'Certificate Generation Service',
                 'description' => 'Service for generating and managing certificates',
-                'base_url' => env('CERTIFICATE_SERVICE_URL', 'http://localhost:8000'),
+                'base_url' => env('CERTIFICATE_SERVICE_URL', 'http://localhost:8001'),
                 'api_key' => env('CERTIFICATE_SERVICE_API_KEY', ''),
                 'bearer_token' => env('CERTIFICATE_SERVICE_TOKEN', ''),
                 'username' => env('CERTIFICATE_SERVICE_USERNAME', 'admin@cslcertificates.com'),

@@ -26,13 +26,6 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
         });
-        
-        Schema::table('certificate_templates', function (Blueprint $table) {
-            $table->foreign('created_by')
-                  ->references('id')
-                  ->on('users')
-                  ->onDelete('set null');
-        });
     }
 
     /**
