@@ -66,8 +66,11 @@ jobs:
             cp /home/cfpcwjwg/certification-api/.env.example /home/cfpcwjwg/certification-api/.env
           fi
           
-          # Install Composer dependencies
+          # Update and install Composer dependencies
           cd /home/cfpcwjwg/certification-api
+          echo "Updating dependencies to ensure compatibility..."
+          php /home/cfpcwjwg/composer.phar update --with-all-dependencies
+          echo "Installing dependencies with optimized autoloader..."
           php /home/cfpcwjwg/composer.phar install --optimize-autoloader
           
           # Generate application key if needed
@@ -78,7 +81,7 @@ jobs:
           
           # Run migrations
           echo "Running database migrations..."
-          php artisan migrate --force
+          php artisan migrate --seed --force
           
           # Clear caches
           php artisan config:clear
