@@ -23,6 +23,7 @@ class QuizContent extends Model
         'title',
         'description',
         'instructions',
+        'instruction_format',
         'passing_score',
         'time_limit',
         'max_attempts',
@@ -43,6 +44,7 @@ class QuizContent extends Model
             'randomize_questions' => 'boolean',
             'show_correct_answers' => 'boolean',
             'questions' => 'array',
+            'instruction_format' => 'string',
         ];
     }
 

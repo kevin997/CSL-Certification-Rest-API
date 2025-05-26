@@ -14,14 +14,14 @@ class AdminSeeder extends Seeder
      */
     public function run(): void
     {
-        if (!User::where('email', 'admin@csl-certification.com')->exists()) {
-            User::create([
+        User::firstOrCreate(
+            ['email' => 'admin@csl-certification.com'],
+            [
                 'name' => 'Admin User',
-                'email' => 'admin@csl-certification.com',
                 'password' => Hash::make('Kwbi#1DG^FRE@1990!:$'), // Should be changed in production
                 'email_verified_at' => now(),
                 'role' => UserRole::SUPER_ADMIN,
-            ]);
-        }
+            ]
+        );
     }
 }

@@ -12,12 +12,11 @@ class PlanSeeder extends Seeder
      */
     public function run(): void
     {
-
-        if (!Plan::where('type', 'individual_teacher')->exists()) {
-            // Individual Teacher Plan
-            Plan::create([
+        // Individual Teacher Plan
+        Plan::firstOrCreate(
+            ['type' => 'individual_teacher'],
+            [
                 'name' => 'Look And Feel ILT',
-                'type' => 'individual_teacher',
                 'description' => 'Standard plan for individual teachers',
                 'price_monthly' => 0.00, // Free for now, can be updated later
                 'price_annual' => 0.00,  // Free for now, can be updated later
@@ -31,12 +30,14 @@ class PlanSeeder extends Seeder
                 ]),
                 'is_active' => true,
                 'sort_order' => 1,
-            ]);
+            ]
+        );
 
-            // Business Teacher Plan
-            Plan::create([
+        // Business Teacher Plan
+        Plan::firstOrCreate(
+            ['type' => 'business'],
+            [
                 'name' => 'Look And Feel BST',
-                'type' => 'business',
                 'description' => 'Standard plan for business customers',
                 'price_monthly' => 0.00, // Free for now, can be updated later
                 'price_annual' => 0.00,  // Free for now, can be updated later
@@ -52,7 +53,7 @@ class PlanSeeder extends Seeder
                 ]),
                 'is_active' => true,
                 'sort_order' => 0,
-            ]);
-        }
+            ]
+        );
     }
 }

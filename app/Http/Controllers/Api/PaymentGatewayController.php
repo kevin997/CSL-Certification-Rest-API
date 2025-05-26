@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @OA\Schema(
@@ -195,7 +196,8 @@ class PaymentGatewayController extends Controller
         // Validate request data
         $validator = Validator::make($request->all(), [
             'environment_id' => 'nullable|integer|exists:environments,id',
-            'gateway_code' => 'required|string|in:' . implode(',', PaymentGatewayFactory::getAvailableGateways()),
+            'gateway_name' => 'required|string|in:' . implode(',', PaymentGatewayFactory::getAvailableGateways()),
+            'code' => 'required|string|in:' . implode(',', PaymentGatewayFactory::getAvailableGateways()),
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'status' => 'required|boolean',
@@ -203,10 +205,10 @@ class PaymentGatewayController extends Controller
             'is_default' => 'boolean',
             'webhook_url' => 'nullable|url',
             'settings' => 'required|array',
-            'settings.api_key' => 'required_if:gateway_code,stripe,lygos|string',
-            'settings.publishable_key' => 'required_if:gateway_code,stripe|string',
-            'settings.client_id' => 'required_if:gateway_code,paypal|string',
-            'settings.client_secret' => 'required_if:gateway_code,paypal|string',
+            'settings.api_key' => 'required_if:gateway_name,stripe,lygos|string',
+            'settings.publishable_key' => 'required_if:gateway_name,stripe|string',
+            'settings.client_id' => 'required_if:gateway_name,paypal|string',
+            'settings.client_secret' => 'required_if:gateway_name,paypal|string',
         ]);
 
         if ($validator->fails()) {
@@ -216,29 +218,40 @@ class PaymentGatewayController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Check if default gateway already exists for this environment
-        if ($request->input('is_default', false)) {
-            $existingDefault = PaymentGatewaySetting::where('environment_id', $request->input('environment_id'))
-                ->where('is_default', true)
-                ->first();
+        // We'll handle the default flag separately after creation
 
-            if ($existingDefault) {
-                $existingDefault->update(['is_default' => false]);
-            }
-        }
-
-        // Create payment gateway
+        // Create payment gateway without the is_default flag
         $paymentGateway = PaymentGatewaySetting::create([
             'environment_id' => $request->input('environment_id'),
-            'gateway_code' => $request->input('gateway_code'),
+            'gateway_name' => $request->input('gateway_name'),
+            'code' => $request->input('code'),
             'name' => $request->input('name'),
             'description' => $request->input('description'),
             'status' => $request->input('status'),
             'mode' => $request->input('mode'),
-            'is_default' => $request->input('is_default', false),
+            'is_default' => false, // Always set to false initially
             'webhook_url' => $request->input('webhook_url'),
             'settings' => json_encode($request->input('settings')),
         ]);
+        
+        // Handle default flag separately if needed
+        if ($request->input('is_default', false)) {
+            DB::statement('SET @disable_triggers = 1');
+            try {
+                // Reset all other gateways
+                DB::table('payment_gateway_settings')
+                    ->where('environment_id', $request->input('environment_id'))
+                    ->where('id', '!=', $paymentGateway->id)
+                    ->update(['is_default' => false]);
+                
+                // Set this gateway as default
+                DB::table('payment_gateway_settings')
+                    ->where('id', $paymentGateway->id)
+                    ->update(['is_default' => true]);
+            } finally {
+                DB::statement('SET @disable_triggers = NULL');
+            }
+        }
 
         // Prepare response data
         $responseData = $paymentGateway->toArray();
@@ -391,6 +404,8 @@ class PaymentGatewayController extends Controller
         // Validate request data
         $validator = Validator::make($request->all(), [
             'environment_id' => 'nullable|integer|exists:environments,id',
+            'gateway_name' => 'string|max:255',
+            'code' => 'string|max:255',
             'name' => 'string|max:255',
             'description' => 'nullable|string',
             'status' => 'boolean',
@@ -398,10 +413,10 @@ class PaymentGatewayController extends Controller
             'is_default' => 'boolean',
             'webhook_url' => 'nullable|url',
             'settings' => 'array',
-            'settings.api_key' => 'string|required_if:gateway_code,stripe,lygos',
-            'settings.publishable_key' => 'string|required_if:gateway_code,stripe',
-            'settings.client_id' => 'string|required_if:gateway_code,paypal',
-            'settings.client_secret' => 'string|required_if:gateway_code,paypal',
+            'settings.api_key' => 'string|required_if:gateway_name,stripe,lygos',
+            'settings.publishable_key' => 'string|required_if:gateway_name,stripe',
+            'settings.client_id' => 'string|required_if:gateway_name,paypal',
+            'settings.client_secret' => 'string|required_if:gateway_name,paypal',
         ]);
 
         if ($validator->fails()) {
@@ -411,21 +426,13 @@ class PaymentGatewayController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Check if default gateway already exists for this environment
-        if ($request->has('is_default') && $request->is_default) {
-            $existingDefault = PaymentGatewaySetting::where('environment_id', $request->input('environment_id', $paymentGateway->environment_id))
-                ->where('id', '!=', $id)
-                ->where('is_default', true)
-                ->first();
-
-            if ($existingDefault) {
-                $existingDefault->update(['is_default' => false]);
-            }
-        }
+        // We'll handle the default flag separately after the main update
 
         // Prepare update data
         $updateData = $request->only([
             'environment_id',
+            'gateway_name',
+            'code',
             'name',
             'description',
             'status',
@@ -445,8 +452,27 @@ class PaymentGatewayController extends Controller
             $updateData['settings'] = json_encode($newSettings);
         }
 
-        // Update payment gateway
+        // Handle is_default flag separately to avoid trigger issues
+        $isDefault = $request->has('is_default') ? (bool)$request->input('is_default') : false;
+        unset($updateData['is_default']);
+        
+        // First update all other fields except is_default
         $paymentGateway->update($updateData);
+        
+        // Only update is_default if it's changing (not already the default)
+        if ($isDefault && !$paymentGateway->is_default) {
+            // First set all other gateways to non-default using a direct query
+            DB::table('payment_gateway_settings')
+                ->where('environment_id', $paymentGateway->environment_id)
+                ->where('id', '!=', $id)
+                ->update(['is_default' => false]);
+                
+            // Then set this one as default without triggering the update trigger
+            DB::statement("UPDATE payment_gateway_settings SET is_default = 1 WHERE id = {$id}");
+            
+            // Refresh the model
+            $paymentGateway = $paymentGateway->fresh();
+        }
 
         // Prepare response data
         $responseData = $paymentGateway->fresh()->toArray();

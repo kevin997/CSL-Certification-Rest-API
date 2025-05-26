@@ -6,7 +6,7 @@ use App\Traits\HasCreatedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\MorphOne;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class AssignmentContent extends Model
@@ -19,7 +19,11 @@ class AssignmentContent extends Model
      * @var array<int, string>
      */
     protected $fillable = [
+        'activity_id',
+        'title',
+        'description',
         'instructions',
+        'instruction_format',
         'due_date',
         'passing_score',
         'max_attempts',
@@ -40,15 +44,16 @@ class AssignmentContent extends Model
             'due_date' => 'datetime',
             'allow_late_submissions' => 'boolean',
             'enable_feedback' => 'boolean',
+            'instruction_format' => 'string',
         ];
     }
 
     /**
      * Get the activity that owns this content.
      */
-    public function activity(): MorphOne
+    public function activity(): BelongsTo
     {
-        return $this->morphOne(Activity::class, 'content');
+        return $this->belongsTo(Activity::class, 'activity_id');
     }
 
     /**

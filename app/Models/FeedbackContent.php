@@ -23,6 +23,7 @@ class FeedbackContent extends Model
         'title',
         'description',
         'instructions',
+        'instruction_format',
         'feedback_type', // 360, questionnaire, form, survey
         'allow_anonymous',
         'completion_message',
@@ -46,6 +47,7 @@ class FeedbackContent extends Model
             'start_date' => 'datetime',
             'end_date' => 'datetime',
             'resource_files' => 'json',
+            'instruction_format' => 'string',
         ];
     }
 

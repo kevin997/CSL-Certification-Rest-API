@@ -150,7 +150,7 @@ class QuizContentController extends Controller
         }
 
         // Validate activity type
-        if ($activity->type->valuew !== 'quiz') {
+        if ($activity->type->value !== 'quiz') {
             return response()->json([
                 'status' => 'error',
                 'message' => 'This activity is not of type quiz',
@@ -160,6 +160,8 @@ class QuizContentController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'instructions' => 'nullable|string',
+            'instruction_format' => 'nullable|string|in:plain,markdown,html,wysiwyg',
             'time_limit' => 'nullable|integer',
             'passing_score' => 'required|integer|min:0|max:100',
             'show_correct_answers' => 'boolean',
@@ -212,6 +214,8 @@ class QuizContentController extends Controller
             'activity_id' => $activityId,
             'title' => $request->title,
             'description' => $request->description,
+            'instructions' => $request->instructions,
+            'instruction_format' => $request->instruction_format ?? 'markdown',
             'time_limit' => $request->time_limit,
             'passing_score' => $request->passing_score,
             'show_correct_answers' => $request->show_correct_answers ?? false,

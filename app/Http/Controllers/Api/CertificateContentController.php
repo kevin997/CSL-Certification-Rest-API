@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\Block;
 use App\Models\CertificateContent;
+use App\Models\CertificateTemplate;
 use App\Models\Template;
+use App\Services\CertificateGenerationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
@@ -44,6 +46,22 @@ use Illuminate\Support\Facades\Validator;
 
 class CertificateContentController extends Controller
 {
+    /**
+     * Certificate generation service
+     * 
+     * @var CertificateGenerationService
+     */
+    protected $certificateGenerationService;
+    
+    /**
+     * Constructor
+     * 
+     * @param CertificateGenerationService $certificateGenerationService
+     */
+    public function __construct(CertificateGenerationService $certificateGenerationService)
+    {
+        $this->certificateGenerationService = $certificateGenerationService;
+    }
     /**
      * Store a newly created certificate content in storage.
      *
@@ -146,6 +164,7 @@ class CertificateContentController extends Controller
             'description' => 'required|string',
             'certificate_type' => 'required|string|in:completion,achievement,participation,custom',
             'template_design' => 'required|string|in:standard,premium,custom',
+            'certificate_template_id' => 'nullable|exists:certificate_templates,id',
             'background_image_url' => 'nullable|string|url',
             'logo_url' => 'nullable|string|url',
             'signature_image_url' => 'nullable|string|url',
@@ -161,7 +180,8 @@ class CertificateContentController extends Controller
             'completion_criteria.value' => 'required_if:completion_criteria.type,percentage|nullable|integer|min:1|max:100',
             'completion_criteria.activities' => 'required_if:completion_criteria.type,specific_activities|nullable|array',
             'completion_criteria.activities.*' => 'integer|exists:activities,id',
-            'expiry_period' => 'nullable|integer', // in days, null means never expires
+            'expiry_period' => 'nullable|integer', // number of time units, null means never expires
+            'expiry_period_unit' => 'required_with:expiry_period|string|in:days,months,years',
             'allow_download' => 'boolean',
             'download_formats' => 'required_if:allow_download,true|array',
             'download_formats.*' => 'string|in:pdf,jpg,png',
@@ -190,6 +210,12 @@ class CertificateContentController extends Controller
 
         // Prepare data for storage
         $data = $request->except(['custom_fields', 'completion_criteria', 'download_formats', 'sharing_platforms']);
+        
+        // If certificate_template_id is provided, fetch the template path from the certificate template
+        if ($request->has('certificate_template_id') && $request->certificate_template_id) {
+            $certificateTemplate = CertificateTemplate::findOrFail($request->certificate_template_id);
+            $data['template_path'] = $certificateTemplate->file_path;
+        }
         
         // Handle arrays that need to be stored as JSON
         if ($request->has('custom_fields')) {
@@ -291,10 +317,19 @@ class CertificateContentController extends Controller
         if ($certificateContent->sharing_platforms) {
             $certificateContent->sharing_platforms = json_decode($certificateContent->sharing_platforms);
         }
+        
+        // Add certificate preview and download URLs if metadata exists
+        $responseData = $certificateContent->toArray();
+        
+        // Add preview and download URLs to the response if certificate has been generated
+        if ($certificateContent->metadata && isset($certificateContent->metadata['certificate_url'])) {
+            $responseData['preview_url'] = $this->certificateGenerationService->getCertificatePreviewUrl($certificateContent);
+            $responseData['download_url'] = $this->certificateGenerationService->getCertificateDownloadUrl($certificateContent);
+        }
 
         return response()->json([
             'status' => 'success',
-            'data' => $certificateContent,
+            'data' => $responseData,
         ]);
     }
 
@@ -405,6 +440,7 @@ class CertificateContentController extends Controller
             'completion_criteria.activities' => 'required_if:completion_criteria.type,specific_activities|nullable|array',
             'completion_criteria.activities.*' => 'integer|exists:activities,id',
             'expiry_period' => 'nullable|integer',
+            'expiry_period_unit' => 'required_with:expiry_period|string|in:days,months,years',
             'allow_download' => 'boolean',
             'download_formats' => 'required_if:allow_download,true|array',
             'download_formats.*' => 'string|in:pdf,jpg,png',
@@ -424,6 +460,15 @@ class CertificateContentController extends Controller
 
         // Prepare data for update
         $updateData = $request->except(['custom_fields', 'completion_criteria', 'download_formats', 'sharing_platforms']);
+        
+        // If certificate_template_id is provided, fetch the template path from the certificate template
+        if ($request->has('certificate_template_id') && $request->certificate_template_id) {
+            // Only update template_path if the template ID has changed
+            if ($certificateContent->certificate_template_id != $request->certificate_template_id) {
+                $certificateTemplate = CertificateTemplate::findOrFail($request->certificate_template_id);
+                $updateData['template_path'] = $certificateTemplate->file_path;
+            }
+        }
         
         // Handle arrays that need to be stored as JSON
         if ($request->has('custom_fields')) {

@@ -6,6 +6,7 @@ use App\Models\User;
 use Database\Seeders\AdminSeeder;
 use Database\Seeders\PlanSeeder;
 use Database\Seeders\EnvironmentUsersSeeder;
+use Database\Seeders\ThirdPartyServiceSeeder;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -21,14 +22,15 @@ class DatabaseSeeder extends Seeder
             AdminSeeder::class,
             PlanSeeder::class,
             EnvironmentUsersSeeder::class,
+            ThirdPartyServiceSeeder::class,
         ]);
 
         // Development test user
         if (app()->environment('local', 'development')) {
-            User::factory()->create([
-                'name' => 'Test User',
-                'email' => 'test@example.com',
-            ]);
+            User::firstOrCreate(
+                ['email' => 'test@example.com'],
+                ['name' => 'Test User']
+            );
         }
     }
 }
