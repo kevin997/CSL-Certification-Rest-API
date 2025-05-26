@@ -115,7 +115,7 @@ class TemplateController extends Controller
      *         required=true,
      *         @OA\JsonContent(
      *             type="object",
-     *             @OA\Property(property="name", type="string", example="CSL Certification Course Template"),
+     *             @OA\Property(property="title", type="string", example="CSL Certification Course Template"),
      *             @OA\Property(property="description", type="string", example="A template for creating certification courses"),
      *             @OA\Property(property="is_public", type="boolean", example=true),
      *             @OA\Property(property="status", type="string", example="draft"),
@@ -145,7 +145,6 @@ class TemplateController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'is_public' => 'boolean',
@@ -162,7 +161,6 @@ class TemplateController extends Controller
         }
 
         $template = Template::create([
-            'name' => $request->name,
             'title' => $request->title,
             'description' => $request->description,
             'is_public' => $request->is_public ?? false,
@@ -307,7 +305,6 @@ class TemplateController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'name' => 'string|max:255',
             'title' => 'string|max:255',
             'description' => 'nullable|string',
             'is_public' => 'boolean',
@@ -323,7 +320,27 @@ class TemplateController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $template->update($request->all());
+        // Check if template is already published and enforce restrictions
+        if ($template->status === 'published') {
+            // Only allow certain fields to be updated when template is published
+            $allowedFields = ['is_public', 'thumbnail_path'];
+            
+            // If trying to update restricted fields, return error
+            $restrictedFields = array_diff(array_keys($request->all()), $allowedFields);
+            if (!empty($restrictedFields)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Cannot modify restricted fields on a published template',
+                    'restricted_fields' => $restrictedFields,
+                ], Response::HTTP_FORBIDDEN);
+            }
+            
+            // Only update allowed fields
+            $template->update($request->only($allowedFields));
+        } else {
+            // If template is not published, update all fields
+            $template->update($request->all());
+        }
 
         return response()->json([
             'status' => 'success',
@@ -446,7 +463,7 @@ class TemplateController extends Controller
 
         // Create a new template
         $newTemplate = $template->replicate();
-        $newTemplate->name = $template->name . ' (Copy)';
+        $newTemplate->title = $template->title . ' (Copy)';
         $newTemplate->created_by = Auth::id();
         $newTemplate->save();
 

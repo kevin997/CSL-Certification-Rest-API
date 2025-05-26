@@ -9,6 +9,7 @@ use App\Models\Template;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -481,20 +482,20 @@ class ActivityController extends Controller
     {
         try {
             // Add detailed logging to identify where the error occurs
-            \Log::info('Activity show method called with ID: ' . $id);
+            Log::info('Activity show method called with ID: ' . $id);
             
             $activity = Activity::findOrFail($id);
-            \Log::info('Activity found', ['activity_id' => $activity->id, 'block_id' => $activity->block_id]);
+            Log::info('Activity found', ['activity_id' => $activity->id, 'block_id' => $activity->block_id]);
             
             $block = Block::findOrFail($activity->block_id);
-            \Log::info('Block found', ['block_id' => $block->id, 'template_id' => $block->template_id]);
+            Log::info('Block found', ['block_id' => $block->id, 'template_id' => $block->template_id]);
             
             $template = Template::findOrFail($block->template_id);
-            \Log::info('Template found', ['template_id' => $template->id, 'is_public' => $template->is_public]);
+            Log::info('Template found', ['template_id' => $template->id, 'is_public' => $template->is_public]);
             
             // Check if user has access to this template
             if (!$template->is_public && $template->created_by !== Auth::id()) {
-                \Log::warning('Permission denied for user to access activity', [
+                Log::warning('Permission denied for user to access activity', [
                     'user_id' => Auth::id(),
                     'template_owner' => $template->created_by,
                     'is_public' => $template->is_public
@@ -508,15 +509,15 @@ class ActivityController extends Controller
 
             // Load the specific content based on activity type
             $contentRelation = $this->getContentRelationship($activity->type);
-            \Log::info('Loading content relation', ['type' => $activity->type, 'relation' => $contentRelation]);
+            Log::info('Loading content relation', ['type' => $activity->type, 'relation' => $contentRelation]);
             
             // Check if the relationship exists before trying to load it
             if ($contentRelation && method_exists($activity, $contentRelation)) {
                 $activity->load($contentRelation);
-                \Log::info('Content relation loaded successfully');
+                Log::info('Content relation loaded successfully');
             } else {
                 // Just log a warning if the relationship doesn't exist
-                \Log::warning('Relationship does not exist on Activity model', [
+                Log::warning('Relationship does not exist on Activity model', [
                     'relation' => $contentRelation,
                     'available_relations' => get_class_methods($activity)
                 ]);
@@ -528,7 +529,7 @@ class ActivityController extends Controller
             ]);
         } catch (\Exception $e) {
             // Log the detailed error
-            \Log::error('Error in ActivityController@show: ' . $e->getMessage(), [
+            Log::error('Error in ActivityController@show: ' . $e->getMessage(), [
                 'exception' => $e,
                 'trace' => $e->getTraceAsString(),
                 'activity_id' => $id
@@ -561,6 +562,14 @@ class ActivityController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to update this activity',
+            ], Response::HTTP_FORBIDDEN);
+        }
+        
+        // Check if template is published and enforce restrictions
+        if ($template->status === 'published') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Cannot modify activities in a published template',
             ], Response::HTTP_FORBIDDEN);
         }
 
@@ -609,6 +618,14 @@ class ActivityController extends Controller
                 'message' => 'You do not have permission to delete this activity',
             ], Response::HTTP_FORBIDDEN);
         }
+        
+        // Check if template is published and enforce restrictions
+        if ($template->status === 'published') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Cannot delete activities in a published template',
+            ], Response::HTTP_FORBIDDEN);
+        }
 
         // Delete the activity
         $activity->delete();
@@ -646,6 +663,14 @@ class ActivityController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to reorder activities in this block',
+            ], Response::HTTP_FORBIDDEN);
+        }
+        
+        // Check if template is published and enforce restrictions
+        if ($template->status === 'published') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Cannot reorder activities in a published template',
             ], Response::HTTP_FORBIDDEN);
         }
 
@@ -755,7 +780,7 @@ class ActivityController extends Controller
         }
         
         // Log the type for debugging
-        \Log::info('Activity type in getContentRelationship', [
+        Log::info('Activity type in getContentRelationship', [
             'type' => $type,
             'type_class' => is_object($type) ? get_class($type) : gettype($type)
         ]);
@@ -776,7 +801,7 @@ class ActivityController extends Controller
 
         // Check if the type exists in our mapping
         if (!isset($contentRelationships[$type])) {
-            \Log::warning('Unknown activity type encountered', ['type' => $type]);
+            Log::warning('Unknown activity type encountered', ['type' => $type]);
             return null;
         }
         
