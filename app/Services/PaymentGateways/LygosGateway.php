@@ -6,6 +6,7 @@ use App\Models\Transaction;
 use App\Models\PaymentGatewaySetting;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 
 class LygosGateway implements PaymentGatewayInterface
@@ -23,6 +24,13 @@ class LygosGateway implements PaymentGatewayInterface
      * @var string
      */
     protected $apiUrl;
+    
+    /**
+     * Lygos merchant ID
+     *
+     * @var string
+     */
+    protected $merchantId;
     
     /**
      * Gateway settings
@@ -43,12 +51,77 @@ class LygosGateway implements PaymentGatewayInterface
         
         // Extract API credentials from settings
         $this->apiKey = $settings->getSetting('api_key');
-        
-        // Set API URL based on mode
-        if ($settings->mode === 'sandbox') {
-            $this->apiUrl = 'https://sandbox.api.lygosapp.com/v1';
-        } else {
-            $this->apiUrl = 'https://api.lygosapp.com/v1';
+        $this->merchantId = $settings->getSetting('merchant_id');
+        $this->apiUrl = $settings->getSetting('api_url', 'https://api.lygos.com/v1');
+    }
+    
+    /**
+     * Create a payment session/intent
+     * 
+     * This method creates a Lygos payment session and returns the payment URL
+     * for redirecting the customer to Lygos's payment page
+     *
+     * @param Transaction $transaction
+     * @param array $paymentData
+     * @return array
+     */
+    public function createPayment(Transaction $transaction, array $paymentData = []): array
+    {
+        try {
+            // Create return and cancel URLs
+            $returnUrl = URL::to('/api/payments/lygos/return?transaction_id=' . $transaction->id);
+            $cancelUrl = URL::to('/api/payments/lygos/cancel?transaction_id=' . $transaction->id);
+            
+            // Create Lygos payment session
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Content-Type' => 'application/json',
+            ])->post($this->apiUrl . '/payment-sessions', [
+                'merchant_id' => $this->merchantId,
+                'amount' => $transaction->total_amount,
+                'currency' => strtoupper($transaction->currency),
+                'description' => $transaction->description,
+                'reference_id' => (string) $transaction->id,
+                'customer' => [
+                    'email' => $transaction->customer_email,
+                    'name' => $transaction->customer_name,
+                ],
+                'success_url' => $returnUrl,
+                'cancel_url' => $cancelUrl,
+                'metadata' => [
+                    'transaction_id' => $transaction->id,
+                    'order_id' => $transaction->order_id,
+                ],
+                'webhook_url' => URL::to('/api/payments/lygos/webhook'),
+            ]);
+            
+            if ($response->successful()) {
+                $paymentSession = $response->json();
+                
+                // Update transaction with Lygos session ID
+                $transaction->gateway_transaction_id = $paymentSession['id'];
+                $transaction->save();
+                
+                // Return the payment URL for redirect
+                return [
+                    'success' => true,
+                    'type' => 'payment_url',
+                    'value' => $paymentSession['payment_url'],
+                    'session_id' => $paymentSession['id']
+                ];
+            } else {
+                Log::error('Lygos payment session creation failed: ' . $response->body());
+                return [
+                    'success' => false,
+                    'message' => 'Failed to create Lygos payment session: ' . ($response->json()['message'] ?? 'Unknown error')
+                ];
+            }
+        } catch (\Exception $e) {
+            Log::error('Lygos payment creation failed: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Failed to create payment: ' . $e->getMessage()
+            ];
         }
     }
     
@@ -59,7 +132,7 @@ class LygosGateway implements PaymentGatewayInterface
      * @param array $paymentData
      * @return array
      */
-    public function processPayment(Transaction $transaction, array $paymentData): array
+    public function processPayment(Transaction $transaction, array $paymentData = []): array
     {
         try {
             // In a real implementation, we would make an actual API call to Lygos
@@ -249,38 +322,58 @@ class LygosGateway implements PaymentGatewayInterface
         return [
             'name' => 'Lygos',
             'code' => 'lygos',
-            'description' => 'Accept payments in Africa with Lygos',
+            'description' => 'Pay with Lygos',
             'is_enabled' => true,
             'mode' => $this->settings->mode,
             'supports' => [
                 'mobile_money' => true,
-                'orange_money' => true,
-                'mtn_mobile_money' => true,
-                'moov_money' => true,
-                'wave' => true,
                 'bank_transfer' => true,
-                'credit_card' => true
-            ],
-            'countries' => [
-                'CI' => 'Côte d\'Ivoire',
-                'SN' => 'Senegal',
-                'CM' => 'Cameroon',
-                'BJ' => 'Benin',
-                'BF' => 'Burkina Faso',
-                'ML' => 'Mali',
-                'GH' => 'Ghana',
-                'TG' => 'Togo',
-                'NE' => 'Niger',
-                'GN' => 'Guinea',
-                'CD' => 'DR Congo',
-                'CG' => 'Congo',
-                'GA' => 'Gabon'
+                'card' => true
             ],
             'currencies' => ['XOF', 'XAF', 'GHS', 'NGN', 'USD', 'EUR'],
             'client_side' => false,
             'redirect_based' => true,
             'webhook_url' => $this->settings->webhook_url,
+            'api_key' => $this->settings->getSetting('api_key'),
             'test_mode' => $this->settings->mode === 'sandbox'
         ];
+    }
+    
+    /**
+     * Verify webhook signature
+     *
+     * @param mixed $payload
+     * @param string $signature
+     * @param string $secret
+     * @return bool
+     */
+    public function verifyWebhookSignature($payload, string $signature, string $secret): bool
+    {
+        try {
+            // Based on Lygos API documentation, they use a HMAC-SHA256 signature
+            // for webhook verification
+            
+            // In a real implementation, we would:
+            // 1. Get the raw payload
+            // 2. Compute the HMAC using the secret key
+            // 3. Compare with the provided signature
+            
+            if (empty($signature) || empty($secret)) {
+                return false;
+            }
+            
+            // Convert payload to string if it's not already
+            $payloadString = is_string($payload) ? $payload : json_encode($payload);
+            
+            // Calculate expected signature
+            $expectedSignature = hash_hmac('sha256', $payloadString, $secret);
+            
+            // Verify signature (constant time comparison to prevent timing attacks)
+            return hash_equals($expectedSignature, $signature);
+        } catch (\Exception $e) {
+            // Log the error
+            Log::error('Lygos webhook verification failed: ' . $e->getMessage());
+            return false;
+        }
     }
 }

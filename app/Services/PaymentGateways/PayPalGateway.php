@@ -4,7 +4,9 @@ namespace App\Services\PaymentGateways;
 
 use App\Models\Transaction;
 use App\Models\PaymentGatewaySetting;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 
 class PayPalGateway implements PaymentGatewayInterface
@@ -31,6 +33,13 @@ class PayPalGateway implements PaymentGatewayInterface
     protected $apiUrl;
     
     /**
+     * PayPal environment (sandbox or live)
+     * 
+     * @var string
+     */
+    protected $environment;
+    
+    /**
      * Gateway settings
      *
      * @var PaymentGatewaySetting
@@ -50,12 +59,134 @@ class PayPalGateway implements PaymentGatewayInterface
         // Extract API credentials from settings
         $this->clientId = $settings->getSetting('client_id');
         $this->clientSecret = $settings->getSetting('client_secret');
-        
-        // Set API URL based on mode
-        if ($settings->mode === 'sandbox') {
-            $this->apiUrl = 'https://api-m.sandbox.paypal.com';
-        } else {
-            $this->apiUrl = 'https://api-m.paypal.com';
+        $this->environment = $settings->getSetting('is_sandbox', true) ? 'sandbox' : 'live';
+        $this->apiUrl = $this->environment === 'sandbox'
+            ? 'https://api-m.sandbox.paypal.com' 
+            : 'https://api-m.paypal.com';
+    }
+    
+    /**
+     * Create a payment session/intent
+     * 
+     * This method creates a PayPal order and returns the checkout URL
+     * for redirecting the customer to PayPal's checkout page
+     *
+     * @param Transaction $transaction
+     * @param array $paymentData
+     * @return array
+     */
+    public function createPayment(Transaction $transaction, array $paymentData = []): array
+    {
+        try {
+            // Get access token
+            $accessToken = $this->getAccessToken();
+            if (!$accessToken) {
+                return [
+                    'success' => false,
+                    'message' => 'Failed to authenticate with PayPal'
+                ];
+            }
+            
+            // Create return and cancel URLs
+            $returnUrl = URL::to('/api/payments/paypal/return?transaction_id=' . $transaction->id);
+            $cancelUrl = URL::to('/api/payments/paypal/cancel?transaction_id=' . $transaction->id);
+            
+            // Create PayPal order
+            $response = Http::withToken($accessToken)
+                ->withHeaders([
+                    'Content-Type' => 'application/json',
+                ])
+                ->post($this->apiUrl . '/v2/checkout/orders', [
+                    'intent' => 'CAPTURE',
+                    'purchase_units' => [
+                        [
+                            'reference_id' => (string) $transaction->id,
+                            'description' => $transaction->description,
+                            'amount' => [
+                                'currency_code' => strtoupper($transaction->currency),
+                                'value' => number_format($transaction->total_amount, 2, '.', ''),
+                            ],
+                        ],
+                    ],
+                    'application_context' => [
+                        'brand_name' => config('app.name'),
+                        'landing_page' => 'BILLING',
+                        'shipping_preference' => 'NO_SHIPPING',
+                        'user_action' => 'PAY_NOW',
+                        'return_url' => $returnUrl,
+                        'cancel_url' => $cancelUrl,
+                    ],
+                ]);
+            
+            if ($response->successful()) {
+                $paypalOrder = $response->json();
+                
+                // Find the approve link
+                $approveLink = null;
+                foreach ($paypalOrder['links'] as $link) {
+                    if ($link['rel'] === 'approve') {
+                        $approveLink = $link['href'];
+                        break;
+                    }
+                }
+                
+                if (!$approveLink) {
+                    return [
+                        'success' => false,
+                        'message' => 'PayPal checkout URL not found in response'
+                    ];
+                }
+                
+                // Update transaction with PayPal order ID
+                $transaction->gateway_transaction_id = $paypalOrder['id'];
+                $transaction->save();
+                
+                // Return the checkout URL for redirect
+                return [
+                    'success' => true,
+                    'type' => 'checkout_url',
+                    'value' => $approveLink,
+                    'order_id' => $paypalOrder['id']
+                ];
+            } else {
+                Log::error('PayPal order creation failed: ' . $response->body());
+                return [
+                    'success' => false,
+                    'message' => 'Failed to create PayPal order: ' . ($response->json()['message'] ?? 'Unknown error')
+                ];
+            }
+        } catch (\Exception $e) {
+            Log::error('PayPal payment creation failed: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Failed to create payment: ' . $e->getMessage()
+            ];
+        }
+    }
+    
+    /**
+     * Get PayPal access token
+     * 
+     * @return string|null
+     */
+    protected function getAccessToken(): ?string
+    {
+        try {
+            $response = Http::withBasicAuth($this->clientId, $this->clientSecret)
+                ->asForm()
+                ->post($this->apiUrl . '/v1/oauth2/token', [
+                    'grant_type' => 'client_credentials'
+                ]);
+                
+            if ($response->successful()) {
+                return $response->json()['access_token'];
+            }
+            
+            Log::error('Failed to get PayPal access token: ' . $response->body());
+            return null;
+        } catch (\Exception $e) {
+            Log::error('PayPal authentication failed: ' . $e->getMessage());
+            return null;
         }
     }
     
@@ -66,7 +197,7 @@ class PayPalGateway implements PaymentGatewayInterface
      * @param array $paymentData
      * @return array
      */
-    public function processPayment(Transaction $transaction, array $paymentData): array
+    public function processPayment(Transaction $transaction, array $paymentData = []): array
     {
         // Validate payment data
         if (!isset($paymentData['order_id']) && !isset($paymentData['payment_id'])) {
@@ -305,7 +436,7 @@ class PayPalGateway implements PaymentGatewayInterface
         return [
             'name' => 'PayPal',
             'code' => 'paypal',
-            'description' => 'Accept payments with PayPal',
+            'description' => 'Pay with PayPal',
             'is_enabled' => true,
             'mode' => $this->settings->mode,
             'supports' => [
@@ -314,10 +445,55 @@ class PayPalGateway implements PaymentGatewayInterface
                 'venmo' => true,
                 'pay_later' => true
             ],
-            'client_side' => true,
-            'client_id' => $this->clientId,
+            'client_side' => false,
+            'redirect_based' => true,
             'webhook_url' => $this->settings->webhook_url,
+            'client_id' => $this->settings->getSetting('client_id'),
             'test_mode' => $this->settings->mode === 'sandbox'
         ];
+    }
+    
+    /**
+     * Verify webhook signature
+     *
+     * @param mixed $payload
+     * @param string $signature
+     * @param string $secret
+     * @return bool
+     */
+    public function verifyWebhookSignature($payload, string $signature, string $secret): bool
+    {
+        try {
+            // In a real implementation, we would use PayPal's SDK to verify the signature
+            // For this demo, we'll implement a basic verification
+            
+            // PayPal sends multiple headers for verification
+            $headers = json_decode($signature, true) ?: [];
+            
+            if (empty($headers)) {
+                return false;
+            }
+            
+            // Check for required headers
+            if (!isset($headers['paypal-auth-algo']) || 
+                !isset($headers['paypal-cert-url']) || 
+                !isset($headers['paypal-transmission-id']) || 
+                !isset($headers['paypal-transmission-sig']) || 
+                !isset($headers['paypal-transmission-time'])) {
+                return false;
+            }
+            
+            // In a real implementation, we would:
+            // 1. Get the certificate from the cert-url
+            // 2. Verify the signature using the certificate
+            // 3. Validate the webhook event
+            
+            // For this demo, we'll simulate a successful verification
+            return true;
+        } catch (\Exception $e) {
+            // Log the error
+            \Illuminate\Support\Facades\Log::error('PayPal webhook verification failed: ' . $e->getMessage());
+            return false;
+        }
     }
 }

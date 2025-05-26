@@ -7,8 +7,19 @@ use App\Models\PaymentGatewaySetting;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
+// Using class aliases to avoid conflicts with Stripe SDK
+use Stripe\StripeClient as StripeSDK;
+use Stripe\Exception\ApiErrorException as StripeApiException;
+
 class StripeGateway implements PaymentGatewayInterface
 {
+    /**
+     * Stripe client
+     *
+     * @var \Stripe\StripeClient
+     */
+    protected $stripeClient;
+    
     /**
      * Stripe API key
      *
@@ -52,9 +63,62 @@ class StripeGateway implements PaymentGatewayInterface
         $this->apiVersion = $settings->getSetting('api_version', '2023-10-16');
         $this->webhookSecret = $settings->getSetting('webhook_secret');
         
-        // In a real implementation, we would initialize the Stripe SDK here
-        // \Stripe\Stripe::setApiKey($this->apiKey);
-        // \Stripe\Stripe::setApiVersion($this->apiVersion);
+        // Initialize the Stripe client
+        $this->stripeClient = new StripeSDK([
+            'api_key' => $this->apiKey,
+            'stripe_version' => $this->apiVersion
+        ]);
+    }
+    
+    /**
+     * Create a payment session/intent
+     * 
+     * This method creates a Stripe PaymentIntent and returns the client_secret
+     * for use with Stripe Elements on the frontend
+     *
+     * @param Transaction $transaction
+     * @param array $paymentData
+     * @return array
+     */
+    public function createPayment(Transaction $transaction, array $paymentData = []): array
+    {
+        try {
+            // Create a PaymentIntent with the order amount and currency
+            $paymentIntent = $this->stripeClient->paymentIntents->create([
+                'amount' => (int)($transaction->total_amount * 100), // Convert to cents
+                'currency' => strtolower($transaction->currency),
+                'metadata' => [
+                    'transaction_id' => $transaction->id,
+                    'order_id' => $transaction->order_id,
+                    'customer_email' => $transaction->customer_email
+                ],
+                'description' => $transaction->description,
+                'receipt_email' => $transaction->customer_email,
+                // Enable automatic payment methods suitable for the customer's location
+                'automatic_payment_methods' => [
+                    'enabled' => true,
+                ],
+            ]);
+            
+            // Update transaction with payment intent ID
+            $transaction->gateway_transaction_id = $paymentIntent->id;
+            $transaction->save();
+            
+            // Return the client_secret for Stripe Elements
+            return [
+                'success' => true,
+                'type' => 'client_secret',
+                'value' => $paymentIntent->client_secret,
+                'payment_intent_id' => $paymentIntent->id,
+                'publishable_key' => $this->settings->getSetting('publishable_key')
+            ];
+        } catch (StripeApiException $e) {
+            Log::error('Stripe payment intent creation failed: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Failed to create payment: ' . $e->getMessage()
+            ];
+        }
     }
     
     /**
@@ -64,7 +128,7 @@ class StripeGateway implements PaymentGatewayInterface
      * @param array $paymentData
      * @return array
      */
-    public function processPayment(Transaction $transaction, array $paymentData): array
+    public function processPayment(Transaction $transaction, array $paymentData = []): array
     {
         // Validate payment data
         if (!isset($paymentData['payment_method_id']) && !isset($paymentData['payment_intent_id'])) {
@@ -348,5 +412,39 @@ class StripeGateway implements PaymentGatewayInterface
             'publishable_key' => $this->settings->getSetting('publishable_key'),
             'test_mode' => $this->settings->mode === 'sandbox'
         ];
+    }
+    
+    /**
+     * Verify webhook signature
+     *
+     * @param mixed $payload
+     * @param string $signature
+     * @param string $secret
+     * @return bool
+     */
+    public function verifyWebhookSignature($payload, string $signature, string $secret): bool
+    {
+        try {
+            // Use Stripe's SDK to verify the signature
+            $event = \Stripe\Webhook::constructEvent(
+                $payload,
+                $signature,
+                $secret ?: $this->webhookSecret
+            );
+            
+            return true;
+        } catch (\UnexpectedValueException $e) {
+            // Invalid payload
+            Log::error('Stripe webhook error: Invalid payload: ' . $e->getMessage());
+            return false;
+        } catch (\Stripe\Exception\SignatureVerificationException $e) {
+            // Invalid signature
+            Log::error('Stripe webhook error: Invalid signature: ' . $e->getMessage());
+            return false;
+        } catch (\Exception $e) {
+            // Other error
+            Log::error('Stripe webhook error: ' . $e->getMessage());
+            return false;
+        }
     }
 }

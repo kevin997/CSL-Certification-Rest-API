@@ -4,12 +4,17 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Transaction;
-use App\Models\PaymentGatewaySetting;
-use App\Models\Environment;
+use App\Models\Order;
+use App\Models\OrderItem;
+use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
+use App\Mail\OrderConfirmation;
 use Illuminate\Support\Str;
 
 /**
@@ -546,6 +551,624 @@ class TransactionController extends Controller
             'message' => 'Transaction status updated successfully',
             'data' => $transaction
         ], Response::HTTP_OK);
+    }
+
+    /**
+     * Create a payment for an order
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     * 
+     * @OA\Post(
+     *     path="/payments/create",
+     *     summary="Create a payment for an order",
+     *     description="Creates a payment session/intent based on the selected payment method",
+     *     operationId="createPayment",
+     *     tags={"Payments"},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"order_id", "gateway_code"},
+     *             @OA\Property(property="order_id", type="integer", example=1),
+     *             @OA\Property(property="gateway_code", type="string", example="stripe"),
+     *             @OA\Property(property="environment_id", type="integer", example=1),
+     *             @OA\Property(property="payment_data", type="object")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Payment created successfully",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="type", type="string", example="client_secret"),
+     *             @OA\Property(property="value", type="string", example="pi_3NJK9JHjZ8aCLp1X1L8qlmvN_secret_MhCLmVIjBBBBrrrGGGGnnnn"),
+     *             @OA\Property(property="payment_intent_id", type="string", example="pi_3NJK9JHjZ8aCLp1X1L8qlmvN"),
+     *             @OA\Property(property="publishable_key", type="string", example="pk_test_51JK9JHjZ8aCLp1X1L8qlmvN")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=400,
+     *         description="Invalid input data or payment creation error"
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Order not found"
+     *     ),
+     *     @OA\Response(
+     *         response=422,
+     *         description="Validation error"
+     *     )
+     * )
+     */
+    public function createPayment(Request $request)
+    {
+        // Validate request data
+        $validator = Validator::make($request->all(), [
+            'order_id' => 'required|integer|exists:orders,id',
+            'gateway_code' => 'required|string|max:50',
+            'environment_id' => 'nullable|integer|exists:environments,id',
+            'payment_data' => 'nullable|array',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // Create the payment
+        $paymentService = app(\App\Services\PaymentService::class);
+        $result = $paymentService->createPayment(
+            $request->input('order_id'),
+            $request->input('gateway_code'),
+            $request->input('payment_data', []),
+            $request->input('environment_id')
+        );
+
+        if ($result['success']) {
+            return response()->json($result, Response::HTTP_OK);
+        } else {
+            return response()->json($result, Response::HTTP_BAD_REQUEST);
+        }
+    }
+    
+    /**
+     * Handle Stripe webhook events
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\Response
+     */
+    public function stripeWebhook(Request $request)
+    {
+        $payload = $request->getContent();
+        $sigHeader = $request->header('Stripe-Signature');
+        $endpointSecret = config('services.stripe.webhook_secret');
+        
+        try {
+            // Verify the webhook signature
+            $event = \Stripe\Webhook::constructEvent(
+                $payload, $sigHeader, $endpointSecret
+            );
+            
+            // Handle the event
+            switch ($event->type) {
+                case 'payment_intent.succeeded':
+                    $paymentIntent = $event->data->object;
+                    $this->handleStripePaymentSuccess($paymentIntent);
+                    break;
+                    
+                case 'payment_intent.payment_failed':
+                    $paymentIntent = $event->data->object;
+                    $this->handleStripePaymentFailure($paymentIntent);
+                    break;
+                    
+                default:
+                    // Unexpected event type
+                    Log::info('Unhandled Stripe event: ' . $event->type);
+            }
+            
+            return response()->json(['status' => 'success']);
+            
+        } catch (\UnexpectedValueException $e) {
+            // Invalid payload
+            Log::error('Stripe webhook error: ' . $e->getMessage());
+            return response()->json(['error' => 'Invalid payload'], 400);
+            
+        } catch (\Stripe\Exception\SignatureVerificationException $e) {
+            // Invalid signature
+            Log::error('Stripe webhook signature verification failed: ' . $e->getMessage());
+            return response()->json(['error' => 'Invalid signature'], 400);
+            
+        } catch (\Exception $e) {
+            // Other exceptions
+            Log::error('Stripe webhook error: ' . $e->getMessage());
+            return response()->json(['error' => 'Webhook processing failed'], 500);
+        }
+    }
+    
+    /**
+     * Handle PayPal webhook events
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\Response
+     */
+    public function paypalWebhook(Request $request)
+    {
+        $payload = $request->all();
+        $webhookId = config('services.paypal.webhook_id');
+        
+        try {
+            // Verify the webhook signature (PayPal uses a different approach)
+            $paypalGateway = app(\App\Services\PaymentGateways\PayPalGateway::class);
+            $webhookSecret = config('services.paypal.webhook_secret');
+            $isValid = $paypalGateway->verifyWebhookSignature($request, $webhookId, $webhookSecret);
+            
+            if (!$isValid) {
+                Log::error('PayPal webhook signature verification failed');
+                return response()->json(['error' => 'Invalid signature'], 400);
+            }
+            
+            // Handle the event
+            $eventType = $payload['event_type'] ?? '';
+            
+            switch ($eventType) {
+                case 'PAYMENT.CAPTURE.COMPLETED':
+                    $this->handlePayPalPaymentSuccess($payload);
+                    break;
+                    
+                case 'PAYMENT.CAPTURE.DENIED':
+                case 'PAYMENT.CAPTURE.DECLINED':
+                    $this->handlePayPalPaymentFailure($payload);
+                    break;
+                    
+                default:
+                    // Unexpected event type
+                    Log::info('Unhandled PayPal event: ' . $eventType);
+            }
+            
+            return response()->json(['status' => 'success']);
+            
+        } catch (\Exception $e) {
+            // Other exceptions
+            Log::error('PayPal webhook error: ' . $e->getMessage());
+            return response()->json(['error' => 'Webhook processing failed'], 500);
+        }
+    }
+    
+    /**
+     * Handle Lygos webhook events
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\Response
+     */
+    public function lygosWebhook(Request $request)
+    {
+        $payload = $request->all();
+        $signature = $request->header('X-Lygos-Signature');
+        $secret = config('services.lygos.webhook_secret');
+        
+        try {
+            // Verify the webhook signature
+            $lygosGateway = app(\App\Services\PaymentGateways\LygosGateway::class);
+            $isValid = $lygosGateway->verifyWebhookSignature($payload, $signature, $secret);
+            
+            if (!$isValid) {
+                Log::error('Lygos webhook signature verification failed');
+                return response()->json(['error' => 'Invalid signature'], 400);
+            }
+            
+            // Handle the event
+            $eventType = $payload['event'] ?? '';
+            
+            switch ($eventType) {
+                case 'payment.completed':
+                    $this->handleLygosPaymentSuccess($payload);
+                    break;
+                    
+                case 'payment.failed':
+                    $this->handleLygosPaymentFailure($payload);
+                    break;
+                    
+                default:
+                    // Unexpected event type
+                    Log::info('Unhandled Lygos event: ' . $eventType);
+            }
+            
+            return response()->json(['status' => 'success']);
+            
+        } catch (\Exception $e) {
+            // Other exceptions
+            Log::error('Lygos webhook error: ' . $e->getMessage());
+            return response()->json(['error' => 'Webhook processing failed'], 500);
+        }
+    }
+    
+    /**
+     * Handle successful Stripe payment
+     *
+     * @param object $paymentIntent
+     * @return void
+     */
+    private function handleStripePaymentSuccess($paymentIntent)
+    {
+        // Extract metadata
+        $transactionId = $paymentIntent->metadata->transaction_id ?? null;
+        $orderId = $paymentIntent->metadata->order_id ?? null;
+        
+        if (!$transactionId && !$orderId) {
+            Log::error('Stripe payment success: Missing transaction_id and order_id in metadata');
+            return;
+        }
+        
+        // Find the transaction
+        $transaction = null;
+        
+        if ($transactionId) {
+            $transaction = Transaction::where('id', $transactionId)->first();
+        } elseif ($orderId) {
+            $transaction = Transaction::where('order_id', $orderId)->first();
+        }
+        
+        if (!$transaction) {
+            Log::error('Stripe payment success: Transaction not found');
+            return;
+        }
+        
+        // Update transaction status
+        $transaction->status = Transaction::STATUS_COMPLETED;
+        $transaction->gateway_transaction_id = $paymentIntent->id;
+        $transaction->gateway_response = json_encode($paymentIntent);
+        $transaction->completed_at = now();
+        $transaction->save();
+        
+        // Update order status
+        $order = Order::findOrFail($transaction->order_id);
+        $order->status = 'completed';
+        $order->save();
+        
+        // Process order completion (e.g., create enrollments, send emails)
+        $this->processCompletedOrder($order);
+    }
+    
+    /**
+     * Handle failed Stripe payment
+     *
+     * @param object $paymentIntent
+     * @return void
+     */
+    private function handleStripePaymentFailure($paymentIntent)
+    {
+        // Extract metadata
+        $transactionId = $paymentIntent->metadata->transaction_id ?? null;
+        $orderId = $paymentIntent->metadata->order_id ?? null;
+        
+        if (!$transactionId && !$orderId) {
+            Log::error('Stripe payment failure: Missing transaction_id and order_id in metadata');
+            return;
+        }
+        
+        // Find the transaction
+        $transaction = null;
+        
+        if ($transactionId) {
+            $transaction = Transaction::where('id', $transactionId)->first();
+        } elseif ($orderId) {
+            $transaction = Transaction::where('order_id', $orderId)->first();
+        }
+        
+        if (!$transaction) {
+            Log::error('Stripe payment failure: Transaction not found');
+            return;
+        }
+        
+        // Update transaction status
+        $transaction->status = Transaction::STATUS_FAILED;
+        $transaction->gateway_transaction_id = $paymentIntent->id;
+        $transaction->gateway_response = json_encode($paymentIntent);
+        $transaction->error_message = $paymentIntent->last_payment_error->message ?? 'Payment failed';
+        $transaction->save();
+        
+        // Update order status
+        $order = Order::find($transaction->order_id);
+        if ($order) {
+            $order->status = 'failed';
+            $order->save();
+        }
+    }
+    
+    /**
+     * Handle successful PayPal payment
+     *
+     * @param array $payload
+     * @return void
+     */
+    private function handlePayPalPaymentSuccess($payload)
+    {
+        // Extract resource data
+        $resource = $payload['resource'] ?? [];
+        $purchaseUnits = $resource['purchase_units'] ?? [];
+        
+        if (empty($purchaseUnits)) {
+            Log::error('PayPal payment success: Missing purchase units');
+            return;
+        }
+        
+        // Get the first purchase unit (we only use one per transaction)
+        $purchaseUnit = $purchaseUnits[0];
+        $referenceId = $purchaseUnit['reference_id'] ?? null;
+        
+        if (!$referenceId) {
+            Log::error('PayPal payment success: Missing reference_id');
+            return;
+        }
+        
+        // Find the transaction using the reference_id (which is our transaction ID)
+        $transaction = Transaction::where('id', $referenceId)->first();
+        
+        if (!$transaction) {
+            Log::error('PayPal payment success: Transaction not found');
+            return;
+        }
+        
+        // Update transaction status
+        $transaction->status = Transaction::STATUS_COMPLETED;
+        $transaction->gateway_transaction_id = $resource['id'] ?? null;
+        $transaction->gateway_response = json_encode($payload);
+        $transaction->completed_at = now();
+        $transaction->save();
+        
+        // Update order status
+        $order = Order::findOrFail($transaction->order_id);
+        $order->status = 'completed';
+        $order->save();
+        
+        // Process order completion (e.g., create enrollments, send emails)
+        $this->processCompletedOrder($order);
+    }
+    
+    /**
+     * Handle failed PayPal payment
+     *
+     * @param array $payload
+     * @return void
+     */
+    private function handlePayPalPaymentFailure($payload)
+    {
+        // Extract resource data
+        $resource = $payload['resource'] ?? [];
+        $purchaseUnits = $resource['purchase_units'] ?? [];
+        
+        if (empty($purchaseUnits)) {
+            Log::error('PayPal payment failure: Missing purchase units');
+            return;
+        }
+        
+        // Get the first purchase unit (we only use one per transaction)
+        $purchaseUnit = $purchaseUnits[0];
+        $referenceId = $purchaseUnit['reference_id'] ?? null;
+        
+        if (!$referenceId) {
+            Log::error('PayPal payment failure: Missing reference_id');
+            return;
+        }
+        
+        // Find the transaction using the reference_id (which is our transaction ID)
+        $transaction = Transaction::where('id', $referenceId)->first();
+        
+        if (!$transaction) {
+            Log::error('PayPal payment failure: Transaction not found');
+            return;
+        }
+        
+        // Update transaction status
+        $transaction->status = Transaction::STATUS_FAILED;
+        $transaction->gateway_transaction_id = $resource['id'] ?? null;
+        $transaction->gateway_response = json_encode($payload);
+        $transaction->error_message = $resource['status_details']['reason'] ?? 'Payment failed';
+        $transaction->save();
+        
+        // Update order status
+        $order = Order::find($transaction->order_id);
+        if ($order) {
+            $order->status = 'failed';
+            $order->save();
+        }
+    }
+    
+    /**
+     * Handle successful Lygos payment
+     *
+     * @param array $payload
+     * @return void
+     */
+    private function handleLygosPaymentSuccess($payload)
+    {
+        // Extract data
+        $paymentId = $payload['payment_id'] ?? null;
+        $metadata = $payload['metadata'] ?? [];
+        $transactionId = $metadata['transaction_id'] ?? null;
+        $orderId = $metadata['order_id'] ?? null;
+        
+        if (!$transactionId && !$orderId) {
+            Log::error('Lygos payment success: Missing transaction_id and order_id in metadata');
+            return;
+        }
+        
+        // Find the transaction
+        $transaction = null;
+        
+        if ($transactionId) {
+            $transaction = Transaction::where('id', $transactionId)->first();
+        } elseif ($orderId) {
+            $transaction = Transaction::where('order_id', $orderId)->first();
+        }
+        
+        if (!$transaction) {
+            Log::error('Lygos payment success: Transaction not found');
+            return;
+        }
+        
+        // Update transaction status
+        $transaction->status = Transaction::STATUS_COMPLETED;
+        $transaction->gateway_transaction_id = $paymentId;
+        $transaction->gateway_response = json_encode($payload);
+        $transaction->completed_at = now();
+        $transaction->save();
+        
+        // Update order status
+        $order = Order::findOrFail($transaction->order_id);
+        $order->status = 'completed';
+        $order->save();
+        
+        // Process order completion (e.g., create enrollments, send emails)
+        $this->processCompletedOrder($order);
+    }
+    
+    /**
+     * Handle failed Lygos payment
+     *
+     * @param array $payload
+     * @return void
+     */
+    private function handleLygosPaymentFailure($payload)
+    {
+        // Extract data
+        $paymentId = $payload['payment_id'] ?? null;
+        $metadata = $payload['metadata'] ?? [];
+        $transactionId = $metadata['transaction_id'] ?? null;
+        $orderId = $metadata['order_id'] ?? null;
+        $errorMessage = $payload['error_message'] ?? 'Payment failed';
+        
+        if (!$transactionId && !$orderId) {
+            Log::error('Lygos payment failure: Missing transaction_id and order_id in metadata');
+            return;
+        }
+        
+        // Find the transaction
+        $transaction = null;
+        
+        if ($transactionId) {
+            $transaction = Transaction::where('id', $transactionId)->first();
+        } elseif ($orderId) {
+            $transaction = Transaction::where('order_id', $orderId)->first();
+        }
+        
+        if (!$transaction) {
+            Log::error('Lygos payment failure: Transaction not found');
+            return;
+        }
+        
+        // Update transaction status
+        $transaction->status = Transaction::STATUS_FAILED;
+        $transaction->gateway_transaction_id = $paymentId;
+        $transaction->gateway_response = json_encode($payload);
+        $transaction->error_message = $errorMessage;
+        $transaction->save();
+        
+        // Update order status
+        $order = Order::findOrFail($transaction->order_id);
+        $order->status = 'failed';
+        $order->save();
+    }
+    
+    /**
+     * Process a completed order
+     *
+     * @param Order $order
+     * @return void
+     */
+    private function processCompletedOrder(Order $order)
+    {
+        // Ensure we have a single Order instance, not a collection
+        if ($order instanceof \Illuminate\Database\Eloquent\Collection) {
+            if ($order->count() > 0) {
+                $order = $order->first();
+            } else {
+                Log::error('processCompletedOrder received empty collection');
+                return;
+            }
+        }
+        
+        // Get the order items
+        $orderItems = OrderItem::where('order_id', $order->id)->get();
+        
+        foreach ($orderItems as $item) {
+            $product = Product::find($item->product_id);
+            
+            if (!$product) {
+                continue;
+            }
+            
+            // Handle course enrollments if the product contains courses
+            $productCourses = DB::table('product_courses')
+                ->where('product_id', $product->id)
+                ->get();
+                
+            foreach ($productCourses as $productCourse) {
+                // Create enrollment if it doesn't exist
+                $enrollment = DB::table('enrollments')
+                    ->where('user_id', $order->user_id)
+                    ->where('course_id', $productCourse->course_id)
+                    ->where('environment_id', $order->environment_id)
+                    ->first();
+                    
+                if (!$enrollment) {
+                    DB::table('enrollments')->insert([
+                        'user_id' => $order->user_id,
+                        'course_id' => $productCourse->course_id,
+                        'environment_id' => $order->environment_id,
+                        'status' => 'active',
+                        'progress' => 0,
+                        'enrolled_at' => now(),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
+            
+            // Handle subscriptions if the product is a subscription
+            if ($product->is_subscription) {
+                // Create or update subscription
+                $subscription = DB::table('subscriptions')
+                    ->where('user_id', $order->user_id)
+                    ->where('product_id', $product->id)
+                    ->where('environment_id', $order->environment_id)
+                    ->first();
+                    
+                if (!$subscription) {
+                    // Create new subscription
+                    DB::table('subscriptions')->insert([
+                        'user_id' => $order->user_id,
+                        'product_id' => $product->id,
+                        'environment_id' => $order->environment_id,
+                        'status' => 'active',
+                        'start_date' => now(),
+                        'end_date' => now()->addDays($product->subscription_duration),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                } else {
+                    // Update existing subscription
+                    DB::table('subscriptions')
+                        ->where('id', $subscription->id)
+                        ->update([
+                            'status' => 'active',
+                            'end_date' => now()->addDays($product->subscription_duration),
+                            'updated_at' => now(),
+                        ]);
+                }
+            }
+        }
+        
+        // Send order confirmation email
+        try {
+            Mail::to($order->billing_email)->send(new OrderConfirmation($order));
+        } catch (\Exception $e) {
+            Log::error('Failed to send order confirmation email: ' . $e->getMessage());
+        }
     }
 
     /**

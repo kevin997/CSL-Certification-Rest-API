@@ -358,21 +358,52 @@ Route::post('/certificates/verify', [CertificateController::class, 'verify']);
 // Storefront routes
 use App\Http\Controllers\Api\StorefrontController;
 
-Route::prefix('storefront')->group(function () {
+Route::group(['prefix' => 'storefront'], function () {
     // Public storefront routes that don't require authentication
-    Route::get('/{environment_id}/products/featured', [StorefrontController::class, 'getFeaturedProducts']);
-    Route::get('/{environment_id}/products', [StorefrontController::class, 'getAllProducts']);
-    Route::get('/{environment_id}/products/{slug}', [StorefrontController::class, 'getProductBySlug']);
-    Route::get('/{environment_id}/product/{id}', [StorefrontController::class, 'getProductById']);
-    Route::get('/{environment_id}/categories', [StorefrontController::class, 'getCategories']);
-    Route::get('/{environment_id}/payment-methods', [StorefrontController::class, 'getPaymentMethods']);
-    Route::get('/{environment_id}/payment-gateways', [StorefrontController::class, 'getPaymentGateways']);
-    Route::post('/{environment_id}/checkout', [StorefrontController::class, 'checkout']);
+    Route::get('/{environmentId}/products', [StorefrontController::class, 'getProducts']);
+    Route::get('/{environmentId}/products/{productId}', [StorefrontController::class, 'getProduct']);
     
-    // Product review routes
-    Route::get('/{environment_id}/products/{product_id}/reviews', [StorefrontController::class, 'getProductReviews']);
-    Route::post('/{environment_id}/products/{product_id}/reviews', [StorefrontController::class, 'submitProductReview']);
+    // Get product categories
+    Route::get('/{environmentId}/categories', [StorefrontController::class, 'getCategories']);
+    Route::get('/{environmentId}/categories/{categoryId}', [StorefrontController::class, 'getCategory']);
     
+    // Get payment methods
+    Route::get('/{environmentId}/payment-methods', [StorefrontController::class, 'getPaymentMethods']);
+    
+    // Get payment gateways
+    Route::get('/{environmentId}/payment-gateways', [StorefrontController::class, 'getPaymentGateways']);
+    
+    // Process checkout
+    Route::post('/{environmentId}/checkout', [StorefrontController::class, 'checkout']);
+    
+    // Get product reviews
+    Route::get('/{environmentId}/products/{productId}/reviews', [StorefrontController::class, 'getProductReviews']);
+    
+    // Submit product review
+    Route::post('/{environmentId}/products/{productId}/reviews', [StorefrontController::class, 'submitProductReview']);
+    
+    // Get countries, states, cities
+    Route::get('/{environmentId}/countries', [StorefrontController::class, 'getCountries']);
+    Route::get('/{environmentId}/states/{country}', [StorefrontController::class, 'getStates']);
+    Route::get('/{environmentId}/cities/{country}/{state}', [StorefrontController::class, 'getCities']);
+});
+
+// Payment Routes
+Route::group(['prefix' => 'payments'], function () {
+    // Create payment
+    Route::post('/create', [TransactionController::class, 'createPayment']);
+    
+    // Payment webhooks
+    Route::post('/stripe/webhook', [TransactionController::class, 'stripeWebhook']);
+    Route::post('/paypal/webhook', [TransactionController::class, 'paypalWebhook']);
+    Route::post('/lygos/webhook', [TransactionController::class, 'lygosWebhook']);
+    
+    // Payment return URLs
+    Route::get('/stripe/return', [TransactionController::class, 'stripeReturn']);
+    Route::get('/paypal/return', [TransactionController::class, 'paypalReturn']);
+    Route::get('/paypal/cancel', [TransactionController::class, 'paypalCancel']);
+    Route::get('/lygos/return', [TransactionController::class, 'lygosReturn']);
+    Route::get('/lygos/cancel', [TransactionController::class, 'lygosCancel']);
     // Course routes
     Route::get('/{environment_id}/courses', [StorefrontController::class, 'getCourses']);
     Route::get('/{environment_id}/courses/{slug}', [StorefrontController::class, 'getCourseBySlug']);

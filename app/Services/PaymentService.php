@@ -4,11 +4,20 @@ namespace App\Services;
 
 use App\Models\Order;
 use App\Models\Transaction;
+use App\Models\Environment;
 use App\Models\PaymentGatewaySetting;
 use App\Services\PaymentGateways\PaymentGatewayFactory;
+use App\Services\PaymentGateways\PaymentGatewayInterface;
+use App\Services\PaymentGateways\StripeGateway;
+use App\Services\PaymentGateways\PayPalGateway;
+use App\Services\PaymentGateways\LygosGateway;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\OrderConfirmation;
 
 class PaymentService
 {
@@ -16,13 +25,255 @@ class PaymentService
      * @var OrderService
      */
     protected $orderService;
+    
+    /**
+     * @var PaymentGatewayFactory
+     */
+    protected $gatewayFactory;
+    
+    /**
+     * @var PaymentGatewayInterface
+     */
+    protected $currentGateway;
+    
+    /**
+     * @var array
+     */
+    protected $environmentCache = [];
 
     /**
-     * Constructor
+     * Constructor for PaymentService
+     * 
+     * @param OrderService $orderService
+     * @param PaymentGatewayFactory $gatewayFactory
      */
-    public function __construct(OrderService $orderService)
+    public function __construct(OrderService $orderService, PaymentGatewayFactory $gatewayFactory)
     {
         $this->orderService = $orderService;
+        $this->gatewayFactory = $gatewayFactory;
+    }
+
+    /**
+     * Create a payment for an order with environment-specific configuration
+     *
+     * @param string $orderId
+     * @param string $paymentMethod
+     * @param array $paymentData
+     * @param string|null $environment
+     * @return array
+     */
+    public function createPayment(string $orderId, string $paymentMethod, array $paymentData = [], ?string $environment = null): array
+    {
+        // Start a database transaction
+        DB::beginTransaction();
+        
+        try {
+            // Get the order
+            $order = $this->orderService->getOrderById($orderId);
+            if (!$order) {
+                return [
+                    'success' => false,
+                    'message' => 'Order not found'
+                ];
+            }
+
+            // Create a transaction record
+            $transaction = new Transaction();
+            $transaction->order_id = $order->id;
+            $transaction->user_id = $order->user_id;
+            $transaction->transaction_id = 'TXN_' . Str::uuid();
+            $transaction->payment_method = $paymentMethod;
+            $transaction->total_amount = $order->total_amount;
+            $transaction->currency = $order->currency ?? 'USD';
+            $transaction->status = 'pending';
+            $transaction->description = 'Payment for Order #' . $order->order_number;
+            $transaction->save();
+
+            // Initialize the payment gateway with environment-specific settings
+            $gateway = $this->initializeGateway($paymentMethod, $environment);
+            if (!$gateway['success']) {
+                DB::rollBack();
+                return $gateway;
+            }
+            
+            $this->currentGateway = $gateway['gateway'];
+            
+            // Create the payment with the gateway
+            $response = $this->currentGateway->createPayment($transaction, $paymentData);
+            
+            if (!$response['success']) {
+                DB::rollBack();
+                return $response;
+            }
+            
+            // Update transaction with gateway reference
+            if (isset($response['gateway_reference'])) {
+                $transaction->gateway_reference = $response['gateway_reference'];
+                $transaction->save();
+            }
+            
+            DB::commit();
+            return $response;
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Payment creation failed: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Payment creation failed: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Initialize a payment gateway with environment-specific configuration
+     *
+     * @param string $gatewayCode
+     * @param string|null $environment
+     * @return array
+     */
+    protected function initializeGateway(string $gatewayCode, ?string $environment = null): array
+    {
+        try {
+            // Get environment ID based on environment name
+            $environmentId = null;
+            if ($environment) {
+                // Cache environment lookups to avoid repeated database queries
+                if (!isset($this->environmentCache[$environment])) {
+                    $env = Environment::where('name', $environment)->first();
+                    $this->environmentCache[$environment] = $env ? $env->id : null;
+                }
+                $environmentId = $this->environmentCache[$environment];
+            }
+            
+            // Get gateway settings for the specified environment
+            $gatewaySettings = $this->getGatewaySettings($gatewayCode, $environmentId);
+            
+            if (!$gatewaySettings) {
+                return [
+                    'success' => false,
+                    'message' => "Payment gateway '$gatewayCode' not configured for the specified environment"
+                ];
+            }
+            
+            // Create and initialize the gateway
+            $gateway = $this->gatewayFactory->create($gatewayCode, $gatewaySettings);
+            
+            if (!$gateway) {
+                return [
+                    'success' => false,
+                    'message' => "Payment gateway '$gatewayCode' not supported"
+                ];
+            }
+            
+            return [
+                'success' => true,
+                'gateway' => $gateway,
+                'settings' => $gatewaySettings
+            ];
+            
+        } catch (\Exception $e) {
+            Log::error('Gateway initialization failed: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Gateway initialization failed: ' . $e->getMessage()
+            ];
+        }
+    }
+    
+    /**
+     * Process a payment with environment-specific configuration
+     * Get the payment gateway settings for a specific gateway and environment
+     *
+     * @param string $gatewayCode
+     * @param int|null $environmentId
+     * @return PaymentGatewaySetting|null
+     */
+    private function getGatewaySettings(string $gatewayCode, ?int $environmentId): ?PaymentGatewaySetting
+    {
+        return PaymentGatewaySetting::where('gateway_code', $gatewayCode)
+            ->where(function ($query) use ($environmentId) {
+                $query->where('environment_id', $environmentId)
+                    ->orWhereNull('environment_id');
+            })
+            ->where('status', true)
+            ->first();
+    }
+    
+    /**
+     * Create a transaction record for the payment
+     *
+     * @param Order $order
+     * @param PaymentGatewaySetting $gatewaySettings
+     * @param string $gatewayCode
+     * @return Transaction
+     */
+    private function createTransactionRecord(Order $order, PaymentGatewaySetting $gatewaySettings, string $gatewayCode): Transaction
+    {
+        $transaction = new Transaction();
+        $transaction->order_id = $order->id;
+        $transaction->environment_id = $order->environment_id;
+        $transaction->payment_gateway_setting_id = $gatewaySettings->id;
+        $transaction->gateway_code = $gatewayCode;
+        $transaction->transaction_id = 'TXN-' . Str::random(16);
+        $transaction->customer_id = $order->user_id;
+        $transaction->customer_name = $order->billing_name;
+        $transaction->customer_email = $order->billing_email;
+        $transaction->amount = $order->total_amount;
+        $transaction->total_amount = $order->total_amount;
+        $transaction->currency = $order->currency ?? 'USD';
+        $transaction->description = 'Payment for order #' . $order->order_number;
+        $transaction->status = Transaction::STATUS_PENDING;
+        $transaction->save();
+        
+        return $transaction;
+    }
+    
+    /**
+     * Process payment with the appropriate gateway
+     *
+     * @param string $gatewayCode
+     * @param PaymentGatewaySetting $gatewaySettings
+     * @param Transaction $transaction
+     * @param array $paymentData
+     * @return array
+     * @throws \Exception
+     */
+    
+    /**
+     * Enhance the payment result with gateway-specific data
+     *
+     * @param string $gatewayCode
+     * @param PaymentGatewaySetting $gatewaySettings
+     * @param array $result
+     * @return array
+     */
+    private function enhancePaymentResult(string $gatewayCode, PaymentGatewaySetting $gatewaySettings, array $result): array
+    {
+        // Only enhance successful results
+        if (!isset($result['success']) || !$result['success']) {
+            return $result;
+        }
+        
+        // Add gateway-specific enhancements
+        switch (strtolower($gatewayCode)) {
+            case 'stripe':
+                // Add Stripe publishable key for frontend use
+                if (isset($result['type']) && $result['type'] === 'client_secret') {
+                    $result['publishable_key'] = $gatewaySettings->getConfigValue('publishable_key');
+                }
+                break;
+                
+            case 'paypal':
+                // Add PayPal-specific data if needed
+                break;
+                
+            case 'lygos':
+                // Add Lygos-specific data if needed
+                break;
+        }
+        
+        return $result;
     }
     
     /**

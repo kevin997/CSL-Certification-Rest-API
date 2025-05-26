@@ -19,6 +19,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 
 class StorefrontController extends Controller
 {
@@ -31,6 +32,1074 @@ class StorefrontController extends Controller
     protected function getEnvironmentById(string $environmentId)
     {
         return Environment::find($environmentId);
+    }
+    
+    /**
+     * Get a list of countries
+     *
+     * @param Request $request
+     * @param string $environmentId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getCountries(Request $request, string $environmentId)
+    {
+        $environment = $this->getEnvironmentById($environmentId);
+        
+        if (!$environment) {
+            return response()->json(['message' => 'Environment not found'], 404);
+        }
+        
+        // List of countries with their codes
+        $countries = [
+            // Common countries
+            ['code' => 'US', 'name' => 'United States'],
+            ['code' => 'CA', 'name' => 'Canada'],
+            ['code' => 'GB', 'name' => 'United Kingdom'],
+            ['code' => 'AU', 'name' => 'Australia'],
+            ['code' => 'FR', 'name' => 'France'],
+            ['code' => 'DE', 'name' => 'Germany'],
+            ['code' => 'IT', 'name' => 'Italy'],
+            ['code' => 'ES', 'name' => 'Spain'],
+            ['code' => 'JP', 'name' => 'Japan'],
+            ['code' => 'CN', 'name' => 'China'],
+            ['code' => 'IN', 'name' => 'India'],
+            ['code' => 'BR', 'name' => 'Brazil'],
+            ['code' => 'MX', 'name' => 'Mexico'],
+            ['code' => 'ZA', 'name' => 'South Africa'],
+            ['code' => 'AE', 'name' => 'United Arab Emirates'],
+            ['code' => 'AR', 'name' => 'Argentina'],
+            ['code' => 'AT', 'name' => 'Austria'],
+            ['code' => 'BE', 'name' => 'Belgium'],
+            ['code' => 'CL', 'name' => 'Chile'],
+            ['code' => 'CO', 'name' => 'Colombia'],
+            ['code' => 'CZ', 'name' => 'Czech Republic'],
+            ['code' => 'DK', 'name' => 'Denmark'],
+            ['code' => 'EG', 'name' => 'Egypt'],
+            ['code' => 'FI', 'name' => 'Finland'],
+            ['code' => 'GR', 'name' => 'Greece'],
+            ['code' => 'HK', 'name' => 'Hong Kong'],
+            ['code' => 'HU', 'name' => 'Hungary'],
+            ['code' => 'ID', 'name' => 'Indonesia'],
+            ['code' => 'IE', 'name' => 'Ireland'],
+            ['code' => 'IL', 'name' => 'Israel'],
+            ['code' => 'KR', 'name' => 'South Korea'],
+            ['code' => 'MY', 'name' => 'Malaysia'],
+            ['code' => 'NL', 'name' => 'Netherlands'],
+            ['code' => 'NO', 'name' => 'Norway'],
+            ['code' => 'NZ', 'name' => 'New Zealand'],
+            ['code' => 'PE', 'name' => 'Peru'],
+            ['code' => 'PH', 'name' => 'Philippines'],
+            ['code' => 'PL', 'name' => 'Poland'],
+            ['code' => 'PT', 'name' => 'Portugal'],
+            ['code' => 'RO', 'name' => 'Romania'],
+            ['code' => 'RU', 'name' => 'Russia'],
+            ['code' => 'SE', 'name' => 'Sweden'],
+            ['code' => 'SG', 'name' => 'Singapore'],
+            ['code' => 'TH', 'name' => 'Thailand'],
+            ['code' => 'TR', 'name' => 'Turkey'],
+            ['code' => 'UA', 'name' => 'Ukraine'],
+            ['code' => 'VN', 'name' => 'Vietnam'],
+            
+            // CEMAC Countries (Economic and Monetary Community of Central Africa)
+            ['code' => 'CM', 'name' => 'Cameroon'],
+            ['code' => 'CF', 'name' => 'Central African Republic'],
+            ['code' => 'TD', 'name' => 'Chad'],
+            ['code' => 'CG', 'name' => 'Republic of Congo'],
+            ['code' => 'GQ', 'name' => 'Equatorial Guinea'],
+            ['code' => 'GA', 'name' => 'Gabon'],
+            
+            // ECOWAS/CEDEAO Countries (Economic Community of West African States)
+            ['code' => 'BJ', 'name' => 'Benin'],
+            ['code' => 'BF', 'name' => 'Burkina Faso'],
+            ['code' => 'CV', 'name' => 'Cape Verde'],
+            ['code' => 'GM', 'name' => 'The Gambia'],
+            ['code' => 'GH', 'name' => 'Ghana'],
+            ['code' => 'GN', 'name' => 'Guinea'],
+            ['code' => 'GW', 'name' => 'Guinea-Bissau'],
+            ['code' => 'CI', 'name' => 'Ivory Coast'],
+            ['code' => 'LR', 'name' => 'Liberia'],
+            ['code' => 'ML', 'name' => 'Mali'],
+            ['code' => 'NE', 'name' => 'Niger'],
+            ['code' => 'NG', 'name' => 'Nigeria'],
+            ['code' => 'SN', 'name' => 'Senegal'],
+            ['code' => 'SL', 'name' => 'Sierra Leone'],
+            ['code' => 'TG', 'name' => 'Togo'],
+        ];
+        
+        return response()->json([
+            'success' => true,
+            'data' => $countries,
+            'environment' => $environment
+        ]);
+    }
+    
+    /**
+     * Get a list of states/provinces for a country
+     *
+     * @param Request $request
+     * @param string $environmentId
+     * @param string $countryCode
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getStates(Request $request, string $environmentId, string $countryCode)
+    {
+        $environment = $this->getEnvironmentById($environmentId);
+        
+        if (!$environment) {
+            return response()->json(['message' => 'Environment not found'], 404);
+        }
+        
+        $states = [];
+        
+        // Return states based on country code
+        if ($countryCode === 'US') {
+            $states = [
+                ['code' => 'AL', 'name' => 'Alabama'],
+                ['code' => 'AK', 'name' => 'Alaska'],
+                ['code' => 'AZ', 'name' => 'Arizona'],
+                ['code' => 'AR', 'name' => 'Arkansas'],
+                ['code' => 'CA', 'name' => 'California'],
+                ['code' => 'CO', 'name' => 'Colorado'],
+                ['code' => 'CT', 'name' => 'Connecticut'],
+                ['code' => 'DE', 'name' => 'Delaware'],
+                ['code' => 'FL', 'name' => 'Florida'],
+                ['code' => 'GA', 'name' => 'Georgia'],
+                ['code' => 'HI', 'name' => 'Hawaii'],
+                ['code' => 'ID', 'name' => 'Idaho'],
+                ['code' => 'IL', 'name' => 'Illinois'],
+                ['code' => 'IN', 'name' => 'Indiana'],
+                ['code' => 'IA', 'name' => 'Iowa'],
+                ['code' => 'KS', 'name' => 'Kansas'],
+                ['code' => 'KY', 'name' => 'Kentucky'],
+                ['code' => 'LA', 'name' => 'Louisiana'],
+                ['code' => 'ME', 'name' => 'Maine'],
+                ['code' => 'MD', 'name' => 'Maryland'],
+                ['code' => 'MA', 'name' => 'Massachusetts'],
+                ['code' => 'MI', 'name' => 'Michigan'],
+                ['code' => 'MN', 'name' => 'Minnesota'],
+                ['code' => 'MS', 'name' => 'Mississippi'],
+                ['code' => 'MO', 'name' => 'Missouri'],
+                ['code' => 'MT', 'name' => 'Montana'],
+                ['code' => 'NE', 'name' => 'Nebraska'],
+                ['code' => 'NV', 'name' => 'Nevada'],
+                ['code' => 'NH', 'name' => 'New Hampshire'],
+                ['code' => 'NJ', 'name' => 'New Jersey'],
+                ['code' => 'NM', 'name' => 'New Mexico'],
+                ['code' => 'NY', 'name' => 'New York'],
+                ['code' => 'NC', 'name' => 'North Carolina'],
+                ['code' => 'ND', 'name' => 'North Dakota'],
+                ['code' => 'OH', 'name' => 'Ohio'],
+                ['code' => 'OK', 'name' => 'Oklahoma'],
+                ['code' => 'OR', 'name' => 'Oregon'],
+                ['code' => 'PA', 'name' => 'Pennsylvania'],
+                ['code' => 'RI', 'name' => 'Rhode Island'],
+                ['code' => 'SC', 'name' => 'South Carolina'],
+                ['code' => 'SD', 'name' => 'South Dakota'],
+                ['code' => 'TN', 'name' => 'Tennessee'],
+                ['code' => 'TX', 'name' => 'Texas'],
+                ['code' => 'UT', 'name' => 'Utah'],
+                ['code' => 'VT', 'name' => 'Vermont'],
+                ['code' => 'VA', 'name' => 'Virginia'],
+                ['code' => 'WA', 'name' => 'Washington'],
+                ['code' => 'WV', 'name' => 'West Virginia'],
+                ['code' => 'WI', 'name' => 'Wisconsin'],
+                ['code' => 'WY', 'name' => 'Wyoming'],
+                ['code' => 'DC', 'name' => 'District of Columbia']
+            ];
+        } else if ($countryCode === 'CA') {
+            $states = [
+                ['code' => 'AB', 'name' => 'Alberta'],
+                ['code' => 'BC', 'name' => 'British Columbia'],
+                ['code' => 'MB', 'name' => 'Manitoba'],
+                ['code' => 'NB', 'name' => 'New Brunswick'],
+                ['code' => 'NL', 'name' => 'Newfoundland and Labrador'],
+                ['code' => 'NS', 'name' => 'Nova Scotia'],
+                ['code' => 'NT', 'name' => 'Northwest Territories'],
+                ['code' => 'NU', 'name' => 'Nunavut'],
+                ['code' => 'ON', 'name' => 'Ontario'],
+                ['code' => 'PE', 'name' => 'Prince Edward Island'],
+                ['code' => 'QC', 'name' => 'Quebec'],
+                ['code' => 'SK', 'name' => 'Saskatchewan'],
+                ['code' => 'YT', 'name' => 'Yukon']
+            ];
+        } else if ($countryCode === 'GB') {
+            $states = [
+                ['code' => 'ENG', 'name' => 'England'],
+                ['code' => 'SCT', 'name' => 'Scotland'],
+                ['code' => 'WLS', 'name' => 'Wales'],
+                ['code' => 'NIR', 'name' => 'Northern Ireland']
+            ];
+        } else if ($countryCode === 'AU') {
+            $states = [
+                ['code' => 'ACT', 'name' => 'Australian Capital Territory'],
+                ['code' => 'NSW', 'name' => 'New South Wales'],
+                ['code' => 'NT', 'name' => 'Northern Territory'],
+                ['code' => 'QLD', 'name' => 'Queensland'],
+                ['code' => 'SA', 'name' => 'South Australia'],
+                ['code' => 'TAS', 'name' => 'Tasmania'],
+                ['code' => 'VIC', 'name' => 'Victoria'],
+                ['code' => 'WA', 'name' => 'Western Australia']
+            ];
+        } else if ($countryCode === 'DE') {
+            $states = [
+                ['code' => 'BW', 'name' => 'Baden-Württemberg'],
+                ['code' => 'BY', 'name' => 'Bavaria'],
+                ['code' => 'BE', 'name' => 'Berlin'],
+                ['code' => 'BB', 'name' => 'Brandenburg'],
+                ['code' => 'HB', 'name' => 'Bremen'],
+                ['code' => 'HH', 'name' => 'Hamburg'],
+                ['code' => 'HE', 'name' => 'Hesse'],
+                ['code' => 'MV', 'name' => 'Mecklenburg-Vorpommern'],
+                ['code' => 'NI', 'name' => 'Lower Saxony'],
+                ['code' => 'NW', 'name' => 'North Rhine-Westphalia'],
+                ['code' => 'RP', 'name' => 'Rhineland-Palatinate'],
+                ['code' => 'SL', 'name' => 'Saarland'],
+                ['code' => 'SN', 'name' => 'Saxony'],
+                ['code' => 'ST', 'name' => 'Saxony-Anhalt'],
+                ['code' => 'SH', 'name' => 'Schleswig-Holstein'],
+                ['code' => 'TH', 'name' => 'Thuringia']
+            ];
+        } else if ($countryCode === 'IN') {
+            $states = [
+                ['code' => 'AP', 'name' => 'Andhra Pradesh'],
+                ['code' => 'AR', 'name' => 'Arunachal Pradesh'],
+                ['code' => 'AS', 'name' => 'Assam'],
+                ['code' => 'BR', 'name' => 'Bihar'],
+                ['code' => 'CT', 'name' => 'Chhattisgarh'],
+                ['code' => 'GA', 'name' => 'Goa'],
+                ['code' => 'GJ', 'name' => 'Gujarat'],
+                ['code' => 'HR', 'name' => 'Haryana'],
+                ['code' => 'HP', 'name' => 'Himachal Pradesh'],
+                ['code' => 'JH', 'name' => 'Jharkhand'],
+                ['code' => 'KA', 'name' => 'Karnataka'],
+                ['code' => 'KL', 'name' => 'Kerala'],
+                ['code' => 'MP', 'name' => 'Madhya Pradesh'],
+                ['code' => 'MH', 'name' => 'Maharashtra'],
+                ['code' => 'MN', 'name' => 'Manipur'],
+                ['code' => 'ML', 'name' => 'Meghalaya'],
+                ['code' => 'MZ', 'name' => 'Mizoram'],
+                ['code' => 'NL', 'name' => 'Nagaland'],
+                ['code' => 'OR', 'name' => 'Odisha'],
+                ['code' => 'PB', 'name' => 'Punjab'],
+                ['code' => 'RJ', 'name' => 'Rajasthan'],
+                ['code' => 'SK', 'name' => 'Sikkim'],
+                ['code' => 'TN', 'name' => 'Tamil Nadu'],
+                ['code' => 'TG', 'name' => 'Telangana'],
+                ['code' => 'TR', 'name' => 'Tripura'],
+                ['code' => 'UT', 'name' => 'Uttarakhand'],
+                ['code' => 'UP', 'name' => 'Uttar Pradesh'],
+                ['code' => 'WB', 'name' => 'West Bengal']
+            ];
+        } else if ($countryCode === 'MX') {
+            $states = [
+                ['code' => 'AGU', 'name' => 'Aguascalientes'],
+                ['code' => 'BCN', 'name' => 'Baja California'],
+                ['code' => 'BCS', 'name' => 'Baja California Sur'],
+                ['code' => 'CAM', 'name' => 'Campeche'],
+                ['code' => 'CHP', 'name' => 'Chiapas'],
+                ['code' => 'CHH', 'name' => 'Chihuahua'],
+                ['code' => 'CMX', 'name' => 'Ciudad de México'],
+                ['code' => 'COA', 'name' => 'Coahuila'],
+                ['code' => 'COL', 'name' => 'Colima'],
+                ['code' => 'DUR', 'name' => 'Durango'],
+                ['code' => 'GUA', 'name' => 'Guanajuato'],
+                ['code' => 'GRO', 'name' => 'Guerrero'],
+                ['code' => 'HID', 'name' => 'Hidalgo'],
+                ['code' => 'JAL', 'name' => 'Jalisco'],
+                ['code' => 'MEX', 'name' => 'México'],
+                ['code' => 'MIC', 'name' => 'Michoacán'],
+                ['code' => 'MOR', 'name' => 'Morelos'],
+                ['code' => 'NAY', 'name' => 'Nayarit'],
+                ['code' => 'NLE', 'name' => 'Nuevo León'],
+                ['code' => 'OAX', 'name' => 'Oaxaca'],
+                ['code' => 'PUE', 'name' => 'Puebla'],
+                ['code' => 'QUE', 'name' => 'Querétaro'],
+                ['code' => 'ROO', 'name' => 'Quintana Roo'],
+                ['code' => 'SLP', 'name' => 'San Luis Potosí'],
+                ['code' => 'SIN', 'name' => 'Sinaloa'],
+                ['code' => 'SON', 'name' => 'Sonora'],
+                ['code' => 'TAB', 'name' => 'Tabasco'],
+                ['code' => 'TAM', 'name' => 'Tamaulipas'],
+                ['code' => 'TLA', 'name' => 'Tlaxcala'],
+                ['code' => 'VER', 'name' => 'Veracruz'],
+                ['code' => 'YUC', 'name' => 'Yucatán'],
+                ['code' => 'ZAC', 'name' => 'Zacatecas']
+            ];
+        }
+        // CEMAC Countries
+        // Cameroon
+        else if ($countryCode === 'CM') {
+            $states = [
+                ['code' => 'AD', 'name' => 'Adamawa'],
+                ['code' => 'CE', 'name' => 'Centre'],
+                ['code' => 'ES', 'name' => 'East'],
+                ['code' => 'EN', 'name' => 'Far North'],
+                ['code' => 'LT', 'name' => 'Littoral'],
+                ['code' => 'NO', 'name' => 'North'],
+                ['code' => 'NW', 'name' => 'North-West'],
+                ['code' => 'SU', 'name' => 'South'],
+                ['code' => 'SW', 'name' => 'South-West'],
+                ['code' => 'OU', 'name' => 'West']
+            ];
+        }
+        // Central African Republic
+        else if ($countryCode === 'CF') {
+            $states = [
+                ['code' => 'BGF', 'name' => 'Bangui'],
+                ['code' => 'BB', 'name' => 'Bamingui-Bangoran'],
+                ['code' => 'BK', 'name' => 'Basse-Kotto'],
+                ['code' => 'HK', 'name' => 'Haute-Kotto'],
+                ['code' => 'HM', 'name' => 'Haut-Mbomou'],
+                ['code' => 'KG', 'name' => 'Kémo'],
+                ['code' => 'LB', 'name' => 'Lobaye'],
+                ['code' => 'HS', 'name' => 'Mambéré-Kadéï'],
+                ['code' => 'MB', 'name' => 'Mbomou'],
+                ['code' => 'NM', 'name' => 'Nana-Mambéré'],
+                ['code' => 'MP', 'name' => 'Ombella-M\'Poko'],
+                ['code' => 'UK', 'name' => 'Ouaka'],
+                ['code' => 'AC', 'name' => 'Ouham'],
+                ['code' => 'OP', 'name' => 'Ouham-Pendé'],
+                ['code' => 'SE', 'name' => 'Sangha-Mbaéré'],
+                ['code' => 'VK', 'name' => 'Vakaga']
+            ];
+        }
+        // Chad
+        else if ($countryCode === 'TD') {
+            $states = [
+                ['code' => 'BA', 'name' => 'Batha'],
+                ['code' => 'BG', 'name' => 'Borkou'],
+                ['code' => 'CB', 'name' => 'Chari-Baguirmi'],
+                ['code' => 'EE', 'name' => 'Ennedi-Est'],
+                ['code' => 'EO', 'name' => 'Ennedi-Ouest'],
+                ['code' => 'GR', 'name' => 'Guéra'],
+                ['code' => 'HL', 'name' => 'Hadjer-Lamis'],
+                ['code' => 'KA', 'name' => 'Kanem'],
+                ['code' => 'LC', 'name' => 'Lac'],
+                ['code' => 'LO', 'name' => 'Logone Occidental'],
+                ['code' => 'LR', 'name' => 'Logone Oriental'],
+                ['code' => 'MA', 'name' => 'Mandoul'],
+                ['code' => 'ME', 'name' => 'Mayo-Kebbi Est'],
+                ['code' => 'MO', 'name' => 'Mayo-Kebbi Ouest'],
+                ['code' => 'MC', 'name' => 'Moyen-Chari'],
+                ['code' => 'ND', 'name' => 'N\'Djamena'],
+                ['code' => 'OD', 'name' => 'Ouaddaï'],
+                ['code' => 'SA', 'name' => 'Salamat'],
+                ['code' => 'SI', 'name' => 'Sila'],
+                ['code' => 'TA', 'name' => 'Tandjilé'],
+                ['code' => 'TI', 'name' => 'Tibesti'],
+                ['code' => 'WF', 'name' => 'Wadi Fira']
+            ];
+        }
+        // Republic of Congo
+        else if ($countryCode === 'CG') {
+            $states = [
+                ['code' => 'BZV', 'name' => 'Brazzaville'],
+                ['code' => 'PNR', 'name' => 'Pointe-Noire'],
+                ['code' => 'BOU', 'name' => 'Bouenza'],
+                ['code' => 'CUV', 'name' => 'Cuvette'],
+                ['code' => 'CUE', 'name' => 'Cuvette-Ouest'],
+                ['code' => 'KOU', 'name' => 'Kouilou'],
+                ['code' => 'LEK', 'name' => 'Lékoumou'],
+                ['code' => 'LIK', 'name' => 'Likouala'],
+                ['code' => 'NIA', 'name' => 'Niari'],
+                ['code' => 'PLT', 'name' => 'Plateaux'],
+                ['code' => 'POO', 'name' => 'Pool'],
+                ['code' => 'SAN', 'name' => 'Sangha']
+            ];
+        }
+        // Equatorial Guinea
+        else if ($countryCode === 'GQ') {
+            $states = [
+                ['code' => 'AN', 'name' => 'Annobón'],
+                ['code' => 'BN', 'name' => 'Bioko Norte'],
+                ['code' => 'BS', 'name' => 'Bioko Sur'],
+                ['code' => 'CS', 'name' => 'Centro Sur'],
+                ['code' => 'KN', 'name' => 'Kié-Ntem'],
+                ['code' => 'LI', 'name' => 'Litoral'],
+                ['code' => 'WN', 'name' => 'Wele-Nzas']
+            ];
+        }
+        // Gabon
+        else if ($countryCode === 'GA') {
+            $states = [
+                ['code' => 'ES', 'name' => 'Estuaire'],
+                ['code' => 'HO', 'name' => 'Haut-Ogooué'],
+                ['code' => 'MO', 'name' => 'Moyen-Ogooué'],
+                ['code' => 'NG', 'name' => 'Ngounié'],
+                ['code' => 'NY', 'name' => 'Nyanga'],
+                ['code' => 'OI', 'name' => 'Ogooué-Ivindo'],
+                ['code' => 'OL', 'name' => 'Ogooué-Lolo'],
+                ['code' => 'OM', 'name' => 'Ogooué-Maritime'],
+                ['code' => 'WN', 'name' => 'Woleu-Ntem']
+            ];
+        }
+        // ECOWAS Countries
+        // Nigeria
+        else if ($countryCode === 'NG') {
+            $states = [
+                ['code' => 'AB', 'name' => 'Abia'],
+                ['code' => 'AD', 'name' => 'Adamawa'],
+                ['code' => 'AK', 'name' => 'Akwa Ibom'],
+                ['code' => 'AN', 'name' => 'Anambra'],
+                ['code' => 'BA', 'name' => 'Bauchi'],
+                ['code' => 'BY', 'name' => 'Bayelsa'],
+                ['code' => 'BE', 'name' => 'Benue'],
+                ['code' => 'BO', 'name' => 'Borno'],
+                ['code' => 'CR', 'name' => 'Cross River'],
+                ['code' => 'DE', 'name' => 'Delta'],
+                ['code' => 'EB', 'name' => 'Ebonyi'],
+                ['code' => 'ED', 'name' => 'Edo'],
+                ['code' => 'EK', 'name' => 'Ekiti'],
+                ['code' => 'EN', 'name' => 'Enugu'],
+                ['code' => 'FC', 'name' => 'Federal Capital Territory'],
+                ['code' => 'GO', 'name' => 'Gombe'],
+                ['code' => 'IM', 'name' => 'Imo'],
+                ['code' => 'JI', 'name' => 'Jigawa'],
+                ['code' => 'KD', 'name' => 'Kaduna'],
+                ['code' => 'KN', 'name' => 'Kano'],
+                ['code' => 'KT', 'name' => 'Katsina'],
+                ['code' => 'KE', 'name' => 'Kebbi'],
+                ['code' => 'KO', 'name' => 'Kogi'],
+                ['code' => 'KW', 'name' => 'Kwara'],
+                ['code' => 'LA', 'name' => 'Lagos'],
+                ['code' => 'NA', 'name' => 'Nasarawa'],
+                ['code' => 'NI', 'name' => 'Niger'],
+                ['code' => 'OG', 'name' => 'Ogun'],
+                ['code' => 'ON', 'name' => 'Ondo'],
+                ['code' => 'OS', 'name' => 'Osun'],
+                ['code' => 'OY', 'name' => 'Oyo'],
+                ['code' => 'PL', 'name' => 'Plateau'],
+                ['code' => 'RI', 'name' => 'Rivers'],
+                ['code' => 'SO', 'name' => 'Sokoto'],
+                ['code' => 'TA', 'name' => 'Taraba'],
+                ['code' => 'YO', 'name' => 'Yobe'],
+                ['code' => 'ZA', 'name' => 'Zamfara']
+            ];
+        }
+        // Ghana
+        else if ($countryCode === 'GH') {
+            $states = [
+                ['code' => 'AF', 'name' => 'Ahafo'],
+                ['code' => 'AH', 'name' => 'Ashanti'],
+                ['code' => 'BA', 'name' => 'Bono'],
+                ['code' => 'BE', 'name' => 'Bono East'],
+                ['code' => 'CP', 'name' => 'Central'],
+                ['code' => 'EP', 'name' => 'Eastern'],
+                ['code' => 'AA', 'name' => 'Greater Accra'],
+                ['code' => 'NE', 'name' => 'North East'],
+                ['code' => 'NP', 'name' => 'Northern'],
+                ['code' => 'OT', 'name' => 'Oti'],
+                ['code' => 'SV', 'name' => 'Savannah'],
+                ['code' => 'UE', 'name' => 'Upper East'],
+                ['code' => 'UW', 'name' => 'Upper West'],
+                ['code' => 'TV', 'name' => 'Volta'],
+                ['code' => 'WP', 'name' => 'Western'],
+                ['code' => 'WN', 'name' => 'Western North']
+            ];
+        }
+        // Senegal
+        else if ($countryCode === 'SN') {
+            $states = [
+                ['code' => 'DK', 'name' => 'Dakar'],
+                ['code' => 'DB', 'name' => 'Diourbel'],
+                ['code' => 'FK', 'name' => 'Fatick'],
+                ['code' => 'KA', 'name' => 'Kaffrine'],
+                ['code' => 'KL', 'name' => 'Kaolack'],
+                ['code' => 'KD', 'name' => 'Kolda'],
+                ['code' => 'KE', 'name' => 'Kédougou'],
+                ['code' => 'LG', 'name' => 'Louga'],
+                ['code' => 'MT', 'name' => 'Matam'],
+                ['code' => 'SL', 'name' => 'Saint-Louis'],
+                ['code' => 'SE', 'name' => 'Sédhiou'],
+                ['code' => 'TC', 'name' => 'Tambacounda'],
+                ['code' => 'TH', 'name' => 'Thiès'],
+                ['code' => 'ZG', 'name' => 'Ziguinchor']
+            ];
+        }
+        // Ivory Coast
+        else if ($countryCode === 'CI') {
+            $states = [
+                ['code' => 'AB', 'name' => 'Abidjan'],
+                ['code' => 'BS', 'name' => 'Bas-Sassandra'],
+                ['code' => 'CM', 'name' => 'Comoé'],
+                ['code' => 'DN', 'name' => 'Denguélé'],
+                ['code' => 'GD', 'name' => 'Gôh-Djiboua'],
+                ['code' => 'LC', 'name' => 'Lacs'],
+                ['code' => 'LG', 'name' => 'Lagunes'],
+                ['code' => 'MG', 'name' => 'Montagnes'],
+                ['code' => 'SM', 'name' => 'Sassandra-Marahoué'],
+                ['code' => 'SV', 'name' => 'Savanes'],
+                ['code' => 'VB', 'name' => 'Vallée du Bandama'],
+                ['code' => 'WR', 'name' => 'Woroba'],
+                ['code' => 'YM', 'name' => 'Yamoussoukro'],
+                ['code' => 'ZZ', 'name' => 'Zanzan']
+            ];
+        }
+        
+        return response()->json([
+            'success' => true,
+            'data' => $states,
+            'environment' => $environment
+        ]);
+    }
+    
+    /**
+     * Get a list of cities for a state/province
+     *
+     * @param Request $request
+     * @param string $environmentId
+     * @param string $countryCode
+     * @param string $stateCode
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getCities(Request $request, string $environmentId, string $countryCode, string $stateCode)
+    {
+        $environment = $this->getEnvironmentById($environmentId);
+        
+        if (!$environment) {
+            return response()->json(['message' => 'Environment not found'], 404);
+        }
+        
+        // For demonstration purposes, return a sample list of cities
+        // In a real application, you would query a database or use a third-party API
+        $cities = [];
+        
+        // US Cities
+        if ($countryCode === 'US') {
+            // California
+            if ($stateCode === 'CA') {
+                $cities = [
+                    ['name' => 'Los Angeles'],
+                    ['name' => 'San Francisco'],
+                    ['name' => 'San Diego'],
+                    ['name' => 'Sacramento'],
+                    ['name' => 'San Jose'],
+                    ['name' => 'Fresno'],
+                    ['name' => 'Oakland'],
+                    ['name' => 'Bakersfield'],
+                    ['name' => 'Anaheim'],
+                    ['name' => 'Santa Ana'],
+                    ['name' => 'Riverside'],
+                    ['name' => 'Irvine'],
+                    ['name' => 'San Bernardino'],
+                    ['name' => 'Modesto'],
+                    ['name' => 'Fontana']
+                ];
+            } 
+            // New York
+            else if ($stateCode === 'NY') {
+                $cities = [
+                    ['name' => 'New York City'],
+                    ['name' => 'Buffalo'],
+                    ['name' => 'Rochester'],
+                    ['name' => 'Yonkers'],
+                    ['name' => 'Syracuse'],
+                    ['name' => 'Albany'],
+                    ['name' => 'New Rochelle'],
+                    ['name' => 'Mount Vernon'],
+                    ['name' => 'Schenectady'],
+                    ['name' => 'Utica'],
+                    ['name' => 'Binghamton'],
+                    ['name' => 'Troy'],
+                    ['name' => 'Niagara Falls'],
+                    ['name' => 'White Plains'],
+                    ['name' => 'Saratoga Springs']
+                ];
+            }
+            // Texas
+            else if ($stateCode === 'TX') {
+                $cities = [
+                    ['name' => 'Houston'],
+                    ['name' => 'San Antonio'],
+                    ['name' => 'Dallas'],
+                    ['name' => 'Austin'],
+                    ['name' => 'Fort Worth'],
+                    ['name' => 'El Paso'],
+                    ['name' => 'Arlington'],
+                    ['name' => 'Corpus Christi'],
+                    ['name' => 'Plano'],
+                    ['name' => 'Laredo'],
+                    ['name' => 'Lubbock'],
+                    ['name' => 'Garland'],
+                    ['name' => 'Irving'],
+                    ['name' => 'Amarillo'],
+                    ['name' => 'Grand Prairie']
+                ];
+            }
+            // Florida
+            else if ($stateCode === 'FL') {
+                $cities = [
+                    ['name' => 'Jacksonville'],
+                    ['name' => 'Miami'],
+                    ['name' => 'Tampa'],
+                    ['name' => 'Orlando'],
+                    ['name' => 'St. Petersburg'],
+                    ['name' => 'Hialeah'],
+                    ['name' => 'Tallahassee'],
+                    ['name' => 'Fort Lauderdale'],
+                    ['name' => 'Port St. Lucie'],
+                    ['name' => 'Cape Coral'],
+                    ['name' => 'Pembroke Pines'],
+                    ['name' => 'Hollywood'],
+                    ['name' => 'Miramar'],
+                    ['name' => 'Gainesville'],
+                    ['name' => 'Coral Springs']
+                ];
+            }
+        }
+        // Canada Cities
+        else if ($countryCode === 'CA') {
+            // Ontario
+            if ($stateCode === 'ON') {
+                $cities = [
+                    ['name' => 'Toronto'],
+                    ['name' => 'Ottawa'],
+                    ['name' => 'Mississauga'],
+                    ['name' => 'Brampton'],
+                    ['name' => 'Hamilton'],
+                    ['name' => 'London'],
+                    ['name' => 'Markham'],
+                    ['name' => 'Vaughan'],
+                    ['name' => 'Kitchener'],
+                    ['name' => 'Windsor']
+                ];
+            }
+            // British Columbia
+            else if ($stateCode === 'BC') {
+                $cities = [
+                    ['name' => 'Vancouver'],
+                    ['name' => 'Victoria'],
+                    ['name' => 'Surrey'],
+                    ['name' => 'Burnaby'],
+                    ['name' => 'Richmond'],
+                    ['name' => 'Abbotsford'],
+                    ['name' => 'Kelowna'],
+                    ['name' => 'Coquitlam'],
+                    ['name' => 'Saanich'],
+                    ['name' => 'Delta']
+                ];
+            }
+            // Quebec
+            else if ($stateCode === 'QC') {
+                $cities = [
+                    ['name' => 'Montreal'],
+                    ['name' => 'Quebec City'],
+                    ['name' => 'Laval'],
+                    ['name' => 'Gatineau'],
+                    ['name' => 'Longueuil'],
+                    ['name' => 'Sherbrooke'],
+                    ['name' => 'Saguenay'],
+                    ['name' => 'Lévis'],
+                    ['name' => 'Trois-Rivières'],
+                    ['name' => 'Terrebonne']
+                ];
+            }
+        }
+        // UK Cities
+        else if ($countryCode === 'GB') {
+            // England
+            if ($stateCode === 'ENG') {
+                $cities = [
+                    ['name' => 'London'],
+                    ['name' => 'Birmingham'],
+                    ['name' => 'Manchester'],
+                    ['name' => 'Liverpool'],
+                    ['name' => 'Leeds'],
+                    ['name' => 'Sheffield'],
+                    ['name' => 'Bristol'],
+                    ['name' => 'Newcastle'],
+                    ['name' => 'Nottingham'],
+                    ['name' => 'Southampton'],
+                    ['name' => 'Oxford'],
+                    ['name' => 'Cambridge'],
+                    ['name' => 'York'],
+                    ['name' => 'Brighton'],
+                    ['name' => 'Portsmouth']
+                ];
+            }
+            // Scotland
+            else if ($stateCode === 'SCT') {
+                $cities = [
+                    ['name' => 'Edinburgh'],
+                    ['name' => 'Glasgow'],
+                    ['name' => 'Aberdeen'],
+                    ['name' => 'Dundee'],
+                    ['name' => 'Inverness'],
+                    ['name' => 'Perth'],
+                    ['name' => 'Stirling'],
+                    ['name' => 'St Andrews'],
+                    ['name' => 'Paisley'],
+                    ['name' => 'Falkirk']
+                ];
+            }
+            // Wales
+            else if ($stateCode === 'WLS') {
+                $cities = [
+                    ['name' => 'Cardiff'],
+                    ['name' => 'Swansea'],
+                    ['name' => 'Newport'],
+                    ['name' => 'Bangor'],
+                    ['name' => 'St Davids'],
+                    ['name' => 'Wrexham'],
+                    ['name' => 'St Asaph'],
+                    ['name' => 'Aberystwyth'],
+                    ['name' => 'Llandudno'],
+                    ['name' => 'Carmarthen']
+                ];
+            }
+        }
+        // Australian Cities
+        else if ($countryCode === 'AU') {
+            // New South Wales
+            if ($stateCode === 'NSW') {
+                $cities = [
+                    ['name' => 'Sydney'],
+                    ['name' => 'Newcastle'],
+                    ['name' => 'Wollongong'],
+                    ['name' => 'Central Coast'],
+                    ['name' => 'Maitland'],
+                    ['name' => 'Wagga Wagga'],
+                    ['name' => 'Albury'],
+                    ['name' => 'Port Macquarie'],
+                    ['name' => 'Tamworth'],
+                    ['name' => 'Orange']
+                ];
+            }
+            // Victoria
+            else if ($stateCode === 'VIC') {
+                $cities = [
+                    ['name' => 'Melbourne'],
+                    ['name' => 'Geelong'],
+                    ['name' => 'Ballarat'],
+                    ['name' => 'Bendigo'],
+                    ['name' => 'Shepparton'],
+                    ['name' => 'Melton'],
+                    ['name' => 'Mildura'],
+                    ['name' => 'Warrnambool'],
+                    ['name' => 'Wodonga'],
+                    ['name' => 'Traralgon']
+                ];
+            }
+            // Queensland
+            else if ($stateCode === 'QLD') {
+                $cities = [
+                    ['name' => 'Brisbane'],
+                    ['name' => 'Gold Coast'],
+                    ['name' => 'Sunshine Coast'],
+                    ['name' => 'Townsville'],
+                    ['name' => 'Cairns'],
+                    ['name' => 'Toowoomba'],
+                    ['name' => 'Mackay'],
+                    ['name' => 'Rockhampton'],
+                    ['name' => 'Bundaberg'],
+                    ['name' => 'Hervey Bay']
+                ];
+            }
+        }
+        // CEMAC Countries Cities
+        // Cameroon
+        else if ($countryCode === 'CM') {
+            // Centre Region
+            if ($stateCode === 'CE') {
+                $cities = [
+                    ['name' => 'Yaoundé'],
+                    ['name' => 'Mbalmayo'],
+                    ['name' => 'Obala'],
+                    ['name' => 'Bafia'],
+                    ['name' => 'Monatélé'],
+                    ['name' => 'Nanga Eboko'],
+                    ['name' => 'Ntui'],
+                    ['name' => 'Eseka'],
+                    ['name' => 'Mfou'],
+                    ['name' => 'Nkoteng']
+                ];
+            }
+            // Littoral Region
+            else if ($stateCode === 'LT') {
+                $cities = [
+                    ['name' => 'Douala'],
+                    ['name' => 'Nkongsamba'],
+                    ['name' => 'Edéa'],
+                    ['name' => 'Loum'],
+                    ['name' => 'Manjo'],
+                    ['name' => 'Mbanga'],
+                    ['name' => 'Dizangué'],
+                    ['name' => 'Yabassi'],
+                    ['name' => 'Penja'],
+                    ['name' => 'Njombé']
+                ];
+            }
+            // North-West Region
+            else if ($stateCode === 'NW') {
+                $cities = [
+                    ['name' => 'Bamenda'],
+                    ['name' => 'Kumbo'],
+                    ['name' => 'Nkambé'],
+                    ['name' => 'Wum'],
+                    ['name' => 'Mbengwi'],
+                    ['name' => 'Fundong'],
+                    ['name' => 'Ndop'],
+                    ['name' => 'Batibo'],
+                    ['name' => 'Bali'],
+                    ['name' => 'Jakiri']
+                ];
+            }
+        }
+        // Republic of Congo
+        else if ($countryCode === 'CG') {
+            // Brazzaville
+            if ($stateCode === 'BZV') {
+                $cities = [
+                    ['name' => 'Brazzaville'],
+                    ['name' => 'Kintelé'],
+                    ['name' => 'Nganga Lingolo'],
+                    ['name' => 'Linzolo'],
+                    ['name' => 'Kintambo'],
+                    ['name' => 'Mbamou'],
+                    ['name' => 'Goma Tsé-Tsé'],
+                    ['name' => 'Ignié'],
+                    ['name' => 'Makoua'],
+                    ['name' => 'Ngabé']
+                ];
+            }
+            // Pointe-Noire
+            else if ($stateCode === 'PNR') {
+                $cities = [
+                    ['name' => 'Pointe-Noire'],
+                    ['name' => 'Tié-Tié'],
+                    ['name' => 'Loandjili'],
+                    ['name' => 'Mongo-Mpoukou'],
+                    ['name' => 'Ngoyo'],
+                    ['name' => 'Lumumba'],
+                    ['name' => 'Mvou-Mvou'],
+                    ['name' => 'Tchibamba'],
+                    ['name' => 'Nkouikou'],
+                    ['name' => 'Vindoulou']
+                ];
+            }
+        }
+        // Gabon
+        else if ($countryCode === 'GA') {
+            // Estuaire
+            if ($stateCode === 'ES') {
+                $cities = [
+                    ['name' => 'Libreville'],
+                    ['name' => 'Owendo'],
+                    ['name' => 'Ntoum'],
+                    ['name' => 'Kango'],
+                    ['name' => 'Cocobeach'],
+                    ['name' => 'Ndzomoe'],
+                    ['name' => 'Cap Estérias'],
+                    ['name' => 'Cap Santa Clara'],
+                    ['name' => 'Donguila'],
+                    ['name' => 'Ikoy-Tsini']
+                ];
+            }
+            // Haut-Ogooué
+            else if ($stateCode === 'HO') {
+                $cities = [
+                    ['name' => 'Franceville'],
+                    ['name' => 'Moanda'],
+                    ['name' => 'Mounana'],
+                    ['name' => 'Okondja'],
+                    ['name' => 'Akiéni'],
+                    ['name' => 'Lékoni'],
+                    ['name' => 'Bakoumba'],
+                    ['name' => 'Ngouoni'],
+                    ['name' => 'Bongoville'],
+                    ['name' => 'Boumango']
+                ];
+            }
+        }
+        // ECOWAS Countries Cities
+        // Nigeria
+        else if ($countryCode === 'NG') {
+            // Lagos
+            if ($stateCode === 'LA') {
+                $cities = [
+                    ['name' => 'Lagos'],
+                    ['name' => 'Ikeja'],
+                    ['name' => 'Badagry'],
+                    ['name' => 'Epe'],
+                    ['name' => 'Ikorodu'],
+                    ['name' => 'Lekki'],
+                    ['name' => 'Mushin'],
+                    ['name' => 'Oshodi'],
+                    ['name' => 'Surulere'],
+                    ['name' => 'Yaba'],
+                    ['name' => 'Ajah'],
+                    ['name' => 'Alimosho'],
+                    ['name' => 'Apapa'],
+                    ['name' => 'Festac'],
+                    ['name' => 'Victoria Island']
+                ];
+            }
+            // Federal Capital Territory
+            else if ($stateCode === 'FC') {
+                $cities = [
+                    ['name' => 'Abuja'],
+                    ['name' => 'Gwagwalada'],
+                    ['name' => 'Kuje'],
+                    ['name' => 'Bwari'],
+                    ['name' => 'Kwali'],
+                    ['name' => 'Abaji'],
+                    ['name' => 'Kubwa'],
+                    ['name' => 'Nyanya'],
+                    ['name' => 'Karu'],
+                    ['name' => 'Jabi'],
+                    ['name' => 'Maitama'],
+                    ['name' => 'Asokoro'],
+                    ['name' => 'Wuse'],
+                    ['name' => 'Garki'],
+                    ['name' => 'Lugbe']
+                ];
+            }
+            // Rivers
+            else if ($stateCode === 'RI') {
+                $cities = [
+                    ['name' => 'Port Harcourt'],
+                    ['name' => 'Bonny'],
+                    ['name' => 'Degema'],
+                    ['name' => 'Eleme'],
+                    ['name' => 'Okrika'],
+                    ['name' => 'Omoku'],
+                    ['name' => 'Opobo'],
+                    ['name' => 'Oyigbo'],
+                    ['name' => 'Buguma'],
+                    ['name' => 'Bori'],
+                    ['name' => 'Ahoada'],
+                    ['name' => 'Eberi'],
+                    ['name' => 'Etche'],
+                    ['name' => 'Isiokpo'],
+                    ['name' => 'Tai']
+                ];
+            }
+        }
+        // Ghana
+        else if ($countryCode === 'GH') {
+            // Greater Accra
+            if ($stateCode === 'AA') {
+                $cities = [
+                    ['name' => 'Accra'],
+                    ['name' => 'Tema'],
+                    ['name' => 'Madina'],
+                    ['name' => 'Teshie'],
+                    ['name' => 'Ashaiman'],
+                    ['name' => 'Adenta'],
+                    ['name' => 'Dome'],
+                    ['name' => 'Nungua'],
+                    ['name' => 'Osu'],
+                    ['name' => 'La'],
+                    ['name' => 'Dansoman'],
+                    ['name' => 'Kaneshie'],
+                    ['name' => 'Achimota'],
+                    ['name' => 'Labadi'],
+                    ['name' => 'Jamestown']
+                ];
+            }
+            // Ashanti
+            else if ($stateCode === 'AH') {
+                $cities = [
+                    ['name' => 'Kumasi'],
+                    ['name' => 'Obuasi'],
+                    ['name' => 'Bekwai'],
+                    ['name' => 'Ejisu'],
+                    ['name' => 'Mampong'],
+                    ['name' => 'Konongo'],
+                    ['name' => 'Asokore Mampong'],
+                    ['name' => 'Effiduase'],
+                    ['name' => 'Offinso'],
+                    ['name' => 'Ejura'],
+                    ['name' => 'Agona'],
+                    ['name' => 'Juaben'],
+                    ['name' => 'Tepa'],
+                    ['name' => 'Agogo'],
+                    ['name' => 'Nkawie']
+                ];
+            }
+        }
+        // Senegal
+        else if ($countryCode === 'SN') {
+            // Dakar
+            if ($stateCode === 'DK') {
+                $cities = [
+                    ['name' => 'Dakar'],
+                    ['name' => 'Pikine'],
+                    ['name' => 'Guédiawaye'],
+                    ['name' => 'Rufisque'],
+                    ['name' => 'Bargny'],
+                    ['name' => 'Sébikotane'],
+                    ['name' => 'Diamniadio'],
+                    ['name' => 'Yène'],
+                    ['name' => 'Sangalkam'],
+                    ['name' => 'Jaxaay'],
+                    ['name' => 'Keur Massar'],
+                    ['name' => 'Mbao'],
+                    ['name' => 'Thiaroye'],
+                    ['name' => 'Yeumbeul'],
+                    ['name' => 'Malika']
+                ];
+            }
+            // Saint-Louis
+            else if ($stateCode === 'SL') {
+                $cities = [
+                    ['name' => 'Saint-Louis'],
+                    ['name' => 'Dagana'],
+                    ['name' => 'Richard Toll'],
+                    ['name' => 'Podor'],
+                    ['name' => 'Matam'],
+                    ['name' => 'Ndioum'],
+                    ['name' => 'Ross Béthio'],
+                    ['name' => 'Mpal'],
+                    ['name' => 'Guédé'],
+                    ['name' => 'Galoya']
+                ];
+            }
+        }
+        // Ivory Coast
+        else if ($countryCode === 'CI') {
+            // Abidjan
+            if ($stateCode === 'AB') {
+                $cities = [
+                    ['name' => 'Abidjan'],
+                    ['name' => 'Abobo'],
+                    ['name' => 'Adjamé'],
+                    ['name' => 'Attécoubé'],
+                    ['name' => 'Cocody'],
+                    ['name' => 'Koumassi'],
+                    ['name' => 'Marcory'],
+                    ['name' => 'Plateau'],
+                    ['name' => 'Port-Bouët'],
+                    ['name' => 'Treichville'],
+                    ['name' => 'Yopougon'],
+                    ['name' => 'Bingerville'],
+                    ['name' => 'Songon'],
+                    ['name' => 'Anyama'],
+                    ['name' => 'Grand-Bassam']
+                ];
+            }
+            // Yamoussoukro
+            else if ($stateCode === 'YM') {
+                $cities = [
+                    ['name' => 'Yamoussoukro'],
+                    ['name' => 'Toumodi'],
+                    ['name' => 'Tiébissou'],
+                    ['name' => 'Didiévi'],
+                    ['name' => 'Attiégouakro'],
+                    ['name' => 'Molonou'],
+                    ['name' => 'Kossou'],
+                    ['name' => 'Lolobo'],
+                    ['name' => 'Seman'],
+                    ['name' => 'Zatta']
+                ];
+            }
+        }
+        
+        return response()->json([
+            'success' => true,
+            'data' => $cities,
+            'environment' => $environment
+        ]);
     }
 
     /**
@@ -124,6 +1193,10 @@ class StorefrontController extends Controller
                 case 'oldest':
                     $sortField = 'created_at';
                     $sortDirection = 'asc';
+                    break;
+                case 'newest':
+                    $sortField = 'created_at';
+                    $sortDirection = 'desc';
                     break;
             }
         }
@@ -351,6 +1424,8 @@ class StorefrontController extends Controller
             DB::beginTransaction();
             
             // Find or create user by email
+            $userExists = User::where('email', $request->input('email'))->exists();
+            
             $user = User::firstOrCreate(
                 ['email' => $request->input('email')],
                 [
@@ -359,7 +1434,41 @@ class StorefrontController extends Controller
                 ]
             );
             
-            // Create order
+            // Dispatch event for user creation/environment association
+            event(new \App\Events\UserCreatedDuringCheckout(
+                $user,
+                $environment,
+                !$userExists // isNewUser flag is true if the user didn't exist before
+            ));
+            
+            // Calculate total amount first
+            $totalAmount = 0;
+            $orderItems = [];
+            
+            // Process products and calculate total
+            foreach ($request->input('products') as $item) {
+                $product = Product::findOrFail($item['id']);
+                
+                // Skip if product doesn't belong to this environment
+                if ($product->environment_id !== $environment->id) {
+                    continue;
+                }
+                
+                $price = $product->discount_price ?? $product->price;
+                $quantity = $item['quantity'];
+                $total = $price * $quantity;
+                
+                $orderItems[] = [
+                    'product' => $product,
+                    'quantity' => $quantity,
+                    'price' => $price,
+                    'total' => $total
+                ];
+                
+                $totalAmount += $total;
+            }
+            
+            // Create order with total amount already set
             $order = new Order();
             $order->user_id = $user->id;
             $order->environment_id = $environment->id;
@@ -375,73 +1484,102 @@ class StorefrontController extends Controller
             $order->billing_country = $request->input('billing_country');
             $order->notes = $request->input('notes');
             $order->referral_id = $request->input('referral_id');
-            $order->save();
-            
-            // Calculate total amount
-            $totalAmount = 0;
-            
-            // Add order items
-            foreach ($request->input('products') as $item) {
-                $product = Product::findOrFail($item['id']);
-                
-                // Skip if product doesn't belong to this environment
-                if ($product->environment_id !== $environment->id) {
-                    continue;
-                }
-                
-                $price = $product->discount_price ?? $product->price;
-                $quantity = $item['quantity'];
-                $total = $price * $quantity;
-                
-                $orderItem = new OrderItem();
-                $orderItem->order_id = $order->id;
-                $orderItem->product_id = $product->id;
-                $orderItem->quantity = $quantity;
-                $orderItem->price = $price;
-                $orderItem->total = $total;
-                $orderItem->is_subscription = $product->is_subscription;
-                $orderItem->save();
-                
-                $totalAmount += $total;
-            }
-            
-            // Update order total
             $order->total_amount = $totalAmount;
             $order->currency = 'USD'; // Default currency
             $order->save();
             
-            // Create transaction
-            $transaction = new Transaction();
-            $transaction->transaction_id = (string) Str::uuid();
-            $transaction->environment_id = $environment->id;
-            $transaction->payment_gateway_setting_id = $request->input('payment_method');
-            $transaction->order_id = $order->id;
-            $transaction->customer_id = $user->id;
-            $transaction->customer_email = $user->email;
-            $transaction->customer_name = $user->name;
-            $transaction->amount = $totalAmount;
-            $transaction->total_amount = $totalAmount;
-            $transaction->currency = 'USD';
-            $transaction->status = Transaction::STATUS_PENDING;
-            $transaction->payment_method = 'credit_card'; // Default payment method
-            $transaction->description = "Payment for order {$order->order_number}";
-            $transaction->ip_address = $request->ip();
-            $transaction->user_agent = $request->userAgent();
-            $transaction->save();
+           
             
             DB::commit();
+            
+            // Prepare the response data
+            $responseData = [
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+                'total_amount' => $totalAmount,
+                'status' => 'pending'
+            ];
+            
+            // Get the payment gateway code
+            $gatewayCode = null;
+            if ($request->has('payment_method')) {
+                $gatewaySettings = PaymentGatewaySetting::find($request->input('payment_method'));
+                if ($gatewaySettings) {
+                    $gatewayCode = $gatewaySettings->gateway_code;
+                }
+            }
+            
+            // If we have a valid gateway, create a payment session/intent
+            if ($gatewayCode) {
+                try {
+                    // Create the payment using the appropriate gateway
+                    $paymentService = app(\App\Services\PaymentService::class);
+                    $paymentResult = $paymentService->createPayment(
+                        $order->id,
+                        $gatewayCode,
+                        [],
+                        $environment->id
+                    );
+                    
+                    // Get transaction ID from payment result if available
+                    $transactionId = $paymentResult['transaction_id'] ?? null;
+                    
+                    if ($paymentResult['success']) {
+                        // Add payment-specific data to the response based on the gateway type
+                        switch ($paymentResult['type']) {
+                            case 'client_secret':
+                                // For Stripe inline payments
+                                $responseData['payment_type'] = 'stripe';
+                                $responseData['client_secret'] = $paymentResult['value'];
+                                $responseData['publishable_key'] = $paymentResult['publishable_key'] ?? null;
+                                break;
+                                
+                            case 'checkout_url':
+                                // For PayPal redirect-based payments
+                                $responseData['payment_type'] = 'paypal';
+                                $responseData['redirect_url'] = $paymentResult['value'];
+                                break;
+                                
+                            case 'payment_url':
+                                // For Lygos redirect-based payments
+                                $responseData['payment_type'] = 'lygos';
+                                $responseData['redirect_url'] = $paymentResult['value'];
+                                break;
+                                
+                            default:
+                                // Fallback to traditional payment processing
+                                $responseData['payment_type'] = 'standard';
+                                // Use transaction ID if available, otherwise use order ID
+                                $responseData['payment_url'] = $transactionId 
+                                    ? route('api.transactions.process', ['id' => $transactionId])
+                                    : route('api.orders.process', ['id' => $order->id]);
+                        }
+                    } else {
+                        // If payment creation failed, fall back to the traditional payment URL
+                        $responseData['payment_type'] = 'standard';
+                        // Use order ID since payment creation failed
+                        $responseData['payment_url'] = route('api.orders.process', ['id' => $order->id]);
+                        // Log the error for debugging
+                        Log::error('Payment creation failed: ' . ($paymentResult['message'] ?? 'Unknown error'));
+                    }
+                } catch (\Exception $e) {
+                    // If an exception occurred, fall back to the traditional payment URL
+                    $responseData['payment_type'] = 'standard';
+                    // Use order ID since we encountered an exception
+                    $responseData['payment_url'] = route('api.orders.process', ['id' => $order->id]);
+                    // Log the error for debugging
+                    Log::error('Payment creation exception: ' . $e->getMessage());
+                }
+            } else {
+                // If no gateway was specified, use the traditional payment URL
+                $responseData['payment_type'] = 'standard';
+                $responseData['payment_url'] = route('api.orders.process', ['id' => $order->id]);
+            }
             
             return response()->json([
                 'success' => true,
                 'message' => 'Order created successfully',
-                'data' => [
-                    'order_id' => $order->id,
-                    'order_number' => $order->order_number,
-                    'transaction_id' => $transaction->transaction_id,
-                    'total_amount' => $totalAmount,
-                    'status' => 'pending',
-                    'payment_url' => route('api.transactions.process', ['id' => $transaction->id]),
-                ]
+                'data' => $responseData
             ]);
             
         } catch (\Exception $e) {
