@@ -1509,6 +1509,8 @@ class StorefrontController extends Controller
                 }
             }
             
+            Log::info('Gateway Code: ' . $gatewayCode);
+            
             // If we have a valid gateway, create a payment session/intent
             if ($gatewayCode) {
                 try {
@@ -1547,33 +1549,27 @@ class StorefrontController extends Controller
                                 break;
                                 
                             default:
-                                // Fallback to traditional payment processing
+                                // Fallback to standard payment type
                                 $responseData['payment_type'] = 'standard';
-                                // Use transaction ID if available, otherwise use order ID
-                                $responseData['payment_url'] = $transactionId 
-                                    ? route('api.transactions.process', ['id' => $transactionId])
-                                    : route('api.orders.process', ['id' => $order->id]);
+                                // No payment_url needed for standard payment type
+                                break;
                         }
                     } else {
-                        // If payment creation failed, fall back to the traditional payment URL
+                        // If payment creation failed, fall back to standard payment type
                         $responseData['payment_type'] = 'standard';
-                        // Use order ID since payment creation failed
-                        $responseData['payment_url'] = route('api.orders.process', ['id' => $order->id]);
                         // Log the error for debugging
                         Log::error('Payment creation failed: ' . ($paymentResult['message'] ?? 'Unknown error'));
                     }
                 } catch (\Exception $e) {
-                    // If an exception occurred, fall back to the traditional payment URL
+                    // If an exception occurred, fall back to standard payment type
                     $responseData['payment_type'] = 'standard';
-                    // Use order ID since we encountered an exception
-                    $responseData['payment_url'] = route('api.orders.process', ['id' => $order->id]);
                     // Log the error for debugging
                     Log::error('Payment creation exception: ' . $e->getMessage());
                 }
             } else {
-                // If no gateway was specified, use the traditional payment URL
+                // If no gateway was specified, just confirm the order was placed successfully
                 $responseData['payment_type'] = 'standard';
-                $responseData['payment_url'] = route('api.orders.process', ['id' => $order->id]);
+                // No payment_url needed - frontend will redirect to success page
             }
             
             return response()->json([
@@ -1845,4 +1841,74 @@ class StorefrontController extends Controller
         
         return response()->json(['data' => $course]);
     }
+    
+    /**
+     * Get products for an environment (maps to getAllProducts)
+     * 
+     * @param Request $request
+     * @param string $environmentId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getProducts(Request $request, string $environmentId)
+    {
+        // This method maps to getAllProducts to maintain API compatibility
+        return $this->getAllProducts($request, $environmentId);
+    }
+    
+    /**
+     * Get a product by ID or slug
+     * 
+     * @param Request $request
+     * @param string $environmentId
+     * @param string $productId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getProduct(Request $request, string $environmentId, string $productId)
+    {
+        // Determine if the productId is numeric (ID) or a string (slug)
+        if (is_numeric($productId)) {
+            return $this->getProductById($request, $environmentId, (int)$productId);
+        } else {
+            return $this->getProductBySlug($request, $environmentId, $productId);
+        }
+    }
+    
+    /**
+     * Get a category by ID
+     * 
+     * @param Request $request
+     * @param string $environmentId
+     * @param int $categoryId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getCategory(Request $request, string $environmentId, int $categoryId)
+    {
+        $environment = $this->getEnvironmentById($environmentId);
+        
+        if (!$environment) {
+            return response()->json(['message' => 'Environment not found'], 404);
+        }
+        
+        $category = ProductCategory::where('environment_id', $environment->id)
+            ->where('id', $categoryId)
+            ->first();
+        
+        if (!$category) {
+            return response()->json(['message' => 'Category not found'], 404);
+        }
+        
+        // Get products in this category
+        $products = Product::whereHas('categories', function($query) use ($categoryId) {
+                $query->where('product_category_id', $categoryId);
+            })
+            ->where('environment_id', $environment->id)
+            ->where('status', 'published')
+            ->paginate(12);
+        
+        $category->products = $products;
+        
+        return response()->json(['data' => $category]);
+    }
+    
+
 }

@@ -316,7 +316,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/transactions', [TransactionController::class, 'store']);
     Route::get('/transactions/{id}', [TransactionController::class, 'show']);
     Route::put('/transactions/{id}/status', [TransactionController::class, 'updateStatus']);
-    Route::post('/transactions/{id}/process', [TransactionController::class, 'process'])->name('api.transactions.process');
     Route::post('/transactions/callback/success', [TransactionController::class, 'callbackSuccess'])->name('api.transactions.callback.success');
     Route::post('/transactions/callback/failure', [TransactionController::class, 'callbackFailure'])->name('api.transactions.callback.failure');
     Route::post('/transactions/webhook/{gateway}', [TransactionController::class, 'webhook'])->name('api.transactions.webhook');
@@ -363,6 +362,12 @@ Route::group(['prefix' => 'storefront'], function () {
     Route::get('/{environmentId}/products', [StorefrontController::class, 'getProducts']);
     Route::get('/{environmentId}/products/{productId}', [StorefrontController::class, 'getProduct']);
     
+    // Get featured products
+    Route::get('/{environmentId}/featured-products', [StorefrontController::class, 'getFeaturedProducts']);
+    
+    // Additional routes for singular product access (for backward compatibility)
+    Route::get('/{environmentId}/product/{productId}', [StorefrontController::class, 'getProduct']);
+    
     // Get product categories
     Route::get('/{environmentId}/categories', [StorefrontController::class, 'getCategories']);
     Route::get('/{environmentId}/categories/{categoryId}', [StorefrontController::class, 'getCategory']);
@@ -375,6 +380,8 @@ Route::group(['prefix' => 'storefront'], function () {
     
     // Process checkout
     Route::post('/{environmentId}/checkout', [StorefrontController::class, 'checkout']);
+    
+
     
     // Get product reviews
     Route::get('/{environmentId}/products/{productId}/reviews', [StorefrontController::class, 'getProductReviews']);
