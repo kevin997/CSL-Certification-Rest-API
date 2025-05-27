@@ -9,6 +9,45 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
+/**
+ * @OA\Schema(
+ *     schema="AssignmentSubmission",
+ *     type="object",
+ *     @OA\Property(property="id", type="integer", format="int64", example=1),
+ *     @OA\Property(property="assignment_content_id", type="integer", format="int64", example=1),
+ *     @OA\Property(property="user_id", type="integer", format="int64", example=1),
+ *     @OA\Property(property="submission_text", type="string", example="This is my assignment submission"),
+ *     @OA\Property(property="status", type="string", example="submitted", description="draft, submitted, graded"),
+ *     @OA\Property(property="score", type="number", format="float", example=85, nullable=true),
+ *     @OA\Property(property="feedback", type="string", example="Good work!", nullable=true),
+ *     @OA\Property(property="attempt_number", type="integer", example=1),
+ *     @OA\Property(property="submitted_at", type="string", format="date-time", example="2025-05-27T15:00:00Z"),
+ *     @OA\Property(property="graded_by", type="integer", format="int64", example=2, nullable=true),
+ *     @OA\Property(property="graded_at", type="string", format="date-time", example="2025-05-28T10:00:00Z", nullable=true),
+ *     @OA\Property(property="created_at", type="string", format="date-time", example="2025-05-27T14:00:00Z"),
+ *     @OA\Property(property="updated_at", type="string", format="date-time", example="2025-05-27T15:00:00Z"),
+ *     @OA\Property(property="deleted_at", type="string", format="date-time", example=null, nullable=true),
+ *     @OA\Property(
+ *         property="user",
+ *         type="object",
+ *         @OA\Property(property="id", type="integer", format="int64", example=1),
+ *         @OA\Property(property="name", type="string", example="John Doe"),
+ *         @OA\Property(property="email", type="string", format="email", example="john@example.com")
+ *     ),
+ *     @OA\Property(
+ *         property="files",
+ *         type="array",
+ *         @OA\Items(type="object",
+ *             @OA\Property(property="id", type="integer", format="int64", example=1),
+ *             @OA\Property(property="filename", type="string", example="assignment.pdf"),
+ *             @OA\Property(property="path", type="string", example="submissions/assignment.pdf"),
+ *             @OA\Property(property="size", type="integer", example=1024),
+ *             @OA\Property(property="mime_type", type="string", example="application/pdf")
+ *         )
+ *     )
+ * )
+ */
+
 class AssignmentSubmission extends Model
 {
     use HasFactory, SoftDeletes, HasGradedBy;
