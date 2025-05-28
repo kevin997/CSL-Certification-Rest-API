@@ -44,7 +44,14 @@ class CertificateGenerationService
         }
         
         try {
-            $response = Http::post($this->service->base_url . '/api/login', [
+            // Get config from service
+            $config = json_decode($this->service->config ?? '{}', true);
+            $verifySSL = $config['verify_ssl'] ?? false;
+            
+            // Disable SSL verification for the request
+            $response = Http::withOptions([
+                'verify' => $verifySSL,
+            ])->post($this->service->base_url . '/api/login', [
                 'email' => $this->service->username,
                 'password' => $this->service->password,
             ]);
@@ -85,8 +92,14 @@ class CertificateGenerationService
         $url = $this->service->base_url . '/api/' . ltrim($endpoint, '/');
         
         try {
-            // Prepare the request
-            $request = Http::withToken($this->service->bearer_token);
+            // Get config from service
+            $config = json_decode($this->service->config ?? '{}', true);
+            $verifySSL = $config['verify_ssl'] ?? false;
+            
+            // Prepare the request with SSL verification disabled
+            $request = Http::withOptions([
+                'verify' => $verifySSL,
+            ])->withToken($this->service->bearer_token);
             
             // Attach files if any
             foreach ($files as $name => $file) {
