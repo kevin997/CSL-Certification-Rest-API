@@ -201,68 +201,73 @@ class OrderController extends Controller
      * )
      */
     public function index(Request $request)
-    {
-        // Check if user has permission to view all orders
-        if (!Auth::user()->is_admin) {
-            return $this->myOrders($request);
-        }
+{
+    // Get the environment from the request
+    $environment = $request->environment;
 
-        $query = Order::with(['user', 'items.product']);
-        
-        // Apply filters
-        if ($request->has('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('order_number', 'like', "%{$search}%")
-                  ->orWhere('billing_name', 'like', "%{$search}%")
-                  ->orWhere('billing_email', 'like', "%{$search}%");
-            });
-        }
-        
-        if ($request->has('status')) {
-            $query->where('status', $request->status);
-        }
-        
-        if ($request->has('user_id')) {
-            $query->where('user_id', $request->user_id);
-        }
-        
-        if ($request->has('min_amount')) {
-            $query->where('total_amount', '>=', $request->min_amount);
-        }
-        
-        if ($request->has('max_amount')) {
-            $query->where('total_amount', '<=', $request->max_amount);
-        }
-        
-        if ($request->has('from_date')) {
-            $query->whereDate('created_at', '>=', $request->from_date);
-        }
-        
-        if ($request->has('to_date')) {
-            $query->whereDate('created_at', '<=', $request->to_date);
-        }
-        
-        // Apply sorting
-        $sortField = $request->input('sort_field', 'created_at');
-        $sortDirection = $request->input('sort_direction', 'desc');
-        $allowedSortFields = ['order_number', 'total_amount', 'status', 'created_at'];
-        
-        if (in_array($sortField, $allowedSortFields)) {
-            $query->orderBy($sortField, $sortDirection === 'asc' ? 'asc' : 'desc');
-        } else {
-            $query->orderBy('created_at', 'desc');
-        }
-        
-        // Pagination
-        $perPage = $request->input('per_page', 15);
-        $orders = $query->paginate($perPage);
-        
-        return response()->json([
-            'status' => 'success',
-            'data' => $orders,
-        ]);
+    $query = Order::with(['user', 'items.product']);
+    
+    // Always filter by environment_id
+    if ($environment) {
+        $query->where('environment_id', $environment->id);
+    } elseif ($request->has('environment_id')) {
+        $query->where('environment_id', $request->environment_id);
     }
+    
+    // Apply filters
+    if ($request->has('search')) {
+        $search = $request->search;
+        $query->where(function ($q) use ($search) {
+            $q->where('order_number', 'like', "%{$search}%")
+              ->orWhere('billing_name', 'like', "%{$search}%")
+              ->orWhere('billing_email', 'like', "%{$search}%");
+        });
+    }
+    
+    if ($request->has('status')) {
+        $query->where('status', $request->status);
+    }
+    
+    if ($request->has('user_id')) {
+        $query->where('user_id', $request->user_id);
+    }
+    
+    if ($request->has('min_amount')) {
+        $query->where('total_amount', '>=', $request->min_amount);
+    }
+    
+    if ($request->has('max_amount')) {
+        $query->where('total_amount', '<=', $request->max_amount);
+    }
+    
+    if ($request->has('from_date')) {
+        $query->whereDate('created_at', '>=', $request->from_date);
+    }
+    
+    if ($request->has('to_date')) {
+        $query->whereDate('created_at', '<=', $request->to_date);
+    }
+    
+    // Apply sorting
+    $sortField = $request->input('sort_field', 'created_at');
+    $sortDirection = $request->input('sort_direction', 'desc');
+    $allowedSortFields = ['order_number', 'total_amount', 'status', 'created_at'];
+    
+    if (in_array($sortField, $allowedSortFields)) {
+        $query->orderBy($sortField, $sortDirection === 'asc' ? 'asc' : 'desc');
+    } else {
+        $query->orderBy('created_at', 'desc');
+    }
+    
+    // Pagination
+    $perPage = $request->input('per_page', 15);
+    $orders = $query->paginate($perPage);
+    
+    return response()->json([
+        'status' => 'success',
+        'data' => $orders,
+    ]);
+}
 
     /**
      * Display a listing of the current user's orders.

@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\LessonContentController;
 use App\Http\Controllers\Api\LessonQuestionResponseController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PaymentGatewayController;
+use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\ProductCategoryController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProfileController;
@@ -34,13 +35,20 @@ use App\Http\Controllers\Api\QuestionController;
 use App\Http\Controllers\Api\QuizContentController;
 use App\Http\Controllers\Api\ReferralController;
 use App\Http\Controllers\Api\TemplateController;
+use App\Http\Controllers\Api\TemplateActivityQuestionController;
 use App\Http\Controllers\Api\TextContentController;
 use App\Http\Controllers\Api\TokenController;
 use App\Http\Controllers\Api\TransactionController;
+use App\Http\Controllers\Api\ValidationController;
 use App\Http\Controllers\Api\VideoContentController;
-use App\Http\Controllers\Api\TemplateActivityQuestionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\StorefrontController;
+use App\Http\Controllers\Api\Onboarding\AfterPlanSelectionOnboarding;
+use App\Http\Controllers\Api\ReferralEnvironmentController;
+use App\Http\Controllers\Api\FinanceController;
+use App\Http\Controllers\Api\AnalyticsController;
+
 
 
 Route::get('/debug/environments', function() {
@@ -92,9 +100,20 @@ Route::post('/reset-password', [ResetPasswordController::class, 'reset']);
 Route::post('/tokens', [TokenController::class, 'createToken']);
 Route::delete('/tokens', [TokenController::class, 'revokeTokens'])->middleware('auth:sanctum');
 
+// Sales Platform Authentication Routes
+Route::post('/admin/sales/tokens', [\App\Http\Controllers\Api\Sales\AuthController::class, 'login']);
+Route::get('/admin/sales/user', [\App\Http\Controllers\Api\Sales\AuthController::class, 'user'])->middleware('auth:sanctum');
+Route::post('/admin/sales/logout', [\App\Http\Controllers\Api\Sales\AuthController::class, 'logout'])->middleware('auth:sanctum');
+
 // Environment routes
 Route::get('/current-environment', [EnvironmentController::class, 'getCurrentEnvironment']);
 
+// Public Plan routes
+Route::get('/public/plans', [PlanController::class, 'index']);
+Route::get('/public/plans/{id}', [PlanController::class, 'show']);
+Route::get('/public/plans/type/{type}', [PlanController::class, 'getByType']);
+Route::post('/public/plans/compare', [PlanController::class, 'compare']);
+Route::post('/public/onboarding/after-plan-selection', [AfterPlanSelectionOnboarding::class, 'store']);
 // Environment management routes
 Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('environments', EnvironmentController::class);
@@ -112,6 +131,54 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::middleware('auth:sanctum')->group(function () {
     // Dashboard data
     Route::get('/dashboard', [DashboardController::class, 'getDashboardData']);
+});
+
+// Sales Dashboard Routes
+Route::middleware('auth:sanctum')->group(function () {
+    // Admin dashboard stats
+    Route::get('/sales/admin/stats', [App\Http\Controllers\Api\Sales\SalesDashboardController::class, 'getAdminStats']);
+    
+    // Sales agent dashboard stats
+    Route::get('/sales/agent/stats', [App\Http\Controllers\Api\Sales\SalesDashboardController::class, 'getAgentStats']);
+    
+    // Performance by period
+    Route::get('/sales/performance', [App\Http\Controllers\Api\Sales\SalesDashboardController::class, 'getPerformanceByPeriod']);
+});
+
+// Sales Agent Management Routes
+Route::middleware('auth:sanctum')->group(function () {
+    // Sales agent listing and creation
+    Route::get('/sales-agents', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'index']);
+    Route::post('/sales-agents', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'store']);
+    
+    // Individual sales agent operations
+    Route::get('/sales-agents/{id}', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'show']);
+    Route::put('/sales-agents/{id}', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'update']);
+    Route::delete('/sales-agents/{id}', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'destroy']);
+    
+    // Sales agent performance
+    Route::get('/sales-agents/{id}/performance', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'getPerformance']);
+    
+    // Sales agent referrals
+    Route::get('/sales-agents/{id}/referrals', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'getReferrals']);
+});
+
+// Referral Management Routes
+Route::middleware('auth:sanctum')->group(function () {
+    // Referral listing and creation
+    Route::get('/referrals', [App\Http\Controllers\Api\ReferralController::class, 'index']);
+    Route::post('/referrals', [App\Http\Controllers\Api\ReferralController::class, 'store']);
+    
+    // Referral statistics (must come before wildcard routes)
+    Route::get('/referrals/stats', [App\Http\Controllers\Api\ReferralController::class, 'getStats']);
+    
+    // Validate referral code
+    Route::post('/referrals/validate', [App\Http\Controllers\Api\ReferralController::class, 'validate']);
+    
+    // Individual referral operations (wildcard routes come last)
+    Route::get('/referrals/{id}', [App\Http\Controllers\Api\ReferralController::class, 'show']);
+    Route::put('/referrals/{id}', [App\Http\Controllers\Api\ReferralController::class, 'update']);
+    Route::delete('/referrals/{id}', [App\Http\Controllers\Api\ReferralController::class, 'destroy']);
 });
 
 // Template Management Routes
@@ -298,6 +365,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/orders/{id}/status', [OrderController::class, 'updateStatus']);
     Route::get('/my-orders', [OrderController::class, 'myOrders']);
     
+    // Plan routes
+    Route::get('/plans', [PlanController::class, 'index']);
+    Route::get('/plans/{id}', [PlanController::class, 'show']);
+    Route::get('/plans/type/{type}', [PlanController::class, 'getByType']);
+    Route::post('/plans/compare', [PlanController::class, 'compare']);
+    
     // Profile routes
     Route::get('/profile', [ProfileController::class, 'getProfile']);
     Route::put('/profile', [ProfileController::class, 'updateProfile']);
@@ -322,19 +395,32 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // Marketing routes
     // Referral routes
-    Route::get('/referrals', [ReferralController::class, 'index']);
-    Route::post('/referrals', [ReferralController::class, 'store']);
-    Route::get('/referrals/{id}', [ReferralController::class, 'show']);
-    Route::put('/referrals/{id}', [ReferralController::class, 'update']);
-    Route::delete('/referrals/{id}', [ReferralController::class, 'destroy']);
-    Route::get('/my-referrals', [ReferralController::class, 'myReferrals']);
-    Route::post('/referrals/validate', [ReferralController::class, 'validate']);
+    Route::get('/marketing/referrals', [ReferralEnvironmentController::class, 'index']);
+    Route::post('/marketing/referrals', [ReferralEnvironmentController::class, 'store']);
+    Route::get('/marketing/referrals/{id}', [ReferralEnvironmentController::class, 'show']);
+    Route::put('/marketing/referrals/{id}', [ReferralEnvironmentController::class, 'update']);
+    Route::delete('/marketing/referrals/{id}', [ReferralEnvironmentController::class, 'destroy']);
+    Route::get('/marketing/my-referrals', [ReferralEnvironmentController::class, 'myReferrals']);
+    Route::post('/marketing/referrals/validate', [ReferralEnvironmentController::class, 'validate']);
     
     // Branding routes
     Route::get('/branding', [BrandingController::class, 'index']);
     Route::post('/branding', [BrandingController::class, 'store']);
     Route::post('/branding/reset', [BrandingController::class, 'reset']);
     Route::post('/branding/preview', [BrandingController::class, 'preview']);
+    
+    // Finance routes
+    Route::get('/finance/overview', [FinanceController::class, 'overview']);
+    Route::get('/finance/subscription', [FinanceController::class, 'subscription']);
+    Route::get('/finance/orders', [FinanceController::class, 'orders']);
+    Route::get('/finance/transactions', [FinanceController::class, 'transactions']);
+    Route::get('/finance/revenue-by-product-type', [FinanceController::class, 'revenueByProductType']);
+    
+    // Analytics routes
+    Route::get('/analytics/overview', [AnalyticsController::class, 'overview']);
+    Route::get('/analytics/user-engagement', [AnalyticsController::class, 'userEngagement']);
+    Route::get('/analytics/course-analytics', [AnalyticsController::class, 'courseAnalytics']);
+    Route::get('/analytics/certificate-analytics', [AnalyticsController::class, 'certificateAnalytics']);
     
     // File routes
     Route::post('/files', [FileController::class, 'store']);
@@ -347,15 +433,17 @@ Route::middleware('auth:sanctum')->group(function () {
 // Public routes
 Route::get('/branding/public', [BrandingController::class, 'getPublicBranding']);
 
+// Validation routes
+Route::post('/subdomains/validate', [ValidationController::class, 'validateSubdomain']);
+Route::post('/domains/validate', [ValidationController::class, 'validateDomain']);
+Route::post('/emails/validate', [ValidationController::class, 'validateEmail']);
+
 // Certificate public routes
 Route::get('/certificates/download/{path}', [CertificateController::class, 'download'])->name('api.certificates.download');
 Route::get('/certificates/preview/{path}', [CertificateController::class, 'preview'])->name('api.certificates.preview');
 
 // Certificate verification (public)
 Route::post('/certificates/verify', [CertificateController::class, 'verify']);
-
-// Storefront routes
-use App\Http\Controllers\Api\StorefrontController;
 
 Route::group(['prefix' => 'storefront'], function () {
     // Public storefront routes that don't require authentication
@@ -381,7 +469,8 @@ Route::group(['prefix' => 'storefront'], function () {
     // Process checkout
     Route::post('/{environmentId}/checkout', [StorefrontController::class, 'checkout']);
     
-
+    // Get Order
+    Route::get('/{environmentId}/orders/{orderId}', [StorefrontController::class, 'getOrder']);
     
     // Get product reviews
     Route::get('/{environmentId}/products/{productId}/reviews', [StorefrontController::class, 'getProductReviews']);

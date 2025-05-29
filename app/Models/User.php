@@ -121,6 +121,14 @@ class User extends Authenticatable
     }
 
     /**
+     * Check if the user is a sales agent.
+     */
+    public function isSalesAgent(): bool
+    {
+        return $this->role === 'sales_agent';
+    }
+
+    /**
      * Get the templates created by this user.
      */
     public function templates(): HasMany

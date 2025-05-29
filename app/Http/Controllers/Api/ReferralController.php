@@ -692,4 +692,115 @@ class ReferralController extends Controller
         
         return $code;
     }
+    
+    /**
+     * Get referral statistics.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     * 
+     * @OA\Get(
+     *     path="/referrals/stats",
+     *     summary="Get referral statistics",
+     *     description="Returns statistics about referrals including counts, conversion rates, and revenue",
+     *     operationId="getReferralStats",
+     *     tags={"Referrals"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Response(
+     *         response=200,
+     *         description="Successful operation",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(
+     *                 property="data",
+     *                 type="object",
+     *                 @OA\Property(property="total_referrals", type="integer", example=100),
+     *                 @OA\Property(property="active_referrals", type="integer", example=75),
+     *                 @OA\Property(property="total_uses", type="integer", example=250),
+     *                 @OA\Property(property="total_conversions", type="integer", example=50),
+     *                 @OA\Property(property="conversion_rate", type="number", format="float", example=20.5),
+     *                 @OA\Property(property="total_revenue", type="number", format="float", example=5000),
+     *                 @OA\Property(property="total_discount_amount", type="number", format="float", example=750)
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Unauthenticated"
+     *     ),
+     *     @OA\Response(
+     *         response=403,
+     *         description="Forbidden - User does not have permission"
+     *     )
+     * )
+     */
+    public function getStats(Request $request)
+    {
+        $user = $request->user();
+        
+        // Base query - filter by user if not admin
+        $query = Referral::query();
+        
+        if (!$user->isAdmin() && $user->isSalesAgent()) {
+            $query->where('referrer_id', $user->id);
+        }
+        
+        // Get total referrals count
+        $totalReferrals = $query->count();
+        
+        // Get active referrals count
+        $activeReferrals = (clone $query)
+            ->where('is_active', true)
+            ->where(function($q) {
+                $q->whereNull('expires_at')
+                  ->orWhere('expires_at', '>', now());
+            })
+            ->count();
+        
+        // Get total uses count
+        $totalUses = (clone $query)->sum('uses_count');
+        
+        // Get total conversions (referrals with at least one use)
+        $totalConversions = (clone $query)
+            ->where('uses_count', '>', 0)
+            ->count();
+        
+        // Calculate conversion rate
+        $conversionRate = $totalReferrals > 0 
+            ? ($totalConversions / $totalReferrals) * 100 
+            : 0;
+        
+        // Calculate total revenue (simplified for demonstration)
+        // In a real application, you would calculate this from actual order data
+        $totalRevenue = (clone $query)
+            ->where('uses_count', '>', 0)
+            ->sum('uses_count') * 100; // Assuming $100 per conversion
+        
+        // Calculate total discount amount (simplified for demonstration)
+        // In a real application, you would calculate this from actual order data
+        $totalDiscountAmount = (clone $query)
+            ->where('uses_count', '>', 0)
+            ->get()
+            ->sum(function($referral) {
+                if ($referral->discount_type === 'percentage') {
+                    return ($referral->discount_value / 100) * $referral->uses_count * 100;
+                } else {
+                    return $referral->discount_value * $referral->uses_count;
+                }
+            });
+        
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'total_referrals' => $totalReferrals,
+                'active_referrals' => $activeReferrals,
+                'total_uses' => $totalUses,
+                'total_conversions' => $totalConversions,
+                'conversion_rate' => round($conversionRate, 2),
+                'total_revenue' => $totalRevenue,
+                'total_discount_amount' => $totalDiscountAmount,
+            ]
+        ]);
+    }
 }

@@ -33,6 +33,45 @@ class StorefrontController extends Controller
     {
         return Environment::find($environmentId);
     }
+
+    /**
+     * Get the order by ID
+     *
+     * @param string $environmentId
+     * @param string $orderId
+     * @return Order|null
+     */
+    protected function getOrderById(string $environmentId, string $orderId)
+    {
+        return Order::find($orderId);
+    }
+
+
+    /**
+     * Get the order by ID
+     *
+     * @param string $environmentId
+     * @param string $orderId
+     * @return Order|null
+     */
+    public function getOrder(string $environmentId, string $orderId) {
+        $environment = $this->getEnvironmentById($environmentId);
+        
+        if (!$environment) {
+            return response()->json(['message' => 'Environment not found'], 404);
+        }
+        
+        $order = $this->getOrderById($environmentId, $orderId);
+        
+        if (!$order) {
+            return response()->json(['message' => 'Order not found'], 404);
+        }
+        
+        return response()->json([
+            'success' => true,
+            'data' => $order,
+        ]);
+    }
     
     /**
      * Get a list of countries
@@ -1405,6 +1444,7 @@ class StorefrontController extends Controller
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'email' => 'required|email|max:255',
+            'phone_number' => 'nullable|string|max:20',
             'products' => 'required|array|min:1',
             'products.*.id' => 'required|exists:products,id',
             'products.*.quantity' => 'required|integer|min:1',
@@ -1477,6 +1517,7 @@ class StorefrontController extends Controller
             $order->payment_method = $request->input('payment_method');
             $order->billing_name = $request->input('name');
             $order->billing_email = $request->input('email');
+            $order->phone_number = $request->input('phone_number');
             $order->billing_address = $request->input('billing_address');
             $order->billing_city = $request->input('billing_city');
             $order->billing_state = $request->input('billing_state');
@@ -1489,6 +1530,40 @@ class StorefrontController extends Controller
             $order->save();
             
            
+            
+            // Check if a referral code was provided
+            if ($request->has('referral_code') && !empty($request->input('referral_code'))) {
+                $referralCode = $request->input('referral_code');
+                
+                // Find the referral by code and environment
+                $referral = \App\Models\EnvironmentReferral::where('code', $referralCode)
+                    ->where('environment_id', $environment->id)
+                    ->where('is_active', true)
+                    ->first();
+                    
+                if ($referral) {
+                    // Check if referral has expired
+                    if (!$referral->expiration_date || now()->isBefore($referral->expiration_date)) {
+                        // Check if referral has reached max uses
+                        if ($referral->max_uses <= 0 || $referral->uses_count < $referral->max_uses) {
+                            // Set the referral ID on the order
+                            $order->referral_id = $referral->id;
+                            $order->save();
+                            
+                            // Dispatch the event to process the referral usage
+                            event(new \App\Events\OrderCompletedWithReferral($order, $referral));
+                            
+                            // Log the referral usage
+                            Log::info('Referral code used in order', [
+                                'referral_id' => $referral->id,
+                                'referral_code' => $referral->code,
+                                'order_id' => $order->id,
+                                'order_number' => $order->order_number
+                            ]);
+                        }
+                    }
+                }
+            }
             
             DB::commit();
             
