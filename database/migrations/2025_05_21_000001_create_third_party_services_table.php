@@ -11,7 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('third_party_services', function (Blueprint $table) {
+        if (!Schema::hasTable('third_party_services')) {
+            Schema::create('third_party_services', function (Blueprint $table) {
             $table->id();
             $table->string('name');
             $table->text('description')->nullable();
@@ -27,6 +28,7 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
         });
+        }
     }
 
     /**
@@ -34,6 +36,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('third_party_services');
+        if (Schema::hasTable('third_party_services')) {
+            Schema::dropIfExists('third_party_services');
+        }
     }
 };

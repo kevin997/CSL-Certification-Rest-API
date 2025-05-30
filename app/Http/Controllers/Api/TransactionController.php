@@ -1092,83 +1092,12 @@ class TransactionController extends Controller
             }
         }
         
-        // Get the order items
-        $orderItems = OrderItem::where('order_id', $order->id)->get();
+        // Dispatch the OrderCompleted event
+        // This will trigger the ProcessOrderItems and SendOrderConfirmationEmail listeners
+        event(new \App\Events\OrderCompleted($order));
         
-        foreach ($orderItems as $item) {
-            $product = Product::find($item->product_id);
-            
-            if (!$product) {
-                continue;
-            }
-            
-            // Handle course enrollments if the product contains courses
-            $productCourses = DB::table('product_courses')
-                ->where('product_id', $product->id)
-                ->get();
-                
-            foreach ($productCourses as $productCourse) {
-                // Create enrollment if it doesn't exist
-                $enrollment = DB::table('enrollments')
-                    ->where('user_id', $order->user_id)
-                    ->where('course_id', $productCourse->course_id)
-                    ->where('environment_id', $order->environment_id)
-                    ->first();
-                    
-                if (!$enrollment) {
-                    DB::table('enrollments')->insert([
-                        'user_id' => $order->user_id,
-                        'course_id' => $productCourse->course_id,
-                        'environment_id' => $order->environment_id,
-                        'status' => 'active',
-                        'progress' => 0,
-                        'enrolled_at' => now(),
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                }
-            }
-            
-            // Handle subscriptions if the product is a subscription
-            if ($product->is_subscription) {
-                // Create or update subscription
-                $subscription = DB::table('subscriptions')
-                    ->where('user_id', $order->user_id)
-                    ->where('product_id', $product->id)
-                    ->where('environment_id', $order->environment_id)
-                    ->first();
-                    
-                if (!$subscription) {
-                    // Create new subscription
-                    DB::table('subscriptions')->insert([
-                        'user_id' => $order->user_id,
-                        'product_id' => $product->id,
-                        'environment_id' => $order->environment_id,
-                        'status' => 'active',
-                        'start_date' => now(),
-                        'end_date' => now()->addDays($product->subscription_duration),
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                } else {
-                    // Update existing subscription
-                    DB::table('subscriptions')
-                        ->where('id', $subscription->id)
-                        ->update([
-                            'status' => 'active',
-                            'end_date' => now()->addDays($product->subscription_duration),
-                            'updated_at' => now(),
-                        ]);
-                }
-            }
-        }
-        
-        // Send order confirmation email
-        try {
-            Mail::to($order->billing_email)->send(new OrderConfirmation($order));
-        } catch (\Exception $e) {
-            Log::error('Failed to send order confirmation email: ' . $e->getMessage());
-        }
+        // Log the event dispatch
+        Log::info("OrderCompleted event dispatched for order {$order->id}");
     }
 
     /**

@@ -12,8 +12,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('assignment_contents', function (Blueprint $table) {
-            $table->string('title')->after('activity_id')->nullable();
-            $table->text('description')->after('title')->nullable();
+            if (!Schema::hasColumn('assignment_contents', 'title')) {
+                $table->string('title')->after('activity_id')->nullable();
+            }
+            if (!Schema::hasColumn('assignment_contents', 'description')) {
+                $table->text('description')->after('title')->nullable();
+            }
         });
     }
 
@@ -23,7 +27,12 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('assignment_contents', function (Blueprint $table) {
-            $table->dropColumn(['title', 'description']);
+            if (Schema::hasColumn('assignment_contents', 'title')) {
+                $table->dropColumn('title');
+            }
+            if (Schema::hasColumn('assignment_contents', 'description')) {
+                $table->dropColumn('description');
+            }
         });
     }
 };

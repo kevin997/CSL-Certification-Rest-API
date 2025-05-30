@@ -11,10 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('certificate_contents', function (Blueprint $table) {
-            // Add metadata JSON column after expiry_period_unit
-            $table->json('metadata')->nullable()->after('expiry_period_unit');
-        });
+        if (!Schema::hasColumn('certificate_contents', 'metadata')) {
+            Schema::table('certificate_contents', function (Blueprint $table) {
+                // Add metadata JSON column after expiry_period_unit
+                $table->json('metadata')->nullable()->after('expiry_period_unit');
+            });
+        }
     }
 
     /**
@@ -22,9 +24,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('certificate_contents', function (Blueprint $table) {
-            // Drop the metadata column
-            $table->dropColumn('metadata');
-        });
+        if (Schema::hasColumn('certificate_contents', 'metadata')) {
+            Schema::table('certificate_contents', function (Blueprint $table) {
+                // Drop the metadata column
+                $table->dropColumn('metadata');
+            });
+        }
     }
 };

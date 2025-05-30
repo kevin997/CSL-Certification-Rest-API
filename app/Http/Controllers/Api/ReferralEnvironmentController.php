@@ -22,7 +22,7 @@ class ReferralEnvironmentController extends Controller
     public function index(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = $request->user()->current_environment_id;
+        $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
             return response()->json([
@@ -98,7 +98,7 @@ class ReferralEnvironmentController extends Controller
     public function myReferrals(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = $request->user()->current_environment_id;
+        $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
             return response()->json([
@@ -127,7 +127,7 @@ class ReferralEnvironmentController extends Controller
     public function store(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = $request->user()->current_environment_id;
+        $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
             return response()->json([
@@ -403,7 +403,7 @@ class ReferralEnvironmentController extends Controller
     public function getStats(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = $request->user()->current_environment_id;
+        $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
             return response()->json([

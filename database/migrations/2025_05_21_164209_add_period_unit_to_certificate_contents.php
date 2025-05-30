@@ -11,10 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('certificate_contents', function (Blueprint $table) {
-            // Add expiry_period_unit field after expiry_period
-            $table->string('expiry_period_unit', 10)->default('days')->after('expiry_period');
-        });
+        if (!Schema::hasColumn('certificate_contents', 'expiry_period_unit')) {
+            Schema::table('certificate_contents', function (Blueprint $table) {
+                // Add expiry_period_unit field after expiry_period
+                $table->string('expiry_period_unit', 10)->default('days')->after('expiry_period');
+            });
+        }
     }
 
     /**
@@ -22,9 +24,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('certificate_contents', function (Blueprint $table) {
-            // Drop the expiry_period_unit field
-            $table->dropColumn('expiry_period_unit');
-        });
+        if (Schema::hasColumn('certificate_contents', 'expiry_period_unit')) {
+            Schema::table('certificate_contents', function (Blueprint $table) {
+                // Drop the expiry_period_unit field
+                $table->dropColumn('expiry_period_unit');
+            });
+        }
     }
 };

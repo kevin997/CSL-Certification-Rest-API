@@ -8566,361 +8566,6 @@
                 }
             }
         },
-        "/api/onboarding/business-learner": {
-            "post": {
-                "tags": [
-                    "Onboarding"
-                ],
-                "summary": "Onboard a batch of business learners",
-                "description": "Create multiple user accounts for business learners and associate them with an environment",
-                "operationId": "onboardBusinessLearners",
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "required": [
-                                    "environment_id",
-                                    "learners"
-                                ],
-                                "properties": {
-                                    "environment_id": {
-                                        "type": "integer",
-                                        "example": 1
-                                    },
-                                    "learners": {
-                                        "type": "array",
-                                        "items": {
-                                            "required": [
-                                                "name",
-                                                "email"
-                                            ],
-                                            "properties": {
-                                                "name": {
-                                                    "type": "string",
-                                                    "example": "John Doe"
-                                                },
-                                                "email": {
-                                                    "type": "string",
-                                                    "format": "email",
-                                                    "example": "john@example.com"
-                                                },
-                                                "employee_id": {
-                                                    "type": "string",
-                                                    "example": "EMP123"
-                                                },
-                                                "department": {
-                                                    "type": "string",
-                                                    "example": "Engineering"
-                                                },
-                                                "position": {
-                                                    "type": "string",
-                                                    "example": "Software Developer"
-                                                }
-                                            },
-                                            "type": "object"
-                                        }
-                                    },
-                                    "send_invitations": {
-                                        "type": "boolean",
-                                        "example": true
-                                    },
-                                    "custom_message": {
-                                        "type": "string",
-                                        "example": "Welcome to our learning platform!"
-                                    }
-                                },
-                                "type": "object"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "201": {
-                        "description": "Business learners onboarded successfully",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "example": "success"
-                                        },
-                                        "message": {
-                                            "type": "string",
-                                            "example": "Business learners onboarded successfully"
-                                        },
-                                        "data": {
-                                            "properties": {
-                                                "environment_id": {
-                                                    "type": "integer",
-                                                    "example": 1
-                                                },
-                                                "learners_created": {
-                                                    "type": "integer",
-                                                    "example": 5
-                                                },
-                                                "learner_ids": {
-                                                    "type": "array",
-                                                    "items": {
-                                                        "type": "integer"
-                                                    }
-                                                }
-                                            },
-                                            "type": "object"
-                                        }
-                                    },
-                                    "type": "object"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation error"
-                    },
-                    "500": {
-                        "description": "Server error"
-                    }
-                }
-            }
-        },
-        "/api/onboarding/business-teacher": {
-            "post": {
-                "tags": [
-                    "Onboarding"
-                ],
-                "summary": "Onboard a new business teacher",
-                "description": "Create a new user account, environment, and subscription for a business teacher",
-                "operationId": "onboardBusinessTeacher",
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "required": [
-                                    "name",
-                                    "email",
-                                    "password",
-                                    "company_name",
-                                    "environment_name",
-                                    "domain",
-                                    "plan_id",
-                                    "billing_cycle"
-                                ],
-                                "properties": {
-                                    "name": {
-                                        "type": "string",
-                                        "example": "John Doe"
-                                    },
-                                    "email": {
-                                        "type": "string",
-                                        "format": "email",
-                                        "example": "john@example.com"
-                                    },
-                                    "password": {
-                                        "type": "string",
-                                        "format": "password",
-                                        "example": "password123"
-                                    },
-                                    "company_name": {
-                                        "type": "string",
-                                        "example": "ABC Corporation"
-                                    },
-                                    "environment_name": {
-                                        "type": "string",
-                                        "example": "ABC Training Academy"
-                                    },
-                                    "domain": {
-                                        "type": "string",
-                                        "example": "abc-training.csl-cert.com"
-                                    },
-                                    "plan_id": {
-                                        "type": "integer",
-                                        "example": 2
-                                    },
-                                    "billing_cycle": {
-                                        "type": "string",
-                                        "enum": [
-                                            "monthly",
-                                            "annual"
-                                        ],
-                                        "example": "annual"
-                                    },
-                                    "theme_color": {
-                                        "type": "string",
-                                        "example": "#3366FF"
-                                    },
-                                    "logo_url": {
-                                        "type": "string",
-                                        "example": "https://example.com/logo.png"
-                                    },
-                                    "description": {
-                                        "type": "string",
-                                        "example": "Corporate training platform for ABC Corp"
-                                    },
-                                    "additional_admins": {
-                                        "type": "array",
-                                        "items": {
-                                            "properties": {
-                                                "name": {
-                                                    "type": "string",
-                                                    "example": "Jane Smith"
-                                                },
-                                                "email": {
-                                                    "type": "string",
-                                                    "format": "email",
-                                                    "example": "jane@example.com"
-                                                }
-                                            },
-                                            "type": "object"
-                                        }
-                                    }
-                                },
-                                "type": "object"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "201": {
-                        "description": "Business teacher onboarded successfully",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "example": "success"
-                                        },
-                                        "message": {
-                                            "type": "string",
-                                            "example": "Business teacher onboarded successfully"
-                                        },
-                                        "data": {
-                                            "properties": {
-                                                "user_id": {
-                                                    "type": "integer",
-                                                    "example": 1
-                                                },
-                                                "environment_id": {
-                                                    "type": "integer",
-                                                    "example": 1
-                                                },
-                                                "subscription_id": {
-                                                    "type": "integer",
-                                                    "example": 1
-                                                },
-                                                "additional_admins": {
-                                                    "type": "array",
-                                                    "items": {
-                                                        "type": "integer"
-                                                    }
-                                                }
-                                            },
-                                            "type": "object"
-                                        }
-                                    },
-                                    "type": "object"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation error"
-                    },
-                    "500": {
-                        "description": "Server error"
-                    }
-                }
-            }
-        },
-        "/api/onboarding/learner": {
-            "post": {
-                "tags": [
-                    "Onboarding"
-                ],
-                "summary": "Onboard a new individual learner",
-                "description": "Create a new user account for an individual learner and associate them with an environment",
-                "operationId": "onboardLearner",
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "required": [
-                                    "name",
-                                    "email",
-                                    "password",
-                                    "environment_id"
-                                ],
-                                "properties": {
-                                    "name": {
-                                        "type": "string",
-                                        "example": "John Doe"
-                                    },
-                                    "email": {
-                                        "type": "string",
-                                        "format": "email",
-                                        "example": "john@example.com"
-                                    },
-                                    "password": {
-                                        "type": "string",
-                                        "format": "password",
-                                        "example": "password123"
-                                    },
-                                    "environment_id": {
-                                        "type": "integer",
-                                        "example": 1
-                                    }
-                                },
-                                "type": "object"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "201": {
-                        "description": "Learner onboarded successfully",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "example": "success"
-                                        },
-                                        "message": {
-                                            "type": "string",
-                                            "example": "Learner onboarded successfully"
-                                        },
-                                        "data": {
-                                            "properties": {
-                                                "user_id": {
-                                                    "type": "integer",
-                                                    "example": 1
-                                                },
-                                                "environment_id": {
-                                                    "type": "integer",
-                                                    "example": 1
-                                                }
-                                            },
-                                            "type": "object"
-                                        }
-                                    },
-                                    "type": "object"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation error"
-                    },
-                    "500": {
-                        "description": "Server error"
-                    }
-                }
-            }
-        },
         "/api/onboarding/teacher": {
             "post": {
                 "tags": [
@@ -12397,6 +12042,81 @@
                     },
                     "422": {
                         "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/referrals/stats": {
+            "get": {
+                "tags": [
+                    "Referrals"
+                ],
+                "summary": "Get referral statistics",
+                "description": "Returns statistics about referrals including counts, conversion rates, and revenue",
+                "operationId": "getReferralStats",
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "total_referrals": {
+                                                    "type": "integer",
+                                                    "example": 100
+                                                },
+                                                "active_referrals": {
+                                                    "type": "integer",
+                                                    "example": 75
+                                                },
+                                                "total_uses": {
+                                                    "type": "integer",
+                                                    "example": 250
+                                                },
+                                                "total_conversions": {
+                                                    "type": "integer",
+                                                    "example": 50
+                                                },
+                                                "conversion_rate": {
+                                                    "type": "number",
+                                                    "format": "float",
+                                                    "example": 20.5
+                                                },
+                                                "total_revenue": {
+                                                    "type": "number",
+                                                    "format": "float",
+                                                    "example": 5000
+                                                },
+                                                "total_discount_amount": {
+                                                    "type": "number",
+                                                    "format": "float",
+                                                    "example": 750
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "403": {
+                        "description": "Forbidden - User does not have permission"
                     }
                 },
                 "security": [

@@ -11,16 +11,26 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('certificate_contents', function (Blueprint $table) {
-            // Add completion_criteria JSON field
-            $table->json('completion_criteria')->nullable()->after('fields_config');
-            
-            // Rename expiry_days to expiry_period
-            $table->renameColumn('expiry_days', 'expiry_period');
-            
-            // Add certificate_template_id field to properly link to templates
-            $table->foreignId('certificate_template_id')->nullable()->after('template_path');
-        });
+        if (!Schema::hasColumn('certificate_contents', 'completion_criteria')) {
+            Schema::table('certificate_contents', function (Blueprint $table) {
+                // Add completion_criteria JSON field
+                $table->json('completion_criteria')->nullable()->after('fields_config');
+            });
+        }
+        
+        if (!Schema::hasColumn('certificate_contents', 'expiry_period')) {
+            Schema::table('certificate_contents', function (Blueprint $table) {
+                // Rename expiry_days to expiry_period
+                $table->renameColumn('expiry_days', 'expiry_period');
+            });
+        }
+        
+        if (!Schema::hasColumn('certificate_contents', 'certificate_template_id')) {
+            Schema::table('certificate_contents', function (Blueprint $table) {
+                // Add certificate_template_id field to properly link to templates
+                $table->foreignId('certificate_template_id')->nullable()->after('template_path');
+            });
+        }
     }
 
     /**
@@ -28,15 +38,25 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('certificate_contents', function (Blueprint $table) {
-            // Drop the completion_criteria field
-            $table->dropColumn('completion_criteria');
-            
-            // Rename expiry_period back to expiry_days
-            $table->renameColumn('expiry_period', 'expiry_days');
-            
-            // Drop the certificate_template_id field
-            $table->dropColumn('certificate_template_id');
-        });
+        if (Schema::hasColumn('certificate_contents', 'completion_criteria')) {
+            Schema::table('certificate_contents', function (Blueprint $table) {
+                // Drop the completion_criteria field
+                $table->dropColumn('completion_criteria');
+            });
+        }
+        
+        if (Schema::hasColumn('certificate_contents', 'expiry_period')) {
+            Schema::table('certificate_contents', function (Blueprint $table) {
+                // Rename expiry_period back to expiry_days
+                $table->renameColumn('expiry_period', 'expiry_days');
+            });
+        }
+        
+        if (Schema::hasColumn('certificate_contents', 'certificate_template_id')) {
+            Schema::table('certificate_contents', function (Blueprint $table) {
+                // Drop the certificate_template_id field
+                $table->dropColumn('certificate_template_id');
+            });
+        }
     }
 };

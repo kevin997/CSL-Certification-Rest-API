@@ -11,7 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('certificate_templates', function (Blueprint $table) {
+        if (!Schema::hasTable('certificate_templates')) {
+            Schema::create('certificate_templates', function (Blueprint $table) {
             $table->id();
             $table->string('name');
             $table->text('description')->nullable();
@@ -27,12 +28,15 @@ return new class extends Migration
             $table->softDeletes();
         });
     }
+    }
 
     /**
      * Reverse the migrations.
      */
     public function down(): void
     {
-        Schema::dropIfExists('certificate_templates');
+        if (Schema::hasTable('certificate_templates')) {
+            Schema::dropIfExists('certificate_templates');
+        }
     }
 };

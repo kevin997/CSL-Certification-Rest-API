@@ -11,10 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('certificate_contents', function (Blueprint $table) {
-            $table->unsignedBigInteger('activity_id')->after('id')->nullable();
-            $table->foreign('activity_id')->references('id')->on('activities')->onDelete('cascade');
-        });
+        if (!Schema::hasColumn('certificate_contents', 'activity_id')) {
+            Schema::table('certificate_contents', function (Blueprint $table) {
+                $table->unsignedBigInteger('activity_id')->after('id')->nullable();
+                $table->foreign('activity_id')->references('id')->on('activities')->onDelete('cascade');
+            });
+        }
     }
 
     /**
@@ -22,9 +24,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('certificate_contents', function (Blueprint $table) {
-            $table->dropForeign(['activity_id']);
-            $table->dropColumn('activity_id');
-        });
+        if (Schema::hasColumn('certificate_contents', 'activity_id')) {
+            Schema::table('certificate_contents', function (Blueprint $table) {
+                $table->dropForeign(['activity_id']);
+                $table->dropColumn('activity_id');
+            });
+        }
     }
 };

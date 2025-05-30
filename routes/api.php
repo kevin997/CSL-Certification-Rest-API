@@ -143,6 +143,21 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // Performance by period
     Route::get('/sales/performance', [App\Http\Controllers\Api\Sales\SalesDashboardController::class, 'getPerformanceByPeriod']);
+
+      // Referral listing and creation
+      Route::get('/sales/admin/referrals', [App\Http\Controllers\Api\ReferralController::class, 'index']);
+      Route::post('/sales/admin/referrals', [App\Http\Controllers\Api\ReferralController::class, 'store']);
+      
+      // Referral statistics (must come before wildcard routes)
+      Route::get('/sales/admin/referrals/stats', [App\Http\Controllers\Api\ReferralController::class, 'getStats']);
+      
+      // Validate referral code
+      Route::post('/sales/admin/referrals/validate', [App\Http\Controllers\Api\ReferralController::class, 'validate']);
+      
+      // Individual referral operations (wildcard routes come last)
+      Route::get('/sales/admin/referrals/{id}', [App\Http\Controllers\Api\ReferralController::class, 'show']);
+      Route::put('/sales/admin/referrals/{id}', [App\Http\Controllers\Api\ReferralController::class, 'update']);
+      Route::delete('/sales/admin/referrals/{id}', [App\Http\Controllers\Api\ReferralController::class, 'destroy']);
 });
 
 // Sales Agent Management Routes
@@ -161,24 +176,6 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // Sales agent referrals
     Route::get('/sales-agents/{id}/referrals', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'getReferrals']);
-});
-
-// Referral Management Routes
-Route::middleware('auth:sanctum')->group(function () {
-    // Referral listing and creation
-    Route::get('/referrals', [App\Http\Controllers\Api\ReferralController::class, 'index']);
-    Route::post('/referrals', [App\Http\Controllers\Api\ReferralController::class, 'store']);
-    
-    // Referral statistics (must come before wildcard routes)
-    Route::get('/referrals/stats', [App\Http\Controllers\Api\ReferralController::class, 'getStats']);
-    
-    // Validate referral code
-    Route::post('/referrals/validate', [App\Http\Controllers\Api\ReferralController::class, 'validate']);
-    
-    // Individual referral operations (wildcard routes come last)
-    Route::get('/referrals/{id}', [App\Http\Controllers\Api\ReferralController::class, 'show']);
-    Route::put('/referrals/{id}', [App\Http\Controllers\Api\ReferralController::class, 'update']);
-    Route::delete('/referrals/{id}', [App\Http\Controllers\Api\ReferralController::class, 'destroy']);
 });
 
 // Template Management Routes
@@ -402,6 +399,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/marketing/referrals/{id}', [ReferralEnvironmentController::class, 'destroy']);
     Route::get('/marketing/my-referrals', [ReferralEnvironmentController::class, 'myReferrals']);
     Route::post('/marketing/referrals/validate', [ReferralEnvironmentController::class, 'validate']);
+    Route::get('/marketing/referrals/stats', [App\Http\Controllers\Api\ReferralEnvironmentController::class, 'getStats']);
+
     
     // Branding routes
     Route::get('/branding', [BrandingController::class, 'index']);

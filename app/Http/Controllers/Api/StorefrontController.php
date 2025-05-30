@@ -1575,12 +1575,15 @@ class StorefrontController extends Controller
                 'status' => 'pending'
             ];
             
+            // We temporally add and Dispatch the event to process the order completion for now
+            event(new \App\Events\OrderCompleted($order));
+            
             // Get the payment gateway code
             $gatewayCode = null;
             if ($request->has('payment_method')) {
                 $gatewaySettings = PaymentGatewaySetting::find($request->input('payment_method'));
                 if ($gatewaySettings) {
-                    $gatewayCode = $gatewaySettings->gateway_code;
+                    $gatewayCode = $gatewaySettings->code;
                 }
             }
             
