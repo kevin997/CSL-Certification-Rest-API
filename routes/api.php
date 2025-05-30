@@ -505,5 +505,22 @@ Route::group(['prefix' => 'payments'], function () {
     Route::get('/{environment_id}/course/{id}', [StorefrontController::class, 'getCourseById']);
 });
 
+// Team Management Routes
+Route::middleware('auth:sanctum')->group(function () {
+    // Team routes
+    Route::get('/teams', [\App\Http\Controllers\Api\TeamController::class, 'index']);
+    Route::post('/teams', [\App\Http\Controllers\Api\TeamController::class, 'store']);
+    Route::get('/teams/{id}', [\App\Http\Controllers\Api\TeamController::class, 'show']);
+    Route::put('/teams/{id}', [\App\Http\Controllers\Api\TeamController::class, 'update']);
+    Route::delete('/teams/{id}', [\App\Http\Controllers\Api\TeamController::class, 'destroy']);
+    
+    // Team members routes
+    Route::get('/teams/{id}/members', [\App\Http\Controllers\Api\TeamController::class, 'getTeamMembers']);
+    Route::post('/teams/invite', [\App\Http\Controllers\Api\TeamController::class, 'inviteMember']);
+    Route::post('/teams/accept-invitation', [\App\Http\Controllers\Api\TeamController::class, 'acceptInvitation']);
+    Route::post('/teams/remove-member', [\App\Http\Controllers\Api\TeamController::class, 'removeMember']);
+    Route::post('/teams/update-member-role', [\App\Http\Controllers\Api\TeamController::class, 'updateMemberRole']);
+});
+
 // Include the learner routes
 require __DIR__ . '/learner.php';
