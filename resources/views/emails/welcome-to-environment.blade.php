@@ -1,4 +1,4 @@
-@component('mail::message')
+@component('mail::message', ['environment' => $environment ?? null, 'branding' => $branding ?? null])
 # Welcome to {{ $branding?->company_name ?? $environment->name }}!
 
 Hello {{ $user->name }},

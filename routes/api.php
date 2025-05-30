@@ -441,8 +441,9 @@ Route::post('/emails/validate', [ValidationController::class, 'validateEmail']);
 Route::get('/certificates/download/{path}', [CertificateController::class, 'download'])->name('api.certificates.download');
 Route::get('/certificates/preview/{path}', [CertificateController::class, 'preview'])->name('api.certificates.preview');
 
-// Certificate verification (public)
+// Certificate routes
 Route::post('/certificates/verify', [CertificateController::class, 'verify']);
+Route::post('/certificate-content/{certificateContentId}/issue', [CertificateController::class, 'issueCertificate'])->middleware('auth:sanctum');
 
 Route::group(['prefix' => 'storefront'], function () {
     // Public storefront routes that don't require authentication

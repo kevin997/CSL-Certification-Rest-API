@@ -117,8 +117,10 @@ class CertificateGenerationService
             if ($response->status() === 401) {
                 Log::info('Token expired, re-authenticating with certificate service');
                 if ($this->authenticate()) {
-                    // Prepare a new request with the fresh token
-                    $request = Http::withToken($this->service->bearer_token);
+                    // Prepare a new request with the fresh token and the same SSL verification settings
+                    $request = Http::withOptions([
+                        'verify' => $verifySSL,
+                    ])->withToken($this->service->bearer_token);
                     
                     // Attach files again if any
                     foreach ($files as $name => $file) {
@@ -273,31 +275,12 @@ class CertificateGenerationService
             if ($certificateContent->certificate_template_id) {
                 $template = CertificateTemplate::find($certificateContent->certificate_template_id);
             }
-
-            // Use the provided template name, or the one from the template, or a default
-            $templateToUse = $templateName ?? ($template ? $template->filename : 'default.pdf');
-
-            // Generate a unique access code for verification
-            $accessCode = Str::random(12);
             
-            // Store all metadata in our database
-            $metadata = [
-                'signatory_name' => $certificateContent->signatory_name ?? '',
-                'signatory_title' => $certificateContent->signatory_title ?? '',
-                'signatory_organization' => $certificateContent->signatory_organization ?? '',
-                'custom_fields' => $certificateContent->custom_fields ?? [],
-                'verification_enabled' => $certificateContent->verification_enabled ?? true,
-                'access_code' => $accessCode,
-                'generated_at' => now()->toDateTimeString(),
-                'user_data' => $userData,
-                'certificate_url' => null,
-            ];
+            // Generate a unique access code for this certificate
+            $accessCode = $this->generateAccessCode();
             
-            // Update the certificate content with the metadata
-            // Use the update method to only update the metadata field
-            // This avoids issues with other fields that might have been added or changed
-            CertificateContent::where('id', $certificateContent->id)
-                ->update(['metadata' => json_encode($metadata)]);
+            // Determine which template to use
+            $templateToUse = $templateName ?: $certificateContent->template->file_path ?? 'default';
             
             // Prepare only the required data for the certificate microservice
             $certificateData = [
@@ -322,22 +305,39 @@ class CertificateGenerationService
                 
                 // Check if the response contains the certificate URLs
                 if (isset($result['data']['certificate_url'])) {
-                    // Update the metadata to include the certificate URL
+                    // Update the certificate content metadata (original implementation)
+                    $metadata = $certificateContent->metadata ?? [];
                     $metadata['certificate_url'] = $result['data']['certificate_url'];
+                    $metadata['preview_url'] = $result['data']['preview_url'] ?? null;
+                    $metadata['access_code'] = $accessCode;
+                    $metadata['generated_at'] = now()->toIso8601String();
                     
-                    // Also store the preview URL if available
-                    if (isset($result['data']['preview_url'])) {
-                        $metadata['preview_url'] = $result['data']['preview_url'];
+                    // Save the updated metadata to the certificate content
+                    $certificateContent->metadata = $metadata;
+                    $certificateContent->save();
+                    
+                    // Also create the IssuedCertificate record (new implementation)
+                    $issuedCertificate = $this->createIssuedCertificate(
+                        $certificateContent,
+                        $userData,
+                        $accessCode,
+                        $result['data']['certificate_url'],
+                        $result['data']['preview_url'] ?? null
+                    );
+                    
+                    // Add the access code and certificate data to the result for the client
+                    $result['accessCode'] = $accessCode;
+                    
+                    // Add the issued certificate ID if it was created successfully
+                    if ($issuedCertificate) {
+                        $result['issuedCertificateId'] = $issuedCertificate->id;
                     }
                     
-                    // Update the certificate content with the updated metadata
-                    CertificateContent::where('id', $certificateContent->id)
-                        ->update(['metadata' => json_encode($metadata)]);
+                    return $result;
                 }
                 
-                // Add the access code to the result for verification
-                $result['accessCode'] = $accessCode;
-                return $result;
+                Log::error('Certificate URL not found in response', ['response' => $result]);
+                return null;
             }
 
             Log::error('Failed to generate certificate', [
@@ -475,5 +475,91 @@ class CertificateGenerationService
         }
         
         return $this->service->base_url . $path;
+    }
+    
+    /**
+     * Generate a unique access code for certificates
+     * 
+     * @return string The generated access code
+     */
+    protected function generateAccessCode(): string
+    {
+        return strtoupper(Str::random(8));
+    }
+    
+    /**
+     * Create an IssuedCertificate record for a generated certificate
+     *
+     * @param CertificateContent $certificateContent The certificate content
+     * @param array $userData The user data for the certificate
+     * @param string $accessCode The unique access code for the certificate
+     * @param string $certificateUrl The URL to the generated certificate
+     * @param string|null $previewUrl The URL to the certificate preview (optional)
+     * @return \App\Models\IssuedCertificate|null The created IssuedCertificate or null if failed
+     */
+    protected function createIssuedCertificate(
+        CertificateContent $certificateContent,
+        array $userData,
+        string $accessCode,
+        string $certificateUrl,
+        ?string $previewUrl = null
+    ): ?\App\Models\IssuedCertificate {
+        try {
+            // Import the IssuedCertificate model
+            $issuedCertificateClass = '\App\Models\IssuedCertificate';
+            
+            // Create the IssuedCertificate record
+            $issuedCertificate = new $issuedCertificateClass();
+            $issuedCertificate->user_id = $userData['user_id'] ?? null;
+            $issuedCertificate->course_id = $certificateContent->course_id;
+            $issuedCertificate->certificate_content_id = $certificateContent->id;
+            $issuedCertificate->access_code = $accessCode;
+            $issuedCertificate->status = 'issued';
+            
+            // Set issued date from userData if provided, otherwise use current time
+            $issuedCertificate->issued_at = isset($userData['issued_date']) ? 
+                new \DateTime($userData['issued_date']) : now();
+                
+            // Set expiry date if provided in userData
+            if (isset($userData['expiry_date'])) {
+                $issuedCertificate->expiry_date = new \DateTime($userData['expiry_date']);
+            } elseif ($certificateContent->expiry_period && $certificateContent->expiry_period_unit) {
+                // Calculate expiry date based on certificate content settings
+                $expiryDate = clone $issuedCertificate->issued_at;
+                
+                switch ($certificateContent->expiry_period_unit) {
+                    case 'days':
+                        $expiryDate->modify("+{$certificateContent->expiry_period} days");
+                        break;
+                    case 'months':
+                        $expiryDate->modify("+{$certificateContent->expiry_period} months");
+                        break;
+                    case 'years':
+                        $expiryDate->modify("+{$certificateContent->expiry_period} years");
+                        break;
+                }
+                
+                $issuedCertificate->expiry_date = $expiryDate;
+            }
+            
+            // Store metadata about the certificate
+            $issuedCertificate->metadata = [
+                'certificate_url' => $certificateUrl,
+                'preview_url' => $previewUrl,
+                'recipient_name' => $userData['fullName'] ?? 'Student Name',
+                'course_title' => $certificateContent->title ?? 'Course Title',
+                'certificate_date' => $userData['certificateDate'] ?? now()->format('F j, Y')
+            ];
+            
+            $issuedCertificate->save();
+            
+            return $issuedCertificate;
+        } catch (\Exception $e) {
+            Log::error('Failed to create IssuedCertificate record', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return null;
+        }
     }
 }

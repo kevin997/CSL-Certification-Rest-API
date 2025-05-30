@@ -4,10 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\CertificateContent;
+use App\Models\IssuedCertificate;
 use App\Services\CertificateGenerationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class CertificateController extends Controller
 {
@@ -189,7 +192,10 @@ class CertificateController extends Controller
         }
 
         // Generate certificate through the certificate generation service
-        $templateName = $certificateContent->template_name;
+        $templateName = $certificateContent->template->file_path;
+        // Strip the 'templates/' prefix if it exists
+        $templateName = str_replace('templates/', '', $templateName);
+        Log::info('Template name on Rest api: '.$templateName);
         $result = $this->certificateGenerationService->generateCertificate(
             $certificateContent,
             $userData,
@@ -284,6 +290,181 @@ class CertificateController extends Controller
         return response()->json([
             'status' => 'success',
             'data' => $result,
+        ]);
+    }
+    
+    /**
+     * Issue a certificate for a user and store it in the IssuedCertificate model
+     * 
+     * @param Request $request
+     * @param int $certificateContentId
+     * @return Response
+     * 
+     * @OA\Post(
+     *     path="/certificate-content/{certificateContentId}/issue",
+     *     summary="Issue a certificate for a user",
+     *     description="Issues a certificate for a user and stores it in the IssuedCertificate model",
+     *     operationId="issueCertificate",
+     *     tags={"Certificates"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="certificateContentId",
+     *         in="path",
+     *         required=true,
+     *         description="ID of the certificate content",
+     *         @OA\Schema(type="integer", format="int64")
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         description="User data for certificate",
+     *         @OA\JsonContent(
+     *             required={"fullName"},
+     *             @OA\Property(property="fullName", type="string", example="John Doe"),
+     *             @OA\Property(property="certificateDate", type="string", example="May 21, 2025"),
+     *             @OA\Property(property="additionalData", type="object")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Certificate issued successfully",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="message", type="string", example="Certificate issued successfully"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="fileUrl", type="string"),
+     *                 @OA\Property(property="previewUrl", type="string"),
+     *                 @OA\Property(property="accessCode", type="string"),
+     *                 @OA\Property(property="issuedCertificateId", type="integer")
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Certificate content not found"
+     *     ),
+     *     @OA\Response(
+     *         response=422,
+     *         description="Validation error"
+     *     )
+     * )
+     */
+    public function issueCertificate(Request $request, $certificateContentId)
+    {
+        // Find the certificate content
+        $certificateContent = CertificateContent::with('template')->findOrFail($certificateContentId);
+        
+        // Get the current authenticated user
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User not authenticated',
+            ], Response::HTTP_UNAUTHORIZED);
+        }
+        
+        // Get the course from the certificate content
+        $courseId = $certificateContent->course_id;
+        
+        // Calculate certificate date based on expiry period if set
+        $issueDate = now();
+        $expiryDate = null;
+        
+        // If expiry period is set, calculate the expiry date
+        if ($certificateContent->expiry_period && $certificateContent->expiry_period_unit) {
+            $expiryDate = clone $issueDate;
+            
+            switch ($certificateContent->expiry_period_unit) {
+                case 'days':
+                    $expiryDate->addDays($certificateContent->expiry_period);
+                    break;
+                case 'months':
+                    $expiryDate->addMonths($certificateContent->expiry_period);
+                    break;
+                case 'years':
+                    $expiryDate->addYears($certificateContent->expiry_period);
+                    break;
+                default:
+                    // Default to no expiry if unit is not recognized
+                    $expiryDate = null;
+            }
+        }
+        
+        // Prepare user data from the authenticated user and certificate content
+        $userData = [
+            'fullName' => $user->name,
+            'certificateDate' => $issueDate->format('F j, Y'),
+            'user_id' => $user->id,
+            'course_id' => $courseId,
+            'email' => $user->email,
+            'issued_date' => $issueDate->toDateTimeString(),
+            'expiry_date' => $expiryDate ? $expiryDate->toDateTimeString() : null,
+        ];
+        
+        // Add certificate content metadata
+        $metadata = $certificateContent->metadata ?? [];
+        
+        // Include signatory information if available
+        if (isset($metadata['signatory_name'])) {
+            $userData['signatory_name'] = $metadata['signatory_name'];
+        }
+        
+        if (isset($metadata['signatory_title'])) {
+            $userData['signatory_title'] = $metadata['signatory_title'];
+        }
+        
+        if (isset($metadata['signatory_organization'])) {
+            $userData['signatory_organization'] = $metadata['signatory_organization'];
+        }
+        
+        // Include any custom fields
+        if (isset($metadata['custom_fields']) && is_array($metadata['custom_fields'])) {
+            $userData['custom_fields'] = $metadata['custom_fields'];
+        }
+        
+        // Add certificate content metadata
+        $userData = array_merge($userData, [
+            'certificate_id' => $certificateContent->id,
+            'certificate_title' => $certificateContent->title,
+        ]);
+
+        // Get the template name from the relationship
+        $templateName = $certificateContent->template ? $certificateContent->template->file_path : null;
+        // Strip the 'templates/' prefix if it exists
+        if ($templateName) {
+            $templateName = str_replace('templates/', '', $templateName);
+        }
+        Log::info('Template name for issueCertificate: '.$templateName);
+
+        // Generate certificate through the certificate generation service
+        $result = $this->certificateGenerationService->generateCertificate(
+            $certificateContent,
+            $userData,
+            $templateName
+        );
+
+        if (!$result) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to issue certificate',
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+        
+        // Find the issued certificate that was created during generation
+        $issuedCertificate = null;
+        if (isset($result['issuedCertificateId'])) {
+            $issuedCertificate = IssuedCertificate::find($result['issuedCertificateId']);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Certificate issued successfully',
+            'data' => [
+                'fileUrl' => $this->certificateGenerationService->getCertificateDownloadUrl($certificateContent),
+                'previewUrl' => $this->certificateGenerationService->getCertificatePreviewUrl($certificateContent),
+                'accessCode' => $result['accessCode'],
+                'issuedCertificateId' => $issuedCertificate ? $issuedCertificate->id : null,
+            ],
         ]);
     }
 }

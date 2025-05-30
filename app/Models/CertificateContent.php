@@ -73,4 +73,12 @@ class CertificateContent extends Model
     {
         return $this->belongsTo(User::class, 'created_by');
     }
+    
+    /**
+     * Get the certificate template associated with this certificate content.
+     */
+    public function template()
+    {
+        return $this->belongsTo(CertificateTemplate::class, 'certificate_template_id');
+    }
 }

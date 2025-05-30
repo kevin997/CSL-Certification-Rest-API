@@ -52,7 +52,4 @@ Route::middleware(['auth:sanctum'])->prefix('learner')->group(function () {
     
     // Template routes
     Route::get('/templates/{id}', [TemplateController::class, 'show']);
-    
-    // User profile - uses the main user endpoint
-    // Already handled by the /user route in api.php
 });

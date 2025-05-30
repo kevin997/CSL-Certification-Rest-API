@@ -90,10 +90,10 @@ class EnrollmentController extends Controller
                 'activity_id' => $request->input('activity_id'),
             ],
             [
-                'completed' => $request->input('completed'),
+                'status' => $request->input('completed'),
                 'score' => $request->input('score'),
-                'completion_time' => $request->input('completion_time'),
-                'submission_data' => $request->input('submission_data'),
+                'time_spent' => $request->input('completion_time'),
+                //'submission_data' => $request->input('submission_data'),
                 'completed_at' => $request->input('completed') ? now() : null,
             ]
         );
