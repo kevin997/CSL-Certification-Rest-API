@@ -19,7 +19,7 @@ class EnrollmentController extends Controller
     public function index(Request $request)
     {
         $user = Auth::user();
-        $environmentId = $request->header('X-Environment-ID');
+        $environmentId = session('current_environment_id');
         
         $enrollments = Enrollment::where('user_id', $user->id)
             ->where('environment_id', $environmentId)
@@ -43,7 +43,7 @@ class EnrollmentController extends Controller
     public function show(Request $request, $id)
     {
         $user = Auth::user();
-        $environmentId = $request->header('X-Environment-ID');
+        $environmentId = session('current_environment_id');
         
         $enrollment = Enrollment::where('id', $id)
             ->where('user_id', $user->id)
@@ -66,7 +66,7 @@ class EnrollmentController extends Controller
     public function updateActivityCompletion(Request $request)
     {
         $user = Auth::user();
-        $environmentId = $request->header('X-Environment-ID');
+        $environmentId = session('current_environment_id');
         
         $request->validate([
             'enrollment_id' => 'required|exists:enrollments,id',
@@ -118,7 +118,7 @@ class EnrollmentController extends Controller
     public function getActivityCompletions(Request $request, $enrollmentId)
     {
         $user = Auth::user();
-        $environmentId = $request->header('X-Environment-ID');
+        $environmentId = session('current_environment_id');
         
         // Verify that the enrollment belongs to the user
         $enrollment = Enrollment::where('id', $enrollmentId)

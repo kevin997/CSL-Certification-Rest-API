@@ -19,7 +19,7 @@ class TemplateController extends Controller
     public function index(Request $request)
     {
         $user = Auth::user();
-        $environmentId = $request->header('X-Environment-ID');
+        $environmentId = session('current_environment_id');
         
         // Get courses the user is enrolled in
         $enrolledCourseIds = Enrollment::where('user_id', $user->id)
@@ -56,7 +56,7 @@ class TemplateController extends Controller
     public function show(Request $request, $id)
     {
         $user = Auth::user();
-        $environmentId = $request->header('X-Environment-ID');
+        $environmentId = session('current_environment_id');
         
         // Check if user is enrolled in a course that uses this template
         $isEnrolled = Enrollment::where('user_id', $user->id)

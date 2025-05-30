@@ -19,7 +19,7 @@ class OrderController extends Controller
     public function index(Request $request)
     {
         $user = Auth::user();
-        $environmentId = $request->header('X-Environment-ID');
+        $environmentId = session('current_environment_id');
         
         $orders = Order::where('user_id', $user->id)
             ->where('environment_id', $environmentId)
@@ -43,7 +43,7 @@ class OrderController extends Controller
     public function show(Request $request, $id)
     {
         $user = Auth::user();
-        $environmentId = $request->header('X-Environment-ID');
+        $environmentId = session('current_environment_id');
         
         $order = Order::where('id', $id)
             ->where('user_id', $user->id)
@@ -70,7 +70,7 @@ class OrderController extends Controller
     public function store(Request $request)
     {
         $user = Auth::user();
-        $environmentId = $request->header('X-Environment-ID');
+        $environmentId = session('current_environment_id');
         
         $request->validate([
             'items' => 'required|array',
@@ -82,7 +82,7 @@ class OrderController extends Controller
         ]);
         
         // Start a database transaction
-        \DB::beginTransaction();
+        DB::beginTransaction();
         
         try {
             // Create the order
@@ -158,7 +158,7 @@ class OrderController extends Controller
                 }
             }
             
-            \DB::commit();
+            DB::commit();
             
             return response()->json([
                 'status' => 'success',
@@ -167,7 +167,7 @@ class OrderController extends Controller
             ], 201);
             
         } catch (\Exception $e) {
-            \DB::rollBack();
+            DB::rollBack();
             
             return response()->json([
                 'status' => 'error',

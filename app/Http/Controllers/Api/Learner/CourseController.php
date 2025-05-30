@@ -19,7 +19,7 @@ class CourseController extends Controller
     public function index(Request $request)
     {
         $user = Auth::user();
-        $environmentId = $request->header('X-Environment-ID');
+        $environmentId = session('current_environment_id');
         
         $courses = Course::whereHas('enrollments', function ($query) use ($user) {
                 $query->where('user_id', $user->id);
@@ -50,7 +50,7 @@ class CourseController extends Controller
     public function show(Request $request, $id)
     {
         $user = Auth::user();
-        $environmentId = $request->header('X-Environment-ID');
+        $environmentId = session('current_environment_id');
         
         $course = Course::where('id', $id)
             ->where('environment_id', $environmentId)

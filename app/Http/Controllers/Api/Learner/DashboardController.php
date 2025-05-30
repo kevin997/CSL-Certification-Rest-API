@@ -22,7 +22,7 @@ class DashboardController extends Controller
     public function index(Request $request)
     {
         $user = Auth::user();
-        $environmentId = $request->header('X-Environment-ID');
+        $environmentId = session('current_environment_id');
         
         // Get course enrollment counts and statuses
         $enrollmentStats = Enrollment::where('user_id', $user->id)
