@@ -25,7 +25,7 @@ class FinanceController extends Controller
     public function overview(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = $request->user()->current_environment_id;
+        $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
             return response()->json([
@@ -181,7 +181,7 @@ class FinanceController extends Controller
     public function subscription(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = $request->user()->current_environment_id;
+        $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
             return response()->json([
@@ -217,7 +217,7 @@ class FinanceController extends Controller
     public function orders(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = $request->user()->current_environment_id;
+        $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
             return response()->json([
@@ -282,7 +282,7 @@ class FinanceController extends Controller
     public function transactions(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = $request->user()->current_environment_id;
+        $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
             return response()->json([
@@ -340,7 +340,7 @@ class FinanceController extends Controller
     public function revenueByProductType(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = $request->user()->current_environment_id;
+        $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
             return response()->json([

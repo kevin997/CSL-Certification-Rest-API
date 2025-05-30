@@ -24,7 +24,7 @@ class AnalyticsController extends Controller
     public function overview(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = $request->user()->current_environment_id;
+        $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
             return response()->json([
@@ -346,7 +346,7 @@ class AnalyticsController extends Controller
     public function userEngagement(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = $request->user()->current_environment_id;
+        $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
             return response()->json([
@@ -433,7 +433,7 @@ class AnalyticsController extends Controller
     public function courseAnalytics(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = $request->user()->current_environment_id;
+        $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
             return response()->json([
@@ -555,7 +555,7 @@ class AnalyticsController extends Controller
     public function certificateAnalytics(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = $request->user()->current_environment_id;
+        $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
             return response()->json([
