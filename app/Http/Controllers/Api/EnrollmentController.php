@@ -124,7 +124,6 @@ class EnrollmentController extends Controller
             'course_id' => 'required|integer|exists:courses,id',
             'user_id' => 'nullable|integer|exists:users,id',
             'status' => 'nullable|string|in:active,completed,expired,cancelled',
-            'expires_at' => 'nullable|date|after:now',
             'notes' => 'nullable|string',
         ]);
 

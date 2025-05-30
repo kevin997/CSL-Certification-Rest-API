@@ -4,6 +4,7 @@ namespace App\Listeners;
 
 use App\Events\OrderCompleted;
 use App\Models\Product;
+use App\Models\Enrollment;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\DB;
@@ -83,15 +84,13 @@ class ProcessOrderItems implements ShouldQueue
                 ->first();
                 
             if (!$enrollment) {
-                DB::table('enrollments')->insert([
+                Enrollment::create([
                     'user_id' => $order->user_id,
                     'course_id' => $productCourse->course_id,
                     'environment_id' => $order->environment_id,
-                    'status' => 'active',
-                    'progress' => 0,
-                    'enrolled_at' => now(),
-                    'created_at' => now(),
-                    'updated_at' => now(),
+                    'status' => 'enrolled',
+                    'progress_percentage' => 0,
+                    'last_activity_at' => now(),
                 ]);
                 
                 Log::info("Created enrollment for user {$order->user_id} in course {$productCourse->course_id}");
