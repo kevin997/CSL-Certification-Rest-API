@@ -38,7 +38,7 @@ class WelcomeToEnvironment extends Mailable implements ShouldQueue
         $companyName = $branding?->company_name ?? $this->environment->name;
 
         return new Envelope(
-            from: new Address(env('MAIL_FROM_ADDRESS', 'no-reply@cfpcsl.com'), $companyName),
+            from: new Address(env('MAIL_FROM_ADDRESS', 'no.reply@cfpcsl.com'), $companyName),
             subject: "Welcome to {$companyName}",
         );
     }

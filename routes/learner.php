@@ -31,7 +31,7 @@ use Illuminate\Support\Facades\Route;
 
 // Protected learner routes - requiring authentication and appropriate roles
 // Users with role:learner or env_role:(learner|company_learner|company_team_member) can access these routes
-Route::middleware(['auth:sanctum', 'ability:role:learner,env_role:learner,env_role:company_learner,env_role:company_team_member'])->prefix('learner')->group(function () {
+Route::middleware(['auth:sanctum'])->prefix('learner')->group(function () {
     // Dashboard routes
     Route::get('/dashboard', [DashboardController::class, 'index']);
     

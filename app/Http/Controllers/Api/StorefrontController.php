@@ -1529,7 +1529,16 @@ class StorefrontController extends Controller
             $order->currency = 'USD'; // Default currency
             $order->save();
             
-           
+            // Save order items to the database
+            foreach ($orderItems as $item) {
+                $orderItem = new OrderItem();
+                $orderItem->order_id = $order->id;
+                $orderItem->product_id = $item['product']->id;
+                $orderItem->quantity = $item['quantity'];
+                $orderItem->price = $item['price'];
+                $orderItem->total = $item['total'];
+                $orderItem->save();
+            }
             
             // Check if a referral code was provided
             if ($request->has('referral_code') && !empty($request->input('referral_code'))) {

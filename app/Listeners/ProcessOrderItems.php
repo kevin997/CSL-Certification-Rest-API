@@ -47,7 +47,12 @@ class ProcessOrderItems implements ShouldQueue
             }
             
             // Handle course enrollments if the product contains courses
-            $this->processProductCourses($product, $order);
+            // Ensure we're passing a single Product model, not a collection
+            if ($product instanceof \App\Models\Product) {
+                $this->processProductCourses($product, $order);
+            } else {
+                Log::error("Expected single Product model for order item {$item->id}, got " . get_class($product));
+            }
             
             // Handle subscriptions if the product is a subscription
             if ($product->is_subscription) {

@@ -1,4 +1,4 @@
-@component('mail::message')
+@component('mail::message', ['environment' => $environment ?? null, 'branding' => $branding ?? null])
 # Order Confirmation
 
 Thank you for your order!
@@ -12,9 +12,25 @@ Thank you for your order!
 @component('mail::table')
 | Product | Quantity | Price |
 |:--------|:--------:|------:|
-@foreach($order->orderItems as $item)
-| {{ $item->product->name }} | {{ $item->quantity }} | {{ number_format($item->price, 2) }} {{ $order->currency }} |
-@endforeach
+@if(isset($order->orderItems) && count($order->orderItems) > 0)
+    @foreach($order->orderItems as $item)
+        @if(isset($item->product))
+        | {{ $item->product->name }} | {{ $item->quantity }} | {{ number_format($item->price, 2) }} {{ $order->currency }} |
+        @else
+        | Product #{{ $item->product_id }} | {{ $item->quantity }} | {{ number_format($item->price, 2) }} {{ $order->currency }} |
+        @endif
+    @endforeach
+@elseif(isset($order->items) && count($order->items) > 0)
+    @foreach($order->items as $item)
+        @if(isset($item->product))
+        | {{ $item->product->name }} | {{ $item->quantity }} | {{ number_format($item->price, 2) }} {{ $order->currency }} |
+        @else
+        | Product #{{ $item->product_id }} | {{ $item->quantity }} | {{ number_format($item->price, 2) }} {{ $order->currency }} |
+        @endif
+    @endforeach
+@else
+| No items found | - | - |
+@endif
 @endcomponent
 
 ## Billing Information
@@ -29,10 +45,10 @@ Thank you for your order!
 
 If you have any questions about your order, please contact our support team.
 
-@component('mail::button', ['url' => config('app.frontend_url') . '/account/orders/' . $order->id])
+@component('mail::button', ['url' => 'https://' . $environment->primary_domain . '/account/orders/' . $order->id])
 View Order
 @endcomponent
 
 Thank you,<br>
-{{ config('app.name') }}
+{{ $branding->company_name ?? $environment->name ?? 'CSL' }}
 @endcomponent

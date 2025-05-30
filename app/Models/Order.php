@@ -65,6 +65,14 @@ class Order extends Model
     {
         return $this->hasMany(OrderItem::class);
     }
+    
+    /**
+     * Alias for items() to maintain compatibility with existing code.
+     */
+    public function orderItems(): HasMany
+    {
+        return $this->items();
+    }
 
     /**
      * Get the referral associated with this order.

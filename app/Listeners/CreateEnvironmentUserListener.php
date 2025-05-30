@@ -63,12 +63,11 @@ class CreateEnvironmentUserListener implements ShouldQueue
         $environmentUser->save();
         
         // Send welcome email with the generated password
+        // Only send one welcome email with the correct password
         $this->sendWelcomeEmail($event->user, $event->environment, $password);
         
-        // Send email with credentials if this is a new user
-        if ($event->isNewUser) {
-            $this->sendWelcomeEmail($event->user, $event->environment);
-        }
+        // Note: We removed the duplicate email sending that was happening for new users
+        // to prevent users from receiving multiple emails with different passwords
     }
     
     /**

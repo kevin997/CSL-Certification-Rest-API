@@ -8,16 +8,9 @@ use App\Models\Environment;
 use App\Models\PaymentGatewaySetting;
 use App\Services\PaymentGateways\PaymentGatewayFactory;
 use App\Services\PaymentGateways\PaymentGatewayInterface;
-use App\Services\PaymentGateways\StripeGateway;
-use App\Services\PaymentGateways\PayPalGateway;
-use App\Services\PaymentGateways\LygosGateway;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Mail;
-use App\Mail\OrderConfirmation;
 
 class PaymentService
 {
@@ -80,13 +73,17 @@ class PaymentService
             // Create a transaction record
             $transaction = new Transaction();
             $transaction->order_id = $order->id;
-            $transaction->user_id = $order->user_id;
+            $transaction->customer_id = $order->user_id;
             $transaction->transaction_id = 'TXN_' . Str::uuid();
             $transaction->payment_method = $paymentMethod;
+            $transaction->amount = $order->total_amount; // Set amount field
             $transaction->total_amount = $order->total_amount;
             $transaction->currency = $order->currency ?? 'USD';
             $transaction->status = 'pending';
             $transaction->description = 'Payment for Order #' . $order->order_number;
+            // Set customer information from the order
+            $transaction->customer_name = $order->billing_name;
+            $transaction->customer_email = $order->billing_email;
             $transaction->save();
 
             // Initialize the payment gateway with environment-specific settings
@@ -136,7 +133,7 @@ class PaymentService
     {
         try {
             // Get environment ID based on environment name
-            $environmentId = null;
+            $environmentId = session('current_environment_id');
             if ($environment) {
                 // Cache environment lookups to avoid repeated database queries
                 if (!isset($this->environmentCache[$environment])) {
@@ -145,6 +142,8 @@ class PaymentService
                 }
                 $environmentId = $this->environmentCache[$environment];
             }
+
+            Log::info('Enviroment id in payment service '.$environmentId);
             
             // Get gateway settings for the specified environment
             $gatewaySettings = $this->getGatewaySettings($gatewayCode, $environmentId);
@@ -191,7 +190,12 @@ class PaymentService
      */
     private function getGatewaySettings(string $gatewayCode, ?int $environmentId): ?PaymentGatewaySetting
     {
-        return PaymentGatewaySetting::where('gateway_code', $gatewayCode)
+        // If environmentId is null, try to get it from the session
+        if ($environmentId === null) {
+            $environmentId = session('current_environment_id');
+        }
+        
+        return PaymentGatewaySetting::where('code', $gatewayCode)
             ->where(function ($query) use ($environmentId) {
                 $query->where('environment_id', $environmentId)
                     ->orWhereNull('environment_id');
@@ -283,7 +287,7 @@ class PaymentService
     {
         try {
             // Get the payment gateway settings
-            $gatewaySettings = PaymentGatewaySetting::where('gateway_code', $gatewayCode)
+            $gatewaySettings = PaymentGatewaySetting::where('code', $gatewayCode)
                 ->where('environment_id', $paymentData['environment_id'] ?? null)
                 ->where('status', true)
                 ->first();
@@ -300,7 +304,7 @@ class PaymentService
             $transaction->order_id = $order->id;
             $transaction->environment_id = $paymentData['environment_id'] ?? $gatewaySettings->environment_id;
             $transaction->payment_gateway_setting_id = $gatewaySettings->id;
-            $transaction->gateway_code = $gatewayCode;
+            $transaction->payment_method = $gatewayCode;
             $transaction->transaction_id = 'TXN-' . Str::random(16);
             $transaction->customer_name = $order->customer_name;
             $transaction->customer_email = $order->customer_email;
@@ -400,7 +404,7 @@ class PaymentService
         
         try {
             // Get the Stripe gateway settings
-            $gatewaySettings = PaymentGatewaySetting::where('gateway_code', 'stripe')
+            $gatewaySettings = PaymentGatewaySetting::where('code', 'stripe')
                 ->where('environment_id', $paymentData['environment_id'] ?? null)
                 ->where('status', true)
                 ->first();
@@ -417,7 +421,7 @@ class PaymentService
             $transaction->order_id = $order->id;
             $transaction->environment_id = $paymentData['environment_id'] ?? $gatewaySettings->environment_id;
             $transaction->payment_gateway_setting_id = $gatewaySettings->id;
-            $transaction->gateway_code = 'stripe';
+            $transaction->payment_method = 'stripe';
             $transaction->transaction_id = 'TXN-' . Str::random(16);
             $transaction->customer_name = $order->customer_name;
             $transaction->customer_email = $order->customer_email;
@@ -520,7 +524,7 @@ class PaymentService
         
         try {
             // Get the PayPal gateway settings
-            $gatewaySettings = PaymentGatewaySetting::where('gateway_code', 'paypal')
+            $gatewaySettings = PaymentGatewaySetting::where('code', 'paypal')
                 ->where('environment_id', $paymentData['environment_id'] ?? null)
                 ->where('status', true)
                 ->first();
@@ -537,7 +541,7 @@ class PaymentService
             $transaction->order_id = $order->id;
             $transaction->environment_id = $paymentData['environment_id'] ?? $gatewaySettings->environment_id;
             $transaction->payment_gateway_setting_id = $gatewaySettings->id;
-            $transaction->gateway_code = 'paypal';
+            $transaction->payment_method = 'paypal';
             $transaction->transaction_id = 'TXN-' . Str::random(16);
             $transaction->customer_name = $order->customer_name;
             $transaction->customer_email = $order->customer_email;
@@ -744,7 +748,7 @@ class PaymentService
             }
             
             // Verify the payment using the gateway
-            $gateway = PaymentGatewayFactory::create($transaction->gateway_code, $gatewaySettings);
+            $gateway = PaymentGatewayFactory::create($transaction->payment_method, $gatewaySettings);
             
             if (!$gateway) {
                 return [
@@ -767,7 +771,7 @@ class PaymentService
                     $this->orderService->updatePaymentStatus($order->id, 'paid', [
                         'transaction_id' => $transaction->transaction_id,
                         'gateway_transaction_id' => $transaction->gateway_transaction_id,
-                        'payment_method' => $transaction->gateway_code,
+                        'payment_method' => $transaction->payment_method,
                         'payment_date' => now()->format('Y-m-d H:i:s')
                     ]);
                     
@@ -925,7 +929,7 @@ class PaymentService
             }
             
             // Process the refund using the gateway
-            $gateway = PaymentGatewayFactory::create($transaction->gateway_code, $gatewaySettings);
+            $gateway = PaymentGatewayFactory::create($transaction->payment_method, $gatewaySettings);
             
             if (!$gateway) {
                 return [
@@ -942,7 +946,7 @@ class PaymentService
                 $refundTransaction->order_id = $transaction->order_id;
                 $refundTransaction->environment_id = $transaction->environment_id;
                 $refundTransaction->payment_gateway_setting_id = $transaction->payment_gateway_setting_id;
-                $refundTransaction->gateway_code = $transaction->gateway_code;
+                $refundTransaction->payment_method = $transaction->payment_method;
                 $refundTransaction->transaction_id = 'REF-' . Str::random(16);
                 $refundTransaction->parent_transaction_id = $transaction->transaction_id;
                 $refundTransaction->gateway_transaction_id = $refundResponse['refund_id'];
@@ -1159,13 +1163,13 @@ class PaymentService
         // Add configured payment gateways
         foreach ($gatewaySettings as $setting) {
             // Initialize the gateway to get its configuration
-            $gateway = PaymentGatewayFactory::create($setting->gateway_code, $setting);
+            $gateway = PaymentGatewayFactory::create($setting->payment_method, $setting);
             
             if ($gateway) {
                 $config = $gateway->getConfig();
                 
                 $paymentMethods[] = [
-                    'id' => $setting->gateway_code,
+                    'id' => $setting->code,
                     'name' => $config['name'] ?? $setting->name,
                     'description' => $config['description'] ?? $setting->description,
                     'is_enabled' => $setting->status,

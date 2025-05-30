@@ -75,7 +75,7 @@ class DashboardController extends Controller
                 }
             }
             
-            $completedActivities += $enrollment->activityCompletions->where('completed', true)->count();
+            $completedActivities += $enrollment->activityCompletions->whereNotNull('completed_at')->count();
         }
         
         $overallProgressPercentage = $totalActivities > 0 ? ($completedActivities / $totalActivities) * 100 : 0;
@@ -85,7 +85,7 @@ class DashboardController extends Controller
                 $query->where('user_id', $user->id)
                     ->where('environment_id', $environmentId);
             })
-            ->where('completed', true)
+            ->whereNotNull('completed_at')
             ->select(DB::raw('DATE(completed_at) as date'), DB::raw('count(*) as count'))
             ->groupBy('date')
             ->orderBy('date')
