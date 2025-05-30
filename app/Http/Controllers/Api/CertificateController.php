@@ -400,28 +400,7 @@ class CertificateController extends Controller
             'issued_date' => $issueDate->toDateTimeString(),
             'expiry_date' => $expiryDate ? $expiryDate->toDateTimeString() : null,
         ];
-        
-        // Add certificate content metadata
-        $metadata = $certificateContent->metadata ?? [];
-        
-        // Include signatory information if available
-        if (isset($metadata['signatory_name'])) {
-            $userData['signatory_name'] = $metadata['signatory_name'];
-        }
-        
-        if (isset($metadata['signatory_title'])) {
-            $userData['signatory_title'] = $metadata['signatory_title'];
-        }
-        
-        if (isset($metadata['signatory_organization'])) {
-            $userData['signatory_organization'] = $metadata['signatory_organization'];
-        }
-        
-        // Include any custom fields
-        if (isset($metadata['custom_fields']) && is_array($metadata['custom_fields'])) {
-            $userData['custom_fields'] = $metadata['custom_fields'];
-        }
-        
+       
         // Add certificate content metadata
         $userData = array_merge($userData, [
             'certificate_id' => $certificateContent->id,

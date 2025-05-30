@@ -513,11 +513,12 @@ class CertificateGenerationService
             $issuedCertificate->user_id = $userData['user_id'] ?? null;
             $issuedCertificate->course_id = $certificateContent->course_id;
             $issuedCertificate->certificate_content_id = $certificateContent->id;
-            $issuedCertificate->access_code = $accessCode;
+            $issuedCertificate->certificate_number = $accessCode;
             $issuedCertificate->status = 'issued';
+            $issuedCertificate->file_path = $certificateUrl; // Set file_path to the certificate URL
             
             // Set issued date from userData if provided, otherwise use current time
-            $issuedCertificate->issued_at = isset($userData['issued_date']) ? 
+            $issuedCertificate->issued_date = isset($userData['issued_date']) ? 
                 new \DateTime($userData['issued_date']) : now();
                 
             // Set expiry date if provided in userData
@@ -525,7 +526,7 @@ class CertificateGenerationService
                 $issuedCertificate->expiry_date = new \DateTime($userData['expiry_date']);
             } elseif ($certificateContent->expiry_period && $certificateContent->expiry_period_unit) {
                 // Calculate expiry date based on certificate content settings
-                $expiryDate = clone $issuedCertificate->issued_at;
+                $expiryDate = clone $issuedCertificate->issued_date;
                 
                 switch ($certificateContent->expiry_period_unit) {
                     case 'days':
@@ -542,8 +543,8 @@ class CertificateGenerationService
                 $issuedCertificate->expiry_date = $expiryDate;
             }
             
-            // Store metadata about the certificate
-            $issuedCertificate->metadata = [
+            // Store metadata about the certificate in custom_fields (JSON column)
+            $issuedCertificate->custom_fields = [
                 'certificate_url' => $certificateUrl,
                 'preview_url' => $previewUrl,
                 'recipient_name' => $userData['fullName'] ?? 'Student Name',
