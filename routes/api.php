@@ -522,5 +522,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/teams/update-member-role', [\App\Http\Controllers\Api\TeamController::class, 'updateMemberRole']);
 });
 
+// Environment User Routes
+Route::middleware('auth:sanctum')->group(function () {
+    // Account setup route
+    Route::put('/environment-users/setup-account', [\App\Http\Controllers\Api\EnvironmentUserController::class, 'setupAccount']);
+});
+
 // Include the learner routes
 require __DIR__ . '/learner.php';

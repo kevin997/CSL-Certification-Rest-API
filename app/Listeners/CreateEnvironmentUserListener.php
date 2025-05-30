@@ -9,6 +9,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Carbon\Carbon;
 
 class CreateEnvironmentUserListener implements ShouldQueue
@@ -45,6 +46,9 @@ class CreateEnvironmentUserListener implements ShouldQueue
             return;
         }
         
+        // Generate a secure random password
+        $password = Str::password(12, true, true, true, false);
+        
         // Create a new environment user record with default credentials
         $environmentUser = new EnvironmentUser();
         $environmentUser->environment_id = $event->environment->id;
@@ -54,8 +58,12 @@ class CreateEnvironmentUserListener implements ShouldQueue
         $environmentUser->joined_at = Carbon::now();
         $environmentUser->use_environment_credentials = true;
         $environmentUser->environment_email = $event->user->email;
-        $environmentUser->environment_password = Hash::make('mylearningenvpassword');
+        $environmentUser->environment_password = Hash::make($password);
+        $environmentUser->is_account_setup = false; // User needs to set up their account
         $environmentUser->save();
+        
+        // Send welcome email with the generated password
+        $this->sendWelcomeEmail($event->user, $event->environment, $password);
         
         // Send email with credentials if this is a new user
         if ($event->isNewUser) {
@@ -68,15 +76,20 @@ class CreateEnvironmentUserListener implements ShouldQueue
      *
      * @param \App\Models\User $user
      * @param \App\Models\Environment $environment
+     * @param string $password
      * @return void
      */
-    private function sendWelcomeEmail($user, $environment): void
+    private function sendWelcomeEmail($user, $environment, string $password = 'welcome123'): void
     {
-        // In a real implementation, you would use Laravel's Mail facade to send an email
-        // For now, we'll just log that we would send an email
-        Log::info("Welcome email would be sent to {$user->email} with credentials for {$environment->name}");
-        
-        // Example of how you would send an actual email:
-        // Mail::to($user->email)->send(new \App\Mail\WelcomeToEnvironment($user, $environment, 'mylearningenvpassword'));
+        try {
+            // Send the welcome email with the environment credentials
+            Mail::to($user->email)->send(new \App\Mail\WelcomeToEnvironment($user, $environment, $password));
+            
+            // Log that the email was sent
+            Log::info("Welcome email sent to {$user->email} for environment {$environment->name}");
+        } catch (\Exception $e) {
+            // Log any errors that occur during email sending
+            Log::error("Failed to send welcome email to {$user->email}: {$e->getMessage()}");
+        }
     }
 }

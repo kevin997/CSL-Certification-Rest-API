@@ -31,7 +31,8 @@ class EnvironmentUser extends Model
         'use_environment_credentials',
         'environment_email',
         'environment_password',
-        'email_verified_at'
+        'email_verified_at',
+        'is_account_setup'
     ];
 
     /**
@@ -46,6 +47,7 @@ class EnvironmentUser extends Model
             'joined_at' => 'datetime',
             'email_verified_at' => 'datetime',
             'use_environment_credentials' => 'boolean',
+            'is_account_setup' => 'boolean',
         ];
     }
 

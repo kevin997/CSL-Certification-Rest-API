@@ -149,13 +149,23 @@ class TokenController extends Controller
             ($environmentUser->role instanceof UserRole ? $environmentUser->role->value : $environmentUser->role) : 
             null;
             
+        // Get the is_account_setup status if this is an environment login
+        $isAccountSetup = null;
+        if ($environmentId) {
+            $envUser = EnvironmentUser::where('environment_id', $environmentId)
+                ->where('user_id', $user->id)
+                ->first();
+            $isAccountSetup = $envUser ? $envUser->is_account_setup : null;
+        }
+        
         return response()->json([
             'token' => $token,
             'user' => $user,
             'environment_id' => $environmentId,
             'role' => $role,
             'user_role' => $userRoleForResponse,
-            'environment_role' => $environmentRoleForResponse
+            'environment_role' => $environmentRoleForResponse,
+            'is_account_setup' => $isAccountSetup
         ]);
     }
     
@@ -212,7 +222,8 @@ class TokenController extends Controller
             'environment_id' => $environmentId,
             'role' => $role,
             'user_role' => $userRoleValue,
-            'environment_role' => $environmentRoleValue
+            'environment_role' => $environmentRoleValue,
+            'is_account_setup' => $environmentUser->is_account_setup
         ]);
     }
 
