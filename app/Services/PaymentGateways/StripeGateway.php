@@ -63,6 +63,7 @@ class StripeGateway implements PaymentGatewayInterface
         $this->apiVersion = $settings->getSetting('api_version', '2023-10-16');
         $this->webhookSecret = $settings->getSetting('webhook_secret');
         
+        Log::info('Keys from database'.$this->apiKey);
         // Initialize the Stripe client
         $this->stripeClient = new StripeSDK([
             'api_key' => $this->apiKey,

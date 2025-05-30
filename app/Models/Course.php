@@ -108,4 +108,13 @@ class Course extends Model
     {
         return $this->hasMany(IssuedCertificate::class);
     }
+    
+    /**
+     * Get the products that include this course.
+     */
+    public function products(): BelongsToMany
+    {
+        return $this->belongsToMany(Product::class, 'product_courses')
+            ->withTimestamps();
+    }
 }

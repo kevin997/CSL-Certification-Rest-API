@@ -296,8 +296,14 @@ class ProductController extends Controller
         $product->save();
 
         // Attach courses if provided
-        if ($request->has('courses') && is_array($request->courses)) {
-            $product->courses()->attach($request->courses);
+        if ($request->has('courses')) {
+            // Handle both array of courses and single course ID
+            if (is_array($request->courses)) {
+                $product->courses()->attach($request->courses);
+            } else {
+                // Handle single course ID
+                $product->courses()->attach([$request->courses]);
+            }
         }
 
         // Load the category relationship
@@ -531,7 +537,13 @@ class ProductController extends Controller
 
         // Update courses if provided
         if ($request->has('courses')) {
-            $product->courses()->sync($request->courses);
+            // Handle both array of courses and single course ID
+            if (is_array($request->courses)) {
+                $product->courses()->sync($request->courses);
+            } else {
+                // Handle single course ID
+                $product->courses()->sync([$request->courses]);
+            }
         }
 
         // Load the category relationship
