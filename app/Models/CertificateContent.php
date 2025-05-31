@@ -81,4 +81,27 @@ class CertificateContent extends Model
     {
         return $this->belongsTo(CertificateTemplate::class, 'certificate_template_id');
     }
+
+    /**
+     * Get the course_id for this certificate content via the related activity.
+     */
+    public function getCourseIdAttribute()
+    {
+        // Defensive: If activity_id is not set, return null
+        if (!$this->activity_id) {
+            return null;
+        }
+        $activity = Activity::find($this->activity_id);
+        if (!$activity || !$activity->block) {
+            return null;
+        }
+        $block = $activity->block;
+        if (!$block->template) {
+            return null;
+        }
+        $template = $block->template;
+        // Get the first course using this template
+        $course = $template->courses()->first();
+        return $course ? $course->id : null;
+    }
 }

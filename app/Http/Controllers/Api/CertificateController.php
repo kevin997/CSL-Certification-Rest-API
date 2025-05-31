@@ -363,8 +363,46 @@ class CertificateController extends Controller
             ], Response::HTTP_UNAUTHORIZED);
         }
         
-        // Get the course from the certificate content
-        $courseId = $certificateContent->course_id;
+        // Find the correct course for this certificate content and user
+        $activity = \App\Models\Activity::find($certificateContent->activity_id);
+        if (!$activity) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Activity not found for certificate content',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+        $block = $activity->block;
+        if (!$block) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Block not found for activity',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+        $template = $block->template;
+        if (!$template) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Template not found for block',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+        $courses = $template->courses;
+        if ($courses->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No courses found for template',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+        // Find the user's enrollment in any of these courses
+        $enrollment = \App\Models\Enrollment::where('user_id', $user->id)
+            ->whereIn('course_id', $courses->pluck('id'))
+            ->first();
+        if (!$enrollment) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User is not enrolled in any course for this certificate',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+        $courseId = $enrollment->course_id;
         
         // Calculate certificate date based on expiry period if set
         $issueDate = now();
