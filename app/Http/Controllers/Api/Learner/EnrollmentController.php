@@ -134,6 +134,102 @@ class EnrollmentController extends Controller
             'data' => $activityCompletions,
         ]);
     }
+
+    /**
+     * Get a specific activity completion for an enrollment
+     * 
+     * @param Request $request
+     * @param int $enrollmentId
+     * @param int $activityId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getActivityCompletion(Request $request, $enrollmentId, $activityId)
+    {
+        $user = Auth::user();
+        $environmentId = session('current_environment_id');
+        
+        // Verify that the enrollment belongs to the user
+        $enrollment = Enrollment::where('id', $enrollmentId)
+            ->where('user_id', $user->id)
+            ->where('environment_id', $environmentId)
+            ->firstOrFail();
+        
+        // Find the activity completion record
+        $activityCompletion = ActivityCompletion::where('enrollment_id', $enrollment->id)
+            ->where('activity_id', $activityId)
+            ->first();
+        
+        if (!$activityCompletion) {
+            // Return empty completion data if not found
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'enrollment_id' => $enrollmentId,
+                    'activity_id' => $activityId,
+                    'completed' => false,
+                    'score' => 0,
+                    'time_spent' => 0,
+                    'completed_at' => null,
+                ],
+            ]);
+        }
+        
+        return response()->json([
+            'status' => 'success',
+            'data' => $activityCompletion,
+        ]);
+    }
+    
+    /**
+     * Reset a specific activity completion for an enrollment
+     * 
+     * @param Request $request
+     * @param int $enrollmentId
+     * @param int $activityId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function resetActivityCompletion(Request $request, $enrollmentId, $activityId)
+    {
+        $user = Auth::user();
+        $environmentId = session('current_environment_id');
+        
+        // Verify that the enrollment belongs to the user
+        $enrollment = Enrollment::where('id', $enrollmentId)
+            ->where('user_id', $user->id)
+            ->where('environment_id', $environmentId)
+            ->firstOrFail();
+        
+        // Find and delete the activity completion record
+        $activityCompletion = ActivityCompletion::where('enrollment_id', $enrollment->id)
+            ->where('activity_id', $activityId)
+            ->first();
+        
+        if ($activityCompletion) {
+            // Reset the completion status
+            $activityCompletion->update([
+                'completed' => false,
+                'score' => 0,
+                'time_spent' => 0,
+                'completed_at' => null,
+            ]);
+            
+            // Update enrollment progress
+            $this->updateEnrollmentProgress($enrollment);
+            
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Activity completion reset successfully',
+                'data' => $activityCompletion,
+                'enrollment' => $enrollment->fresh(),
+            ]);
+        }
+        
+        return response()->json([
+            'status' => 'success',
+            'message' => 'No activity completion found to reset',
+        ]);
+    }
+    
     
     /**
      * Update enrollment progress based on activity completions
