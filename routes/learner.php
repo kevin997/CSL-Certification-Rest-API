@@ -45,7 +45,7 @@ Route::middleware(['auth:sanctum'])->prefix('learner')->group(function () {
     
     // Activity completion routes
     Route::post('/activity-completions', [EnrollmentController::class, 'updateActivityCompletion']);
-    
+    Route::get('/enrollments/{enrollmentId}/activity-completions', [EnrollmentController::class, 'getActivityCompletions']);
     // Order routes
     Route::get('/orders', [OrderController::class, 'index']);
     Route::get('/orders/{id}', [OrderController::class, 'show']);
