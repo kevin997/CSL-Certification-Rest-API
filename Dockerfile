@@ -13,12 +13,7 @@ FROM composer:2 AS composer-builder
 WORKDIR /app
 COPY composer.json composer.lock ./
 # Copy all necessary files for composer install
-COPY app/ app/
-COPY bootstrap/ bootstrap/
-COPY config/ config/
-COPY database/ database/
-COPY routes/ routes/
-COPY resources/ resources/
+COPY . .
 # Install dependencies with more verbose output to diagnose issues
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --verbose
 
