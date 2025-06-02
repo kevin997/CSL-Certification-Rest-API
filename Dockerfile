@@ -9,10 +9,25 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Composer dependencies
-FROM composer:2 AS composer-builder
+FROM php:8.2-alpine AS composer-builder
 WORKDIR /app
-COPY composer.json composer.lock ./
-# Copy all necessary files for composer install
+
+# Install Composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+# Install required PHP extensions and dependencies
+RUN apk add --no-cache \
+    icu-dev \
+    libzip-dev \
+    oniguruma-dev \
+    libxml2-dev \
+    && docker-php-ext-install \
+    intl \
+    zip \
+    pdo_mysql \
+    mbstring
+
+# Copy all application files
 COPY . .
 # Install dependencies with more verbose output to diagnose issues
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --verbose
@@ -37,11 +52,12 @@ RUN apk add --no-cache \
     libxml2-dev \
     postgresql-dev \
     netcat-openbsd \
-    supervisor
+    supervisor \
+    icu-dev
 
 # Install PHP extensions
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip
+    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip intl
 
 # Copy application files
 COPY --chown=www-data:www-data . /var/www/html
