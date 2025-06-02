@@ -66,6 +66,9 @@ jobs:
               docker_image: "{{ docker_registry }}/{{ app_name }}"
               docker_tag: "{{ lookup('env', 'GITHUB_SHA') | default('latest', true) }}"
               app_dir: /opt/csl-certification-rest-api
+              db_database: "{{ lookup('env', 'DB_DATABASE', default='cfpcwjwg_certification_api_db') }}"
+              db_username: "{{ lookup('env', 'DB_USERNAME', default='cfpcwjwg_certi_user') }}"
+              db_password: "{{ lookup('env', 'DB_PASSWORD', default='#&H3k-ID0V') }}"
 
             tasks:
               - name: Create application directory
@@ -156,15 +159,7 @@ jobs:
                   group: ubuntu
                   mode: '0644'
                 
-              - name: Update database credentials in .env file
-                ansible.builtin.lineinfile:
-                  path: "{{ app_dir }}/.env"
-                  regexp: "{{ item.regexp }}"
-                  line: "{{ item.line }}"
-                with_items:
-                  - { regexp: '^DB_DATABASE=.*', line: 'DB_DATABASE={{ lookup("env", "DB_DATABASE", default="csl_certification_api_db") }}' }
-                  - { regexp: '^DB_USERNAME=.*', line: 'DB_USERNAME={{ lookup("env", "DB_USERNAME", default="csl_user") }}' }
-                  - { regexp: '^DB_PASSWORD=.*', line: 'DB_PASSWORD={{ lookup("env", "DB_PASSWORD", default="secure_password") }}' }
+              # Note: Database credentials are already set in .env.staging, no need to update them
 
               - name: Generate Laravel app key if not set
                 shell: |
@@ -207,30 +202,34 @@ jobs:
                   regexp: 'image: localhost:5000/csl-certification-rest-api:latest'
                   replace: 'image: localhost:5000/csl-certification-rest-api:{{ docker_tag }}'
 
-              - name: Create database backup before deployment
-                shell: |
-                  # Check if the database container is running
-                  if docker ps | grep -q csl-certification-rest-api-db; then
-                    # Create backup directory if it doesn't exist
-                    mkdir -p {{ app_dir }}/backups
+              - name: Create database backup if container is running
+                block:
+                  - name: Check if database container is running
+                    command: docker ps -f name=csl-certification-rest-api-db
+                    register: docker_ps_output
                     
-                    # Create timestamped backup file
-                    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-                    BACKUP_FILE={{ app_dir }}/backups/db_backup_${TIMESTAMP}.sql
+                  - name: Create backup directory
+                    file:
+                      path: "{{ app_dir }}/backups"
+                      state: directory
+                      mode: '0755'
+                    when: docker_ps_output.stdout.find('csl-certification-rest-api-db') != -1
                     
-                    # Dump the database
-                    docker exec csl-certification-rest-api-db mysqldump -u root -p"${DB_PASSWORD}" --databases ${DB_DATABASE} > ${BACKUP_FILE}
+                  - name: Get timestamp for backup filename
+                    shell: date +%Y%m%d_%H%M%S
+                    register: timestamp
+                    when: docker_ps_output.stdout.find('csl-certification-rest-api-db') != -1
                     
-                    # Keep only the last 5 backups
-                    ls -t {{ app_dir }}/backups/db_backup_*.sql | tail -n +6 | xargs -r rm
+                  - name: Backup database
+                    shell: docker exec csl-certification-rest-api-db mysqldump -u root -p"{{ db_password }}" --databases "{{ db_database }}" > "{{ app_dir }}/backups/db_backup_{{ timestamp.stdout }}.sql"
+                    when: docker_ps_output.stdout.find('csl-certification-rest-api-db') != -1
                     
-                    echo "Database backup created at ${BACKUP_FILE}"
-                  else
-                    echo "Database container not running, skipping backup"
-                  fi
+                  - name: Keep only last 5 backups
+                    shell: find {{ app_dir }}/backups -name "db_backup_*.sql" -type f -printf '%T@ %p\n' | sort -nr | tail -n +6 | cut -d' ' -f2- | xargs -r rm
+                    when: docker_ps_output.stdout.find('csl-certification-rest-api-db') != -1
                 register: backup_result
                 ignore_errors: yes
-                
+        
               - name: Display backup result
                 debug:
                   var: backup_result.stdout_lines
