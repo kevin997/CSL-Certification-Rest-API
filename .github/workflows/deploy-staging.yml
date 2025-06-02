@@ -1,0 +1,447 @@
+name: Deploy CSL Certification Rest API to Staging
+
+on:
+  push:
+    branches: [ staging ]
+  workflow_dispatch:
+
+# Define environment variables that can be used across jobs
+env:
+  APP_VERSION: 1.0.0
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, dom, fileinfo, mysql, gd
+          coverage: none
+        
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+        
+      - name: Copy environment file
+        run: cp .env.example .env
+        
+      - name: Generate app key
+        run: php artisan key:generate
+        
+      - name: Run tests
+        run: php artisan test
+  
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      SERVER_IP: ${{ secrets.SERVER_IP }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
+          
+      - name: Install Ansible
+        run: |
+          sudo apt update
+          sudo apt install -y ansible
+          
+      - name: Create Ansible inventory
+        run: |
+          mkdir -p .github/workflows
+          echo "[ec2]" > inventory.ini
+          echo "$SERVER_IP ansible_user=$SSH_USER" >> inventory.ini
+          
+      - name: Copy SSH key for GitHub access
+        env:
+          GITHUB_SSH_KEY: ${{ secrets.GIT_SSH_KEY }}
+        run: |
+          echo "$GITHUB_SSH_KEY" > github_deploy_key
+          chmod 600 github_deploy_key
+          
+      - name: Create Ansible vars file
+        run: |
+          echo "---" > vars.yml
+          echo "github_ssh_key: |" >> vars.yml
+          sed 's/^/  /' github_deploy_key >> vars.yml
+          
+      - name: Create Ansible playbook
+        run: |
+          cat > deploy-rest-api.yml << 'EOF'
+          ---
+          - name: Deploy CSL Certification Rest API
+            hosts: ec2
+            become: yes
+            vars:
+              app_name: csl-certification-rest-api
+              docker_registry: localhost:5000
+              docker_image: "{{ docker_registry }}/{{ app_name }}"
+              docker_tag: "{{ lookup('env', 'GITHUB_SHA') | default('latest', true) }}"
+              app_dir: /opt/csl-certification-rest-api
+
+            tasks:
+              - name: Create application directory
+                ansible.builtin.file:
+                  path: "{{ app_dir }}"
+                  state: directory
+                  mode: "0755"
+                  owner: ubuntu
+                  group: ubuntu
+
+              - name: Ensure .ssh directory exists
+                ansible.builtin.file:
+                  path: /home/ubuntu/.ssh
+                  state: directory
+                  mode: '0700'
+                  owner: ubuntu
+                  group: ubuntu
+
+              - name: Copy GitHub SSH key
+                ansible.builtin.copy:
+                  content: "{{ github_ssh_key | default('') }}"
+                  dest: /home/ubuntu/.ssh/github_deploy_key
+                  mode: '0600'
+                  owner: ubuntu
+                  group: ubuntu
+                when: github_ssh_key is defined
+
+              - name: Configure SSH for GitHub
+                ansible.builtin.copy:
+                  content: |
+                    Host github.com
+                      StrictHostKeyChecking no
+                      User git
+                      IdentityFile /home/ubuntu/.ssh/github_deploy_key
+                  dest: /home/ubuntu/.ssh/config
+                  mode: '0600'
+                  owner: ubuntu
+                  group: ubuntu
+
+              - name: Clone application repository from GitHub using SSH
+                ansible.builtin.git:
+                  repo: git@github.com:kevin997/CSL-Certification-Rest-API.git
+                  dest: "{{ app_dir }}"
+                  version: staging
+                  force: yes
+                  accept_hostkey: yes
+                become: yes
+                become_user: ubuntu
+
+              - name: Clean up Docker system
+                shell: |
+                  # Remove unused images (not used by any container)
+                  docker image prune -af --filter "until=24h"
+                  # Remove stopped containers
+                  docker container prune -f
+                ignore_errors: yes
+                
+              - name: Check disk space before build
+                shell: df -h /
+                register: disk_space_before
+                
+              - name: Display disk space before build
+                debug:
+                  var: disk_space_before.stdout_lines
+                  
+              - name: Check if Docker registry is running
+                shell: docker ps | grep registry
+                register: registry_status
+                ignore_errors: yes
+                
+              - name: Start Docker registry if not running
+                shell: |
+                  if [ "$(docker ps -a | grep registry)" ]; then
+                    if [ ! "$(docker ps | grep registry)" ]; then
+                      docker start registry
+                    fi
+                  else
+                    docker run -d -p 5000:5000 --restart=always --name registry registry:2
+                  fi
+                when: registry_status.rc != 0
+                ignore_errors: yes
+
+              - name: Copy .env.staging file
+                ansible.builtin.template:
+                  src: "{{ app_dir }}/.env.staging"
+                  dest: "{{ app_dir }}/.env"
+                  owner: ubuntu
+                  group: ubuntu
+                  mode: '0644'
+                
+              - name: Update database credentials in .env file
+                ansible.builtin.lineinfile:
+                  path: "{{ app_dir }}/.env"
+                  regexp: "{{ item.regexp }}"
+                  line: "{{ item.line }}"
+                with_items:
+                  - { regexp: '^DB_DATABASE=.*', line: 'DB_DATABASE={{ lookup("env", "DB_DATABASE", default="csl_certification_api_db") }}' }
+                  - { regexp: '^DB_USERNAME=.*', line: 'DB_USERNAME={{ lookup("env", "DB_USERNAME", default="csl_user") }}' }
+                  - { regexp: '^DB_PASSWORD=.*', line: 'DB_PASSWORD={{ lookup("env", "DB_PASSWORD", default="secure_password") }}' }
+
+              - name: Generate Laravel app key if not set
+                shell: |
+                  cd {{ app_dir }}
+                  if ! grep -q "^APP_KEY=" .env || grep -q "^APP_KEY=$" .env; then
+                    docker run --rm -v "{{ app_dir }}:/var/www/html" \
+                    -w /var/www/html php:8.2-cli php artisan key:generate --force
+                  fi
+                ignore_errors: no
+
+              - name: Build Docker image
+                docker_image:
+                  name: "{{ app_name }}"
+                  build:
+                    path: "{{ app_dir }}"
+                    dockerfile: Dockerfile
+                  source: build
+                  tag: "{{ docker_tag }}"
+                  force_source: yes
+
+              - name: Tag and push Docker image to registry
+                shell: |
+                  docker tag {{ app_name }}:{{ docker_tag }} {{ docker_registry }}/{{ app_name }}:{{ docker_tag }}
+                  docker tag {{ app_name }}:{{ docker_tag }} {{ docker_registry }}/{{ app_name }}:latest
+                  docker push {{ docker_registry }}/{{ app_name }}:{{ docker_tag }}
+                  docker push {{ docker_registry }}/{{ app_name }}:latest
+                ignore_errors: no
+
+              - name: Create Docker Compose override file
+                ansible.builtin.template:
+                  src: "{{ app_dir }}/docker-compose.yml"
+                  dest: "{{ app_dir }}/docker-compose.override.yml"
+                  owner: ubuntu
+                  group: ubuntu
+                  mode: '0644'
+
+              - name: Update Docker Compose image tag
+                ansible.builtin.replace:
+                  path: "{{ app_dir }}/docker-compose.override.yml"
+                  regexp: 'image: localhost:5000/csl-certification-rest-api:latest'
+                  replace: 'image: localhost:5000/csl-certification-rest-api:{{ docker_tag }}'
+
+              - name: Create database backup before deployment
+                shell: |
+                  # Check if the database container is running
+                  if docker ps | grep -q csl-certification-rest-api-db; then
+                    # Create backup directory if it doesn't exist
+                    mkdir -p {{ app_dir }}/backups
+                    
+                    # Create timestamped backup file
+                    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+                    BACKUP_FILE={{ app_dir }}/backups/db_backup_${TIMESTAMP}.sql
+                    
+                    # Dump the database
+                    docker exec csl-certification-rest-api-db mysqldump -u root -p"${DB_PASSWORD}" --databases ${DB_DATABASE} > ${BACKUP_FILE}
+                    
+                    # Keep only the last 5 backups
+                    ls -t {{ app_dir }}/backups/db_backup_*.sql | tail -n +6 | xargs -r rm
+                    
+                    echo "Database backup created at ${BACKUP_FILE}"
+                  else
+                    echo "Database container not running, skipping backup"
+                  fi
+                register: backup_result
+                ignore_errors: yes
+                
+              - name: Display backup result
+                debug:
+                  var: backup_result.stdout_lines
+                  
+              - name: Stop any running containers
+                shell: |
+                  cd {{ app_dir }}
+                  docker compose down || true
+                ignore_errors: yes
+                
+              - name: Ensure database initialization files are properly set up
+                shell: |
+                  cd {{ app_dir }}
+                  mkdir -p docker/mysql
+                  cp cfpcwjwg_certification_api_db.sql docker/mysql/
+                  
+                  # Create init.sql if it doesn't exist
+                  if [ ! -f docker/mysql/init.sql ]; then
+                    cat > docker/mysql/init.sql << 'EOF'
+                    -- Create database if it doesn't exist
+                    CREATE DATABASE IF NOT EXISTS `csl_certification_api_db`;
+                    
+                    -- Grant privileges to user
+                    GRANT ALL PRIVILEGES ON `csl_certification_api_db`.* TO 'csl_user'@'%';
+                    FLUSH PRIVILEGES;
+                    EOF
+                  fi
+                
+              - name: Start application with Docker Compose
+                shell: |
+                  cd {{ app_dir }}
+                  docker compose up -d
+                environment:
+                  COMPOSE_HTTP_TIMEOUT: "300"
+                register: compose_result
+                
+              - name: Display Docker Compose output
+                debug:
+                  var: compose_result.stdout_lines
+
+              - name: Run database migrations
+                shell: |
+                  cd {{ app_dir }}
+                  docker compose exec -T app php artisan migrate --force
+                register: migration_result
+                ignore_errors: yes
+
+              - name: Display migration output
+                debug:
+                  var: migration_result.stdout_lines
+                  
+              - name: Create queue tables if they don't exist
+                shell: |
+                  cd {{ app_dir }}
+                  docker compose exec -T app php artisan queue:table
+                  docker compose exec -T app php artisan queue:failed-table
+                  docker compose exec -T app php artisan migrate --force
+                register: queue_tables_result
+                ignore_errors: yes
+                
+              - name: Display queue tables result
+                debug:
+                  var: queue_tables_result.stdout_lines
+                  
+              - name: Restart queue workers
+                shell: |
+                  cd {{ app_dir }}
+                  docker compose restart queue
+                register: queue_restart_result
+                
+              - name: Display queue restart result
+                debug:
+                  var: queue_restart_result.stdout_lines
+                  
+              - name: Check disk space after deployment
+                shell: df -h /
+                register: disk_space_after
+                
+              - name: Display disk space after deployment
+                debug:
+                  var: disk_space_after.stdout_lines
+                  
+              - name: Check container status
+                shell: docker ps
+                register: docker_status
+                
+              - name: Display container status
+                debug:
+                  var: docker_status.stdout_lines
+                  
+              - name: Check application health
+                shell: |
+                  cd {{ app_dir }}
+                  HEALTH_URL=http://localhost:8080/api/health
+                  RETRY_COUNT=0
+                  MAX_RETRIES=10
+                  
+                  echo "Checking application health at $HEALTH_URL"
+                  
+                  while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                    HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $HEALTH_URL)
+                    
+                    if [ "$HEALTH_STATUS" = "200" ]; then
+                      echo "Application is healthy!"
+                      HEALTH_RESPONSE=$(curl -s $HEALTH_URL)
+                      echo "Health response: $HEALTH_RESPONSE"
+                      break
+                    else
+                      echo "Health check failed with status $HEALTH_STATUS. Retrying in 5 seconds..."
+                      sleep 5
+                      RETRY_COUNT=$((RETRY_COUNT+1))
+                    fi
+                  done
+                  
+                  if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+                    echo "Health check failed after $MAX_RETRIES attempts"
+                    exit 1
+                  fi
+                register: health_check_result
+                ignore_errors: yes
+                
+              - name: Check queue health
+                shell: |
+                  cd {{ app_dir }}
+                  QUEUE_HEALTH_URL=http://localhost:8080/api/health/queue
+                  RETRY_COUNT=0
+                  MAX_RETRIES=5
+                  
+                  echo "Checking queue health at $QUEUE_HEALTH_URL"
+                  
+                  while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                    QUEUE_HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $QUEUE_HEALTH_URL)
+                    
+                    if [ "$QUEUE_HEALTH_STATUS" = "200" ]; then
+                      echo "Queue health endpoint is accessible!"
+                      QUEUE_HEALTH_RESPONSE=$(curl -s $QUEUE_HEALTH_URL)
+                      echo "Queue health response: $QUEUE_HEALTH_RESPONSE"
+                      
+                      # Check for failed jobs
+                      FAILED_JOBS=$(echo $QUEUE_HEALTH_RESPONSE | grep -o '"failed_jobs":[0-9]*' | cut -d ':' -f2)
+                      if [ "$FAILED_JOBS" -gt 0 ]; then
+                        echo "⚠️ WARNING: $FAILED_JOBS failed jobs detected in the queue"
+                      else
+                        echo "✅ No failed jobs detected in the queue"
+                      fi
+                      break
+                    else
+                      echo "Queue health check failed with status $QUEUE_HEALTH_STATUS. Retrying in 5 seconds..."
+                      sleep 5
+                      RETRY_COUNT=$((RETRY_COUNT+1))
+                    fi
+                  done
+                  
+                  if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+                    echo "Queue health check failed after $MAX_RETRIES attempts"
+                    # Don't fail the deployment, just log the warning
+                    echo "⚠️ WARNING: Unable to check queue health, but continuing deployment"
+                  fi
+                register: queue_health_check_result
+                ignore_errors: yes
+                
+              - name: Display health check result
+                debug:
+                  var: health_check_result.stdout_lines
+                  
+              - name: Display queue health check result
+                debug:
+                  var: queue_health_check_result.stdout_lines
+                  
+          
+      - name: Run Ansible playbook
+        id: deploy
+        run: |
+          ansible-playbook -i inventory.ini deploy-rest-api.yml -e "@vars.yml"
+        continue-on-error: true
+        
+      - name: Set deployment status
+        id: status
+        run: echo "status=${{ steps.deploy.outcome == 'success' && 'success' || 'failure' }}" >> $GITHUB_OUTPUT
+      
+      - name: Notify deployment status
+        if: always()
+        uses: ./.github/workflows/slack-notification.yml@${{ github.ref }}
+        with:
+          status: ${{ steps.status.outputs.status }}
+          environment: 'staging'
+          version: ${{ env.APP_VERSION }}-${{ github.sha }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

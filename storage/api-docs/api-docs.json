@@ -4296,6 +4296,105 @@
                 }
             }
         },
+        "/certificate-content/{certificateContentId}/issue": {
+            "post": {
+                "tags": [
+                    "Certificates"
+                ],
+                "summary": "Issue a certificate for a user",
+                "description": "Issues a certificate for a user and stores it in the IssuedCertificate model",
+                "operationId": "issueCertificate",
+                "parameters": [
+                    {
+                        "name": "certificateContentId",
+                        "in": "path",
+                        "description": "ID of the certificate content",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "User data for certificate",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "fullName"
+                                ],
+                                "properties": {
+                                    "fullName": {
+                                        "type": "string",
+                                        "example": "John Doe"
+                                    },
+                                    "certificateDate": {
+                                        "type": "string",
+                                        "example": "May 21, 2025"
+                                    },
+                                    "additionalData": {
+                                        "type": "object"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Certificate issued successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Certificate issued successfully"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "fileUrl": {
+                                                    "type": "string"
+                                                },
+                                                "previewUrl": {
+                                                    "type": "string"
+                                                },
+                                                "accessCode": {
+                                                    "type": "string"
+                                                },
+                                                "issuedCertificateId": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Certificate content not found"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
         "/certificate-templates": {
             "get": {
                 "tags": [

@@ -43,13 +43,56 @@ use App\Http\Controllers\Api\ValidationController;
 use App\Http\Controllers\Api\VideoContentController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use App\Http\Controllers\Api\StorefrontController;
 use App\Http\Controllers\Api\Onboarding\AfterPlanSelectionOnboarding;
 use App\Http\Controllers\Api\ReferralEnvironmentController;
 use App\Http\Controllers\Api\FinanceController;
 use App\Http\Controllers\Api\AnalyticsController;
 
+// Health check endpoint for monitoring and deployment verification
+Route::get('/health', function() {
+    return response()->json([
+        'status' => 'ok',
+        'timestamp' => now()->toIso8601String(),
+        'environment' => config('app.env'),
+        'version' => config('app.version', '1.0.0'),
+    ]);
+});
 
+// Queue status endpoint
+Route::get('/health/queue', function () {
+    $queueSize = DB::table('jobs')->count();
+    $failedJobs = DB::table('failed_jobs')->count();
+    
+    $status = $failedJobs > 0 ? 'warning' : 'ok';
+    
+    $queueData = [
+        'status' => $status,
+        'timestamp' => now()->toIso8601String(),
+        'queue_size' => $queueSize,
+        'failed_jobs' => $failedJobs,
+        'driver' => config('queue.default'),
+        'queues' => ['default', 'emails', 'notifications'],
+    ];
+    
+    // Send notification email if there are failed jobs
+    if ($failedJobs > 0) {
+        // Check if we've already sent a notification recently (within the last hour)
+        $cacheKey = 'queue_failure_notification_sent';
+        if (!cache()->has($cacheKey)) {
+            // Send the email notification
+            Mail::to('kevinliboire@gmail.com')
+                ->send(new \App\Mail\QueueFailureNotification($queueData));
+            
+            // Cache the notification to prevent sending too many emails
+            cache()->put($cacheKey, now(), now()->addHour());
+        }
+    }
+    
+    return response()->json($queueData);
+});
 
 Route::get('/debug/environments', function() {
     $environments = \App\Models\Environment::where('is_active', true)
