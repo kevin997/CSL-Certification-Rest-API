@@ -413,9 +413,54 @@ jobs:
       
       - name: Notify deployment status
         if: always()
-        uses: ./.github/workflows/slack-notification.yml@${{ github.ref }}
+        uses: slackapi/slack-github-action@v1.24.0
         with:
-          status: ${{ steps.status.outputs.status }}
-          environment: 'staging'
-          version: ${{ env.APP_VERSION }}-${{ github.sha }}
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Deployment ${{ steps.status.outputs.status == 'success' && 'Successful ✅' || 'Failed ❌' }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Environment:* staging"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Version:* ${{ env.APP_VERSION }}-${{ github.sha }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Triggered by:* ${{ github.actor }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:* <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>"
+                    }
+                  ]
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Workflow Run"
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
