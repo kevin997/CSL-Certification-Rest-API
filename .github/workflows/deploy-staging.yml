@@ -161,22 +161,7 @@ jobs:
                   mode: '0644'
                 
               # Note: Database credentials are already set in .env.staging, no need to update them
-
-              - name: Install Composer dependencies
-                shell: |
-                  cd {{ app_dir }}
-                  docker run --rm -v "{{ app_dir }}:/var/www/html" \
-                  -w /var/www/html composer:latest composer install --no-interaction --no-dev --optimize-autoloader
-                ignore_errors: no
-
-              - name: Generate Laravel app key if not set
-                shell: |
-                  cd {{ app_dir }}
-                  if ! grep -q "^APP_KEY=" .env || grep -q "^APP_KEY=$" .env; then
-                    docker run --rm -v "{{ app_dir }}:/var/www/html" \
-                    -w /var/www/html php:8.2-cli php artisan key:generate --force
-                  fi
-                ignore_errors: yes
+              # Composer dependencies and app key generation are handled in the Dockerfile during image build
 
               - name: Build Docker image
                 docker_image:
