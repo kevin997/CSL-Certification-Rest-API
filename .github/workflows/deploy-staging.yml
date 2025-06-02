@@ -323,73 +323,66 @@ jobs:
                   var: docker_status.stdout_lines
                   
               - name: Check application health
-                shell: |
-                  cd {{ app_dir }}
-                  HEALTH_URL=http://localhost:8080/api/health
-                  RETRY_COUNT=0
-                  MAX_RETRIES=10
-                  
-                  echo "Checking application health at $HEALTH_URL"
-                  
+                shell: >
+                  cd {{ app_dir }} &&
+                  HEALTH_URL=http://localhost:8080/api/health &&
+                  RETRY_COUNT=0 &&
+                  MAX_RETRIES=10 &&
+                  echo "Checking application health at $HEALTH_URL" &&
                   while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-                    HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $HEALTH_URL)
-                    
+                    HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $HEALTH_URL);
                     if [ "$HEALTH_STATUS" = "200" ]; then
-                      echo "Application is healthy!"
-                      HEALTH_RESPONSE=$(curl -s $HEALTH_URL)
-                      echo "Health response: $HEALTH_RESPONSE"
-                      break
+                      echo "Application is healthy!";
+                      HEALTH_RESPONSE=$(curl -s $HEALTH_URL);
+                      echo "Health response: $HEALTH_RESPONSE";
+                      break;
                     else
-                      echo "Health check failed with status $HEALTH_STATUS. Retrying in 5 seconds..."
-                      sleep 5
-                      RETRY_COUNT=$((RETRY_COUNT+1))
-                    fi
-                  done
-                  
+                      echo "Health check failed with status $HEALTH_STATUS. Retrying in 5 seconds...";
+                      sleep 5;
+                      RETRY_COUNT=$((RETRY_COUNT+1));
+                    fi;
+                  done &&
                   if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-                    echo "Health check failed after $MAX_RETRIES attempts"
-                    exit 1
+                    echo "Health check failed after $MAX_RETRIES attempts";
+                    exit 1;
                   fi
+                args:
+                  executable: /bin/bash
                 register: health_check_result
                 ignore_errors: yes
                 
               - name: Check queue health
-                shell: |
-                  cd {{ app_dir }}
-                  QUEUE_HEALTH_URL=http://localhost:8080/api/health/queue
-                  RETRY_COUNT=0
-                  MAX_RETRIES=5
-                  
-                  echo "Checking queue health at $QUEUE_HEALTH_URL"
-                  
+                shell: >
+                  cd {{ app_dir }} &&
+                  QUEUE_HEALTH_URL=http://localhost:8080/api/health/queue &&
+                  RETRY_COUNT=0 &&
+                  MAX_RETRIES=5 &&
+                  echo "Checking queue health at $QUEUE_HEALTH_URL" &&
                   while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-                    QUEUE_HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $QUEUE_HEALTH_URL)
-                    
+                    QUEUE_HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $QUEUE_HEALTH_URL);
                     if [ "$QUEUE_HEALTH_STATUS" = "200" ]; then
-                      echo "Queue health endpoint is accessible!"
-                      QUEUE_HEALTH_RESPONSE=$(curl -s $QUEUE_HEALTH_URL)
-                      echo "Queue health response: $QUEUE_HEALTH_RESPONSE"
-                      
-                      # Check for failed jobs
-                      FAILED_JOBS=$(echo $QUEUE_HEALTH_RESPONSE | grep -o '"failed_jobs":[0-9]*' | cut -d ':' -f2)
+                      echo "Queue health endpoint is accessible!";
+                      QUEUE_HEALTH_RESPONSE=$(curl -s $QUEUE_HEALTH_URL);
+                      echo "Queue health response: $QUEUE_HEALTH_RESPONSE";
+                      FAILED_JOBS=$(echo $QUEUE_HEALTH_RESPONSE | grep -o '"failed_jobs":[0-9]*' | cut -d ':' -f2 || echo 0);
                       if [ "$FAILED_JOBS" -gt 0 ]; then
-                        echo "⚠️ WARNING: $FAILED_JOBS failed jobs detected in the queue"
+                        echo "WARNING: $FAILED_JOBS failed jobs detected in the queue";
                       else
-                        echo "✅ No failed jobs detected in the queue"
-                      fi
-                      break
+                        echo "No failed jobs detected in the queue";
+                      fi;
+                      break;
                     else
-                      echo "Queue health check failed with status $QUEUE_HEALTH_STATUS. Retrying in 5 seconds..."
-                      sleep 5
-                      RETRY_COUNT=$((RETRY_COUNT+1))
-                    fi
-                  done
-                  
+                      echo "Queue health check failed with status $QUEUE_HEALTH_STATUS. Retrying in 5 seconds...";
+                      sleep 5;
+                      RETRY_COUNT=$((RETRY_COUNT+1));
+                    fi;
+                  done &&
                   if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-                    echo "Queue health check failed after $MAX_RETRIES attempts"
-                    # Don't fail the deployment, just log the warning
-                    echo "⚠️ WARNING: Unable to check queue health, but continuing deployment"
+                    echo "Queue health check failed after $MAX_RETRIES attempts";
+                    echo "WARNING: Unable to check queue health, but continuing deployment";
                   fi
+                args:
+                  executable: /bin/bash
                 register: queue_health_check_result
                 ignore_errors: yes
                 
