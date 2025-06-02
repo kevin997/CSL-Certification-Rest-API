@@ -164,19 +164,27 @@ jobs:
               # Composer dependencies and app key generation are handled in the Dockerfile during image build
 
               - name: Build Docker image
-                docker_image:
-                  name: "{{ app_name }}"
-                  build:
-                    path: "{{ app_dir }}"
-                    dockerfile: Dockerfile
-                  source: build
-                  tag: "{{ docker_tag }}"
-                  force_source: yes
+                shell: |
+                  cd {{ app_dir }}
+                  # Build with full output for debugging
+                  docker build --no-cache -t csl-certification-rest-api .
+                register: docker_build_result
+                ignore_errors: yes
+
+              - name: Debug Docker build output
+                debug:
+                  var: docker_build_result
+                when: docker_build_result.rc != 0
+
+              - name: Fail if Docker build failed
+                fail:
+                  msg: "Docker build failed. See debug output for details."
+                when: docker_build_result.rc != 0
 
               - name: Tag and push Docker image to registry
                 shell: |
-                  docker tag {{ app_name }}:{{ docker_tag }} {{ docker_registry }}/{{ app_name }}:{{ docker_tag }}
-                  docker tag {{ app_name }}:{{ docker_tag }} {{ docker_registry }}/{{ app_name }}:latest
+                  docker tag csl-certification-rest-api:latest {{ docker_registry }}/{{ app_name }}:{{ docker_tag }}
+                  docker tag csl-certification-rest-api:latest {{ docker_registry }}/{{ app_name }}:latest
                   docker push {{ docker_registry }}/{{ app_name }}:{{ docker_tag }}
                   docker push {{ docker_registry }}/{{ app_name }}:latest
                 ignore_errors: no

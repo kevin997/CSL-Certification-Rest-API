@@ -12,9 +12,15 @@ RUN npm run build
 FROM composer:2 AS composer-builder
 WORKDIR /app
 COPY composer.json composer.lock ./
-# Copy only the files needed for composer install to leverage Docker cache
+# Copy all necessary files for composer install
+COPY app/ app/
+COPY bootstrap/ bootstrap/
+COPY config/ config/
 COPY database/ database/
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
+COPY routes/ routes/
+COPY resources/ resources/
+# Install dependencies with more verbose output to diagnose issues
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --verbose
 
 # Stage 3: Final PHP image
 FROM php:8.2-fpm-alpine
