@@ -152,9 +152,10 @@ jobs:
                 ignore_errors: yes
 
               - name: Copy .env.staging file
-                ansible.builtin.template:
+                ansible.builtin.copy:
                   src: "{{ app_dir }}/.env.staging"
                   dest: "{{ app_dir }}/.env"
+                  remote_src: yes
                   owner: ubuntu
                   group: ubuntu
                   mode: '0644'
