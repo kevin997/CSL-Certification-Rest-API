@@ -31,7 +31,7 @@ export DB_DATABASE=$DB_NAME
 export DB_USERNAME=$DB_USER
 export DB_PASSWORD=$DB_PASSWORD
 
-# Test connection to AWS RDS
+# Test connection to AWS RDS/Aurora
 echo -n "Testing connection to AWS RDS... "
 if mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" -e "SELECT 'Connection successful!';" &> /dev/null; then
     echo "SUCCESS"
