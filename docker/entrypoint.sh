@@ -28,22 +28,31 @@ touch /var/www/html/storage/logs/laravel.log
 chmod 777 /var/www/html/storage/logs/laravel.log
 
 # Wait for database to be ready
-echo "Waiting for database connection..."
-MAX_RETRIES=30
-RETRY_COUNT=0
-
-while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-  if nc -z db 3306; then
-    echo "Database connection established"
-    break
-  fi
-  echo "Waiting for database connection... ($RETRY_COUNT/$MAX_RETRIES)"
-  RETRY_COUNT=$((RETRY_COUNT+1))
-  sleep 2
-done
-
-if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-  echo "WARNING: Could not connect to database after $MAX_RETRIES attempts, but continuing startup"
+if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ]; then
+    echo "Waiting for database connection..."
+    RETRY_COUNT=0
+    MAX_RETRIES=30
+    
+    # Add a delay to ensure MySQL is fully initialized
+    echo "Giving MySQL time to fully initialize (15 seconds)..."
+    sleep 15
+    
+    set +e
+    until nc -z -v -w30 $DB_HOST $DB_PORT || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
+        echo "Waiting for database connection..."
+        sleep 2
+        RETRY_COUNT=$((RETRY_COUNT+1))
+    done
+    
+    if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+        echo "Error: Failed to connect to database after $MAX_RETRIES attempts!"
+    else
+        echo "Database is up and running!"
+        # Test MySQL connection directly
+        echo "Testing MySQL connection directly..."
+        mysql -h $DB_HOST -u $DB_USERNAME -p$DB_PASSWORD -e "SELECT 1;" || echo "MySQL connection test failed, but continuing..."
+    fi
+    set -e
 fi
 
 # Run database migrations if needed
