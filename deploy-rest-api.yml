@@ -116,7 +116,7 @@
 
     # Docker cleanup and preparation
     - name: Clean up Docker system
-      shell: docker system prune -af --volumes
+      shell: sudo docker system prune -af --volumes
       ignore_errors: yes
       
     - name: Check disk space before build
@@ -128,18 +128,18 @@
         var: disk_space_before.stdout_lines
         
     - name: Check if Docker registry is running
-      shell: docker ps | grep registry
+      shell: sudo docker ps | grep registry
       register: registry_status
       ignore_errors: yes
       
     - name: Start Docker registry if not running
       shell: |
-        if [ "$(docker ps -a | grep registry)" ]; then
-          if [ ! "$(docker ps | grep registry)" ]; then
-            docker start registry
+        if [ "$(sudo docker ps -a | grep registry)" ]; then
+          if [ ! "$(sudo docker ps | grep registry)" ]; then
+            sudo docker start registry
           fi
         else
-          docker run -d -p 5000:5000 --restart=always --name registry registry:2
+          sudo docker run -d -p 5000:5000 --restart=always --name registry registry:2
         fi
       when: registry_status.rc != 0
       ignore_errors: yes
@@ -159,21 +159,27 @@
       shell: |
         cd {{ app_dir }}
         # Build with full output for debugging
-        docker build -t {{ app_name }}:latest .
+        DOCKER_BUILDKIT=0 sudo docker build -t {{ app_name }}:latest .
       register: docker_build_result
       ignore_errors: no
 
     - name: Tag and push Docker image to registry
       shell: |
-        docker tag {{ app_name }}:latest {{ docker_image }}:{{ docker_tag }}
-        docker tag {{ app_name }}:latest {{ docker_image }}:latest
-        docker push {{ docker_image }}:{{ docker_tag }}
-        docker push {{ docker_image }}:latest
+        sudo docker tag {{ app_name }}:latest {{ docker_image }}:{{ docker_tag }}
+        sudo docker tag {{ app_name }}:latest {{ docker_image }}:latest
+      register: tag_result
+      ignore_errors: no
+
+    - name: Push Docker image to registry
+      shell: |
+        sudo docker push {{ docker_image }}:{{ docker_tag }}
+        sudo docker push {{ docker_image }}:latest
+      register: push_result
       ignore_errors: no
 
     # Database backup
     - name: Check if database container is running
-      command: docker ps -f name=csl-certification-rest-api-db
+      command: sudo docker ps -f name=csl-certification-rest-api-db
       register: docker_ps_output
       ignore_errors: yes
 
@@ -192,7 +198,7 @@
       ignore_errors: yes
       
     - name: Backup database
-      shell: docker exec csl-certification-rest-api-db mysqldump -u root -p"{{ db_password }}" --databases "{{ db_database }}" > "{{ app_dir }}/backups/db_backup_{{ timestamp.stdout }}.sql"
+      shell: sudo docker exec csl-certification-rest-api-db mysqldump -u root -p"{{ db_password }}" --databases "{{ db_database }}" > "{{ app_dir }}/backups/db_backup_{{ timestamp.stdout }}.sql"
       register: backup_result
       when: docker_ps_output.stdout.find('csl-certification-rest-api-db') != -1
       ignore_errors: yes
@@ -206,7 +212,7 @@
     - name: Stop any running containers
       shell: |
         cd {{ app_dir }}
-        docker compose down || true
+        sudo docker compose down || true
       ignore_errors: yes
       
     - name: Ensure database initialization files are properly set up
@@ -222,7 +228,7 @@
     - name: Start application with Docker Compose
       shell: |
         cd {{ app_dir }}
-        docker compose up -d
+        sudo docker compose up -d
       environment:
         COMPOSE_HTTP_TIMEOUT: "300"
       register: compose_result
@@ -238,7 +244,7 @@
         RETRY_COUNT=0
         
         while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-          if docker exec csl-certification-rest-api-db mysqladmin ping -h localhost -u root -p"{{ db_password }}" --silent; then
+          if sudo docker exec csl-certification-rest-api-db mysqladmin ping -h localhost -u root -p"{{ db_password }}" --silent; then
             echo "Database is ready!"
             exit 0
           fi
@@ -255,7 +261,7 @@
     - name: Run database migrations
       shell: |
         cd {{ app_dir }}
-        docker compose exec -T app php artisan migrate --force
+        sudo docker compose exec -T app php artisan migrate --force
       register: migration_result
       ignore_errors: yes
       
@@ -266,7 +272,7 @@
     - name: Restart queue worker
       shell: |
         cd {{ app_dir }}
-        docker compose exec -T app php artisan queue:restart
+        sudo docker compose exec -T app php artisan queue:restart
       register: queue_restart_result
       ignore_errors: yes
       
@@ -305,7 +311,7 @@
     - name: Check queue health
       shell: |
         cd {{ app_dir }}
-        docker compose exec -T app php artisan queue:health
+        sudo docker compose exec -T app php artisan queue:health
       register: queue_health
       ignore_errors: yes
       

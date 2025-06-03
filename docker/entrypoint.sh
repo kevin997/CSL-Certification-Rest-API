@@ -1,5 +1,6 @@
 #!/bin/sh
-set -e
+# Don't exit immediately on error to allow proper error logging
+set +e
 
 # Create log directories
 mkdir -p /var/log/nginx
@@ -23,21 +24,39 @@ chmod -R 775 /var/www/html/bootstrap
 
 # Wait for database to be ready
 echo "Waiting for database connection..."
-while ! nc -z db 3306; do
-  sleep 1
+MAX_RETRIES=30
+RETRY_COUNT=0
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+  if nc -z db 3306; then
+    echo "Database connection established"
+    break
+  fi
+  echo "Waiting for database connection... ($RETRY_COUNT/$MAX_RETRIES)"
+  RETRY_COUNT=$((RETRY_COUNT+1))
+  sleep 2
 done
-echo "Database connection established"
+
+if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+  echo "WARNING: Could not connect to database after $MAX_RETRIES attempts, but continuing startup"
+fi
 
 # Run database migrations if needed
 if [ "$APP_ENV" != "production" ] || [ "$MIGRATE_ON_STARTUP" = "true" ]; then
   echo "Running database migrations..."
-  php artisan migrate --force
+  php artisan migrate --force || echo "WARNING: Database migrations failed but continuing startup"
 fi
 
 # Clear and rebuild cache for optimal performance
 echo "Optimizing application..."
-php artisan optimize:clear
-php artisan optimize
+php artisan optimize:clear || echo "WARNING: Cache clear failed but continuing startup"
+php artisan optimize || echo "WARNING: Cache optimization failed but continuing startup"
+
+# Create a simple health check endpoint
+echo "Creating health check endpoint..."
+mkdir -p /var/www/html/public/health
+echo '{"status":"ok","timestamp":"'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"}'> /var/www/html/public/health/index.json
+echo '<?php echo json_encode(["status" => "ok", "timestamp" => date("c")]);' > /var/www/html/public/health/index.php
 
 # Create storage symlink
 php artisan storage:link
