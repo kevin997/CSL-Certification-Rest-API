@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/compose-spec/compose-spec/master/schema/compose-spec.json
+version: '3.8'
+
+services:
+  # Combined Laravel App with Nginx
+  app:
+    image: localhost:5000/csl-certification-rest-api:latest
+    container_name: csl-certification-rest-api
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./storage:/var/www/html/storage
+      - ./bootstrap/cache:/var/www/html/bootstrap/cache
+    environment:
+      - APP_ENV=${APP_ENV:-staging}
+      - APP_DEBUG=${APP_DEBUG:-false}
+      - DB_HOST=db
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - CONTAINER_ROLE=app
+    networks:
+      - csl-network
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # MySQL Service
+  db:
+    image: mysql:8.0
+    container_name: csl-certification-rest-api-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_USER: ${DB_USERNAME}
+      SERVICE_TAGS: staging
+      SERVICE_NAME: mysql
+    volumes:
+      - dbdata:/var/lib/mysql
+      - ./docker/mysql/cfpcwjwg_certification_api_db.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    networks:
+      - csl-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+  
+  # Queue Worker Service
+  queue:
+    image: localhost:5000/csl-certification-rest-api:latest
+    container_name: csl-certification-rest-api-queue
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_started
+      db:
+        condition: service_healthy
+    volumes:
+      - ./storage:/var/www/html/storage
+    environment:
+      - CONTAINER_ROLE=queue
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - APP_ENV=${APP_ENV:-staging}
+      - APP_DEBUG=${APP_DEBUG:-false}
+      - QUEUE_CONNECTION=database
+    networks:
+      - csl-network
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -v grep | grep 'supervisord' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  csl-network:
+    driver: bridge
+
+volumes:
+  dbdata:
+    driver: local

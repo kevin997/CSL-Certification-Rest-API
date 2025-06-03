@@ -27,12 +27,20 @@ mkdir -p /var/www/html/storage/framework/sessions
 mkdir -p /var/www/html/storage/framework/views
 chown -R www-data:www-data /var/www/html/storage
 
-# Determine if we should run as queue worker or web server
+# Create nginx logs directory
+mkdir -p /var/log/nginx
+touch /var/log/nginx/access.log /var/log/nginx/error.log
+
+# Create supervisor logs directory
+mkdir -p /var/log/supervisor
+
+# Determine container role
 if [ "$CONTAINER_ROLE" = "queue" ]; then
   echo "Starting queue worker..."
-  exec supervisord -c /etc/supervisor/supervisord.conf
+  exec supervisord -c /etc/supervisor/conf.d/supervisord.conf
 else
-  # Start PHP-FPM
-  echo "Starting PHP-FPM..."
-  exec php-fpm
+  # Start Nginx and PHP-FPM
+  echo "Starting Nginx and PHP-FPM..."
+  php-fpm -D
+  exec nginx -g "daemon off;"
 fi

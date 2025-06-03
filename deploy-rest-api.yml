@@ -1,0 +1,278 @@
+---
+- name: Deploy CSL Certification Rest API
+  hosts: ec2
+  become: yes
+  vars:
+    app_name: csl-certification-rest-api
+    docker_registry: localhost:5000
+    docker_image: "{{ docker_registry }}/{{ app_name }}"
+    docker_tag: "{{ lookup('env', 'GITHUB_SHA') | default('latest', true) }}"
+    app_dir: /opt/csl-certification-rest-api
+    db_database: "{{ lookup('env', 'DB_DATABASE', default='cfpcwjwg_certification_api_db') }}"
+    db_username: "{{ lookup('env', 'DB_USERNAME', default='cfpcwjwg_certi_user') }}"
+    db_password: "{{ lookup('env', 'DB_PASSWORD', default='#&H3k-ID0V') }}"
+
+  tasks:
+    # Setup tasks
+    - name: Create application directory
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        mode: "0755"
+        owner: ubuntu
+        group: ubuntu
+
+    - name: Ensure .ssh directory exists
+      ansible.builtin.file:
+        path: /home/ubuntu/.ssh
+        state: directory
+        mode: '0700'
+        owner: ubuntu
+        group: ubuntu
+
+    - name: Copy GitHub SSH key
+      ansible.builtin.copy:
+        content: "{{ github_ssh_key | default('') }}"
+        dest: /home/ubuntu/.ssh/github_deploy_key
+        mode: '0600'
+        owner: ubuntu
+        group: ubuntu
+      when: github_ssh_key is defined
+
+    - name: Configure SSH for GitHub
+      ansible.builtin.copy:
+        content: |
+          Host github.com
+            StrictHostKeyChecking no
+            User git
+            IdentityFile /home/ubuntu/.ssh/github_deploy_key
+        dest: /home/ubuntu/.ssh/config
+        mode: '0600'
+        owner: ubuntu
+        group: ubuntu
+
+    # Clean up old app directory
+    - name: Clean up old app directory
+      shell: |
+        if [ -d "{{ app_dir }}/old" ]; then
+          rm -rf "{{ app_dir }}/old"
+        fi
+        if [ -d "{{ app_dir }}/.git" ]; then
+          mkdir -p "{{ app_dir }}/old"
+          find "{{ app_dir }}" -mindepth 1 -maxdepth 1 -not -name "old" -not -name "backups" -not -name ".env" -exec mv {} "{{ app_dir }}/old/" \;
+        fi
+      args:
+        executable: /bin/bash
+      ignore_errors: yes
+
+    # Clone repository
+    - name: Clone application repository from GitHub using SSH
+      ansible.builtin.git:
+        repo: git@github.com:kevin997/CSL-Certification-Rest-API.git
+        dest: "{{ app_dir }}"
+        version: staging
+        force: yes
+        accept_hostkey: yes
+      become: yes
+      become_user: ubuntu
+
+    # Docker cleanup and preparation
+    - name: Clean up Docker system
+      shell: docker system prune -af --volumes
+      ignore_errors: yes
+      
+    - name: Check disk space before build
+      shell: df -h /
+      register: disk_space_before
+      
+    - name: Display disk space before build
+      debug:
+        var: disk_space_before.stdout_lines
+        
+    - name: Check if Docker registry is running
+      shell: docker ps | grep registry
+      register: registry_status
+      ignore_errors: yes
+      
+    - name: Start Docker registry if not running
+      shell: |
+        if [ "$(docker ps -a | grep registry)" ]; then
+          if [ ! "$(docker ps | grep registry)" ]; then
+            docker start registry
+          fi
+        else
+          docker run -d -p 5000:5000 --restart=always --name registry registry:2
+        fi
+      when: registry_status.rc != 0
+      ignore_errors: yes
+
+    # Environment setup
+    - name: Copy .env.staging file
+      ansible.builtin.copy:
+        src: "{{ app_dir }}/.env.staging"
+        dest: "{{ app_dir }}/.env"
+        remote_src: yes
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+
+    # Docker build and push - streamlined
+    - name: Build Docker image
+      shell: |
+        cd {{ app_dir }}
+        # Enable BuildKit for faster builds
+        export DOCKER_BUILDKIT=1
+        # Build with full output for debugging
+        docker build -t {{ app_name }}:latest .
+      register: docker_build_result
+      ignore_errors: no
+
+    - name: Tag and push Docker image to registry
+      shell: |
+        docker tag {{ app_name }}:latest {{ docker_image }}:{{ docker_tag }}
+        docker tag {{ app_name }}:latest {{ docker_image }}:latest
+        docker push {{ docker_image }}:{{ docker_tag }}
+        docker push {{ docker_image }}:latest
+      ignore_errors: no
+
+    # Database backup
+    - name: Check if database container is running
+      command: docker ps -f name=csl-certification-rest-api-db
+      register: docker_ps_output
+      ignore_errors: yes
+
+    - name: Create backup directory
+      file:
+        path: "{{ app_dir }}/backups"
+        state: directory
+        mode: '0755'
+      when: docker_ps_output.stdout.find('csl-certification-rest-api-db') != -1
+      ignore_errors: yes
+
+    - name: Get timestamp for backup filename
+      shell: date +%Y%m%d_%H%M%S
+      register: timestamp
+      when: docker_ps_output.stdout.find('csl-certification-rest-api-db') != -1
+      ignore_errors: yes
+      
+    - name: Backup database
+      shell: docker exec csl-certification-rest-api-db mysqldump -u root -p"{{ db_password }}" --databases "{{ db_database }}" > "{{ app_dir }}/backups/db_backup_{{ timestamp.stdout }}.sql"
+      register: backup_result
+      when: docker_ps_output.stdout.find('csl-certification-rest-api-db') != -1
+      ignore_errors: yes
+
+    - name: Keep only last 5 backups
+      shell: find {{ app_dir }}/backups -name "db_backup_*.sql" -type f -printf '%T@ %p\n' | sort -nr | tail -n +6 | cut -d' ' -f2- | xargs -r rm
+      when: docker_ps_output.stdout.find('csl-certification-rest-api-db') != -1
+      ignore_errors: yes
+
+    # Application deployment
+    - name: Stop any running containers
+      shell: |
+        cd {{ app_dir }}
+        docker compose down || true
+      ignore_errors: yes
+      
+    - name: Ensure database initialization files are properly set up
+      shell: |
+        cd {{ app_dir }}
+        mkdir -p docker/mysql
+        if [ -f "cfpcwjwg_certification_api_db.sql" ]; then
+          cp cfpcwjwg_certification_api_db.sql docker/mysql/
+          chmod -R 755 docker/mysql
+        fi
+      ignore_errors: yes
+
+    - name: Start application with Docker Compose
+      shell: |
+        cd {{ app_dir }}
+        docker compose up -d
+      environment:
+        COMPOSE_HTTP_TIMEOUT: "300"
+      register: compose_result
+      
+    - name: Display Docker Compose output
+      debug:
+        var: compose_result.stdout_lines
+
+    # Database migrations and queue management
+    - name: Wait for database to be ready
+      shell: |
+        MAX_RETRIES=30
+        RETRY_COUNT=0
+        
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          if docker exec csl-certification-rest-api-db mysqladmin ping -h localhost -u root -p"{{ db_password }}" --silent; then
+            echo "Database is ready!"
+            exit 0
+          fi
+          echo "Waiting for database to be ready... ($RETRY_COUNT/$MAX_RETRIES)"
+          RETRY_COUNT=$((RETRY_COUNT+1))
+          sleep 2
+        done
+        
+        echo "Database failed to become ready in time"
+        exit 1
+      register: db_ready
+      ignore_errors: yes
+
+    - name: Run database migrations
+      shell: |
+        cd {{ app_dir }}
+        docker compose exec -T app php artisan migrate --force
+      register: migration_result
+      ignore_errors: yes
+      
+    - name: Display migration result
+      debug:
+        var: migration_result.stdout_lines
+        
+    - name: Restart queue worker
+      shell: |
+        cd {{ app_dir }}
+        docker compose exec -T app php artisan queue:restart
+      register: queue_restart_result
+      ignore_errors: yes
+      
+    - name: Display queue restart result
+      debug:
+        var: queue_restart_result.stdout_lines
+        
+    # Health check
+    - name: Check application health
+      shell: |
+        MAX_RETRIES=12
+        RETRY_COUNT=0
+        APP_URL="http://localhost:8080/health"
+        
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $APP_URL);
+          if [ "$HEALTH_STATUS" = "200" ]; then
+            echo "Application is healthy!";
+            exit 0;
+          fi
+          echo "Waiting for application to become healthy... ($RETRY_COUNT/$MAX_RETRIES)"
+          RETRY_COUNT=$((RETRY_COUNT+1))
+          sleep 5
+        done
+        
+        echo "Application failed to become healthy in time"
+        exit 1
+      register: health_check
+      ignore_errors: yes
+      
+    - name: Display health check result
+      debug:
+        var: health_check.stdout_lines
+
+    # Queue health check
+    - name: Check queue health
+      shell: |
+        cd {{ app_dir }}
+        docker compose exec -T app php artisan queue:health
+      register: queue_health
+      ignore_errors: yes
+      
+    - name: Display queue health result
+      debug:
+        var: queue_health.stdout_lines

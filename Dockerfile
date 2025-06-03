@@ -1,97 +1,85 @@
-# Multi-stage build for Laravel application
-
-# Stage 1: Build frontend assets
-FROM node:20-alpine AS node-builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-
-# Stage 2: Composer dependencies
-FROM php:8.2-alpine AS composer-builder
-WORKDIR /app
-
-# Install Composer
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-
-# Install required PHP extensions and dependencies
-RUN apk add --no-cache \
-    icu-dev \
-    libzip-dev \
-    oniguruma-dev \
-    libxml2-dev \
-    && docker-php-ext-install \
-    intl \
-    zip \
-    pdo_mysql \
-    mbstring
-
-# Copy all application files
-COPY . .
-# Install dependencies with more verbose output to diagnose issues
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --verbose
-
-# Stage 3: Final PHP image
 FROM php:8.2-fpm-alpine
 
 # Set working directory
 WORKDIR /var/www/html
 
-# Install PHP extensions and dependencies
+# Install essential dependencies
 RUN apk add --no-cache \
     libpng-dev \
     libjpeg-turbo-dev \
     freetype-dev \
+    icu-dev \
+    libzip-dev \
+    oniguruma-dev \
+    libxml2-dev \
     zip \
     unzip \
     git \
     curl \
-    libzip-dev \
-    oniguruma-dev \
-    libxml2-dev \
-    postgresql-dev \
     netcat-openbsd \
+    nginx \
     supervisor \
-    icu-dev
+    mysql-client
 
 # Install PHP extensions
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip intl
+    && docker-php-ext-install \
+    pdo_mysql \
+    mbstring \
+    exif \
+    pcntl \
+    bcmath \
+    gd \
+    zip \
+    intl
+
+# Install composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 # Copy application files
-COPY --chown=www-data:www-data . /var/www/html
+COPY . /var/www/html
 
-# Copy built assets from node stage
-COPY --from=node-builder --chown=www-data:www-data /app/public/build /var/www/html/public/build
+# Copy environment file
+COPY .env.staging /var/www/html/.env
 
-# Copy composer dependencies
-COPY --from=composer-builder --chown=www-data:www-data /app/vendor /var/www/html/vendor
+# Set permissions
+RUN chown -R www-data:www-data /var/www/html \
+    && chmod -R 755 /var/www/html/storage \
+    && chmod -R 755 /var/www/html/bootstrap/cache
 
-# Generate optimized autoloader
-COPY --from=composer-builder /usr/bin/composer /usr/bin/composer
-RUN composer dump-autoload --no-dev --optimize
+# Install dependencies
+RUN composer install --no-interaction --no-dev --optimize-autoloader
 
-# Set proper permissions
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+# Build frontend assets if needed
+RUN if [ -f "package.json" ]; then \
+    apk add --no-cache nodejs npm \
+    && npm ci \
+    && npm run build \
+    && apk del nodejs npm; \
+    fi
 
-# Switch to non-root user
-USER www-data
+# Generate application key
+RUN php artisan key:generate
 
-# Create directory for supervisor configs
-RUN mkdir -p /etc/supervisor/conf.d
+# Copy nginx configuration
+RUN mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
+COPY docker/nginx/conf.d/app.conf /etc/nginx/sites-available/default
+COPY docker/nginx/nginx.conf /etc/nginx/nginx.conf
+RUN ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/
+RUN mkdir -p /etc/nginx/conf.d
 
 # Copy supervisor configuration
-COPY --chown=root:root docker/supervisor/queue.conf /etc/supervisor/conf.d/
+COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Copy entrypoint script
-COPY --chown=www-data:www-data docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-
-# Make sure the entrypoint script is executable
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose port 9000
-EXPOSE 9000
+# Setup cron job for Laravel scheduler
+RUN echo "* * * * * cd /var/www/html && php artisan schedule:run >> /dev/null 2>&1" | crontab -
+
+# Expose port 80
+EXPOSE 80
 
 # Set entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
