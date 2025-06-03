@@ -65,8 +65,13 @@
         executable: /bin/bash
       ignore_errors: yes
 
-    # Clone repository
-    - name: Clone application repository from GitHub using SSH
+    # Clone or update repository
+    - name: Check if repository directory exists
+      ansible.builtin.stat:
+        path: "{{ app_dir }}/.git"
+      register: git_dir
+
+    - name: Clone application repository from GitHub using SSH if not exists
       ansible.builtin.git:
         repo: git@github.com:kevin997/CSL-Certification-Rest-API.git
         dest: "{{ app_dir }}"
@@ -75,6 +80,16 @@
         accept_hostkey: yes
       become: yes
       become_user: ubuntu
+      when: not git_dir.stat.exists
+      
+    - name: Update existing repository
+      ansible.builtin.shell: |
+        cd {{ app_dir }}
+        git fetch
+        git reset --hard origin/staging
+      become: yes
+      become_user: ubuntu
+      when: git_dir.stat.exists
 
     # Docker cleanup and preparation
     - name: Clean up Docker system
@@ -120,8 +135,6 @@
     - name: Build Docker image
       shell: |
         cd {{ app_dir }}
-        # Enable BuildKit for faster builds
-        export DOCKER_BUILDKIT=1
         # Build with full output for debugging
         docker build -t {{ app_name }}:latest .
       register: docker_build_result
