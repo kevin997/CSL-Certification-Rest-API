@@ -1,6 +1,26 @@
 #!/bin/sh
 set -e
 
+# Create log directories
+mkdir -p /var/log/nginx
+mkdir -p /var/log/supervisor
+touch /var/log/nginx/access.log /var/log/nginx/error.log
+touch /var/log/supervisor/supervisord.log
+
+# Create Laravel storage directories
+mkdir -p /var/www/html/storage/framework/{sessions,views,cache}
+mkdir -p /var/www/html/storage/logs
+mkdir -p /var/www/html/bootstrap/cache
+
+# Create log files
+touch /var/www/html/storage/logs/laravel.log
+
+# Set proper permissions for all storage and bootstrap directories
+chown -R www-data:www-data /var/www/html/storage
+chmod -R 775 /var/www/html/storage
+chown -R www-data:www-data /var/www/html/bootstrap
+chmod -R 775 /var/www/html/bootstrap
+
 # Wait for database to be ready
 echo "Waiting for database connection..."
 while ! nc -z db 3306; do
@@ -19,17 +39,8 @@ echo "Optimizing application..."
 php artisan optimize:clear
 php artisan optimize
 
-# Create storage directory structure if it doesn't exist
-echo "Setting up storage directories..."
-mkdir -p /var/www/html/storage/logs
-mkdir -p /var/www/html/storage/framework/cache
-mkdir -p /var/www/html/storage/framework/sessions
-mkdir -p /var/www/html/storage/framework/views
-chown -R www-data:www-data /var/www/html/storage
-
-# Create nginx logs directory
-mkdir -p /var/log/nginx
-touch /var/log/nginx/access.log /var/log/nginx/error.log
+# Create storage symlink
+php artisan storage:link
 
 # Create supervisor logs directory
 mkdir -p /var/log/supervisor
