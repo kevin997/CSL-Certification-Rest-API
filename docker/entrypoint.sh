@@ -33,14 +33,18 @@ if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ]; then
     RETRY_COUNT=0
     MAX_RETRIES=30
     
-    # Add a delay to ensure MySQL is fully initialized
-    echo "Giving MySQL time to fully initialize (15 seconds)..."
-    sleep 15
+    # Add a longer delay to ensure MySQL is fully initialized with all grant tables processed
+    echo "Giving MySQL time to fully initialize (30 seconds)..."
+    sleep 30
+    
+    # Get our container IP address for explicit grants
+    CONTAINER_IP=$(hostname -i | awk '{print $1}')
+    echo "Container IP: $CONTAINER_IP"
     
     set +e
-    until nc -z -v -w30 $DB_HOST $DB_PORT || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
+    until nc -z -v -w30 $DB_HOST 3306 || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
         echo "Waiting for database connection..."
-        sleep 2
+        sleep 5
         RETRY_COUNT=$((RETRY_COUNT+1))
     done
     
@@ -48,9 +52,33 @@ if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ]; then
         echo "Error: Failed to connect to database after $MAX_RETRIES attempts!"
     else
         echo "Database is up and running!"
-        # Test MySQL connection directly
-        echo "Testing MySQL connection directly..."
-        mysql -h $DB_HOST -u $DB_USERNAME -p$DB_PASSWORD -e "SELECT 1;" || echo "MySQL connection test failed, but continuing..."
+        
+        # First try to create a specific user for our container IP
+        echo "Creating a specific user for our container IP: $CONTAINER_IP"
+        mysql -h $DB_HOST -u root -p$DB_PASSWORD --connect-timeout=30 -e "CREATE USER IF NOT EXISTS 'root'@'$CONTAINER_IP' IDENTIFIED BY '$DB_PASSWORD'; GRANT ALL ON *.* TO 'root'@'$CONTAINER_IP' WITH GRANT OPTION; FLUSH PRIVILEGES;" || echo "Failed to create specific user but continuing..."
+        
+        # Test MySQL connection with different user combinations
+        echo "Testing MySQL connection as root@% user..."
+        mysql -h $DB_HOST -u root -p$DB_PASSWORD --connect-timeout=10 -e "SELECT 'Connected as root@%';" || echo "Connection as root@% failed"
+        
+        echo "Testing MySQL connection as root@$CONTAINER_IP user..."
+        mysql -h $DB_HOST -u root -p$DB_PASSWORD --connect-timeout=10 -e "SELECT 'Connected as root@$CONTAINER_IP';" || echo "Connection as root@$CONTAINER_IP failed"
+        
+        # Try connecting with different host specifications
+        echo "Testing MySQL connection using 127.0.0.1..."
+        mysql -h 127.0.0.1 -u root -p$DB_PASSWORD --connect-timeout=10 -e "SELECT 'Connected via 127.0.0.1';" || echo "Connection via 127.0.0.1 failed"
+        
+        # Try connecting using explicit networking options
+        echo "Testing MySQL connection with explicit protocol..."
+        mysql -h $DB_HOST -u root -p$DB_PASSWORD --protocol=TCP --connect-timeout=10 -e "SELECT 'Connected with TCP protocol';" || echo "Connection with TCP protocol failed"
+        
+        # Try to fix .env file database settings
+        if [ -f "/var/www/html/.env" ]; then
+            echo "Updating .env file with correct database connection settings"
+            sed -i "s/DB_HOST=.*/DB_HOST=$DB_HOST/g" /var/www/html/.env
+            sed -i "s/DB_USERNAME=.*/DB_USERNAME=root/g" /var/www/html/.env
+            sed -i "s/DB_PASSWORD=.*/DB_PASSWORD=$DB_PASSWORD/g" /var/www/html/.env
+        fi
     fi
     set -e
 fi
