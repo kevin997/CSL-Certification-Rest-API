@@ -3,13 +3,18 @@
   hosts: ec2
   become: yes
   vars:
+    # Application configuration
     app_name: csl-certification-rest-api
     docker_registry: localhost:5000
     docker_image: "{{ docker_registry }}/{{ app_name }}"
     docker_tag: "{{ lookup('env', 'GITHUB_SHA') | default('latest', true) }}"
     app_dir: /opt/csl-certification-rest-api
+    
+    # AWS RDS connection variables
+    # Note: The application now uses AWS RDS instead of Docker MySQL container
+    db_host: "{{ lookup('env', 'DB_HOST', default='database-1.ccr2s68cu8xf.us-east-1.rds.amazonaws.com') }}"
     db_database: "{{ lookup('env', 'DB_DATABASE', default='cfpcwjwg_certification_api_db') }}"
-    db_username: "{{ lookup('env', 'DB_USERNAME', default='cfpcwjwg_certi_user') }}"
+    db_username: "{{ lookup('env', 'DB_USERNAME', default='certi_user') }}"
     db_password: "{{ lookup('env', 'DB_PASSWORD', default='#&H3k-ID0V') }}"
 
   tasks:
@@ -177,37 +182,29 @@
       register: push_result
       ignore_errors: no
 
-    # Database backup
-    - name: Check if database container is running
-      command: sudo docker ps -f name=csl-certification-rest-api-db
-      register: docker_ps_output
-      ignore_errors: yes
-
+    # AWS RDS database backup
     - name: Create backup directory
       file:
         path: "{{ app_dir }}/backups"
         state: directory
+        owner: ubuntu
+        group: ubuntu
         mode: '0755'
-      when: docker_ps_output.stdout.find('csl-certification-rest-api-db') != -1
-      ignore_errors: yes
-
-    - name: Get timestamp for backup filename
-      shell: date +%Y%m%d_%H%M%S
-      register: timestamp
-      when: docker_ps_output.stdout.find('csl-certification-rest-api-db') != -1
+      
+    - name: Backup AWS RDS database before deployment
+      shell: |
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        mysqldump -h "{{ db_host }}" -u "{{ db_username }}" -p"{{ db_password }}" "{{ db_database }}" > "{{ app_dir }}/backups/db_backup_${TIMESTAMP}.sql"
+      register: backup_result
       ignore_errors: yes
       
-    - name: Backup database
-      shell: |
-        cd {{ app_dir }}
-        sudo docker exec csl-certification-rest-api-db mysqldump -h 127.0.0.1 -u root -p"{{ db_password }}" --databases "{{ db_database }}" > "{{ app_dir }}/backups/db_backup_{{ timestamp.stdout }}.sql" || echo "Database backup failed but continuing"
-      register: backup_result
-      when: docker_ps_output.stdout.find('csl-certification-rest-api-db') != -1
-      ignore_errors: yes
+    - name: Display backup result
+      debug:
+        var: backup_result
+      when: backup_result is defined
 
     - name: Keep only last 5 backups
       shell: find {{ app_dir }}/backups -name "db_backup_*.sql" -type f -printf '%T@ %p\n' | sort -nr | tail -n +6 | cut -d' ' -f2- | xargs -r rm
-      when: docker_ps_output.stdout.find('csl-certification-rest-api-db') != -1
       ignore_errors: yes
 
     # Application deployment
@@ -217,14 +214,12 @@
         sudo docker compose down || true
       ignore_errors: yes
       
-    - name: Ensure database initialization files are properly set up
+    - name: Ensure AWS RDS initialization script is executable
       shell: |
         cd {{ app_dir }}
-        mkdir -p docker/mysql
-        if [ -f "cfpcwjwg_certification_api_db.sql" ]; then
-          cp cfpcwjwg_certification_api_db.sql docker/mysql/
+        if [ -f "initialize-rds.sh" ]; then
+          chmod +x initialize-rds.sh
         fi
-        chmod 644 docker/mysql/*.sql || true
       ignore_errors: yes
       
     - name: Ensure Laravel storage and bootstrap directories exist on host
@@ -255,31 +250,33 @@
       debug:
         var: compose_result.stdout_lines
 
-    # Database migrations and queue management
-    - name: Wait for database to be ready
+    # AWS RDS initialization and database management
+    - name: Initialize AWS RDS database
       shell: |
-        MAX_RETRIES=30
-        RETRY_COUNT=0
-        
-        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-          if sudo docker exec csl-certification-rest-api-db mysqladmin ping -h localhost -u root -p"{{ db_password }}" --silent; then
-            echo "Database is ready!"
-            exit 0
-          fi
-          echo "Waiting for database to be ready... ($RETRY_COUNT/$MAX_RETRIES)"
-          RETRY_COUNT=$((RETRY_COUNT+1))
-          sleep 2
-        done
-        
-        echo "Database failed to become ready in time"
-        exit 1
-      register: db_ready
+        cd {{ app_dir }}
+        DB_HOST="{{ db_host }}" DB_USER="{{ db_username }}" DB_PASSWORD="{{ db_password }}" DB_NAME="{{ db_database }}" ./initialize-rds.sh
+      environment:
+        DB_HOST: "{{ db_host }}"
+        DB_USER: "{{ db_username }}"
+        DB_PASSWORD: "{{ db_password }}"
+        DB_NAME: "{{ db_database }}"
+      register: rds_init_result
       ignore_errors: yes
+      
+    - name: Display RDS initialization result
+      debug:
+        var: rds_init_result.stdout_lines
+      when: rds_init_result is defined
 
     - name: Run database migrations
       shell: |
         cd {{ app_dir }}
-        sudo docker compose exec -T app php artisan migrate --force
+        # Set AWS RDS environment variables before running migrations
+        export DB_HOST="{{ db_host }}"
+        export DB_DATABASE="{{ db_database }}"
+        export DB_USERNAME="{{ db_username }}"
+        export DB_PASSWORD="{{ db_password }}"
+        sudo -E docker compose exec -T app php artisan migrate --force
       register: migration_result
       ignore_errors: yes
       

@@ -15,58 +15,21 @@ services:
     environment:
       - APP_ENV=${APP_ENV:-staging}
       - APP_DEBUG=${APP_DEBUG:-false}
-      - DB_HOST=db
-      - DB_DATABASE=${DB_DATABASE}
-      - DB_USERNAME=${DB_USERNAME}
+      # AWS RDS connection settings
+      - DB_HOST=${DB_HOST:-database-1.ccr2s68cu8xf.us-east-1.rds.amazonaws.com}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_DATABASE=${DB_DATABASE:-cfpcwjwg_certification_api_db}
+      - DB_USERNAME=${DB_USERNAME:-certi_user}
       - DB_PASSWORD=${DB_PASSWORD}
       - CONTAINER_ROLE=app
     networks:
       - csl-network
-    depends_on:
-      db:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health/index.php"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
-
-  # MySQL Service
-  db:
-    image: mysql:8.0
-    container_name: csl-certification-rest-api-db
-    restart: always
-    environment:
-      MYSQL_DATABASE: ${DB_DATABASE}
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
-      MYSQL_USER: ${DB_USERNAME}
-      MYSQL_ALLOW_EMPTY_PASSWORD: "no"
-      # Critical for Docker network connections - from GitHub issue #275
-      MYSQL_ROOT_HOST: "%"
-      SERVICE_TAGS: staging
-      SERVICE_NAME: mysql
-    # Simplified command flags based on GitHub issue solution
-    command: >
-      --default-authentication-plugin=mysql_native_password 
-      --character-set-server=utf8mb4 
-      --collation-server=utf8mb4_unicode_ci 
-      --bind-address=0.0.0.0
-    volumes:
-      - dbdata:/var/lib/mysql
-      - ./docker/mysql/cfpcwjwg_certification_api_db.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
-      # Create a custom my.cnf to ensure proper connectivity
-      - ./docker/mysql/my.cnf:/etc/mysql/conf.d/my.cnf:ro
-    networks:
-      - csl-network
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD}"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 40s  # Give MySQL more time to initialize
   
   # Queue Worker Service
   queue:
@@ -76,16 +39,15 @@ services:
     depends_on:
       app:
         condition: service_started
-      db:
-        condition: service_healthy
     volumes:
       - ./storage:/var/www/html/storage
     environment:
       - CONTAINER_ROLE=queue
-      - DB_HOST=db
-      - DB_PORT=3306
-      - DB_DATABASE=${DB_DATABASE}
-      - DB_USERNAME=${DB_USERNAME}
+      # AWS RDS connection settings
+      - DB_HOST=${DB_HOST:-database-1.ccr2s68cu8xf.us-east-1.rds.amazonaws.com}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_DATABASE=${DB_DATABASE:-cfpcwjwg_certification_api_db}
+      - DB_USERNAME=${DB_USERNAME:-certi_user}
       - DB_PASSWORD=${DB_PASSWORD}
       - APP_ENV=${APP_ENV:-staging}
       - APP_DEBUG=${APP_DEBUG:-false}
@@ -101,7 +63,3 @@ services:
 networks:
   csl-network:
     driver: bridge
-
-volumes:
-  dbdata:
-    driver: local

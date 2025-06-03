@@ -27,78 +27,55 @@ chmod -R 777 /var/www/html/bootstrap/cache
 touch /var/www/html/storage/logs/laravel.log
 chmod 777 /var/www/html/storage/logs/laravel.log
 
-# Wait for database to be ready
+# Check AWS RDS connection
 if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ]; then
-    echo "Waiting for database connection..."
+    echo "Checking AWS RDS connection..."
     RETRY_COUNT=0
-    MAX_RETRIES=30
+    MAX_RETRIES=15
     
-    # Add a longer delay to ensure MySQL is fully initialized with all grant tables processed
-    echo "Giving MySQL time to fully initialize (30 seconds)..."
-    sleep 30
-    
-    # Get our container IP address for explicit grants
+    # Get container IP address for logging purposes
     CONTAINER_IP=$(hostname -i | awk '{print $1}')
     echo "Container IP: $CONTAINER_IP"
     
     set +e
-    until nc -z -v -w30 $DB_HOST 3306 || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
-        echo "Waiting for database connection..."
-        sleep 5
+    until nc -z -v -w10 $DB_HOST 3306 || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
+        echo "Waiting for AWS RDS connection... attempt $((RETRY_COUNT+1))/$MAX_RETRIES"
+        sleep 3
         RETRY_COUNT=$((RETRY_COUNT+1))
     done
     
     if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-        echo "Error: Failed to connect to database after $MAX_RETRIES attempts!"
+        echo "Error: Failed to connect to AWS RDS after $MAX_RETRIES attempts!"
+        echo "Please verify AWS RDS endpoint, security groups, and credentials."
     else
-        echo "Database is up and running!"
+        echo "AWS RDS connection established!"
         
-        # First try to create a specific user for our container IP
-        echo "Creating a specific user for our container IP: $CONTAINER_IP"
-        mysql -h $DB_HOST -u root -p$DB_PASSWORD --connect-timeout=30 -e "CREATE USER IF NOT EXISTS 'root'@'$CONTAINER_IP' IDENTIFIED BY '$DB_PASSWORD'; GRANT ALL ON *.* TO 'root'@'$CONTAINER_IP' WITH GRANT OPTION; FLUSH PRIVILEGES;" || echo "Failed to create specific user but continuing..."
-        
-        # Test MySQL connection with different user combinations
-        echo "Testing MySQL connection as root@% user..."
-        mysql -h $DB_HOST -u root -p$DB_PASSWORD --connect-timeout=10 -e "SELECT 'Connected as root@%';" || echo "Connection as root@% failed"
-        
-        echo "Testing MySQL connection as root@$CONTAINER_IP user..."
-        mysql -h $DB_HOST -u root -p$DB_PASSWORD --connect-timeout=10 -e "SELECT 'Connected as root@$CONTAINER_IP';" || echo "Connection as root@$CONTAINER_IP failed"
-        
-        # Try connecting with different host specifications
-        echo "Testing MySQL connection using 127.0.0.1..."
-        mysql -h 127.0.0.1 -u root -p$DB_PASSWORD --connect-timeout=10 -e "SELECT 'Connected via 127.0.0.1';" || echo "Connection via 127.0.0.1 failed"
-        
-        # Try connecting using explicit networking options
-        echo "Testing MySQL connection with explicit protocol..."
-        mysql -h $DB_HOST -u root -p$DB_PASSWORD --protocol=TCP --connect-timeout=10 -e "SELECT 'Connected with TCP protocol';" || echo "Connection with TCP protocol failed"
-        
-        # Try to fix .env file database settings
-        if [ -f "/var/www/html/.env" ]; then
-            echo "Updating .env file with correct database connection settings"
-            sed -i "s/DB_HOST=.*/DB_HOST=$DB_HOST/g" /var/www/html/.env
-            sed -i "s/DB_USERNAME=.*/DB_USERNAME=root/g" /var/www/html/.env
-            sed -i "s/DB_PASSWORD=.*/DB_PASSWORD=$DB_PASSWORD/g" /var/www/html/.env
-        fi
+        # Test MySQL connection with app user
+        echo "Testing MySQL connection as certi_user..."
+        mysql -h $DB_HOST -u $DB_USERNAME -p$DB_PASSWORD --connect-timeout=10 -e "SELECT 'Connected to AWS RDS successfully!';" || \
+        echo "Connection to AWS RDS failed. Check credentials and network access."
     fi
-    set -e
 fi
 
-# Run database migrations if needed
-if [ "$APP_ENV" != "production" ] || [ "$MIGRATE_ON_STARTUP" = "true" ]; then
-  echo "Running database migrations..."
-  php artisan migrate --force || echo "WARNING: Database migrations failed but continuing startup"
+# Run migrations with error handling
+echo "Running database migrations..."
+if php artisan migrate --force; then
+    echo "Migrations completed successfully."
+else
+    echo "Warning: Migrations failed. Application may not function correctly."
 fi
 
-# Clear and rebuild cache for optimal performance
-echo "Optimizing application..."
-php artisan optimize:clear || echo "WARNING: Cache clear failed but continuing startup"
-php artisan optimize || echo "WARNING: Cache optimization failed but continuing startup"
+# Clear and optimize for better performance
+echo "Clearing and optimizing cache..."
+if php artisan optimize:clear && php artisan optimize; then
+    echo "Cache cleared and optimized successfully."
+else
+    echo "Warning: Cache optimization failed."
+fi
 
-# Create a simple health check endpoint
-echo "Creating health check endpoint..."
+# Create a static health check endpoint for Docker healthchecks
 mkdir -p /var/www/html/public/health
-echo '{"status":"ok","timestamp":"'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"}'> /var/www/html/public/health/index.json
-echo '<?php echo json_encode(["status" => "ok", "timestamp" => date("c")]);' > /var/www/html/public/health/index.php
+echo '<?php echo json_encode(["status" => "ok", "timestamp" => time()]);' > /var/www/html/public/health/index.php
 
 # Create storage symlink
 php artisan storage:link
