@@ -198,7 +198,9 @@
       ignore_errors: yes
       
     - name: Backup database
-      shell: sudo docker exec csl-certification-rest-api-db mysqldump -u root -p"{{ db_password }}" --databases "{{ db_database }}" > "{{ app_dir }}/backups/db_backup_{{ timestamp.stdout }}.sql"
+      shell: |
+        cd {{ app_dir }}
+        sudo docker exec csl-certification-rest-api-db mysqldump -h 127.0.0.1 -u root -p"{{ db_password }}" --databases "{{ db_database }}" > "{{ app_dir }}/backups/db_backup_{{ timestamp.stdout }}.sql" || echo "Database backup failed but continuing"
       register: backup_result
       when: docker_ps_output.stdout.find('csl-certification-rest-api-db') != -1
       ignore_errors: yes
@@ -221,8 +223,24 @@
         mkdir -p docker/mysql
         if [ -f "cfpcwjwg_certification_api_db.sql" ]; then
           cp cfpcwjwg_certification_api_db.sql docker/mysql/
-          chmod -R 755 docker/mysql
         fi
+        chmod 644 docker/mysql/*.sql || true
+      ignore_errors: yes
+      
+    - name: Ensure Laravel storage and bootstrap directories exist on host
+      shell: |
+        cd {{ app_dir }}
+        mkdir -p storage/framework/sessions storage/framework/views storage/framework/cache storage/logs
+        mkdir -p bootstrap/cache
+        touch storage/logs/laravel.log
+      ignore_errors: yes
+      
+    - name: Set proper permissions for Laravel directories on host
+      shell: |
+        cd {{ app_dir }}
+        # Use 777 permissions to ensure Docker container can write to these directories
+        chmod -R 777 storage
+        chmod -R 777 bootstrap/cache
       ignore_errors: yes
 
     - name: Start application with Docker Compose

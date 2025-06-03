@@ -10,8 +10,8 @@ services:
     ports:
       - "8080:80"
     volumes:
-      - ./storage:/var/www/html/storage
-      - ./bootstrap/cache:/var/www/html/bootstrap/cache
+      - ./storage:/var/www/html/storage:delegated
+      - ./bootstrap/cache:/var/www/html/bootstrap/cache:delegated
     environment:
       - APP_ENV=${APP_ENV:-staging}
       - APP_DEBUG=${APP_DEBUG:-false}
