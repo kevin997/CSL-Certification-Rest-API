@@ -43,14 +43,22 @@ services:
       MYSQL_PASSWORD: ${DB_PASSWORD}
       MYSQL_USER: ${DB_USERNAME}
       MYSQL_ALLOW_EMPTY_PASSWORD: "no"
+      # Critical for Docker network connections - from GitHub issue #275
       MYSQL_ROOT_HOST: "%"
       SERVICE_TAGS: staging
       SERVICE_NAME: mysql
-    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --bind-address=0.0.0.0
+    # Simplified command flags based on GitHub issue solution
+    command: >
+      --default-authentication-plugin=mysql_native_password 
+      --character-set-server=utf8mb4 
+      --collation-server=utf8mb4_unicode_ci 
+      --bind-address=0.0.0.0
     volumes:
       - dbdata:/var/lib/mysql
       - ./docker/mysql/cfpcwjwg_certification_api_db.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+      # Create a custom my.cnf to ensure proper connectivity
+      - ./docker/mysql/my.cnf:/etc/mysql/conf.d/my.cnf:ro
     networks:
       - csl-network
     healthcheck:
@@ -58,6 +66,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+      start_period: 40s  # Give MySQL more time to initialize
   
   # Queue Worker Service
   queue:
