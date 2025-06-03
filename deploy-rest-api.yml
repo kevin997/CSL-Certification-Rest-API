@@ -9,13 +9,6 @@
     docker_image: "{{ docker_registry }}/{{ app_name }}"
     docker_tag: "{{ lookup('env', 'GITHUB_SHA') | default('latest', true) }}"
     app_dir: /opt/csl-certification-rest-api
-    
-    # AWS RDS connection variables
-    # Note: The application now uses AWS RDS instead of Docker MySQL container
-    db_host: "{{ lookup('env', 'DB_HOST', default='database-1.ccr2s68cu8xf.us-east-1.rds.amazonaws.com') }}"
-    db_database: "{{ lookup('env', 'DB_DATABASE', default='cfpcwjwg_certification_api_db') }}"
-    db_username: "{{ lookup('env', 'DB_USERNAME', default='certi_user') }}"
-    db_password: "{{ lookup('env', 'DB_PASSWORD', default='#&H3k-ID0V') }}"
 
   tasks:
     # Setup tasks
@@ -23,7 +16,7 @@
       ansible.builtin.file:
         path: "{{ app_dir }}"
         state: directory
-        mode: "0755"
+        mode: "0777"
         owner: ubuntu
         group: ubuntu
 
@@ -121,7 +114,7 @@
 
     # Docker cleanup and preparation
     - name: Clean up Docker system
-      shell: sudo docker system prune -af --volumes
+      shell: docker system prune -af --volumes
       ignore_errors: yes
       
     - name: Check disk space before build
@@ -133,18 +126,18 @@
         var: disk_space_before.stdout_lines
         
     - name: Check if Docker registry is running
-      shell: sudo docker ps | grep registry
+      shell: docker ps | grep registry
       register: registry_status
       ignore_errors: yes
       
     - name: Start Docker registry if not running
       shell: |
-        if [ "$(sudo docker ps -a | grep registry)" ]; then
-          if [ ! "$(sudo docker ps | grep registry)" ]; then
-            sudo docker start registry
+        if [ "$(docker ps -a | grep registry)" ]; then
+          if [ ! "$(docker ps | grep registry)" ]; then
+            docker start registry
           fi
         else
-          sudo docker run -d -p 5000:5000 --restart=always --name registry registry:2
+          docker run -d -p 5000:5000 --restart=always --name registry registry:2
         fi
       when: registry_status.rc != 0
       ignore_errors: yes
@@ -164,21 +157,21 @@
       shell: |
         cd {{ app_dir }}
         # Build with full output for debugging
-        DOCKER_BUILDKIT=0 sudo docker build -t {{ app_name }}:latest .
+        DOCKER_BUILDKIT=0 docker build -t {{ app_name }}:latest .
       register: docker_build_result
       ignore_errors: no
 
     - name: Tag and push Docker image to registry
       shell: |
-        sudo docker tag {{ app_name }}:latest {{ docker_image }}:{{ docker_tag }}
-        sudo docker tag {{ app_name }}:latest {{ docker_image }}:latest
+        docker tag {{ app_name }}:latest {{ docker_image }}:{{ docker_tag }}
+        docker tag {{ app_name }}:latest {{ docker_image }}:latest
       register: tag_result
       ignore_errors: no
 
     - name: Push Docker image to registry
       shell: |
-        sudo docker push {{ docker_image }}:{{ docker_tag }}
-        sudo docker push {{ docker_image }}:latest
+        docker push {{ docker_image }}:{{ docker_tag }}
+        docker push {{ docker_image }}:latest
       register: push_result
       ignore_errors: no
 
@@ -189,14 +182,7 @@
         state: directory
         owner: ubuntu
         group: ubuntu
-        mode: '0755'
-      
-    - name: Backup AWS RDS database before deployment
-      shell: |
-        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-        mysqldump -h "{{ db_host }}" -u "{{ db_username }}" -p"{{ db_password }}" "{{ db_database }}" > "{{ app_dir }}/backups/db_backup_${TIMESTAMP}.sql"
-      register: backup_result
-      ignore_errors: yes
+        mode: '0777'
       
     - name: Display backup result
       debug:
@@ -211,15 +197,7 @@
     - name: Stop any running containers
       shell: |
         cd {{ app_dir }}
-        sudo docker compose down || true
-      ignore_errors: yes
-      
-    - name: Ensure AWS RDS initialization script is executable
-      shell: |
-        cd {{ app_dir }}
-        if [ -f "initialize-rds.sh" ]; then
-          chmod +x initialize-rds.sh
-        fi
+        docker compose down || true
       ignore_errors: yes
       
     - name: Ensure Laravel storage and bootstrap directories exist on host
@@ -241,7 +219,7 @@
     - name: Start application with Docker Compose
       shell: |
         cd {{ app_dir }}
-        sudo docker compose up -d
+        docker compose up -d
       environment:
         COMPOSE_HTTP_TIMEOUT: "300"
       register: compose_result
@@ -249,36 +227,6 @@
     - name: Display Docker Compose output
       debug:
         var: compose_result.stdout_lines
-
-    # AWS RDS initialization and database management
-    - name: Initialize AWS RDS database
-      shell: |
-        cd {{ app_dir }}
-        DB_HOST="{{ db_host }}" DB_USER="{{ db_username }}" DB_PASSWORD="{{ db_password }}" DB_NAME="{{ db_database }}" ./initialize-rds.sh
-      environment:
-        DB_HOST: "{{ db_host }}"
-        DB_USER: "{{ db_username }}"
-        DB_PASSWORD: "{{ db_password }}"
-        DB_NAME: "{{ db_database }}"
-      register: rds_init_result
-      ignore_errors: yes
-      
-    - name: Display RDS initialization result
-      debug:
-        var: rds_init_result.stdout_lines
-      when: rds_init_result is defined
-
-    - name: Run database migrations
-      shell: |
-        cd {{ app_dir }}
-        # Set AWS RDS environment variables before running migrations
-        export DB_HOST="{{ db_host }}"
-        export DB_DATABASE="{{ db_database }}"
-        export DB_USERNAME="{{ db_username }}"
-        export DB_PASSWORD="{{ db_password }}"
-        sudo -E docker compose exec -T app php artisan migrate --force
-      register: migration_result
-      ignore_errors: yes
       
     - name: Display migration result
       debug:
@@ -287,7 +235,7 @@
     - name: Restart queue worker
       shell: |
         cd {{ app_dir }}
-        sudo docker compose exec -T app php artisan queue:restart
+        docker compose exec -T app php artisan queue:restart
       register: queue_restart_result
       ignore_errors: yes
       
