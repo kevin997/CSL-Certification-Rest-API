@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('lesson_questions', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('lesson_questions')) {
+            echo "Table 'lesson_questions' already exists, skipping...\n";
+        } else {
+            Schema::create('lesson_questions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('lesson_content_id')->constrained()->onDelete('cascade');
             $table->foreignId('content_part_id')->nullable()->constrained('lesson_content_parts')->onDelete('set null');
@@ -29,7 +34,8 @@ return new class extends Migration
             $table->index('content_part_id');
             $table->index('question_type');
             $table->index('is_scorable');
-        });
+            });
+        }
     }
 
     /**

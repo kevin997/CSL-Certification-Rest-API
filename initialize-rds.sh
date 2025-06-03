@@ -25,6 +25,12 @@ echo "=== AWS RDS Database Initialization ==="
 echo "This script will initialize the $DB_NAME database on $DB_HOST"
 echo "Using credentials: $DB_USER:$DB_PASSWORD"
 
+# Set environment variables for potential Laravel commands after this script
+export DB_HOST=$DB_HOST
+export DB_DATABASE=$DB_NAME
+export DB_USERNAME=$DB_USER
+export DB_PASSWORD=$DB_PASSWORD
+
 # Test connection to AWS RDS
 echo -n "Testing connection to AWS RDS... "
 if mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" -e "SELECT 'Connection successful!';" &> /dev/null; then
@@ -64,12 +70,22 @@ else
 fi
 
 # Verify database tables were created
-echo -n "Verifying database tables... "
-TABLE_COUNT=$(mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" -e "SELECT COUNT(TABLE_NAME) FROM information_schema.tables WHERE table_schema='$DB_NAME';" -N)
+echo    # Count tables in database to verify import
+TABLE_COUNT=$(mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$DB_NAME';" | grep -v "COUNT" | tr -d ' ')
+    
 if [ "$TABLE_COUNT" -gt 0 ]; then
-    echo "SUCCESS ($TABLE_COUNT tables found)"
+    echo "SUCCESS: Database imported with $TABLE_COUNT tables"
+    echo
+    echo "===================================================================="
+    echo "IMPORTANT: Run Laravel migrations with the following command:"
+    echo "php artisan migrate --force"
+    echo
+    echo "The migrations have been updated to check if tables exist"
+    echo "before creating them, so this should be safe to run."
+    echo "===================================================================="
+    exit 0
 else
-    echo "FAILED (No tables found)"
+    echo "ERROR: Database appears to be empty after import attempt"
     exit 1
 fi
 

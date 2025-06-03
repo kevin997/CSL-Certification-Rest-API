@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('plans', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('plans')) {
+            echo "Table 'plans' already exists, skipping...\n";
+        } else {
+            Schema::create('plans', function (Blueprint $table) {
             $table->id();
             $table->string('name');
             $table->text('description')->nullable();
@@ -24,7 +29,8 @@ return new class extends Migration
             $table->boolean('is_active')->default(true);
             $table->integer('sort_order')->default(0);
             $table->timestamps();
-        });
+            });
+        }
     }
 
     /**

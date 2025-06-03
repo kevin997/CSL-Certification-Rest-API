@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('assignment_submission_files', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('assignment_submission_files')) {
+            echo "Table 'assignment_submission_files' already exists, skipping...\n";
+        } else {
+            Schema::create('assignment_submission_files', function (Blueprint $table) {
             $table->id();
             $table->foreignId('assignment_submission_id')->constrained()->onDelete('cascade');
             $table->string('file_path');
@@ -26,7 +31,8 @@ return new class extends Migration
             $table->index('assignment_submission_id');
             $table->index('file_type');
             $table->index('is_video');
-        });
+            });
+        }
     }
 
     /**

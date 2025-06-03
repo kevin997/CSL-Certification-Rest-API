@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('assignment_criterion_scores', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('assignment_criterion_scores')) {
+            echo "Table 'assignment_criterion_scores' already exists, skipping...\n";
+        } else {
+            Schema::create('assignment_criterion_scores', function (Blueprint $table) {
             $table->id();
             $table->foreignId('assignment_submission_id')->constrained()->onDelete('cascade');
             $table->foreignId('assignment_criterion_id')->constrained()->onDelete('cascade');
@@ -26,7 +31,8 @@ return new class extends Migration
             
             // Unique constraint to prevent duplicate scores for the same criterion and submission
             $table->unique(['assignment_submission_id', 'assignment_criterion_id'], 'unique_criterion_score');
-        });
+            });
+        }
     }
 
     /**

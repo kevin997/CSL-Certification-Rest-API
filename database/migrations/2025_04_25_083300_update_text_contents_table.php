@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -13,10 +14,25 @@ return new class extends Migration
     {
         Schema::table('text_contents', function (Blueprint $table) {
             // Add missing columns that are validated in the controller
-            $table->string('title')->after('id');
-            $table->text('description')->nullable()->after('title');
-            $table->enum('format', ['plain', 'markdown', 'html'])->default('markdown')->after('content');
-            $table->foreignId('activity_id')->after('id')->constrained('activities')->onDelete('cascade');
+            // Check if column already exists
+
+            if (!MigrationHelper::columnExists('text_contents', 'title')) {
+
+                $table->string('title')->after('id');
+                // Check if column already exists
+
+                if (!MigrationHelper::columnExists('text_contents', 'description')) {
+
+                    $table->text('description')->nullable()->after('title');
+                    $table->enum('format', ['plain', 'markdown', 'html'])->default('markdown')->after('content');
+                    // Check if column already exists
+
+                    if (!MigrationHelper::columnExists('text_contents', 'activity_id')) {
+
+                        $table->foreignId('activity_id')->after('id')->constrained('activities')->onDelete('cascade');
+                    }
+                }
+            }
         });
     }
 

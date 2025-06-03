@@ -1,8 +1,10 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+
 
 class UpdateCoursesTableForImageFields extends Migration
 {
@@ -17,33 +19,58 @@ class UpdateCoursesTableForImageFields extends Migration
             // Check if thumbnail_path exists and rename it to thumbnail_url
             if (Schema::hasColumn('courses', 'thumbnail_path')) {
                 $table->renameColumn('thumbnail_path', 'thumbnail_url');
-            } 
-            // If thumbnail_path doesn't exist but thumbnail_url doesn't either, add thumbnail_url
+            } // If thumbnail_path doesn't exist but thumbnail_url doesn't either, add thumbnail_url
             else if (!Schema::hasColumn('courses', 'thumbnail_url')) {
-                $table->string('thumbnail_url')->nullable()->after('difficulty_level');
+                // Check if column already exists
+
+                if (!MigrationHelper::columnExists('courses', 'thumbnail_url')) {
+
+                    $table->string('thumbnail_url')->nullable()->after('difficulty_level');
+                }
             }
 
             // Add featured_image if it doesn't exist
             if (!Schema::hasColumn('courses', 'featured_image')) {
-                $table->string('featured_image')->nullable()->after('thumbnail_url');
-            }
+                // Check if column already exists
 
+                if (!MigrationHelper::columnExists('courses', 'featured_image')) {
+
+                    $table->string('featured_image')->nullable()->after('thumbnail_url');
+                }
+            }
             // Add is_featured if it doesn't exist
             if (!Schema::hasColumn('courses', 'is_featured')) {
-                $table->boolean('is_featured')->default(false)->after('featured_image');
-            }
+                // Check if column already exists
 
+                if (!MigrationHelper::columnExists('courses', 'is_featured')) {
+
+                    $table->boolean('is_featured')->default(false)->after('featured_image');
+                }
+            }
             // Add meta fields if they don't exist
             if (!Schema::hasColumn('courses', 'meta_title')) {
-                $table->string('meta_title')->nullable()->after('is_featured');
-            }
+                // Check if column already exists
 
+                if (!MigrationHelper::columnExists('courses', 'meta_title')) {
+
+                    $table->string('meta_title')->nullable()->after('is_featured');
+                }
+            }
             if (!Schema::hasColumn('courses', 'meta_description')) {
-                $table->text('meta_description')->nullable()->after('meta_title');
-            }
+                // Check if column already exists
 
+                if (!MigrationHelper::columnExists('courses', 'meta_description')) {
+
+                    $table->text('meta_description')->nullable()->after('meta_title');
+                }
+            }
             if (!Schema::hasColumn('courses', 'meta_keywords')) {
-                $table->string('meta_keywords')->nullable()->after('meta_description');
+                // Check if column already exists
+
+                if (!MigrationHelper::columnExists('courses', 'meta_keywords')) {
+
+                    $table->string('meta_keywords')->nullable()->after('meta_description');
+                }
             }
         });
     }

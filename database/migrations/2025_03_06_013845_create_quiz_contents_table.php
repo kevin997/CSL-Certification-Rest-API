@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('quiz_contents', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('quiz_contents')) {
+            echo "Table 'quiz_contents' already exists, skipping...\n";
+        } else {
+            Schema::create('quiz_contents', function (Blueprint $table) {
             $table->id();
             $table->text('instructions')->nullable();
             $table->integer('passing_score')->default(70); // Percentage
@@ -21,7 +26,8 @@ return new class extends Migration
             $table->foreignId('created_by')->constrained('users');
             $table->timestamps();
             $table->softDeletes();
-        });
+            });
+        }
     }
 
     /**

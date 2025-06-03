@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('product_reviews', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('product_reviews')) {
+            echo "Table 'product_reviews' already exists, skipping...\n";
+        } else {
+            Schema::create('product_reviews', function (Blueprint $table) {
             $table->id();
             $table->foreignId('product_id')->constrained()->onDelete('cascade');
             $table->foreignId('environment_id')->constrained()->onDelete('cascade');
@@ -28,7 +33,8 @@ return new class extends Migration
             $table->index(['product_id', 'status']);
             $table->index(['environment_id', 'product_id']);
             $table->index('rating');
-        });
+            });
+        }
     }
 
     /**

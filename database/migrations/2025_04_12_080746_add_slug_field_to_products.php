@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -13,10 +14,15 @@ return new class extends Migration
     {
         Schema::table('products', function (Blueprint $table) {
             // Add slug column after name column
-            $table->string('slug')->after('name');
-            
-            // Create a composite unique index for slug and environment_id
-            $table->unique(['slug', 'environment_id']);
+            // Check if column already exists
+
+            if (!MigrationHelper::columnExists('products', 'slug')) {
+
+                $table->string('slug')->after('name');
+
+                // Create a composite unique index for slug and environment_id
+                $table->unique(['slug', 'environment_id']);
+            }
         });
     }
 
@@ -28,7 +34,7 @@ return new class extends Migration
         Schema::table('products', function (Blueprint $table) {
             // Drop the composite unique index
             $table->dropUnique(['slug', 'environment_id']);
-            
+
             // Drop the slug column
             $table->dropColumn('slug');
         });

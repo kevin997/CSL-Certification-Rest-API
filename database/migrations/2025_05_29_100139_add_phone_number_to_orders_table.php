@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -13,7 +14,12 @@ return new class extends Migration
     {
         if (!Schema::hasColumn('orders', 'phone_number')) {
             Schema::table('orders', function (Blueprint $table) {
-                $table->string('phone_number')->nullable()->after('billing_email');
+                // Check if column already exists
+
+                if (!MigrationHelper::columnExists('orders', 'phone_number')) {
+
+                    $table->string('phone_number')->nullable()->after('billing_email');
+                }
             });
         }
     }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -13,17 +14,32 @@ return new class extends Migration
     {
         Schema::table('feedback_contents', function (Blueprint $table) {
             // Add missing fields to match frontend implementation
-            $table->text('instructions')->nullable()->after('description');
-            $table->text('completion_message')->nullable()->after('is_anonymous');
+            // Check if column already exists
+
+            if (!MigrationHelper::columnExists('feedback_contents', 'instructions')) {
+
+                $table->text('instructions')->nullable()->after('description');
+            // Check if column already exists
+
+            if (!MigrationHelper::columnExists('feedback_contents', 'completion_message')) {
+
+                $table->text('completion_message')->nullable()->after('is_anonymous');
             $table->json('resource_files')->nullable()->after('completion_message');
-            $table->foreignId('activity_id')->nullable()->after('id');
+            // Check if column already exists
+
+            if (!MigrationHelper::columnExists('feedback_contents', 'activity_id')) {
+
+                $table->foreignId('activity_id')->nullable()->after('id');
             
             // Rename field to match frontend implementation
             $table->renameColumn('is_anonymous', 'allow_anonymous');
             
             // Add index for activity_id
             $table->index('activity_id');
-        });
+            }
+        }
+    }
+    });
     }
 
     /**

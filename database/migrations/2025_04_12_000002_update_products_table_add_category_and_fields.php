@@ -1,8 +1,10 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+
 
 return new class extends Migration
 {
@@ -13,20 +15,53 @@ return new class extends Migration
     {
         Schema::table('products', function (Blueprint $table) {
             // Add category relationship
-            $table->foreignId('category_id')->nullable()->after('environment_id')
-                ->constrained('product_categories')->onDelete('set null');
-            
+            // Check if column already exists
+
+            if (!MigrationHelper::columnExists('products', 'category_id')) {
+
+                $table->foreignId('category_id')->nullable()->after('environment_id')
+                    ->constrained('product_categories')->onDelete('set null');
+            }
+
             // Add inventory management fields
-            $table->string('sku')->nullable()->after('name');
-            $table->integer('stock_quantity')->nullable()->after('price');
-            
+            // Check if column already exists
+
+            if (!MigrationHelper::columnExists('products', 'sku')) {
+
+                $table->string('sku')->nullable()->after('name');
+                // Check if column already exists
+            }
+
+            if (!MigrationHelper::columnExists('products', 'stock_quantity')) {
+
+                $table->integer('stock_quantity')->nullable()->after('price');
+            }
+
             // Add featured flag
-            $table->boolean('is_featured')->default(false)->after('status');
-            
+            // Check if column already exists
+
+            if (!MigrationHelper::columnExists('products', 'is_featured')) {
+
+                $table->boolean('is_featured')->default(false)->after('status');
+            }
+
             // Add SEO fields
-            $table->string('meta_title')->nullable()->after('thumbnail_path');
-            $table->text('meta_description')->nullable()->after('meta_title');
-            $table->string('meta_keywords')->nullable()->after('meta_description');
+            // Check if column already exists
+
+            if (!MigrationHelper::columnExists('products', 'meta_title')) {
+
+                $table->string('meta_title')->nullable()->after('thumbnail_path');
+                // Check if column already exists
+            }
+            if (!MigrationHelper::columnExists('products', 'meta_description')) {
+
+                $table->text('meta_description')->nullable()->after('meta_title');
+                // Check if column already exists
+            }
+            if (!MigrationHelper::columnExists('products', 'meta_keywords')) {
+
+                $table->string('meta_keywords')->nullable()->after('meta_description');
+            }
         });
     }
 
@@ -38,9 +73,9 @@ return new class extends Migration
         Schema::table('products', function (Blueprint $table) {
             $table->dropForeign(['category_id']);
             $table->dropColumn([
-                'category_id', 
-                'sku', 
-                'stock_quantity', 
+                'category_id',
+                'sku',
+                'stock_quantity',
                 'is_featured',
                 'meta_title',
                 'meta_description',

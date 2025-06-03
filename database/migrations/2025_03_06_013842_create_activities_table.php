@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('activities', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('activities')) {
+            echo "Table 'activities' already exists, skipping...\n";
+        } else {
+            Schema::create('activities', function (Blueprint $table) {
             $table->id();
             $table->string('title');
             $table->text('description')->nullable();
@@ -30,7 +35,8 @@ return new class extends Migration
             $table->index('status');
             $table->index('type');
             $table->index(['content_type', 'content_id']); // Index for polymorphic relationship
-        });
+            });
+        }
     }
 
     /**

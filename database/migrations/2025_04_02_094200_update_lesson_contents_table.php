@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -13,13 +14,38 @@ return new class extends Migration
     {
         Schema::table('lesson_contents', function (Blueprint $table) {
             // Add the missing columns that our frontend expects
-            $table->foreignId('activity_id')->after('id')->constrained('activities')->onDelete('cascade');
-            $table->string('title')->after('activity_id');
-            $table->text('description')->nullable()->after('title');
-            $table->text('content')->nullable()->after('description');
-            $table->enum('format', ['plain', 'markdown', 'html', 'wysiwyg'])->default('markdown')->after('content');
-            $table->integer('estimated_duration')->nullable()->after('format');
-            $table->json('resources')->nullable()->after('estimated_duration');
+            // Check if column already exists
+
+            if (!MigrationHelper::columnExists('lesson_contents', 'activity_id')) {
+
+                $table->foreignId('activity_id')->after('id')->constrained('activities')->onDelete('cascade');
+                // Check if column already exists
+
+                if (!MigrationHelper::columnExists('lesson_contents', 'title')) {
+
+                    $table->string('title')->after('activity_id');
+                    // Check if column already exists
+
+                    if (!MigrationHelper::columnExists('lesson_contents', 'description')) {
+
+                        $table->text('description')->nullable()->after('title');
+                        // Check if column already exists
+
+                        if (!MigrationHelper::columnExists('lesson_contents', 'content')) {
+
+                            $table->text('content')->nullable()->after('description');
+                            $table->enum('format', ['plain', 'markdown', 'html', 'wysiwyg'])->default('markdown')->after('content');
+                            // Check if column already exists
+
+                            if (!MigrationHelper::columnExists('lesson_contents', 'estimated_duration')) {
+
+                                $table->integer('estimated_duration')->nullable()->after('format');
+                                $table->json('resources')->nullable()->after('estimated_duration');
+                            }
+                        }
+                    }
+                }
+            }
         });
     }
 

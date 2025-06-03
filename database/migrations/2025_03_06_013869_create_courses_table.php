@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('courses', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('courses')) {
+            echo "Table 'courses' already exists, skipping...\n";
+        } else {
+            Schema::create('courses', function (Blueprint $table) {
             $table->id();
             $table->string('title');
             $table->text('description')->nullable();
@@ -34,7 +39,8 @@ return new class extends Migration
             $table->index('status');
             $table->index(['start_date', 'end_date']);
             $table->index('difficulty_level');
-        });
+            });
+        }
     }
 
     /**

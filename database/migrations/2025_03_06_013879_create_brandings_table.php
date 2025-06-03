@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('brandings', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('brandings')) {
+            echo "Table 'brandings' already exists, skipping...\n";
+        } else {
+            Schema::create('brandings', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->string('company_name');
@@ -32,7 +37,8 @@ return new class extends Migration
             $table->index('user_id');
             $table->index('is_active');
             $table->index('custom_domain');
-        });
+            });
+        }
     }
 
     /**

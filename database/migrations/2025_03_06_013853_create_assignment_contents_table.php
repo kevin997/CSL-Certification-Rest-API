@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('assignment_contents', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('assignment_contents')) {
+            echo "Table 'assignment_contents' already exists, skipping...\n";
+        } else {
+            Schema::create('assignment_contents', function (Blueprint $table) {
             $table->id();
             $table->text('instructions');
             $table->timestamp('due_date')->nullable();
@@ -26,7 +31,8 @@ return new class extends Migration
             
             // Indexes
             $table->index('due_date');
-        });
+            });
+        }
     }
 
     /**

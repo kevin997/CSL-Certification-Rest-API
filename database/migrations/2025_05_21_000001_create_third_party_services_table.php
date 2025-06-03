@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -12,6 +13,10 @@ return new class extends Migration
     public function up(): void
     {
         if (!Schema::hasTable('third_party_services')) {
+            // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('third_party_services')) {
+            echo "Table 'third_party_services' already exists, skipping...\n";
+        } else {
             Schema::create('third_party_services', function (Blueprint $table) {
             $table->id();
             $table->string('name');
@@ -27,7 +32,8 @@ return new class extends Migration
             $table->json('config')->nullable();
             $table->timestamps();
             $table->softDeletes();
-        });
+            });
+        }
         }
     }
 

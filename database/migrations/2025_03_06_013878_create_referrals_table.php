@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('referrals', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('referrals')) {
+            echo "Table 'referrals' already exists, skipping...\n";
+        } else {
+            Schema::create('referrals', function (Blueprint $table) {
             $table->id();
             $table->foreignId('referrer_id')->constrained('users')->onDelete('cascade');
             $table->string('code')->unique();
@@ -29,7 +34,8 @@ return new class extends Migration
             $table->index('code');
             $table->index('is_active');
             $table->index('expires_at');
-        });
+            });
+        }
     }
 
     /**

@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -12,6 +13,10 @@ return new class extends Migration
     public function up(): void
     {
         if (!Schema::hasTable('team_members')) {
+            // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('team_members')) {
+            echo "Table 'team_members' already exists, skipping...\n";
+        } else {
             Schema::create('team_members', function (Blueprint $table) {
                 $table->id();
                 $table->unsignedBigInteger('team_id');
@@ -26,6 +31,7 @@ return new class extends Migration
                 // Unique constraint to prevent duplicate team members
                 $table->unique(['team_id', 'user_id']);
             });
+        }
         }
     }
 

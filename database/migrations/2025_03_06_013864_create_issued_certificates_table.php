@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('issued_certificates', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('issued_certificates')) {
+            echo "Table 'issued_certificates' already exists, skipping...\n";
+        } else {
+            Schema::create('issued_certificates', function (Blueprint $table) {
             $table->id();
             $table->foreignId('certificate_content_id')->constrained()->onDelete('cascade');
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
@@ -35,7 +40,8 @@ return new class extends Migration
             $table->index('issued_date');
             $table->index('expiry_date');
             $table->index('course_id'); // Added index for course_id
-        });
+            });
+        }
     }
 
     /**

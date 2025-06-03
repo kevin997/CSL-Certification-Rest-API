@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('transactions', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('transactions')) {
+            echo "Table 'transactions' already exists, skipping...\n";
+        } else {
+            Schema::create('transactions', function (Blueprint $table) {
             $table->id();
             $table->uuid('transaction_id')->unique();
             $table->foreignId('environment_id')->constrained('environments')->cascadeOnDelete();
@@ -50,7 +55,8 @@ return new class extends Migration
             $table->index('customer_id');
             $table->index('status');
             $table->index('created_at');
-        });
+            });
+        }
     }
 
     /**

@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -12,7 +13,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('payment_gateway_settings', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('payment_gateway_settings')) {
+            echo "Table 'payment_gateway_settings' already exists, skipping...\n";
+        } else {
+            Schema::create('payment_gateway_settings', function (Blueprint $table) {
             $table->id();
             $table->foreignId('environment_id')->constrained('environments')->cascadeOnDelete();
             $table->string('gateway_name');
@@ -33,8 +38,8 @@ return new class extends Migration
             $table->string('updated_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
-        });
-        
+            });
+        }
         // Create a composite index on environment_id and is_default
         // This doesn't enforce the constraint but will help with query performance
         DB::statement('CREATE INDEX idx_env_default ON payment_gateway_settings(environment_id, is_default)');

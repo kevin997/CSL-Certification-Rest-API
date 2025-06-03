@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('environment_user', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('environment_user')) {
+            echo "Table 'environment_user' already exists, skipping...\n";
+        } else {
+            Schema::create('environment_user', function (Blueprint $table) {
             $table->id();
             $table->foreignId('environment_id')->constrained()->onDelete('cascade');
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
@@ -22,7 +27,8 @@ return new class extends Migration
             
             // Ensure a user can only be associated with an environment once
             $table->unique(['environment_id', 'user_id']);
-        });
+            });
+        }
     }
 
     /**

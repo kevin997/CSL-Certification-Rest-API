@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,11 +12,21 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Ensure the table exists before modifying it
+        if (!MigrationHelper::tableExists('enrollments')) {
+            echo "Table 'enrollments' does not exist, skipping migration...\n";
+            return;
+        }
+
         Schema::table('enrollments', function (Blueprint $table) {
-            $table->foreignId('environment_id')->nullable()->after('user_id')
+            // Check if column already exists
+        if (!MigrationHelper::columnExists('enrollments', 'environment_id')) {
+
+                $table->foreignId('environment_id')->nullable()->after('user_id')
                 ->constrained('environments')
                 ->onDelete('cascade');
-        });
+        }
+    });
     }
 
     /**

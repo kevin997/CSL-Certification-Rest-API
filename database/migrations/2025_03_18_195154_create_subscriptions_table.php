@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('subscriptions', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('subscriptions')) {
+            echo "Table 'subscriptions' already exists, skipping...\n";
+        } else {
+            Schema::create('subscriptions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('environment_id')->constrained()->onDelete('cascade');
             $table->foreignId('plan_id')->constrained();
@@ -27,7 +32,8 @@ return new class extends Migration
             $table->timestamp('next_payment_at')->nullable();
             $table->boolean('setup_fee_paid')->default(false);
             $table->timestamps();
-        });
+            });
+        }
     }
 
     /**

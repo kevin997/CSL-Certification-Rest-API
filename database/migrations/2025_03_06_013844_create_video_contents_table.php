@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('video_contents', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('video_contents')) {
+            echo "Table 'video_contents' already exists, skipping...\n";
+        } else {
+            Schema::create('video_contents', function (Blueprint $table) {
             $table->id();
             $table->string('url');
             $table->string('provider')->nullable(); // youtube, vimeo, etc.
@@ -23,7 +28,8 @@ return new class extends Migration
             
             // Indexes
             $table->index('provider');
-        });
+            });
+        }
     }
 
     /**

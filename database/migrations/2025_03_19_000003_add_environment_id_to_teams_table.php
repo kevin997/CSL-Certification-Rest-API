@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,9 +12,19 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Ensure the table exists before modifying it
+        if (!MigrationHelper::tableExists('teams')) {
+            echo "Table 'teams' does not exist, skipping migration...\n";
+            return;
+        }
+
         Schema::table('teams', function (Blueprint $table) {
-            $table->foreignId('environment_id')->nullable()->after('personal_team')->constrained('environments');
+            // Check if column already exists
+        if (!MigrationHelper::columnExists('teams', 'environment_id')) {
+
+                $table->foreignId('environment_id')->nullable()->after('personal_team')->constrained('environments');
             $table->index('environment_id');
+            }
         });
     }
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('feedback_submissions', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('feedback_submissions')) {
+            echo "Table 'feedback_submissions' already exists, skipping...\n";
+        } else {
+            Schema::create('feedback_submissions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('feedback_content_id')->constrained()->onDelete('cascade');
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
@@ -30,7 +35,8 @@ return new class extends Migration
             // If multiple submissions are not allowed, we can add a unique constraint
             // But we'll leave it commented out since the FeedbackContent model has a flag for this
             // $table->unique(['feedback_content_id', 'user_id'], 'unique_feedback_submission');
-        });
+            });
+        }
     }
 
     /**

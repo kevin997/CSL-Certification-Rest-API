@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -12,6 +13,10 @@ return new class extends Migration
     public function up(): void
     {
         if (!Schema::hasTable('environment_referrals')) {
+            // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('environment_referrals')) {
+            echo "Table 'environment_referrals' already exists, skipping...\n";
+        } else {
             Schema::create('environment_referrals', function (Blueprint $table) {
                 $table->id();
                 $table->unsignedBigInteger('referrer_id');
@@ -26,6 +31,7 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
             });
+        }
         }
     }
 

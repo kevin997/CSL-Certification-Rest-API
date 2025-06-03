@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('activity_completions', function (Blueprint $table) {
+        // Skip creation if table already exists (from SQL dump)
+        if (MigrationHelper::tableExists('activity_completions')) {
+            echo "Table 'activity_completions' already exists, skipping...\n";
+        } else {
+            Schema::create('activity_completions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('enrollment_id')->constrained()->onDelete('cascade');
             $table->foreignId('activity_id')->constrained()->onDelete('cascade');
@@ -30,7 +35,8 @@ return new class extends Migration
             
             // Unique constraint to prevent duplicate completions
             $table->unique(['enrollment_id', 'activity_id'], 'unique_activity_completion');
-        });
+            });
+        }
     }
 
     /**
