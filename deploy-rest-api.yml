@@ -329,7 +329,7 @@
     - name: Check queue health
       shell: |
         cd {{ app_dir }}
-        sudo docker compose exec -T app php artisan queue:health
+        curl -f http://localhost:8080/health/queue
       register: queue_health
       ignore_errors: yes
       

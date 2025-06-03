@@ -42,10 +42,16 @@ COPY . /var/www/html
 # Copy environment file
 COPY .env.staging /var/www/html/.env
 
-# Set permissions
-RUN chown -R www-data:www-data /var/www/html \
-    && chmod -R 755 /var/www/html/storage \
-    && chmod -R 755 /var/www/html/bootstrap/cache
+# Set permissions - use 777 for mounted volumes to ensure they're writable
+RUN mkdir -p /var/www/html/storage/framework/sessions \
+    /var/www/html/storage/framework/views \
+    /var/www/html/storage/framework/cache \
+    /var/www/html/storage/logs \
+    /var/www/html/bootstrap/cache \
+    && touch /var/www/html/storage/logs/laravel.log \
+    && chown -R www-data:www-data /var/www/html \
+    && chmod -R 777 /var/www/html/storage \
+    && chmod -R 777 /var/www/html/bootstrap/cache
 
 # Install dependencies
 RUN composer install --no-interaction --no-dev --optimize-autoloader

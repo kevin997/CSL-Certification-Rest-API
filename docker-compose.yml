@@ -45,7 +45,7 @@ services:
       MYSQL_ROOT_HOST: "%"
       SERVICE_TAGS: staging
       SERVICE_NAME: mysql
-    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --bind-address=0.0.0.0
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --bind-address=0.0.0.0 --skip-host-cache --skip-name-resolve
     volumes:
       - dbdata:/var/lib/mysql
       - ./docker/mysql/cfpcwjwg_certification_api_db.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
