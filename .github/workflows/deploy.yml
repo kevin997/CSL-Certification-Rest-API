@@ -1,105 +1,144 @@
-name: Deploy to Production
+name: Deploy CSL Certification Rest API to Staging
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
+
+# Define environment variables that can be used across jobs
+env:
+  APP_VERSION: 1.0.0
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
+    env:
+      SERVER_IP: ${{ secrets.SERVER_IP }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Install sshpass
-        run: sudo apt-get install -y sshpass
-
-      - name: Deploy to Server
+        
+      - name: Set up SSH
         env:
-          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
-          sshpass -p "$SSH_PASSWORD" ssh -p 5022 -o StrictHostKeyChecking=no cfpcwjwg@185.221.182.234 << 'EOSSH'
-          # Verify we're in the correct base directory
-          if [ ! -d "/home/cfpcwjwg/certification-api" ]; then
-            echo "Creating base directory /home/cfpcwjwg/certification-api"
-            mkdir -p /home/cfpcwjwg/certification-api
-          fi
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
           
-          cd /home/cfpcwjwg/certification-api/
+      - name: Install Ansible
+        run: |
+          sudo apt update
+          sudo apt install -y ansible
           
-          # Check if the directory is a git repository
-          if [ ! -d "/home/cfpcwjwg/certification-api/.git" ]; then
-            echo "Setting up new Git repository in certification-api directory..."
-
-            # Initialize git in directory
-            git init
-            git remote add origin git@github.com:kevin997/CSL-Certification-Rest-API.git
-            
-            # Set up SSH for GitHub access
-            mkdir -p ~/.ssh
-            ssh-keyscan github.com >> ~/.ssh/known_hosts
-            
-            # Try to fetch and reset
-            git fetch || echo "Failed to fetch from GitHub, check SSH keys"
-            git reset --hard origin/main || echo "Failed to reset to origin/main"
-            
-            FIRST_TIME_SETUP=true
-          else
-            echo "Updating existing Git repository in certification-api directory..."
-            cd /home/cfpcwjwg/certification-api/
-            rm -fr ".git/rebase-merge" || true
-            git config user.email "kevinliboire@gmail.com"
-            git config user.name "Kevin"
-            git config pull.rebase true
-            git add .
-            git commit -m "Server changes before pull" || true
-            git pull origin main || echo "Failed to pull from GitHub, check SSH keys"
-            
-            FIRST_TIME_SETUP=false
-          fi
+      - name: Create Ansible inventory
+        run: |
+          echo "[ec2]" > inventory.ini
+          echo "$SERVER_IP ansible_user=$SSH_USER" >> inventory.ini
           
-          # Copy .env.example to .env if .env doesn't exist
-          if [ ! -f "/home/cfpcwjwg/certification-api/.env" ]; then
-            echo "Creating .env file from .env.example"
-            cp /home/cfpcwjwg/certification-api/.env.example /home/cfpcwjwg/certification-api/.env
-          fi
+      - name: Copy SSH key for GitHub access
+        env:
+          GITHUB_SSH_KEY: ${{ secrets.GIT_SSH_KEY }}
+        run: |
+          echo "$GITHUB_SSH_KEY" > github_deploy_key
+          chmod 600 github_deploy_key
           
-          # Update and install Composer dependencies
-          cd /home/cfpcwjwg/certification-api
-          echo "Updating dependencies to ensure compatibility..."
-          php /home/cfpcwjwg/composer.phar update --with-all-dependencies
-          echo "Installing dependencies with optimized autoloader..."
-          php /home/cfpcwjwg/composer.phar install --optimize-autoloader
-          
-          # Generate application key if needed
-          if [ "$FIRST_TIME_SETUP" = true ]; then
-            echo "Generating application key..."
-            php artisan key:generate
-          fi
-          
-          # Run migrations
-          echo "Running database migrations..."
-          php artisan migrate --seed --force
-          
-          # Clear caches
-          php artisan config:clear
-          php artisan cache:clear
-          php artisan view:clear
-          php artisan route:clear
-          
-          # Generate API documentation
-          php artisan l5-swagger:generate
-          
-          # Link storage
-          php artisan storage:link
-          
-          # Set correct permissions
-          find /home/cfpcwjwg/certification-api -type f -exec chmod 644 {} \;
-          find /home/cfpcwjwg/certification-api -type d -exec chmod 755 {} \;
-          chmod -R 775 /home/cfpcwjwg/certification-api/storage
-          chmod -R 775 /home/cfpcwjwg/certification-api/bootstrap/cache
-          
-          echo "Deployment completed successfully!"
-          EOSSH
+      - name: Create Ansible vars file
+        run: |
+          echo "---" > vars.yml
+          echo "github_ssh_key: |" >> vars.yml
+          sed 's/^/  /' github_deploy_key >> vars.yml
+          echo "app_name: csl-certification-rest-api" >> vars.yml
+          echo "docker_registry: localhost:5000" >> vars.yml
+          echo "docker_tag: ${GITHUB_SHA:-latest}" >> vars.yml
+          echo "app_dir: /opt/csl-certification-rest-api" >> vars.yml
+          echo "db_database: cfpcwjwg_certification_api_db" >> vars.yml
+          echo "db_username: cfpcwjwg_certi_user" >> vars.yml
+          echo "db_password: '#&H3k-ID0V'" >> vars.yml
+      
+      - name: Run Ansible playbook
+        id: deploy
+        run: |
+          ansible-playbook -i inventory.ini deploy-rest-api.yml -e "@vars.yml"
+        continue-on-error: true
+        
+      - name: Set deployment status
+        id: status
+        run: echo "status=${{ steps.deploy.outcome == 'success' && 'success' || 'failure' }}" >> $GITHUB_OUTPUT
+      
+      - name: Notify deployment status
+        if: always()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "${{ steps.status.outputs.status == 'success' && '✅ Deployment Successful' || '❌ Deployment Failed' }}",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Environment:*\nstaging"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Version:*\n${{ env.APP_VERSION }}-${{ github.sha }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n${{ github.repository }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n${{ github.ref_name }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Triggered by:*\n${{ github.actor }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:*\n<${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>"
+                    }
+                  ]
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Workflow",
+                        "emoji": true
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
