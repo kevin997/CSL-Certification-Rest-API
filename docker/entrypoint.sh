@@ -57,35 +57,20 @@ if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ]; then
     fi
 fi
 
-# Check if database is empty and needs initialization
+# Run migrations and seed database
 if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ]; then
-    echo "Checking if database needs initialization..."
-    TABLE_COUNT=$(mysql -h "$DB_HOST" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "SELECT COUNT(TABLE_NAME) FROM information_schema.tables WHERE table_schema='${DB_DATABASE}';" -sN)
-    
-    if [ "$TABLE_COUNT" = "0" ] || [ -z "$TABLE_COUNT" ]; then
-        echo "Database is empty. Initializing with SQL dump..."
-        
-        # Check if SQL dump exists
-        if [ -f "/var/www/html/docker/cfpcwjwg_certification_api_db.sql" ]; then
-            echo "Importing database from SQL dump..."
-            mysql -h "$DB_HOST" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" < /var/www/html/docker/cfpcwjwg_certification_api_db.sql
-            
-            if [ $? -eq 0 ]; then
-                echo "Database initialized successfully from SQL dump."
-            else
-                echo "Error: Failed to import SQL dump!"
-            fi
-        else
-            echo "Warning: SQL dump file not found at /var/www/html/docker/cfpcwjwg_certification_api_db.sql"
-        fi
-    else
-        echo "Database already contains $TABLE_COUNT tables. Skipping initialization."
-    fi
-    
-    # Run migrations with error handling (will be safe now with our MigrationHelper checks)
+    # Run migrations with error handling
     echo "Running database migrations..."
     if php artisan migrate --force; then
         echo "Migrations completed successfully."
+        
+        # Seed the database
+        echo "Seeding database..."
+        if php artisan db:seed --force; then
+            echo "Database seeded successfully."
+        else
+            echo "Warning: Database seeding failed. Some data may be missing."
+        fi
     else
         echo "Warning: Migrations failed. Application may not function correctly."
     fi
