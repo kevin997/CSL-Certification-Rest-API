@@ -1,4 +1,4 @@
-name: Deploy CSL Certification Rest API to Staging
+name: Deploy CSL Certification Rest API to Production
 
 on:
   push:
@@ -89,7 +89,7 @@ jobs:
                   "fields": [
                     {
                       "type": "mrkdwn",
-                      "text": "*Environment:*\nstaging"
+                      "text": "*Environment:*\Production"
                     },
                     {
                       "type": "mrkdwn",
