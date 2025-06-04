@@ -16,10 +16,10 @@ services:
       - APP_ENV=${APP_ENV:-staging}
       - APP_DEBUG=${APP_DEBUG:-false}
       # AWS RDS connection settings
-      - DB_HOST=${DB_HOST:-database-1.ccr2s68cu8xf.us-east-1.rds.amazonaws.com}
-      - DB_PORT=${DB_PORT:-3306}
-      - DB_DATABASE=${DB_DATABASE:-cfpcwjwg_certification_api_db}
-      - DB_USERNAME=${DB_USERNAME:-certi_user}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
       - DB_PASSWORD=${DB_PASSWORD}
       - CONTAINER_ROLE=app
     networks:
@@ -44,12 +44,12 @@ services:
     environment:
       - CONTAINER_ROLE=queue
       # AWS RDS connection settings
-      - DB_HOST=${DB_HOST:-database-1.ccr2s68cu8xf.us-east-1.rds.amazonaws.com}
-      - DB_PORT=${DB_PORT:-3306}
-      - DB_DATABASE=${DB_DATABASE:-cfpcwjwg_certification_api_db}
-      - DB_USERNAME=${DB_USERNAME:-certi_user}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
       - DB_PASSWORD=${DB_PASSWORD}
-      - APP_ENV=${APP_ENV:-staging}
+      - APP_ENV=${APP_ENV}
       - APP_DEBUG=${APP_DEBUG:-false}
       - QUEUE_CONNECTION=database
     networks:
