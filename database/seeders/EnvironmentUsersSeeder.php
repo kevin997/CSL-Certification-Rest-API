@@ -16,7 +16,7 @@ class EnvironmentUsersSeeder extends Seeder
      */
     public function run(): void
     {
-        if (!Environment::where('primary_domain', 'learning.cfpcsl.com')->exists()) {
+        if (!Environment::where('primary_domain', 'learning.csl-brands.com')->exists()) {
 
             // 1. Create users with specific roles (or find them if they already exist)
             $companyTeacher = User::firstOrCreate(
@@ -57,7 +57,7 @@ class EnvironmentUsersSeeder extends Seeder
 
             // 2. Create environments (or find them if they already exist)
             $environment1 = Environment::firstOrCreate(
-                ['primary_domain' => 'learning.cfpcsl.com'],
+                ['primary_domain' => 'learning.csl-brands.com'],
                 [
                     'name' => 'Company Environment',
                     'owner_id' => $companyTeacher->id,
@@ -66,7 +66,7 @@ class EnvironmentUsersSeeder extends Seeder
             );
 
             $environment2 = Environment::firstOrCreate(
-                ['primary_domain' => 'csl-certification.vercel.app'],
+                ['primary_domain' => 'learning.cfpcsl.com'],
                 [
                     'name' => 'Individual Environment',
                     'owner_id' => $individualTeacher->id,

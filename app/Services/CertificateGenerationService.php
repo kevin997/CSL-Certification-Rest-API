@@ -289,6 +289,7 @@ class CertificateGenerationService
                     'fullName' => $userData['fullName'] ?? 'Student Name',
                     'courseTitle' => $certificateContent->title ?? 'Course Title',
                     'certificateDate' => $userData['certificateDate'] ?? now()->format('F j, Y'),
+                    'expiryDate' => $userData['expiryDate'] ?? null,
                     'accessCode' => $accessCode,
                 ]
             ];
