@@ -180,10 +180,36 @@ class CertificateController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+
+        // Calculate certificate date based on expiry period if set
+        $issueDate = now();
+        $expiryDate = null;
+
+        // If expiry period is set, calculate the expiry date
+        if ($certificateContent->expiry_period && $certificateContent->expiry_period_unit) {
+            $expiryDate = clone $issueDate;
+
+            switch ($certificateContent->expiry_period_unit) {
+                case 'days':
+                    $expiryDate->addDays($certificateContent->expiry_period);
+                    break;
+                case 'months':
+                    $expiryDate->addMonths($certificateContent->expiry_period);
+                    break;
+                case 'years':
+                    $expiryDate->addYears($certificateContent->expiry_period);
+                    break;
+                default:
+                    // Default to no expiry if unit is not recognized
+                    $expiryDate = null;
+            }
+        }
+
         // Prepare user data
         $userData = [
             'fullName' => $request->fullName,
             'certificateDate' => $request->certificateDate ?? now()->format('F j, Y'),
+            'expiryDate' => $expiryDate->format('F j, Y') ?? null,
         ];
 
         // Add any additional data
@@ -199,7 +225,7 @@ class CertificateController extends Controller
         $result = $this->certificateGenerationService->generateCertificate(
             $certificateContent,
             $userData,
-            $templateName
+            $templateName,
         );
 
         if (!$result) {
@@ -437,6 +463,7 @@ class CertificateController extends Controller
             'email' => $user->email,
             'issued_date' => $issueDate->toDateTimeString(),
             'expiry_date' => $expiryDate ? $expiryDate->toDateTimeString() : null,
+            'expiryDate' =>  $expiryDate->format('F j, Y') ?? null,
         ];
        
         // Add certificate content metadata
@@ -457,7 +484,8 @@ class CertificateController extends Controller
         $result = $this->certificateGenerationService->generateCertificate(
             $certificateContent,
             $userData,
-            $templateName
+            $templateName,
+            $enrollment
         );
 
         if (!$result) {
