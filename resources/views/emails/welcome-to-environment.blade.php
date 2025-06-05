@@ -9,7 +9,8 @@ Your account has been created and you can now access the learning environment.
 
 ## Your Login Information
 **Email:** {{ $user->email }}  
-**Password:** {{ $password }}
+**Password:** {{ $password }}  
+**Login URL:** <a href="{{ $loginUrl }}">{{ $loginUrl }}</a>
 
 @component('mail::button', ['url' => $loginUrl, 'color' => $branding?->primary_color ? substr($branding->primary_color, 1) : 'primary'])
 Login to Your Account

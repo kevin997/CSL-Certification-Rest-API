@@ -45,7 +45,7 @@ Thank you for your order!
 
 If you have any questions about your order, please contact our support team.
 
-@component('mail::button', ['url' => 'https://' . $environment->primary_domain . '/account/orders/' . $order->id])
+@component('mail::button', ['url' => 'https://' . $environment->primary_domain . '/learners/orders/' . $order->id])
 View Order
 @endcomponent
 

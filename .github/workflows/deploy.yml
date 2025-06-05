@@ -89,7 +89,7 @@ jobs:
                   "fields": [
                     {
                       "type": "mrkdwn",
-                      "text": "*Environment:*\Production"
+                      "text": "*Environment:*\nProduction"
                     },
                     {
                       "type": "mrkdwn",

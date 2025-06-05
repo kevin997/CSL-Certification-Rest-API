@@ -571,6 +571,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Account setup route
     Route::put('/environment-users/setup-account', [\App\Http\Controllers\Api\EnvironmentUserController::class, 'setupAccount']);
 });
+// Include the environment authentication routes
+require __DIR__ . '/environment-auth.php';
 
 // Include the learner routes
 require __DIR__ . '/learner.php';
