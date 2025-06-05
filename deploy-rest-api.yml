@@ -228,6 +228,13 @@
       debug:
         var: compose_result.stdout_lines
       
+    - name: Check migration logs
+      shell: |
+        cd {{ app_dir }}
+        docker compose logs app | grep -i "migrations"
+      register: migration_result
+      ignore_errors: yes
+
     - name: Display migration result
       debug:
         var: migration_result.stdout_lines

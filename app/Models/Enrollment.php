@@ -77,4 +77,12 @@ class Enrollment extends Model
     {
         return $this->hasMany(ActivityCompletion::class);
     }
+    
+    /**
+     * Get the analytics data for this enrollment's activities.
+     */
+    public function analytics(): HasMany
+    {
+        return $this->hasMany(EnrollmentAnalytics::class);
+    }
 }

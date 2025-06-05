@@ -576,3 +576,24 @@ require __DIR__ . '/environment-auth.php';
 
 // Include the learner routes
 require __DIR__ . '/learner.php';
+
+// Enrollment Analytics Routes
+Route::middleware('auth:sanctum')->prefix('analytics')->group(function () {
+    // Track activity analytics
+    Route::post('/activity/track', [\App\Http\Controllers\Api\EnrollmentAnalyticsController::class, 'trackActivityAnalytics']);
+    
+    // Get analytics for specific activity
+    Route::get('/enrollments/{enrollmentId}/activities/{activityId}', [\App\Http\Controllers\Api\EnrollmentAnalyticsController::class, 'getActivityAnalytics']);
+    
+    // Get all analytics for an enrollment
+    Route::get('/enrollments/{enrollmentId}', [\App\Http\Controllers\Api\EnrollmentAnalyticsController::class, 'getEnrollmentAnalytics']);
+    
+    // Get analytics summary for a user
+    Route::get('/users/{userId}/summary', [\App\Http\Controllers\Api\EnrollmentAnalyticsController::class, 'getUserAnalyticsSummary']);
+    
+    // Get course engagement over time
+    Route::get('/courses/{courseId}/engagement-over-time', [\App\Http\Controllers\Api\EnrollmentAnalyticsController::class, 'getCourseEngagementOverTime']);
+    
+    // Get activity engagement leaderboard
+    Route::get('/courses/{courseId}/activity-leaderboard', [\App\Http\Controllers\Api\EnrollmentAnalyticsController::class, 'getActivityEngagementLeaderboard']);
+});
