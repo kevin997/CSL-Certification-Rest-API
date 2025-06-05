@@ -73,7 +73,7 @@ class EnrollmentController extends Controller
             'activity_id' => 'required|exists:activities,id',
             'completed' => 'required|boolean',
             'score' => 'nullable|numeric|min:0|max:100',
-            'completion_time' => 'nullable|numeric|min:0',
+            'time_spent' => 'nullable|numeric|min:0',
             'submission_data' => 'nullable|json',
         ]);
         
@@ -90,9 +90,9 @@ class EnrollmentController extends Controller
                 'activity_id' => $request->input('activity_id'),
             ],
             [
-                'status' => $request->input('completed'),
+                'status' => $request->input('completed') ? 'completed' : 'in-progress',
                 'score' => $request->input('score'),
-                'time_spent' => $request->input('completion_time'),
+                'time_spent' => $request->input('time_spent'),
                 //'submission_data' => $request->input('submission_data'),
                 'completed_at' => $request->input('completed') ? now() : null,
             ]
@@ -207,7 +207,7 @@ class EnrollmentController extends Controller
         if ($activityCompletion) {
             // Reset the completion status
             $activityCompletion->update([
-                'completed' => false,
+                'status' => 'in-progress',
                 'score' => 0,
                 'time_spent' => 0,
                 'completed_at' => null,
@@ -256,7 +256,7 @@ class EnrollmentController extends Controller
         
         // Get completed activities
         $completedCount = ActivityCompletion::where('enrollment_id', $enrollment->id)
-            ->where('completed', true)
+            ->where('status', 'completed')
             ->count();
         
         // Calculate progress percentage
