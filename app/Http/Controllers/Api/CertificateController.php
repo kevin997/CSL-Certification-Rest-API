@@ -20,7 +20,7 @@ class CertificateController extends Controller
      * @var CertificateGenerationService
      */
     protected $certificateGenerationService;
-    
+
     /**
      * Constructor
      * 
@@ -30,7 +30,7 @@ class CertificateController extends Controller
     {
         $this->certificateGenerationService = $certificateGenerationService;
     }
-    
+
     /**
      * Download a certificate
      * 
@@ -47,21 +47,21 @@ class CertificateController extends Controller
                 'message' => 'Invalid signature',
             ], Response::HTTP_UNAUTHORIZED);
         }
-        
+
         // Proxy the request to the certificate service
         $serviceUrl = $this->certificateGenerationService->getServiceUrl('/api/certificates/download/' . $path);
-        
+
         if (!$serviceUrl) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Certificate service not configured',
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
-        
+
         // Redirect to the certificate service URL
         return redirect()->away($serviceUrl);
     }
-    
+
     /**
      * Preview a certificate
      * 
@@ -73,14 +73,14 @@ class CertificateController extends Controller
     {
         // Proxy the request to the certificate service
         $serviceUrl = $this->certificateGenerationService->getServiceUrl('/api/certificates/preview/' . $path);
-        
+
         if (!$serviceUrl) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Certificate service not configured',
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
-        
+
         // Redirect to the certificate service URL
         return redirect()->away($serviceUrl);
     }
@@ -157,7 +157,7 @@ class CertificateController extends Controller
                 ->where('id', $id)
                 ->first();
         }
-        
+
         // If no certificate content found or ID not provided, find by activity_id only
         if (empty($certificateContent)) {
             $certificateContent = CertificateContent::where('activity_id', $activityId)
@@ -209,7 +209,7 @@ class CertificateController extends Controller
         $userData = [
             'fullName' => $request->fullName,
             'certificateDate' => $request->certificateDate ?? now()->format('F j, Y'),
-            'expiryDate' => $expiryDate->format('F j, Y') ?? null,
+            'expiryDate' => $expiryDate ?? null,
         ];
 
         // Add any additional data
@@ -221,7 +221,7 @@ class CertificateController extends Controller
         $templateName = $certificateContent->template->file_path;
         // Strip the 'templates/' prefix if it exists
         $templateName = str_replace('templates/', '', $templateName);
-        Log::info('Template name on Rest api: '.$templateName);
+        Log::info('Template name on Rest api: ' . $templateName);
         $result = $this->certificateGenerationService->generateCertificate(
             $certificateContent,
             $userData,
@@ -234,7 +234,7 @@ class CertificateController extends Controller
                 'message' => 'Failed to generate certificate',
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
-        
+
         // We'll use the original certificate content object since it's already been updated in the database
         // The metadata is stored in the database but not in our current object, so we need to refresh it
         $certificateContent->refresh();
@@ -318,7 +318,7 @@ class CertificateController extends Controller
             'data' => $result,
         ]);
     }
-    
+
     /**
      * Issue a certificate for a user and store it in the IssuedCertificate model
      * 
@@ -379,7 +379,7 @@ class CertificateController extends Controller
     {
         // Find the certificate content
         $certificateContent = CertificateContent::with('template')->findOrFail($certificateContentId);
-        
+
         // Get the current authenticated user
         $user = Auth::user();
         if (!$user) {
@@ -389,6 +389,34 @@ class CertificateController extends Controller
             ], Response::HTTP_UNAUTHORIZED);
         }
         
+        // Check if a certificate has already been issued for this user and content
+        $existingCertificate = IssuedCertificate::where('user_id', $user->id)
+            ->where('certificate_content_id', $certificateContentId)
+            ->first();
+            
+        if ($existingCertificate) {
+            // Get file URL from file_path field
+            $fileUrl = $existingCertificate->file_path;
+            
+            // Get preview URL from custom_fields JSON (already casted to array by model)
+            $previewUrl = null;
+            if ($existingCertificate->custom_fields) {
+                $previewUrl = $existingCertificate->custom_fields['preview_url'] ?? null;
+            }
+            
+            // Return the existing certificate data
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Certificate already issued',
+                'data' => [
+                    'fileUrl' => $fileUrl,
+                    'previewUrl' => $previewUrl,
+                    'accessCode' => $existingCertificate->certificate_number,
+                    'issuedCertificateId' => $existingCertificate->id,
+                ],
+            ]);
+        }
+
         // Find the correct course for this certificate content and user
         $activity = \App\Models\Activity::find($certificateContent->activity_id);
         if (!$activity) {
@@ -429,15 +457,15 @@ class CertificateController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
         $courseId = $enrollment->course_id;
-        
+
         // Calculate certificate date based on expiry period if set
         $issueDate = now();
         $expiryDate = null;
-        
+
         // If expiry period is set, calculate the expiry date
         if ($certificateContent->expiry_period && $certificateContent->expiry_period_unit) {
             $expiryDate = clone $issueDate;
-            
+
             switch ($certificateContent->expiry_period_unit) {
                 case 'days':
                     $expiryDate->addDays($certificateContent->expiry_period);
@@ -453,7 +481,7 @@ class CertificateController extends Controller
                     $expiryDate = null;
             }
         }
-        
+
         // Prepare user data from the authenticated user and certificate content
         $userData = [
             'fullName' => $user->name,
@@ -463,9 +491,9 @@ class CertificateController extends Controller
             'email' => $user->email,
             'issued_date' => $issueDate->toDateTimeString(),
             'expiry_date' => $expiryDate ? $expiryDate->toDateTimeString() : null,
-            'expiryDate' =>  $expiryDate->format('F j, Y') ?? null,
+            'expiryDate' => $expiryDate ? $expiryDate->toDateTimeString() : null,
         ];
-       
+
         // Add certificate content metadata
         $userData = array_merge($userData, [
             'certificate_id' => $certificateContent->id,
@@ -478,7 +506,7 @@ class CertificateController extends Controller
         if ($templateName) {
             $templateName = str_replace('templates/', '', $templateName);
         }
-        Log::info('Template name for issueCertificate: '.$templateName);
+        Log::info('Template name for issueCertificate: ' . $templateName);
 
         // Generate certificate through the certificate generation service
         $result = $this->certificateGenerationService->generateCertificate(
@@ -494,21 +522,37 @@ class CertificateController extends Controller
                 'message' => 'Failed to issue certificate',
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
-        
+
         // Find the issued certificate that was created during generation
         $issuedCertificate = null;
         if (isset($result['issuedCertificateId'])) {
             $issuedCertificate = IssuedCertificate::find($result['issuedCertificateId']);
+        }
+        
+        if (!$issuedCertificate) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to create certificate record',
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+        
+        // Get file URL from file_path field
+        $fileUrl = $issuedCertificate->file_path;
+        
+        // Get preview URL from custom_fields JSON (already casted to array by model)
+        $previewUrl = null;
+        if ($issuedCertificate->custom_fields) {
+            $previewUrl = $issuedCertificate->custom_fields['preview_url'] ?? null;
         }
 
         return response()->json([
             'status' => 'success',
             'message' => 'Certificate issued successfully',
             'data' => [
-                'fileUrl' => $this->certificateGenerationService->getCertificateDownloadUrl($certificateContent),
-                'previewUrl' => $this->certificateGenerationService->getCertificatePreviewUrl($certificateContent),
-                'accessCode' => $result['accessCode'],
-                'issuedCertificateId' => $issuedCertificate ? $issuedCertificate->id : null,
+                'fileUrl' => $fileUrl,
+                'previewUrl' => $previewUrl,
+                'accessCode' => $issuedCertificate->access_code,
+                'issuedCertificateId' => $issuedCertificate->id,
             ],
         ]);
     }

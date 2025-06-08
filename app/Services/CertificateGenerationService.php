@@ -299,6 +299,8 @@ class CertificateGenerationService
                 ]
             ];
 
+            Log::info('Certificate data for generateCertificate before request: '.json_encode($certificateData));
+
             // Make the authenticated request to generate the certificate
             $response = $this->makeAuthenticatedRequest(
                 'post',

@@ -95,28 +95,63 @@ class QuestionController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'required|string',
             'question_text' => 'required|string',
-            'question_type' => 'required|string|in:multiple_choice,multiple_response,true_false,text,fill_blanks_text,fill_blanks_drag,matching,hotspot,essay,questionnaire,matrix',
+            'question_type' => 'required|string|in:multiple_choice,multiple_response,true_false,text,fill_blanks_text,fill_blanks_drag,matching,hotspot,essay,questionnaire,matrix,drag_and_drop,ordering,code_snippet,multi_select,short_answer,fill_in_blank',
             'instructions' => 'nullable|string',
             'instruction_format' => 'nullable|string|in:plain,markdown,html,wysiwyg',
-            'options' => 'required_if:question_type,multiple_choice,multiple_response,matching,hotspot|array',
-            'options.*.text' => 'required_if:question_type,multiple_choice,multiple_response,matching|string',
-            'options.*.is_correct' => 'required_if:question_type,multiple_choice,multiple_response|boolean',
+            // Common question options
+            'options' => 'required_if:question_type,multiple_choice,multiple_response,matching,hotspot,drag_and_drop,ordering,multi_select|array',
+            'options.*.text' => 'required_if:question_type,multiple_choice,multiple_response,matching,drag_and_drop,ordering,multi_select|string',
+            'options.*.is_correct' => 'required_if:question_type,multiple_choice,multiple_response,multi_select,hotspot|boolean',
             'options.*.match_text' => 'required_if:question_type,matching|string',
+            'options.*.value' => 'nullable|string',
+            'options.*.feedback' => 'nullable|string',
+            
+            // Hotspot question
             'options.*.position' => 'required_if:question_type,hotspot|array',
             'options.*.position.x' => 'required_if:question_type,hotspot|numeric',
             'options.*.position.y' => 'required_if:question_type,hotspot|numeric',
-            'blanks' => 'required_if:question_type,fill_blanks_text,fill_blanks_drag|array',
-            'blanks.*.text' => 'required_if:question_type,fill_blanks_text,fill_blanks_drag|string',
-            'blanks.*.correct_answer' => 'required_if:question_type,fill_blanks_text|string',
+            
+            // Image fields for matching and hotspot questions
+            'image_url' => 'nullable|string',
+            'image_alt' => 'nullable|string',
+            
+            // Drag and Drop question
+            'options.*.source_container' => 'required_if:question_type,drag_and_drop|string',
+            'options.*.target_container' => 'required_if:question_type,drag_and_drop|string',
+            
+            // Ordering question 
+            'options.*.initial_order' => 'required_if:question_type,ordering|numeric',
+            'options.*.correct_order' => 'required_if:question_type,ordering|numeric',
+            
+            // Essay question
+            'answer_required' => 'nullable|boolean',
+            'min_words' => 'nullable|integer|min:0',
+            'max_words' => 'nullable|integer|min:0',
+            'model_answer' => 'nullable|string',
+            'rubric' => 'nullable|string',
+            
+            // Code snippet question
+            'code_language' => 'required_if:question_type,code_snippet|string',
+            'initial_code' => 'nullable|string',
+            'solution_code' => 'nullable|string',
+            
+            // Fill in blanks
+            'blanks' => 'required_if:question_type,fill_blanks_text,fill_blanks_drag,fill_in_blank|array',
+            'blanks.*.text' => 'required_if:question_type,fill_blanks_text,fill_blanks_drag,fill_in_blank|string',
+            'blanks.*.correct_answer' => 'required_if:question_type,fill_blanks_text,fill_in_blank|string',
             'blanks.*.position' => 'required_if:question_type,fill_blanks_drag|array',
             'blanks.*.position.x' => 'required_if:question_type,fill_blanks_drag|numeric',
             'blanks.*.position.y' => 'required_if:question_type,fill_blanks_drag|numeric',
+            
+            // Matrix question
             'matrix_rows' => 'required_if:question_type,matrix|array',
             'matrix_columns' => 'required_if:question_type,matrix|array',
             'matrix_options' => 'required_if:question_type,matrix|array',
             'matrix_options.*.row' => 'required_if:question_type,matrix|string',
             'matrix_options.*.column' => 'required_if:question_type,matrix|string',
             'matrix_options.*.is_selected' => 'required_if:question_type,matrix|boolean',
+            
+            // Common for all question types
             'explanation' => 'nullable|string',
             'points' => 'required|integer|min:1',
             'is_scorable' => 'boolean',
@@ -159,20 +194,21 @@ class QuestionController extends Controller
         }
 
         // If using related table for questions
-        $question = new QuizQuestion([
+        $question = QuizQuestion::create([
             'quiz_content_id' => $quizContent->id,
             'title' => $request->title,
-            'question' => $request->question_text, // Set the question field to match question_text
             'question_text' => $request->question_text,
             'question_type' => $request->question_type,
-            'options' => $request->options,
-            'blanks' => $request->blanks,
-            'matrix_rows' => $request->matrix_rows,
-            'matrix_columns' => $request->matrix_columns,
-            'matrix_options' => $request->matrix_options,
+            'options' => $request->options ? $request->options : null,
+            'image_url' => $request->image_url,
+            'image_alt' => $request->image_alt,
+            'blanks' => $request->blanks ? $request->blanks : null,
+            'matrix_rows' => $request->matrix_rows ? $request->matrix_rows : null,
+            'matrix_columns' => $request->matrix_columns ? $request->matrix_columns : null,
+            'matrix_options' => $request->matrix_options ? $request->matrix_options : null,
             'explanation' => $request->explanation,
             'instructions' => $request->instructions,
-            'instruction_format' => $request->instruction_format ?? 'markdown',
+            'instruction_format' => $request->instruction_format ?? 'plain',
             'points' => $request->points,
             'is_scorable' => $request->is_scorable ?? true,
             'order' => QuizQuestion::where('quiz_content_id', $quizContent->id)->count() + 1,
@@ -268,8 +304,11 @@ class QuestionController extends Controller
                 ], Response::HTTP_NOT_FOUND);
             }
             
+            // Handle naming convention mapping for compatibility between front-end and back-end
+            $requestData = $request->all();
+            
             // Update the question
-            $questions[$questionIndex] = array_merge($questions[$questionIndex], $request->all());
+            $questions[$questionIndex] = array_merge($questions[$questionIndex], $requestData);
             $quizContent->questions = $questions;
             $quizContent->save();
             
@@ -285,7 +324,10 @@ class QuestionController extends Controller
             ->where('id', $questionId)
             ->firstOrFail();
         
-        $question->fill($request->all());
+        // Handle naming convention mapping for compatibility between front-end and back-end
+        $requestData = $request->all();
+        
+        $question->fill($requestData);
         $question->save();
         
         return response()->json([
@@ -293,6 +335,33 @@ class QuestionController extends Controller
             'message' => 'Question updated successfully',
             'data' => $question,
         ]);
+    }
+
+    /**
+     * Map question type naming conventions between front-end and back-end
+     * This method would ensure compatibility when front-end and back-end use different naming conventions
+     * Currently not needed, but kept as placeholder for future use
+     *
+     * @param array $data The request data to map
+     * @return array The mapped request data
+     */
+    private function mapQuestionTypeNaming(array $data): array
+    {
+        // No mapping needed at this time, but this method could be used in the future
+        // For example, if front-end uses 'multiChoice' but back-end uses 'multiple_choice'
+        
+        return $data;
+    }
+    
+    /**
+     * Get the next order number for a question in a quiz content
+     *
+     * @param int $quizContentId
+     * @return int
+     */
+    private function getNextQuestionOrder(int $quizContentId): int
+    {
+        return QuizQuestion::where('quiz_content_id', $quizContentId)->count() + 1;
     }
 
     /**

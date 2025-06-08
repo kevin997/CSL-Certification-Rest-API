@@ -284,7 +284,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/activities/{activityId}/lesson', [LessonContentController::class, 'destroy']);
     
     // Lesson Question Response routes
-    Route::post('/lessons/{lessonId}/submit-responses', [LessonQuestionResponseController::class, 'submitResponses']);
+
+  
+    
+    // Quiz Submission Routes
+    Route::post('/quiz/{quizContentId}/submissions', [\App\Http\Controllers\QuizSubmissionController::class, 'store']);
+    Route::get('/quiz/{quizContentId}/submissions', [\App\Http\Controllers\QuizSubmissionController::class, 'index']);
+    Route::get('/quiz/submissions/{submissionId}', [\App\Http\Controllers\QuizSubmissionController::class, 'show']);
+    Route::get('/enrollments/{enrollmentId}/quiz-submissions', [\App\Http\Controllers\QuizSubmissionController::class, 'getByEnrollment']);
     Route::get('/lessons/{lessonId}/responses', [LessonQuestionResponseController::class, 'getResponses']);
     
     // Assignment Content routes

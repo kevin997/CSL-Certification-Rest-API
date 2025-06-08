@@ -25,6 +25,8 @@ class QuizQuestion extends Model
         'question_text',
         'question_type', // multiple_choice, multiple_response, true_false, text, fill_blanks_text, fill_blanks_drag, matching, hotspot, essay, questionnaire, matrix
         'options',
+        'image_url',    // URL to image used for questions like matching or hotspot
+        'image_alt',    // Alt text description for the image
         'blanks',
         'matrix_rows',
         'matrix_columns',
