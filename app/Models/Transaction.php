@@ -10,6 +10,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class Transaction extends Model
 {
@@ -42,6 +45,15 @@ class Transaction extends Model
         'gateway_response',
         'description',
         'notes',
+        // Currency conversion fields
+        'converted_amount',
+        'target_currency',
+        'exchange_rate',
+        'source_currency',
+        'original_amount',
+        'conversion_date',
+        'conversion_provider',
+        'conversion_meta',
         'ip_address',
         'user_agent',
         'paid_at',
@@ -110,6 +122,119 @@ class Transaction extends Model
     public function paymentGatewaySetting(): BelongsTo
     {
         return $this->belongsTo(PaymentGatewaySetting::class);
+    }
+    
+    /**
+     * Convert the total_amount to XAF currency and store conversion data
+     *
+     * @param float|null $amount Amount to convert (defaults to transaction's total_amount if null)
+     * @param bool $saveToDatabase Whether to save the conversion data to the database
+     * @return float|null The converted amount in XAF or null if conversion fails
+     */
+    public function convertToXAF(?float $amount = null, bool $saveToDatabase = true): ?float
+    {
+        // Use provided amount or fall back to transaction's total_amount
+        $amountToConvert = $amount ?? $this->total_amount;
+        $sourceCurrency = strtoupper($this->currency);
+        $targetCurrency = 'XAF';
+        
+        // If amount is null or 0, return 0
+        if ($amountToConvert === null || $amountToConvert == 0) {
+            return 0;
+        }
+        
+        // If currency is already XAF, return the amount as is
+        if ($sourceCurrency === $targetCurrency) {
+            return $amountToConvert;
+        }
+        
+        // Cache key based on the currency
+        $cacheKey = 'exchange_rate_' . $sourceCurrency . '_to_' . $targetCurrency;
+        $conversionProvider = 'ExchangeRate-API';
+        $conversionMeta = [];
+        
+        // Try to get exchange rate from cache (cache for 24 hours)
+        $exchangeRate = Cache::remember($cacheKey, 86400, function () use ($sourceCurrency, &$conversionMeta, &$conversionProvider) {
+            try {
+                // Call the ExchangeRate-API (free version, no API key required)
+                $response = Http::get('https://open.er-api.com/v6/latest/' . $sourceCurrency);
+                
+                if ($response->successful()) {
+                    $data = $response->json();
+                    
+                    // Store additional metadata about the conversion
+                    $conversionMeta = [
+                        'provider_response' => [
+                            'time_last_update_utc' => $data['time_last_update_utc'] ?? null,
+                            'time_next_update_utc' => $data['time_next_update_utc'] ?? null,
+                            'base_code' => $data['base_code'] ?? null,
+                        ],
+                        'api_status' => 'success',
+                        'api_url' => 'https://open.er-api.com/v6/latest/' . $sourceCurrency
+                    ];
+                    
+                    // Check if XAF rate exists in the response
+                    if (isset($data['rates']['XAF'])) {
+                        return $data['rates']['XAF'];
+                    }
+                } else {
+                    $conversionMeta = [
+                        'api_status' => 'error',
+                        'api_response' => $response->body(),
+                        'api_url' => 'https://open.er-api.com/v6/latest/' . $sourceCurrency
+                    ];
+                }
+                
+                // Fallback exchange rates if API call fails
+                // These are approximate and should be updated regularly
+                $fallbackRates = [
+                    'USD' => 600.0,   // 1 USD ≈ 600 XAF
+                    'EUR' => 655.957, // 1 EUR = 655.957 XAF (fixed rate)
+                    'GBP' => 780.0,   // 1 GBP ≈ 780 XAF
+                    'CAD' => 450.0,   // 1 CAD ≈ 450 XAF
+                    'AUD' => 400.0,   // 1 AUD ≈ 400 XAF
+                ];
+                
+                $conversionProvider = 'Fallback Rates';
+                $conversionMeta['used_fallback'] = true;
+                
+                return $fallbackRates[$sourceCurrency] ?? null;
+                
+            } catch (\Exception $e) {
+                Log::error('Currency conversion error: ' . $e->getMessage());
+                $conversionProvider = 'Error';
+                $conversionMeta = [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                    'used_fallback' => false
+                ];
+                return null;
+            }
+        });
+        
+        // If we couldn't get an exchange rate, return null
+        if ($exchangeRate === null) {
+            return null;
+        }
+        
+        // Convert the amount and round to 2 decimal places
+        $convertedAmount = round($amountToConvert * $exchangeRate, 2);
+        
+        // Store the conversion data in the database if requested
+        if ($saveToDatabase) {
+            $this->update([
+                'converted_amount' => $convertedAmount,
+                'target_currency' => $targetCurrency,
+                'exchange_rate' => $exchangeRate,
+                'source_currency' => $sourceCurrency,
+                'original_amount' => $amountToConvert,
+                'conversion_date' => now(),
+                'conversion_provider' => $conversionProvider,
+                'conversion_meta' => json_encode($conversionMeta)
+            ]);
+        }
+        
+        return $convertedAmount;
     }
 
     /**

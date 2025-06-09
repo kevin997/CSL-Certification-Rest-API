@@ -1604,8 +1604,13 @@ class StorefrontController extends Controller
             // If we have a valid gateway, create a payment session/intent
             if ($gatewayCode) {
                 try {
-                    // Create the payment using the appropriate gateway
-                    $paymentService = app(\App\Services\PaymentService::class);
+                    // Create the payment using the appropriate gateway with all required dependencies
+                    $orderService = app()->make(\App\Services\OrderService::class);
+                    $gatewayFactory = app()->make(\App\Services\PaymentGateways\PaymentGatewayFactory::class);
+                    $commissionService = app()->make(\App\Services\Commission\CommissionService::class);
+                    
+                    // Initialize payment service with all dependencies
+                    $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService);
                     $paymentResult = $paymentService->createPayment(
                         $order->id,
                         $gatewayCode,
@@ -2083,9 +2088,12 @@ class StorefrontController extends Controller
             
             // Create PaymentGatewayFactory instance
             $gatewayFactory = app()->make(\App\Services\PaymentGateways\PaymentGatewayFactory::class);
+
+            // Create CommissionService instance
+            $commissionService = app()->make(\App\Services\Commission\CommissionService::class);
             
             // Initialize payment service with proper dependencies
-            $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory);
+            $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService);
             
             // Process the payment - pass order ID as expected by the method
             $result = $paymentService->processPayment($order->id, [  

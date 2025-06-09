@@ -8,6 +8,7 @@ use App\Models\Environment;
 use App\Models\PaymentGatewaySetting;
 use App\Services\PaymentGateways\PaymentGatewayFactory;
 use App\Services\PaymentGateways\PaymentGatewayInterface;
+use App\Services\Commission\CommissionService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -18,6 +19,11 @@ class PaymentService
      * @var OrderService
      */
     protected $orderService;
+    
+    /**
+     * @var CommissionService
+     */
+    protected $commissionService;
     
     /**
      * @var PaymentGatewayFactory
@@ -39,10 +45,12 @@ class PaymentService
      * 
      * @param OrderService $orderService
      * @param PaymentGatewayFactory $gatewayFactory
+     * @param CommissionService $commissionService
      */
-    public function __construct(OrderService $orderService, PaymentGatewayFactory $gatewayFactory)
+    public function __construct(OrderService $orderService, PaymentGatewayFactory $gatewayFactory, CommissionService $commissionService)
     {
         $this->orderService = $orderService;
+        $this->commissionService = $commissionService;
         $this->gatewayFactory = $gatewayFactory;
     }
 
@@ -76,11 +84,24 @@ class PaymentService
             $transaction->customer_id = $order->user_id;
             $transaction->transaction_id = 'TXN_' . Str::uuid();
             $transaction->payment_method = $paymentMethod;
-            $transaction->amount = $order->total_amount; // Set amount field
-            $transaction->total_amount = $order->total_amount;
             $transaction->currency = $order->currency ?? 'USD';
             $transaction->status = 'pending';
             $transaction->description = 'Payment for Order #' . $order->order_number;
+            
+            // Set the base amount (without commission)
+            $transaction->amount = $order->total_amount;
+            
+            // Apply commission to calculate fee_amount, tax_amount, and total_amount
+            $this->commissionService->applyCommissionToTransaction($transaction);
+            
+            // Log the commission application
+            Log::info('Applied commission to transaction for order', [
+                'order_id' => $order->id,
+                'base_amount' => $transaction->amount,
+                'fee_amount' => $transaction->fee_amount,
+                'tax_amount' => $transaction->tax_amount,
+                'total_amount' => $transaction->total_amount
+            ]);
             // Set customer information from the order
             $transaction->customer_name = $order->billing_name;
             $transaction->customer_email = $order->billing_email;
@@ -310,23 +331,36 @@ class PaymentService
             $transaction->transaction_id = 'TXN-' . Str::random(16);
             
             // Validate customer name and email
-            $transaction->customer_name = !empty($order->customer_name) ? $order->customer_name : 'Guest Customer';
+            $transaction->customer_name = !empty($order->billing_name) ? $order->billing_name : 'Guest Customer';
             
             // Only set customer email if it's valid
-            if (!empty($order->customer_email) && filter_var($order->customer_email, FILTER_VALIDATE_EMAIL)) {
-                $transaction->customer_email = $order->customer_email;
-                Log::info('Valid customer email found for order ' . $order->id, ['email' => $order->customer_email]);
+            if (!empty($order->billing_email) && filter_var($order->billing_email, FILTER_VALIDATE_EMAIL)) {
+                $transaction->customer_email = $order->billing_email;
+                Log::info('Valid customer email found for order ' . $order->id, ['email' => $order->billing_email]);
             } else {
                 $transaction->customer_email = null;
-                Log::info('Invalid or missing customer email for order ' . $order->id, ['raw_email' => $order->customer_email ?? 'null']);
+                Log::info('Invalid or missing customer email for order ' . $order->id, ['raw_email' => $order->billing_email ?? 'null']);
             }
             
-            // Set transaction amounts
-            $transaction->total_amount = $order->total;
+            // Set base amount (without commission)
             $transaction->amount = $order->total_amount ?? $order->total; // Fallback if total_amount is not set
             $transaction->currency = $order->currency ?? 'USD';
             $transaction->description = 'Payment for order #' . $order->order_number;
             $transaction->status = 'pending';
+            
+            // Apply commission to calculate fee_amount, tax_amount, and total_amount
+            $this->commissionService->applyCommissionToTransaction($transaction);
+            
+            // Log the commission application
+            Log::info('Applied commission to transaction for gateway payment', [
+                'order_id' => $order->id,
+                'gateway' => $gatewayCode,
+                'base_amount' => $transaction->amount,
+                'fee_amount' => $transaction->fee_amount,
+                'tax_amount' => $transaction->tax_amount,
+                'total_amount' => $transaction->total_amount
+            ]);
+            
             $transaction->save();
             
             // Process the payment using the gateway
@@ -386,7 +420,7 @@ class PaymentService
                     'status' => $transaction->status,
                     'checkout_url' => $paymentResponse['checkout_url'] ?? null,
                     'payment_date' => $transaction->paid_at ? $transaction->paid_at->format('Y-m-d H:i:s') : now()->format('Y-m-d H:i:s'),
-                    'payment_type' => 'stripe',
+                    'payment_type' => $gatewayCode,
                     'client_secret' => $paymentResponse['client_secret'] ?? null,
                     'publishable_key' => $paymentResponse['publishable_key'] ?? null
                 ];
@@ -450,11 +484,25 @@ class PaymentService
             $transaction->transaction_id = 'TXN-' . Str::random(16);
             $transaction->customer_name = $order->customer_name;
             $transaction->customer_email = $order->customer_email;
-            $transaction->total_amount = $order->total;
             $transaction->currency = $order->currency ?? 'USD';
             $transaction->description = 'Payment for order #' . $order->order_number;
             $transaction->status = 'pending';
+            
+            // Set base amount (without commission)
             $transaction->amount = $order->total_amount;
+            
+            // Apply commission to calculate fee_amount, tax_amount, and total_amount
+            $this->commissionService->applyCommissionToTransaction($transaction);
+            
+            // Log the commission application
+            Log::info('Applied commission to transaction for credit card payment', [
+                'order_id' => $order->id,
+                'base_amount' => $transaction->amount,
+                'fee_amount' => $transaction->fee_amount,
+                'tax_amount' => $transaction->tax_amount,
+                'total_amount' => $transaction->total_amount
+            ]);
+            
             $transaction->save();
             
             // Initialize the Stripe gateway
@@ -567,11 +615,25 @@ class PaymentService
             $transaction->transaction_id = 'TXN-' . Str::random(16);
             $transaction->customer_name = $order->customer_name;
             $transaction->customer_email = $order->customer_email;
-            $transaction->total_amount = $order->total;
             $transaction->currency = $order->currency ?? 'USD';
             $transaction->description = 'Payment for order #' . $order->order_number;
             $transaction->status = 'pending';
+            
+            // Set base amount (without commission)
             $transaction->amount = $order->total_amount;
+            
+            // Apply commission to calculate fee_amount, tax_amount, and total_amount
+            $this->commissionService->applyCommissionToTransaction($transaction);
+            
+            // Log the commission application
+            Log::info('Applied commission to transaction for PayPal payment', [
+                'order_id' => $order->id,
+                'base_amount' => $transaction->amount,
+                'fee_amount' => $transaction->fee_amount,
+                'tax_amount' => $transaction->tax_amount,
+                'total_amount' => $transaction->total_amount
+            ]);
+            
             $transaction->save();
             
             // Initialize the PayPal gateway
@@ -971,11 +1033,44 @@ class PaymentService
                 $refundTransaction->gateway_transaction_id = $refundResponse['refund_id'];
                 $refundTransaction->customer_name = $transaction->customer_name;
                 $refundTransaction->customer_email = $transaction->customer_email;
-                $refundTransaction->total_amount = -$amount; // Negative amount for refunds
                 $refundTransaction->currency = $transaction->currency;
                 $refundTransaction->description = 'Refund for transaction ' . $transaction->transaction_id . ($reason ? ': ' . $reason : '');
                 $refundTransaction->status = 'completed';
                 $refundTransaction->type = 'refund';
+                
+                // For refunds, we need to calculate the proportional fee and tax amounts
+                // based on the original transaction's commission rate
+                $refundTransaction->amount = -$amount; // Base amount as negative for refunds
+                
+                // If the original transaction had commission applied, apply proportional commission to the refund
+                if ($transaction->fee_amount && $transaction->tax_amount && $transaction->amount > 0) {
+                    // Calculate the proportion of the refund to the original transaction
+                    $proportion = $amount / $transaction->amount;
+                    
+                    // Apply the same proportion to the fee and tax
+                    $refundTransaction->fee_amount = -($transaction->fee_amount * $proportion);
+                    $refundTransaction->tax_amount = -($transaction->tax_amount * $proportion);
+                    $refundTransaction->total_amount = $refundTransaction->amount + $refundTransaction->fee_amount + $refundTransaction->tax_amount;
+                    
+                    Log::info('Applied proportional commission to refund transaction', [
+                        'original_transaction_id' => $transaction->transaction_id,
+                        'refund_transaction_id' => $refundTransaction->transaction_id,
+                        'refund_amount' => $amount,
+                        'proportion' => $proportion,
+                        'refund_fee' => $refundTransaction->fee_amount,
+                        'refund_tax' => $refundTransaction->tax_amount,
+                        'refund_total' => $refundTransaction->total_amount
+                    ]);
+                } else {
+                    // If no commission on original, just set total amount equal to refund amount
+                    $refundTransaction->total_amount = $refundTransaction->amount;
+                    
+                    Log::info('No commission applied to refund transaction', [
+                        'original_transaction_id' => $transaction->transaction_id,
+                        'refund_transaction_id' => $refundTransaction->transaction_id,
+                        'refund_amount' => $amount
+                    ]);
+                }
                 $refundTransaction->metadata = json_encode([
                     'original_transaction_id' => $transaction->transaction_id,
                     'reason' => $reason,

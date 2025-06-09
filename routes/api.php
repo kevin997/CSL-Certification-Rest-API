@@ -551,10 +551,13 @@ Route::group(['prefix' => 'payments'], function () {
     
     // Payment return URLs
     Route::get('/stripe/return', [TransactionController::class, 'stripeReturn']);
+    
     Route::get('/paypal/return', [TransactionController::class, 'paypalReturn']);
     Route::get('/paypal/cancel', [TransactionController::class, 'paypalCancel']);
+   
     Route::get('/lygos/return', [TransactionController::class, 'lygosReturn']);
     Route::get('/lygos/cancel', [TransactionController::class, 'lygosCancel']);
+    
     // Course routes
     Route::get('/{environment_id}/courses', [StorefrontController::class, 'getCourses']);
     Route::get('/{environment_id}/courses/{slug}', [StorefrontController::class, 'getCourseBySlug']);

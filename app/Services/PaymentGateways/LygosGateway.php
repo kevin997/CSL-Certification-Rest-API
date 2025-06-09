@@ -4,9 +4,11 @@ namespace App\Services\PaymentGateways;
 
 use App\Models\Transaction;
 use App\Models\PaymentGatewaySetting;
-use Illuminate\Support\Facades\Log;
+use App\Models\Environment;
+use App\Services\PaymentGateways\PaymentGatewayInterface;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class LygosGateway implements PaymentGatewayInterface
@@ -17,28 +19,28 @@ class LygosGateway implements PaymentGatewayInterface
      * @var string
      */
     protected $apiKey;
-    
+
     /**
      * Lygos API URL
      *
      * @var string
      */
     protected $apiUrl;
-    
+
     /**
      * Lygos merchant ID
      *
      * @var string
      */
     protected $merchantId;
-    
+
     /**
      * Gateway settings
      *
      * @var PaymentGatewaySetting
      */
     protected $settings;
-    
+
     /**
      * Initialize the payment gateway with settings
      *
@@ -48,13 +50,13 @@ class LygosGateway implements PaymentGatewayInterface
     public function initialize(PaymentGatewaySetting $settings): void
     {
         $this->settings = $settings;
-        
+
         // Extract API credentials from settings
         $this->apiKey = $settings->getSetting('api_key');
         $this->merchantId = $settings->getSetting('merchant_id');
-        $this->apiUrl = $settings->getSetting('api_url', 'https://api.lygos.com/v1');
+        $this->apiUrl = $settings->getSetting('api_url', 'https://api.lygosapp.com/v1/gateway');
     }
-    
+
     /**
      * Create a payment session/intent
      * 
@@ -68,63 +70,103 @@ class LygosGateway implements PaymentGatewayInterface
     public function createPayment(Transaction $transaction, array $paymentData = []): array
     {
         try {
-            // Create return and cancel URLs
-            $returnUrl = URL::to('/api/payments/lygos/return?transaction_id=' . $transaction->id);
-            $cancelUrl = URL::to('/api/payments/lygos/cancel?transaction_id=' . $transaction->id);
+            // Get environment details
+            $environment = null;
+            if ($transaction->environment_id) {
+                $environment = Environment::find($transaction->environment_id);
+            }
+
+            // Convert amount to XAF since Lygos requires XAF currency
+            $amountInXAF = $transaction->convertToXAF();
             
-            // Create Lygos payment session
-            $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $this->apiKey,
-                'Content-Type' => 'application/json',
-            ])->post($this->apiUrl . '/payment-sessions', [
-                'merchant_id' => $this->merchantId,
-                'amount' => $transaction->total_amount,
-                'currency' => strtoupper($transaction->currency),
-                'description' => $transaction->description,
-                'reference_id' => (string) $transaction->id,
-                'customer' => [
-                    'email' => $transaction->customer_email,
-                    'name' => $transaction->customer_name,
-                ],
-                'success_url' => $returnUrl,
-                'cancel_url' => $cancelUrl,
-                'metadata' => [
-                    'transaction_id' => $transaction->id,
-                    'order_id' => $transaction->order_id,
-                ],
-                'webhook_url' => URL::to('/api/payments/lygos/webhook'),
+            // If conversion failed, log error and use original amount
+            if ($amountInXAF === null) {
+                Log::warning('Currency conversion to XAF failed. Using original amount.', [
+                    'transaction_id' => $transaction->transaction_id,
+                    'original_currency' => $transaction->currency,
+                    'original_amount' => $transaction->total_amount
+                ]);
+                $amountInXAF = $transaction->total_amount;
+            }
+            
+            // Log the conversion details
+            Log::info('Currency conversion for Lygos payment', [
+                'transaction_id' => $transaction->transaction_id,
+                'original_currency' => $transaction->currency,
+                'original_amount' => $transaction->total_amount,
+                'converted_amount_xaf' => $amountInXAF
             ]);
             
-            if ($response->successful()) {
-                $paymentSession = $response->json();
-                
-                // Update transaction with Lygos session ID
-                $transaction->gateway_transaction_id = $paymentSession['id'];
-                $transaction->save();
-                
-                // Return the payment URL for redirect
-                return [
-                    'success' => true,
-                    'type' => 'payment_url',
-                    'value' => $paymentSession['payment_url'],
-                    'session_id' => $paymentSession['id']
-                ];
-            } else {
-                Log::error('Lygos payment session creation failed: ' . $response->body());
+            // Create return and cancel URLs
+            $successUrl = $paymentData['success_url'] ?? route('api.transactions.callback.success');
+            $failureUrl = $paymentData['failure_url'] ?? route('api.transactions.callback.failure');
+            
+            // Prepare the request data with converted amount
+            $requestData = [
+                'amount' => (int)$amountInXAF,
+                'shop_name' => $environment ? $environment->name : 'CSL Certification Platform',
+                'message' => $transaction->description ?? 'Payment for certification services',
+                'success_url' => $successUrl,
+                'failure_url' => $failureUrl,
+                'order_id' => $transaction->transaction_id
+            ];
+
+            // Make an actual API call to Lygos
+            $response = Http::withHeaders([
+                'api-key' => $this->apiKey,
+                'Content-Type' => 'application/json'
+            ])->post($this->apiUrl, $requestData);
+            
+            // Check if the API call was successful
+            if (!$response->successful()) {
+                Log::error('Lygos payment gateway creation failed: ' . $response->body());
                 return [
                     'success' => false,
-                    'message' => 'Failed to create Lygos payment session: ' . ($response->json()['message'] ?? 'Unknown error')
+                    'message' => 'Failed to create Lygos payment gateway: ' . ($response->json()['message'] ?? 'Unknown error')
                 ];
             }
+            
+            // Get the response data from the API
+            $responseData = $response->json();
+            $gatewayId = $responseData['id'] ?? Str::uuid()->toString();
+            $paymentLink = $responseData['link'] ?? "https://checkout.lygosapp.com/pay/{$gatewayId}";
+            
+            // Log successful API call
+            Log::info('Lygos payment gateway created successfully', [
+                'gateway_id' => $gatewayId,
+                'transaction_id' => $transaction->transaction_id,
+                'payment_link' => $paymentLink
+            ]);
+
+            // Update transaction with gateway ID
+            $transaction->gateway_transaction_id = $gatewayId;
+            $transaction->save();
+            
+            return [
+                'success' => true,
+                'message' => 'Payment gateway created successfully',
+                'transaction_id' => $gatewayId,
+                'checkout_url' => $paymentLink,
+                'type' => 'payment_url',
+                'value' => $paymentLink,
+                'amount' => $transaction->total_amount,
+                'currency' => $transaction->currency,
+                'payment_method' => 'lygos',
+                'payment_type' => 'lygos',
+                'created' => time(),
+                'response' => $responseData
+            ];
         } catch (\Exception $e) {
             Log::error('Lygos payment creation failed: ' . $e->getMessage());
             return [
                 'success' => false,
-                'message' => 'Failed to create payment: ' . $e->getMessage()
+                'message' => 'Failed to create payment: ' . $e->getMessage(),
+                'error' => $e->getMessage(),
+                'error_code' => $e->getCode()
             ];
         }
     }
-    
+
     /**
      * Process a payment
      *
@@ -137,52 +179,90 @@ class LygosGateway implements PaymentGatewayInterface
         try {
             // In a real implementation, we would make an actual API call to Lygos
             // For this demo, we'll simulate the API call
+
+            // Get environment details
+            $environment = null;
+            if ($transaction->environment_id) {
+                $environment = Environment::find($transaction->environment_id);
+            }
+
+            // Convert amount to XAF since Lygos requires XAF currency
+            $amountInXAF = $transaction->convertToXAF();
             
-            // Prepare the request data
+            // If conversion failed, log error and use original amount
+            if ($amountInXAF === null) {
+                Log::warning('Currency conversion to XAF failed. Using original amount.', [
+                    'transaction_id' => $transaction->transaction_id,
+                    'original_currency' => $transaction->currency,
+                    'original_amount' => $transaction->total_amount
+                ]);
+                $amountInXAF = $transaction->total_amount;
+            }
+            
+            // Log the conversion details
+            Log::info('Currency conversion for Lygos payment', [
+                'transaction_id' => $transaction->transaction_id,
+                'original_currency' => $transaction->currency,
+                'original_amount' => $transaction->total_amount,
+                'converted_amount_xaf' => $amountInXAF
+            ]);
+            
+            // Prepare the request data with converted amount
             $requestData = [
-                'amount' => (int)$transaction->total_amount,
-                'shop_name' => 'CSL Certification Platform',
+                'amount' => (int)$amountInXAF,
+                'shop_name' => $environment ? $environment->name : 'CSL Certification Platform',
                 'message' => $transaction->description ?? 'Payment for certification services',
                 'success_url' => $paymentData['success_url'] ?? route('api.transactions.callback.success'),
                 'failure_url' => $paymentData['failure_url'] ?? route('api.transactions.callback.failure'),
                 'order_id' => $transaction->transaction_id
             ];
+
+            // Make an actual API call to Lygos
+            $response = Http::withHeaders([
+                'api-key' => $this->apiKey,
+                'Content-Type' => 'application/json'
+            ])->post('https://api.lygosapp.com/v1/gateway', $requestData);
             
-            // Simulate API call delay
-            usleep(500000); // 0.5 seconds
+            // Check if the API call was successful
+            if (!$response->successful()) {
+                Log::error('Lygos payment gateway creation failed: ' . $response->body());
+                return [
+                    'success' => false,
+                    'message' => 'Failed to create Lygos payment gateway: ' . ($response->json()['message'] ?? 'Unknown error')
+                ];
+            }
             
-            // Generate a Lygos-like gateway ID
-            $gatewayId = Str::uuid()->toString();
+            // Get the response data from the API
+            $responseData = $response->json();
+            $gatewayId = $responseData['id'] ?? Str::uuid()->toString();
+            $paymentLink = $responseData['link'] ?? "https://checkout.lygosapp.com/pay/{$gatewayId}";
             
-            // Simulate the response from Lygos API
-            $responseData = [
-                'id' => $gatewayId,
-                'amount' => $requestData['amount'],
-                'currency' => $transaction->currency,
-                'shop_name' => $requestData['shop_name'],
-                'message' => $requestData['message'],
-                'user_id' => Str::uuid()->toString(),
-                'creation_date' => now()->toIso8601ZuluString(),
-                'link' => "https://checkout.lygosapp.com/pay/{$gatewayId}",
-                'order_id' => $requestData['order_id'],
-                'success_url' => $requestData['success_url'],
-                'failure_url' => $requestData['failure_url']
-            ];
+            // Log successful API call
+            Log::info('Lygos payment gateway created successfully', [
+                'gateway_id' => $gatewayId,
+                'transaction_id' => $transaction->transaction_id,
+                'payment_link' => $paymentLink
+            ]);
+
+            // Update transaction with gateway ID
+            $transaction->gateway_transaction_id = $gatewayId;
+            $transaction->save();
             
             return [
                 'success' => true,
                 'message' => 'Payment gateway created successfully',
                 'transaction_id' => $gatewayId,
-                'checkout_url' => $responseData['link'],
+                'checkout_url' => $paymentLink,
                 'amount' => $transaction->total_amount,
                 'currency' => $transaction->currency,
                 'payment_method' => 'lygos',
-                'created' => strtotime($responseData['creation_date']),
+                'payment_type' => 'lygos',
+                'created' => time(),
                 'response' => $responseData
             ];
         } catch (\Exception $e) {
             Log::error('Lygos payment error: ' . $e->getMessage());
-            
+
             return [
                 'success' => false,
                 'message' => 'Payment processing failed: ' . $e->getMessage(),
@@ -191,7 +271,7 @@ class LygosGateway implements PaymentGatewayInterface
             ];
         }
     }
-    
+
     /**
      * Verify a payment
      *
@@ -203,10 +283,10 @@ class LygosGateway implements PaymentGatewayInterface
         try {
             // In a real implementation, we would make an API call to Lygos to verify the payment
             // For this demo, we'll simulate a successful verification
-            
+
             // Simulate API call delay
             usleep(300000); // 0.3 seconds
-            
+
             // Simulate the response from Lygos API
             $responseData = [
                 'id' => $transactionId,
@@ -219,7 +299,7 @@ class LygosGateway implements PaymentGatewayInterface
                 'fees' => 25,
                 'net_amount' => 975
             ];
-            
+
             return [
                 'success' => true,
                 'message' => 'Payment verified',
@@ -233,7 +313,7 @@ class LygosGateway implements PaymentGatewayInterface
             ];
         } catch (\Exception $e) {
             Log::error('Lygos verification error: ' . $e->getMessage());
-            
+
             return [
                 'success' => false,
                 'message' => 'Payment verification failed: ' . $e->getMessage(),
@@ -242,7 +322,7 @@ class LygosGateway implements PaymentGatewayInterface
             ];
         }
     }
-    
+
     /**
      * Process a refund
      *
@@ -260,22 +340,22 @@ class LygosGateway implements PaymentGatewayInterface
                 'message' => 'No gateway transaction ID found'
             ];
         }
-        
+
         try {
             // In a real implementation, we would make an API call to Lygos to process the refund
             // For this demo, we'll simulate a successful refund
-            
+
             // Simulate API call delay
             usleep(500000); // 0.5 seconds
-            
+
             // If amount is not specified, refund the full amount
             if ($amount === null) {
                 $amount = $transaction->total_amount;
             }
-            
+
             // Generate a refund ID
             $refundId = 'REF-' . Str::random(10);
-            
+
             // Simulate the response from Lygos API
             $responseData = [
                 'id' => $refundId,
@@ -287,7 +367,7 @@ class LygosGateway implements PaymentGatewayInterface
                 'creation_date' => now()->toIso8601ZuluString(),
                 'completion_date' => now()->toIso8601ZuluString()
             ];
-            
+
             return [
                 'success' => true,
                 'message' => 'Refund processed successfully',
@@ -302,7 +382,7 @@ class LygosGateway implements PaymentGatewayInterface
             ];
         } catch (\Exception $e) {
             Log::error('Lygos refund error: ' . $e->getMessage());
-            
+
             return [
                 'success' => false,
                 'message' => 'Refund processing failed: ' . $e->getMessage(),
@@ -311,7 +391,7 @@ class LygosGateway implements PaymentGatewayInterface
             ];
         }
     }
-    
+
     /**
      * Get payment gateway configuration
      *
@@ -338,7 +418,7 @@ class LygosGateway implements PaymentGatewayInterface
             'test_mode' => $this->settings->mode === 'sandbox'
         ];
     }
-    
+
     /**
      * Verify webhook signature
      *
@@ -352,22 +432,22 @@ class LygosGateway implements PaymentGatewayInterface
         try {
             // Based on Lygos API documentation, they use a HMAC-SHA256 signature
             // for webhook verification
-            
+
             // In a real implementation, we would:
             // 1. Get the raw payload
             // 2. Compute the HMAC using the secret key
             // 3. Compare with the provided signature
-            
+
             if (empty($signature) || empty($secret)) {
                 return false;
             }
-            
+
             // Convert payload to string if it's not already
             $payloadString = is_string($payload) ? $payload : json_encode($payload);
-            
+
             // Calculate expected signature
             $expectedSignature = hash_hmac('sha256', $payloadString, $secret);
-            
+
             // Verify signature (constant time comparison to prevent timing attacks)
             return hash_equals($expectedSignature, $signature);
         } catch (\Exception $e) {
