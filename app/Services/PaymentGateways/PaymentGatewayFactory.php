@@ -32,6 +32,15 @@ class PaymentGatewayFactory
             return null;
         }
         
+        Log::info("[Factory] Building {$gateway} gateway", [
+            'gateway_code' => $gateway,
+            'settings_id' => $settings->id,
+            'settings_code' => $settings->code,
+            'environment' => $settings->environment_id,
+            'is_test_mode' => $settings->getSetting('test_mode', false),
+            'settings_present' => !empty($settings->settings)
+        ]);
+        
         $gatewayClass = self::$gateways[$gateway];
         $gatewayInstance = new $gatewayClass();
         $gatewayInstance->initialize($settings);

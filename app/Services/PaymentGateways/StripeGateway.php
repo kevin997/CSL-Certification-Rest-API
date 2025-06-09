@@ -55,22 +55,65 @@ class StripeGateway implements PaymentGatewayInterface
      * @return void
      */
     public function initialize(PaymentGatewaySetting $settings): void
-    {
-        $this->settings = $settings;
-        
-        // Extract API credentials from settings
-        $this->apiKey = $settings->getSetting('api_key');
-        $this->apiVersion = $settings->getSetting('api_version', '2023-10-16');
-        $this->webhookSecret = $settings->getSetting('webhook_secret');
-        
-        Log::info('Keys from database'.$this->apiKey);
-        // Initialize the Stripe client
-        $this->stripeClient = new StripeSDK([
-            'api_key' => $this->apiKey,
-            'stripe_version' => $this->apiVersion
-        ]);
+{
+    $this->settings = $settings;
+    
+    // Extract API credentials from settings with detailed logging
+    $this->apiKey = $settings->getSetting('api_key');
+    $this->apiVersion = $settings->getSetting('api_version', '2023-10-16');
+    $this->webhookSecret = $settings->getSetting('webhook_secret');
+    
+    // Check for test mode and use appropriate keys
+    $isTestMode = $settings->getSetting('test_mode', false);
+    if ($isTestMode) {
+        // Try to get test keys if in test mode
+        $testApiKey = $settings->getSetting('test_api_key');
+        if (!empty($testApiKey)) {
+            $this->apiKey = $testApiKey;
+            Log::info('[StripeGateway] Using test API key');
+        }
     }
     
+    // Enhanced logging for Stripe initialization
+    Log::info('[StripeGateway] Initializing Stripe client', [
+        'gateway_id' => $settings->id,
+        'gateway_code' => $settings->code,
+        'environment_id' => $settings->environment_id,
+        'api_key_present' => !empty($this->apiKey),
+        'api_key_length' => $this->apiKey ? strlen($this->apiKey) : 0,
+        'api_key_starts_with' => $this->apiKey ? substr($this->apiKey, 0, 3) : 'none',
+        'api_version' => $this->apiVersion,
+        'webhook_secret_present' => !empty($this->webhookSecret),
+        'test_mode' => $isTestMode,
+        'settings_type' => is_array($settings->settings) ? 'array' : (is_string($settings->settings) ? 'string' : gettype($settings->settings)),
+    ]);
+    
+    // Check if API key is available before initializing
+    if (empty($this->apiKey)) {
+        Log::error('[StripeGateway] Missing API key', [
+            'gateway_id' => $settings->id,
+            'gateway_code' => $settings->code,
+            'environment_id' => $settings->environment_id
+        ]);
+        throw new \Exception('Stripe API key is missing. Please check your payment gateway settings.');
+    }
+    
+    // Initialize the Stripe client
+    $this->stripeClient = new StripeSDK([
+        'api_key' => $this->apiKey,
+        'stripe_version' => $this->apiVersion
+    ]);
+    
+    // Verify the API key works by making a simple API call
+    try {
+        $this->stripeClient->balance->retrieve();
+        Log::info('[StripeGateway] API key verification successful');
+    } catch (\Exception $e) {
+        Log::error('[StripeGateway] API key verification failed', ['error' => $e->getMessage()]);
+        // We don't throw here to allow the payment flow to continue and fail gracefully if needed
+    }
+}
+
     /**
      * Create a payment session/intent
      * 
@@ -84,37 +127,90 @@ class StripeGateway implements PaymentGatewayInterface
     public function createPayment(Transaction $transaction, array $paymentData = []): array
     {
         try {
-            // Create a PaymentIntent with the order amount and currency
-            $paymentIntent = $this->stripeClient->paymentIntents->create([
-                'amount' => (int)($transaction->total_amount * 100), // Convert to cents
+            // Log before attempting to create payment intent
+            Log::info('[StripeGateway] Attempting to create payment intent', [
+                'transaction_id' => $transaction->id,
+                'order_id' => $transaction->order_id,
+                'amount' => $transaction->total_amount,
+                'currency' => $transaction->currency,
+                'api_key_present' => !empty($this->apiKey),
+                'api_key_starts_with' => $this->apiKey ? substr($this->apiKey, 0, 3) : 'none',
+                'stripe_client_initialized' => isset($this->stripeClient),
+                'gateway_id' => $this->settings->id ?? null,
+                'gateway_code' => $this->settings->code ?? null
+            ]);
+            
+            // Check if Stripe client is initialized
+            if (!isset($this->stripeClient)) {
+                Log::error('[StripeGateway] Stripe client not initialized');
+                return [
+                    'success' => false,
+                    'message' => 'Stripe client not initialized. Please check payment gateway settings.'
+                ];
+            }
+            
+            // Format amount properly (ensure it's an integer in cents)
+            $amountInCents = (int) round($transaction->total_amount * 100);
+            
+            // Prepare payment intent parameters
+            $paymentIntentParams = [
+                'amount' => $amountInCents,
                 'currency' => strtolower($transaction->currency),
+                'payment_method_types' => ['card'],
                 'metadata' => [
                     'transaction_id' => $transaction->id,
                     'order_id' => $transaction->order_id,
-                    'customer_email' => $transaction->customer_email
+                    'environment_id' => $transaction->environment_id ?? null
                 ],
-                'description' => $transaction->description,
-                'receipt_email' => $transaction->customer_email,
-                // Enable automatic payment methods suitable for the customer's location
-                'automatic_payment_methods' => [
-                    'enabled' => true,
-                ],
-            ]);
+                'description' => $transaction->description ?? "Payment for order #{$transaction->order_id}",
+            ];
+            
+            // Only include customer email in metadata and receipt_email if it's valid
+            if (!empty($transaction->customer_email) && filter_var($transaction->customer_email, FILTER_VALIDATE_EMAIL)) {
+                $paymentIntentParams['metadata']['customer_email'] = $transaction->customer_email;
+                $paymentIntentParams['receipt_email'] = $transaction->customer_email;
+                
+                Log::info('[StripeGateway] Including customer email', [
+                    'email' => $transaction->customer_email
+                ]);
+            } else {
+                Log::info('[StripeGateway] No valid customer email found', [
+                    'raw_email' => $transaction->customer_email ?? 'null'
+                ]);
+            }
+            
+            // Create a PaymentIntent with proper error handling
+            $paymentIntent = $this->stripeClient->paymentIntents->create($paymentIntentParams);
             
             // Update transaction with payment intent ID
             $transaction->gateway_transaction_id = $paymentIntent->id;
             $transaction->save();
+            
+            Log::info('[StripeGateway] Payment intent created successfully', [
+                'payment_intent_id' => $paymentIntent->id,
+                'transaction_id' => $transaction->id,
+                'order_id' => $transaction->order_id
+            ]);
             
             // Return the client_secret for Stripe Elements
             return [
                 'success' => true,
                 'type' => 'client_secret',
                 'value' => $paymentIntent->client_secret,
+                'client_secret' => $paymentIntent->client_secret,
                 'payment_intent_id' => $paymentIntent->id,
                 'publishable_key' => $this->settings->getSetting('publishable_key')
             ];
-        } catch (StripeApiException $e) {
-            Log::error('Stripe payment intent creation failed: ' . $e->getMessage());
+        } catch (\Exception $e) {
+            Log::error('[StripeGateway] Error creating payment intent', [
+                'error' => $e->getMessage(),
+                'error_type' => get_class($e),
+                'transaction_id' => $transaction->id,
+                'api_key_present' => !empty($this->apiKey),
+                'stripe_client_initialized' => isset($this->stripeClient),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
             return [
                 'success' => false,
                 'message' => 'Failed to create payment: ' . $e->getMessage()

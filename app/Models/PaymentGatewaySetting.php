@@ -183,8 +183,57 @@ class PaymentGatewaySetting extends Model
      */
     public function getSetting(string $key, $default = null)
     {
-        $settings = $this->settings ?? [];
-        return $settings[$key] ?? $default;
+        // Ensure settings is properly handled regardless of its format
+        $settings = $this->settings;
+        
+        // Add detailed logging about the settings format
+        \Illuminate\Support\Facades\Log::info(
+            "[PaymentGatewaySetting] Settings format for gateway '{$this->code}'", [
+            'gateway_id' => $this->id,
+            'gateway_code' => $this->code,
+            'settings_type' => gettype($settings),
+            'is_json_string' => is_string($settings) && $this->isJson($settings),
+            'environment' => $this->environment_id
+        ]);
+        
+        // Handle different types of settings data
+        if (is_string($settings) && $this->isJson($settings)) {
+            // If settings is a JSON string that wasn't auto-decoded
+            $settings = json_decode($settings, true) ?? [];
+        } elseif (!is_array($settings)) {
+            // If settings is neither an array nor a valid JSON string
+            $settings = [];
+        }
+        
+        $value = $settings[$key] ?? $default;
+        
+        // Add logging for sensitive keys without exposing the actual values
+        if (in_array($key, ['api_key', 'secret_key', 'webhook_secret'])) {
+            \Illuminate\Support\Facades\Log::info(
+                "[PaymentGatewaySetting] Retrieved {$key} for gateway '{$this->code}'", [
+                'gateway_id' => $this->id,
+                'gateway_code' => $this->code,
+                'key_present' => !empty($value),
+                'environment' => $this->environment_id
+            ]);
+        }
+        
+        return $value;
+    }
+    
+    /**
+     * Check if a string is valid JSON
+     * 
+     * @param string $string
+     * @return bool
+     */
+    private function isJson($string) {
+        if (!is_string($string)) {
+            return false;
+        }
+        
+        json_decode($string);
+        return json_last_error() === JSON_ERROR_NONE;
     }
 
     /**

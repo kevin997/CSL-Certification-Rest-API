@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Course;
+use App\Models\CourseSection;
+use App\Models\CourseSectionItem;
 use App\Models\Environment;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -12,14 +15,14 @@ use App\Models\ProductCategory;
 use App\Models\ProductReview;
 use App\Models\Transaction;
 use App\Models\User;
-use App\Models\Course;
-use App\Models\CourseSection;
-use App\Models\CourseSectionItem;
+use App\Services\OrderService;
+use App\Services\ReferralService;
+use App\Services\StripeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Log;
 
 class StorefrontController extends Controller
 {
@@ -1995,6 +1998,126 @@ class StorefrontController extends Controller
         $category->products = $products;
         
         return response()->json(['data' => $category]);
+    }
+    
+    /**
+     * Continue payment for a pending order
+     *
+     * @param Request $request
+     * @param int $orderId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function continuePayment(Request $request, $orderId)
+    {
+        // Get the authenticated user
+        $user = $request->user();
+        
+        // Fetch the order by ID
+        $order = Order::find($orderId);
+        
+        // Check if order exists
+        if (!$order) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Order not found'
+            ], 404);
+        }
+        
+        // Validate that the order belongs to the current user
+        if ($user->id !== $order->user_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized access to this order'
+            ], 403);
+        }
+        
+        // Check that order status is pending
+        if ($order->status !== 'pending') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only pending orders can continue payment',
+                'order_status' => $order->status
+            ], 400);
+        }
+        
+        // Validate the payment method data
+        $validator = Validator::make($request->all(), [
+            'payment_method' => 'required|string',
+            'payment_data' => 'sometimes|array',
+        ]);
+        
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        
+        // Load order items and related products
+        $order->load(['items.product', 'user']);
+        
+        // Process the payment based on the payment method
+        $paymentMethod = $request->input('payment_method');
+        $paymentData = $request->input('payment_data', []);
+        
+        try {
+            // Get the payment gateway settings
+            $paymentGatewaySetting = PaymentGatewaySetting::where('environment_id', $order->environment_id)
+                ->where(function($query) use ($paymentMethod) {
+                    $query->where('code', $paymentMethod)
+                          ->orWhere('id', $paymentMethod)
+                          ->orWhere('gateway_name', $paymentMethod);
+                })
+                ->first();
+            
+            if (!$paymentGatewaySetting) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment method not available'
+                ], 400);
+            }
+            
+            // Create OrderService instance
+            $orderService = app()->make(\App\Services\OrderService::class);
+            
+            // Create PaymentGatewayFactory instance
+            $gatewayFactory = app()->make(\App\Services\PaymentGateways\PaymentGatewayFactory::class);
+            
+            // Initialize payment service with proper dependencies
+            $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory);
+            
+            // Process the payment - pass order ID as expected by the method
+            $result = $paymentService->processPayment($order->id, [  
+                'payment_method' => $paymentGatewaySetting->code, // Use the gateway code from settings
+                'environment_id' => $order->environment_id,
+                ...$paymentData
+            ]);
+            
+            // Update the order with payment method
+            $order->payment_method = $paymentGatewaySetting->id;
+            $order->save();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment processing initiated',
+                'data' => $result,
+                'order' => $order
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Payment continuation error: ' . $e->getMessage(), [
+                'order_id' => $order->id,
+                'payment_method' => $paymentMethod,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment processing failed: ' . $e->getMessage()
+            ], 500);
+        }
     }
     
 

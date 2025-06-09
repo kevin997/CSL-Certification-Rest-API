@@ -217,6 +217,7 @@ class PaymentService
      */
     public function processPayment(int $orderId, array $paymentData): array
     {
+        Log::info('Processing payment for order ' . $paymentData['payment_method']);
         $order = $this->orderService->getOrderById($orderId);
         
         if (!$order) {
@@ -285,6 +286,7 @@ class PaymentService
      */
     protected function processGatewayPayment(Order $order, string $gatewayCode, array $paymentData): array
     {
+        Log::info('Processing payment for order ' . $order->id . ' using ' . $gatewayCode);
         try {
             // Get the payment gateway settings
             $gatewaySettings = PaymentGatewaySetting::where('code', $gatewayCode)
@@ -299,24 +301,32 @@ class PaymentService
                 ];
             }
             
-            // Create a new transaction
+            // Create a new transaction with validated data
             $transaction = new Transaction();
             $transaction->order_id = $order->id;
             $transaction->environment_id = $paymentData['environment_id'] ?? $gatewaySettings->environment_id;
             $transaction->payment_gateway_setting_id = $gatewaySettings->id;
             $transaction->payment_method = $gatewayCode;
             $transaction->transaction_id = 'TXN-' . Str::random(16);
-            $transaction->customer_name = $order->customer_name;
-            $transaction->customer_email = $order->customer_email;
+            
+            // Validate customer name and email
+            $transaction->customer_name = !empty($order->customer_name) ? $order->customer_name : 'Guest Customer';
+            
+            // Only set customer email if it's valid
+            if (!empty($order->customer_email) && filter_var($order->customer_email, FILTER_VALIDATE_EMAIL)) {
+                $transaction->customer_email = $order->customer_email;
+                Log::info('Valid customer email found for order ' . $order->id, ['email' => $order->customer_email]);
+            } else {
+                $transaction->customer_email = null;
+                Log::info('Invalid or missing customer email for order ' . $order->id, ['raw_email' => $order->customer_email ?? 'null']);
+            }
+            
+            // Set transaction amounts
             $transaction->total_amount = $order->total;
+            $transaction->amount = $order->total_amount ?? $order->total; // Fallback if total_amount is not set
             $transaction->currency = $order->currency ?? 'USD';
             $transaction->description = 'Payment for order #' . $order->order_number;
             $transaction->status = 'pending';
-            $transaction->metadata = json_encode([
-                'order_id' => $order->id,
-                'order_number' => $order->order_number,
-                'payment_data' => $paymentData
-            ]);
             $transaction->save();
             
             // Process the payment using the gateway
@@ -329,13 +339,25 @@ class PaymentService
                 ];
             }
             
-            $paymentResponse = $gateway->processPayment($transaction, $paymentData);
+            // For Stripe, first create a payment intent before processing
+            if ($gatewayCode === 'stripe') {
+                Log::info('Creating Stripe payment intent for order ' . $order->id);
+                // First create the payment intent
+                $paymentResponse = $gateway->createPayment($transaction, $paymentData);
+                
+                if (!$paymentResponse['success']) {
+                    return $paymentResponse;
+                }
+            } else {
+                // For other gateways, process payment directly
+                $paymentResponse = $gateway->processPayment($transaction, $paymentData);
+            }
             
             // Update the transaction with the gateway response
             $transaction->gateway_transaction_id = $paymentResponse['transaction_id'] ?? null;
             $transaction->status = $paymentResponse['success'] ? ($paymentResponse['status'] ?? 'pending') : 'failed';
-            $transaction->response_data = json_encode($paymentResponse);
-            $transaction->processed_at = now();
+            $transaction->gateway_response = json_encode($paymentResponse);
+           
             $transaction->save();
             
             // Update the order payment status if payment was successful
@@ -363,7 +385,10 @@ class PaymentService
                     'currency' => $transaction->currency,
                     'status' => $transaction->status,
                     'checkout_url' => $paymentResponse['checkout_url'] ?? null,
-                    'payment_date' => $transaction->processed_at->format('Y-m-d H:i:s')
+                    'payment_date' => $transaction->paid_at ? $transaction->paid_at->format('Y-m-d H:i:s') : now()->format('Y-m-d H:i:s'),
+                    'payment_type' => 'stripe',
+                    'client_secret' => $paymentResponse['client_secret'] ?? null,
+                    'publishable_key' => $paymentResponse['publishable_key'] ?? null
                 ];
             } else {
                 return [
@@ -429,11 +454,7 @@ class PaymentService
             $transaction->currency = $order->currency ?? 'USD';
             $transaction->description = 'Payment for order #' . $order->order_number;
             $transaction->status = 'pending';
-            $transaction->metadata = json_encode([
-                'order_id' => $order->id,
-                'order_number' => $order->order_number,
-                'payment_data' => $paymentData
-            ]);
+            $transaction->amount = $order->total_amount;
             $transaction->save();
             
             // Initialize the Stripe gateway
@@ -452,8 +473,8 @@ class PaymentService
             // Update the transaction with the gateway response
             $transaction->gateway_transaction_id = $paymentResponse['transaction_id'] ?? null;
             $transaction->status = $paymentResponse['success'] ? ($paymentResponse['status'] ?? 'pending') : 'failed';
-            $transaction->response_data = json_encode($paymentResponse);
-            $transaction->processed_at = now();
+            $transaction->gateway_response = json_encode($paymentResponse);
+           
             $transaction->save();
             
             // Update the order payment status if payment was successful
@@ -484,7 +505,8 @@ class PaymentService
                     'amount' => $order->total,
                     'currency' => $transaction->currency,
                     'status' => $transaction->status,
-                    'payment_date' => $transaction->processed_at->format('Y-m-d H:i:s'),
+                    'payment_date' => $transaction->paid_at ? $transaction->paid_at->format('Y-m-d H:i:s') : now()->format('Y-m-d H:i:s'),
+                    'payment_type' => 'credit_card',
                     'client_secret' => $paymentResponse['client_secret'] ?? null
                 ];
             } else {
@@ -549,11 +571,7 @@ class PaymentService
             $transaction->currency = $order->currency ?? 'USD';
             $transaction->description = 'Payment for order #' . $order->order_number;
             $transaction->status = 'pending';
-            $transaction->metadata = json_encode([
-                'order_id' => $order->id,
-                'order_number' => $order->order_number,
-                'payment_data' => $paymentData
-            ]);
+            $transaction->amount = $order->total_amount;
             $transaction->save();
             
             // Initialize the PayPal gateway
@@ -572,8 +590,8 @@ class PaymentService
             // Update the transaction with the gateway response
             $transaction->gateway_transaction_id = $paymentResponse['transaction_id'] ?? null;
             $transaction->status = $paymentResponse['success'] ? ($paymentResponse['status'] ?? 'pending') : 'failed';
-            $transaction->response_data = json_encode($paymentResponse);
-            $transaction->processed_at = now();
+            $transaction->gateway_response = json_encode($paymentResponse);
+           
             $transaction->save();
             
             // Update the order payment status if payment was successful
@@ -603,7 +621,8 @@ class PaymentService
                     'amount' => $order->total,
                     'currency' => $transaction->currency,
                     'status' => $transaction->status,
-                    'payment_date' => $transaction->processed_at->format('Y-m-d H:i:s')
+                    'payment_type' => 'paypal',
+                    'payment_date' => $transaction->paid_at ? $transaction->paid_at->format('Y-m-d H:i:s') : now()->format('Y-m-d H:i:s')
                 ];
             } else {
                 return [
@@ -789,7 +808,7 @@ class PaymentService
                 'payment_status' => $transaction->status,
                 'amount' => $transaction->total_amount,
                 'currency' => $transaction->currency,
-                'payment_date' => $transaction->processed_at ? $transaction->processed_at->format('Y-m-d H:i:s') : null,
+                'payment_date' => $transaction->paid_at ? $transaction->paid_at->format('Y-m-d H:i:s') : null,
                 'verification_date' => $transaction->verified_at ? $transaction->verified_at->format('Y-m-d H:i:s') : null
             ];
         } catch (\Exception $e) {
@@ -962,7 +981,7 @@ class PaymentService
                     'reason' => $reason,
                     'refund_data' => $refundResponse
                 ]);
-                $refundTransaction->processed_at = now();
+                $refundTransaction->refunded_at = now();
                 $refundTransaction->verified_at = now();
                 $refundTransaction->save();
                 
@@ -1000,7 +1019,7 @@ class PaymentService
                     'order_id' => $transaction->order_id,
                     'amount' => $amount,
                     'currency' => $transaction->currency,
-                    'refund_date' => $refundTransaction->processed_at->format('Y-m-d H:i:s')
+                    'refund_date' => $refundTransaction->refunded_at ? $refundTransaction->refunded_at->format('Y-m-d H:i:s') : now()->format('Y-m-d H:i:s')
                 ];
             } else {
                 return [

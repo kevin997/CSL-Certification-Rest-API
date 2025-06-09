@@ -522,6 +522,8 @@ Route::group(['prefix' => 'storefront'], function () {
     // Get Order
     Route::get('/{environmentId}/orders/{orderId}', [StorefrontController::class, 'getOrder']);
     
+
+    
     // Get product reviews
     Route::get('/{environmentId}/products/{productId}/reviews', [StorefrontController::class, 'getProductReviews']);
     
@@ -533,6 +535,9 @@ Route::group(['prefix' => 'storefront'], function () {
     Route::get('/{environmentId}/states/{country}', [StorefrontController::class, 'getStates']);
     Route::get('/{environmentId}/cities/{country}/{state}', [StorefrontController::class, 'getCities']);
 });
+
+// Continue payment for a pending order
+Route::post('/storefront/orders/{orderId}/continue-payment', [StorefrontController::class, 'continuePayment'])->middleware('auth:sanctum');
 
 // Payment Routes
 Route::group(['prefix' => 'payments'], function () {

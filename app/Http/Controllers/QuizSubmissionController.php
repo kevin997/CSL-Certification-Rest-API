@@ -9,6 +9,7 @@ use App\Models\QuizQuestionResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 
 class QuizSubmissionController extends Controller
 {
@@ -95,6 +96,8 @@ class QuizSubmissionController extends Controller
      */
     public function index($quizContentId)
     {
+
+        Log::info("Getting quizcontentId".$quizContentId);
         // Check if quiz content exists
         $quizContent = QuizContent::find($quizContentId);
         if (!$quizContent) {
