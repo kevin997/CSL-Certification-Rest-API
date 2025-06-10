@@ -161,7 +161,7 @@ class SupportedOnboardingController extends Controller
                 $payment = Payment::create([
                     'user_id' => $user->id,
                     'subscription_id' => $subscription->id,
-                    'amount' => $plan->pricing['setup_fee'] ?? 177.00,
+                    'amount' => $plan->setup_fee ?? 177.00,
                     'currency' => 'USD',
                     'payment_method' => $request->payment_method,
                     'transaction_id' => $paymentResult['transaction_id'],

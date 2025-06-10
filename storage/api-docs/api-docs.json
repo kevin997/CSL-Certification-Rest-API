@@ -8787,6 +8787,250 @@
                 }
             }
         },
+        "/api/onboarding/standalone": {
+            "post": {
+                "tags": [
+                    "Onboarding"
+                ],
+                "summary": "Onboard a new user with the standalone plan",
+                "description": "Create a new user account, environment, and subscription for the standalone plan",
+                "operationId": "onboardStandalone",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "name",
+                                    "email",
+                                    "password",
+                                    "environment_name",
+                                    "domain_type",
+                                    "domain"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "John Doe"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "john@example.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "password123"
+                                    },
+                                    "environment_name": {
+                                        "type": "string",
+                                        "example": "John's Academy"
+                                    },
+                                    "domain_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "subdomain",
+                                            "custom"
+                                        ],
+                                        "example": "subdomain"
+                                    },
+                                    "domain": {
+                                        "type": "string",
+                                        "example": "johns-academy"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "example": "A platform for teaching computer science"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "User onboarded successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "User onboarded successfully"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "user_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "environment_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "subscription_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "domain": {
+                                                    "type": "string",
+                                                    "example": "johns-academy.csl-cert.com"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    },
+                    "500": {
+                        "description": "Server error"
+                    }
+                }
+            }
+        },
+        "/api/onboarding/supported": {
+            "post": {
+                "tags": [
+                    "Onboarding"
+                ],
+                "summary": "Onboard a new user with the supported plan",
+                "description": "Create a new user account, environment, subscription, and process payment for the supported plan",
+                "operationId": "onboardSupported",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "name",
+                                    "email",
+                                    "password",
+                                    "environment_name",
+                                    "domain_type",
+                                    "domain",
+                                    "payment_method",
+                                    "payment_token"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "John Doe"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "john@example.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "password123"
+                                    },
+                                    "environment_name": {
+                                        "type": "string",
+                                        "example": "John's Academy"
+                                    },
+                                    "domain_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "subdomain",
+                                            "custom"
+                                        ],
+                                        "example": "subdomain"
+                                    },
+                                    "domain": {
+                                        "type": "string",
+                                        "example": "johns-academy"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "example": "A platform for teaching computer science"
+                                    },
+                                    "payment_method": {
+                                        "type": "string",
+                                        "enum": [
+                                            "stripe",
+                                            "lygos"
+                                        ],
+                                        "example": "stripe"
+                                    },
+                                    "payment_token": {
+                                        "type": "string",
+                                        "example": "tok_visa"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "User onboarded successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "User onboarded successfully"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "user_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "environment_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "subscription_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "payment_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "domain": {
+                                                    "type": "string",
+                                                    "example": "johns-academy.csl-cert.com"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    },
+                    "500": {
+                        "description": "Server error"
+                    }
+                }
+            }
+        },
         "/orders": {
             "get": {
                 "tags": [

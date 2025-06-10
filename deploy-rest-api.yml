@@ -96,7 +96,7 @@
       ansible.builtin.git:
         repo: git@github.com:kevin997/CSL-Certification-Rest-API.git
         dest: "{{ app_dir }}"
-        version: staging
+        version: main
         force: yes
         accept_hostkey: yes
       become: yes
@@ -107,7 +107,7 @@
       ansible.builtin.shell: |
         cd {{ app_dir }}
         git fetch
-        git reset --hard origin/staging
+        git reset --hard origin/main
       become: yes
       become_user: ubuntu
       when: app_dir_stat.stat.exists and git_dir_stat is defined and git_dir_stat.stat.exists
