@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\User;
 use Database\Seeders\AdminSeeder;
 use Database\Seeders\PlanSeeder;
+use Database\Seeders\DemoPlanSeeder;
 use Database\Seeders\EnvironmentUsersSeeder;
 use Database\Seeders\ThirdPartyServiceSeeder;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
@@ -21,6 +22,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             AdminSeeder::class,
             PlanSeeder::class,
+            DemoPlanSeeder::class,
             EnvironmentUsersSeeder::class,
             ThirdPartyServiceSeeder::class,
         ]);

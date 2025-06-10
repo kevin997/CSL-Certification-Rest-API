@@ -46,6 +46,7 @@ class Environment extends Model
         'logo_url',
         'favicon_url',
         'is_active',
+        'is_demo',
         'owner_id',
         'description',
     ];
@@ -58,6 +59,7 @@ class Environment extends Model
     protected $casts = [
         'additional_domains' => 'array',
         'is_active' => 'boolean',
+        'is_demo' => 'boolean',
     ];
 
     /**
@@ -196,5 +198,15 @@ class Environment extends Model
         }
         
         return $activeSubscription->plan->type ?? 'free';
+    }
+    
+    /**
+     * Check if the environment is a demo environment.
+     * 
+     * @return bool
+     */
+    public function isDemoEnvironment(): bool
+    {
+        return $this->is_demo === true;
     }
 }

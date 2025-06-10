@@ -52,6 +52,7 @@ use App\Http\Controllers\Api\FinanceController;
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\Onboarding\StandaloneOnboardingController;
 use App\Http\Controllers\Api\Onboarding\SupportedOnboardingController;
+use App\Http\Controllers\Api\Onboarding\DemoOnboardingController;
 
 // Health check endpoint for monitoring and deployment verification
 Route::get('/health', function() {
@@ -71,8 +72,12 @@ Route::prefix('onboarding')->group(function () {
     // Supported plan onboarding
     Route::post('/supported', [SupportedOnboardingController::class, 'store']);
     
+    // Demo plan onboarding
+    Route::post('/demo', [DemoOnboardingController::class, 'store']);
+    
     // Get available plans
     Route::get('/plans', [PlanController::class, 'getOnboardingPlans']);
+    Route::post('/referral/validate', [ReferralController::class, 'validate']);
 });
 
 // Queue status endpoint

@@ -118,20 +118,24 @@ class PlanController extends Controller
     
     /**
      * Get plans specifically for the onboarding process.
-     * Returns only the Standalone and Supported plans with formatted data for the onboarding UI.
+     * Returns the Standalone, Supported, and Demo plans with formatted data for the onboarding UI.
      *
      * @return JsonResponse
      */
     public function getOnboardingPlans(): JsonResponse
     {
-        // Get only the Standalone and Supported plans that are active
-        $plans = Plan::whereIn('type', ['standalone', 'supported'])
+        // Get the Standalone, Supported, and Demo plans that are active
+        $plans = Plan::whereIn('type', ['standalone', 'supported', 'demo'])
             ->where('is_active', true)
             ->orderBy('sort_order', 'asc')
             ->get();
             
         // Format the plans for the onboarding UI with additional metadata
         $formattedPlans = $plans->map(function ($plan) {
+            $isDemo = $plan->type === 'demo';
+            $isStandalone = $plan->type === 'standalone';
+            $isSupported = $plan->type === 'supported';
+            
             return [
                 'id' => $plan->id,
                 'name' => $plan->name,
@@ -140,11 +144,13 @@ class PlanController extends Controller
                 'features' => $plan->features,
                 'limits' => $plan->limits,
                 'pricing' => $plan->pricing,
-                'is_free' => $plan->type === 'standalone',
+                'is_free' => $isStandalone || $isDemo,
                 'setup_fee' => $plan->setup_fee ?? 0,
                 'monthly_fee' => $plan->price_monthly ?? 0,
-                'recommended' => $plan->type === 'supported',
-                'support_level' => $plan->type === 'supported' ? 'Full Support' : 'Self-Service',
+                'recommended' => $isSupported,
+                'is_demo' => $isDemo,
+                'support_level' => $isSupported ? 'Full Support' : ($isDemo ? 'Demo Support' : 'Self-Service'),
+                'expires_after_days' => $isDemo ? ($plan->features['expires_after_days'] ?? 14) : null,
             ];
         });
 
