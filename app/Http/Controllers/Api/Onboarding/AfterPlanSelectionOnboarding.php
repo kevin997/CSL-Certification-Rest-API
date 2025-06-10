@@ -122,25 +122,6 @@ class AfterPlanSelectionOnboarding extends Controller
                     'is_active' => true,
                 ]);
 
-                // Associate the user with the environment as an owner
-                $environment->users()->attach($user->id, [
-                    'role' => 'owner',
-                    'permissions' => json_encode([
-                        'manage_users' => true,
-                        'manage_courses' => true,
-                        'manage_content' => true,
-                        'manage_billing' => true,
-                    ]),
-                    'joined_at' => now(),
-                    'is_active' => true,
-                    'credentials' => json_encode([
-                        'username' => $user->email,
-                        'environment_specific_id' => 'TCH-' . $user->id,
-                    ]),
-                    'environment_email' => $user->email,
-                    'environment_password' => Hash::make($request->password),
-                    'use_environment_credentials' => true,
-                ]);
 
                 // Create a subscription
                 $subscription = Subscription::create([

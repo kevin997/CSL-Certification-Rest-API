@@ -50,6 +50,8 @@ use App\Http\Controllers\Api\Onboarding\AfterPlanSelectionOnboarding;
 use App\Http\Controllers\Api\ReferralEnvironmentController;
 use App\Http\Controllers\Api\FinanceController;
 use App\Http\Controllers\Api\AnalyticsController;
+use App\Http\Controllers\Api\Onboarding\StandaloneOnboardingController;
+use App\Http\Controllers\Api\Onboarding\SupportedOnboardingController;
 
 // Health check endpoint for monitoring and deployment verification
 Route::get('/health', function() {
@@ -59,6 +61,18 @@ Route::get('/health', function() {
         'environment' => config('app.env'),
         'version' => config('app.version', '1.0.0'),
     ]);
+});
+
+// Onboarding Routes
+Route::prefix('onboarding')->group(function () {
+    // Standalone plan onboarding
+    Route::post('/standalone', [StandaloneOnboardingController::class, 'store']);
+    
+    // Supported plan onboarding
+    Route::post('/supported', [SupportedOnboardingController::class, 'store']);
+    
+    // Get available plans
+    Route::get('/plans', [PlanController::class, 'getOnboardingPlans']);
 });
 
 // Queue status endpoint

@@ -115,4 +115,42 @@ class PlanController extends Controller
             'data' => $plans,
         ]);
     }
+    
+    /**
+     * Get plans specifically for the onboarding process.
+     * Returns only the Standalone and Supported plans with formatted data for the onboarding UI.
+     *
+     * @return JsonResponse
+     */
+    public function getOnboardingPlans(): JsonResponse
+    {
+        // Get only the Standalone and Supported plans that are active
+        $plans = Plan::whereIn('type', ['standalone', 'supported'])
+            ->where('is_active', true)
+            ->orderBy('sort_order', 'asc')
+            ->get();
+            
+        // Format the plans for the onboarding UI with additional metadata
+        $formattedPlans = $plans->map(function ($plan) {
+            return [
+                'id' => $plan->id,
+                'name' => $plan->name,
+                'type' => $plan->type,
+                'description' => $plan->description,
+                'features' => $plan->features,
+                'limits' => $plan->limits,
+                'pricing' => $plan->pricing,
+                'is_free' => $plan->type === 'standalone',
+                'setup_fee' => $plan->setup_fee ?? 0,
+                'monthly_fee' => $plan->price_monthly ?? 0,
+                'recommended' => $plan->type === 'supported',
+                'support_level' => $plan->type === 'supported' ? 'Full Support' : 'Self-Service',
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $formattedPlans,
+        ]);
+    }
 }

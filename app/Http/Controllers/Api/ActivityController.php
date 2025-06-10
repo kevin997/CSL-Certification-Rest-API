@@ -428,6 +428,15 @@ class ActivityController extends Controller
             ], Response::HTTP_FORBIDDEN);
         }
 
+        // Check if template is published and enforce restrictions
+        // if ($template->status === 'published') {
+        //     return response()->json([
+        //         'status' => 'error',
+        //         'message' => 'Cannot modify templates in a published template',
+        //     ], Response::HTTP_FORBIDDEN);
+        // }
+
+
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
@@ -566,12 +575,12 @@ class ActivityController extends Controller
         }
         
         // Check if template is published and enforce restrictions
-        if ($template->status === 'published') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Cannot modify activities in a published template',
-            ], Response::HTTP_FORBIDDEN);
-        }
+        // if ($template->status === 'published') {
+        //     return response()->json([
+        //         'status' => 'error',
+        //         'message' => 'Cannot modify activities in a published template',
+        //     ], Response::HTTP_FORBIDDEN);
+        // }
 
         $validator = Validator::make($request->all(), [
             'title' => 'string|max:255',
@@ -620,12 +629,12 @@ class ActivityController extends Controller
         }
         
         // Check if template is published and enforce restrictions
-        if ($template->status === 'published') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Cannot delete activities in a published template',
-            ], Response::HTTP_FORBIDDEN);
-        }
+        // if ($template->status === 'published') {
+        //     return response()->json([
+        //         'status' => 'error',
+        //         'message' => 'Cannot delete activities in a published template',
+        //     ], Response::HTTP_FORBIDDEN);
+        // }
 
         // Delete the activity
         $activity->delete();
@@ -667,12 +676,12 @@ class ActivityController extends Controller
         }
         
         // Check if template is published and enforce restrictions
-        if ($template->status === 'published') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Cannot reorder activities in a published template',
-            ], Response::HTTP_FORBIDDEN);
-        }
+        // if ($template->status === 'published') {
+        //     return response()->json([
+        //         'status' => 'error',
+        //         'message' => 'Cannot reorder activities in a published template',
+        //     ], Response::HTTP_FORBIDDEN);
+        // }
 
         $validator = Validator::make($request->all(), [
             'activities' => 'required|array',
