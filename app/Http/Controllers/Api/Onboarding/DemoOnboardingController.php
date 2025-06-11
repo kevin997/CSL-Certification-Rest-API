@@ -7,6 +7,7 @@ use App\Models\Environment;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Services\Tax\TaxZoneService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -80,6 +81,8 @@ class DemoOnboardingController extends Controller
             'domain_type' => 'required|in:subdomain,custom',
             'domain' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'country_code' => 'nullable|string|size:2',
+            'state_code' => 'nullable|string',
             'referral_code' => 'nullable|string',
         ]);
 
@@ -125,6 +128,8 @@ class DemoOnboardingController extends Controller
                     'theme_color' => '#1C692F', // CSL Brands green
                     'is_active' => true,
                     'is_demo' => true, // Mark this as a demo environment
+                    'country_code' => $request->country_code ?? 'CM', // Default to Cameroon if not provided
+                    'state_code' => $request->state_code // Null by default if not provided
                 ]);
                 
                 // Calculate expiration date (14 days from now)

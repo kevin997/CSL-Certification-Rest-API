@@ -95,28 +95,19 @@ class Commission extends Model
     }
     
     /**
-     * Calculate the fee and tax amounts based on the commission rate.
-     * The commission is split: 70% as fee_amount and 30% as tax_amount.
+     * Calculate the fee amount based on the commission rate.
+     * Note: This method no longer calculates tax - that's now handled by TaxZoneService.
      *
      * @param float $amount The base amount to calculate commission on
-     * @return array Returns ['fee_amount' => float, 'tax_amount' => float, 'total_amount' => float]
+     * @return array Returns ['fee_amount' => float, 'base_amount' => float, 'commission_rate' => float]
      */
     public function calculateAmounts(float $amount): array
     {
-        // Calculate the total commission amount
-        $commissionAmount = $amount * ($this->rate / 100);
-        
-        // Split the commission: 70% as fee and 30% as tax
-        $feeAmount = round($commissionAmount * 0.7, 2);
-        $taxAmount = round($commissionAmount * 0.3, 2);
-        
-        // Calculate the total amount including commission
-        $totalAmount = $amount + $feeAmount + $taxAmount;
+        // Calculate the commission fee amount (100% of commission is now fee)
+        $feeAmount = round($amount * ($this->rate / 100), 2);
         
         return [
             'fee_amount' => $feeAmount,
-            'tax_amount' => $taxAmount,
-            'total_amount' => $totalAmount,
             'base_amount' => $amount,
             'commission_rate' => $this->rate,
         ];

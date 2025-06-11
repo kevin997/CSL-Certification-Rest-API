@@ -37,7 +37,9 @@ class StandaloneOnboardingController extends Controller
      *             @OA\Property(property="environment_name", type="string", example="John's Academy"),
      *             @OA\Property(property="domain_type", type="string", enum={"subdomain", "custom"}, example="subdomain"),
      *             @OA\Property(property="domain", type="string", example="johns-academy"),
-     *             @OA\Property(property="description", type="string", example="A platform for teaching computer science")
+     *             @OA\Property(property="description", type="string", example="A platform for teaching computer science"),
+     *             @OA\Property(property="country_code", type="string", example="CM"),
+     *             @OA\Property(property="state_code", type="string", example="CE")
      *         )
      *     ),
      *     @OA\Response(
@@ -77,6 +79,8 @@ class StandaloneOnboardingController extends Controller
             'domain_type' => 'required|in:subdomain,custom',
             'domain' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'country_code' => 'nullable|string|size:2',
+            'state_code' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -120,6 +124,8 @@ class StandaloneOnboardingController extends Controller
                     'owner_id' => $user->id,
                     'theme_color' => '#1C692F', // CSL Brands green
                     'is_active' => true,
+                    'country_code' => $request->country_code ?? 'CM', // Default to Cameroon if not provided
+                    'state_code' => $request->state_code, // Null by default if not provided
                 ]);
                 
                 // Create the subscription

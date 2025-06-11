@@ -8,6 +8,7 @@ use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Services\Tax\TaxZoneService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -81,6 +82,8 @@ class SupportedOnboardingController extends Controller
             'domain_type' => 'required|in:subdomain,custom',
             'domain' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'country_code' => 'nullable|string|size:2',
+            'state_code' => 'nullable|string',
             'payment_method' => 'required|in:stripe,lygos',
             'payment_token' => 'required|string',
         ]);
@@ -143,6 +146,8 @@ class SupportedOnboardingController extends Controller
                     'owner_id' => $user->id,
                     'theme_color' => '#1C692F', // CSL Brands green
                     'is_active' => true,
+                    'country_code' => $request->country_code ?? 'CM', // Default to Cameroon if not provided
+                    'state_code' => $request->state_code, // Null by default if not provided
                 ]);
                 
                 // Create the subscription

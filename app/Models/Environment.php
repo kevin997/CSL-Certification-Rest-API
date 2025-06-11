@@ -49,6 +49,8 @@ class Environment extends Model
         'is_demo',
         'owner_id',
         'description',
+        'country_code', //default CM
+        'state_code'// default null 
     ];
 
     /**

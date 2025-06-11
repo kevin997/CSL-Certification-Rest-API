@@ -18,6 +18,7 @@ use App\Models\User;
 use App\Services\OrderService;
 use App\Services\ReferralService;
 use App\Services\StripeService;
+use App\Services\Tax\TaxZoneService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -26,6 +27,24 @@ use Illuminate\Support\Str;
 
 class StorefrontController extends Controller
 {
+    /**
+     * The tax zone service instance.
+     *
+     * @var TaxZoneService
+     */
+    protected $taxZoneService;
+
+    /**
+     * Create a new controller instance.
+     *
+     * @param TaxZoneService $taxZoneService
+     * @return void
+     */
+    public function __construct(TaxZoneService $taxZoneService)
+    {
+        $this->taxZoneService = $taxZoneService;
+    }
+
     /**
      * Get the environment by ID
      *
@@ -1143,7 +1162,7 @@ class StorefrontController extends Controller
             'environment' => $environment
         ]);
     }
-
+    
     /**
      * Get featured products for an environment
      *
@@ -1609,7 +1628,7 @@ class StorefrontController extends Controller
                     $gatewayFactory = app()->make(\App\Services\PaymentGateways\PaymentGatewayFactory::class);
                     $commissionService = app()->make(\App\Services\Commission\CommissionService::class);
                     
-                    // Initialize payment service with all dependencies
+                    // Initialize payment service with proper dependencies
                     $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService);
                     $paymentResult = $paymentService->createPayment(
                         $order->id,
@@ -2105,7 +2124,7 @@ class StorefrontController extends Controller
             // Update the order with payment method
             $order->payment_method = $paymentGatewaySetting->id;
             $order->save();
-            
+        
             return response()->json([
                 'success' => true,
                 'message' => 'Payment processing initiated',
@@ -2128,5 +2147,73 @@ class StorefrontController extends Controller
         }
     }
     
-
+    /**
+     * Get tax rate for a specific location
+     *
+     * @param Request $request
+     * @param string $environmentId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getTaxRateForLocation(Request $request, string $environmentId)
+    {
+        $environment = $this->getEnvironmentById($environmentId);
+        
+        if (!$environment) {
+            return response()->json(['message' => 'Environment not found'], 404);
+        }
+        
+        // Validate the request
+        $validator = Validator::make($request->all(), [
+            'country_code' => 'required|string|size:2',
+            'state_code' => 'nullable|string',
+        ]);
+        
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        
+        $countryCode = $request->input('country_code');
+        $stateCode = $request->input('state_code');
+        
+        try {
+            // Get tax rate from TaxZoneService
+            $taxZone = $this->taxZoneService->getTaxZoneForLocation($countryCode, $stateCode);
+            $taxRate = $taxZone ? $taxZone->rate : 0;
+            
+            // Get commission rate (hardcoded for now, can be made dynamic later)
+            $commissionRate = 0.17; // 17% commission
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'tax_rate' => $taxRate,
+                    'commission_rate' => $commissionRate,
+                    'tax_zone' => $taxZone ? [
+                        'id' => $taxZone->id,
+                        'name' => $taxZone->name,
+                        'country_code' => $taxZone->country_code,
+                        'state_code' => $taxZone->state_code,
+                        'rate' => $taxZone->rate,
+                    ] : null,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error fetching tax rate: ' . $e->getMessage(), [
+                'environment_id' => $environmentId,
+                'country_code' => $countryCode,
+                'state_code' => $stateCode,
+                'error' => $e->getMessage(),
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch tax rate',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }

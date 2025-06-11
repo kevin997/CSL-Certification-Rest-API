@@ -8787,6 +8787,128 @@
                 }
             }
         },
+        "/api/onboarding/demo": {
+            "post": {
+                "tags": [
+                    "Onboarding"
+                ],
+                "summary": "Onboard a new user with the demo plan",
+                "description": "Create a new user account, environment, and subscription for the demo plan",
+                "operationId": "onboardDemo",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "name",
+                                    "email",
+                                    "password",
+                                    "environment_name",
+                                    "domain_type",
+                                    "domain"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "John Doe"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "john@example.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "password123"
+                                    },
+                                    "environment_name": {
+                                        "type": "string",
+                                        "example": "John's Academy"
+                                    },
+                                    "domain_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "subdomain",
+                                            "custom"
+                                        ],
+                                        "example": "subdomain"
+                                    },
+                                    "domain": {
+                                        "type": "string",
+                                        "example": "johns-academy"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "example": "A platform for teaching computer science"
+                                    },
+                                    "referral_code": {
+                                        "type": "string",
+                                        "example": "FRIEND50"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "User onboarded successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Your demo environment has been created successfully!"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "user_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "environment_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "subscription_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "domain": {
+                                                    "type": "string",
+                                                    "example": "johns-academy.csl-cert.com"
+                                                },
+                                                "expires_at": {
+                                                    "type": "string",
+                                                    "format": "date-time",
+                                                    "example": "2023-01-15T00:00:00Z"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    },
+                    "500": {
+                        "description": "Server error"
+                    }
+                }
+            }
+        },
         "/api/onboarding/standalone": {
             "post": {
                 "tags": [

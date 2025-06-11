@@ -553,6 +553,9 @@ Route::group(['prefix' => 'storefront'], function () {
     Route::get('/{environmentId}/countries', [StorefrontController::class, 'getCountries']);
     Route::get('/{environmentId}/states/{country}', [StorefrontController::class, 'getStates']);
     Route::get('/{environmentId}/cities/{country}/{state}', [StorefrontController::class, 'getCities']);
+    
+    // Get tax rate for location
+    Route::post('/{environmentId}/tax-rate', [StorefrontController::class, 'getTaxRateForLocation']);
 });
 
 // Continue payment for a pending order
