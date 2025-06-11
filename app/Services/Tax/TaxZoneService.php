@@ -4,6 +4,7 @@ namespace App\Services\Tax;
 
 use App\Models\TaxZone;
 use App\Models\Environment;
+use App\Models\Order;
 use Illuminate\Support\Facades\Log;
 
 class TaxZoneService
@@ -132,9 +133,10 @@ class TaxZoneService
      *
      * @param float $baseAmount
      * @param int|null $environmentId
+     * @param Order|null $order Optional order to use for billing country if environment has no country code
      * @return array Returns ['tax_rate' => float, 'tax_amount' => float, 'zone_name' => string|null]
      */
-    public function calculateTaxByEnvironment(float $baseAmount, ?int $environmentId = null): array
+    public function calculateTaxByEnvironment(float $baseAmount, ?int $environmentId = null, ?Order $order = null): array
     {
         if (!$environmentId) {
             Log::warning('Missing environment ID for tax calculation, using 0% tax rate', [
@@ -170,6 +172,26 @@ class TaxZoneService
             }
             
             if (!$environment->country_code) {
+                // Check if we have an order with billing country
+                if ($order && $order->billing_country) {
+                    Log::info('Using order billing country for tax calculation', [
+                        'environment_id' => $environmentId,
+                        'environment_name' => $environment->name,
+                        'order_id' => $order->id,
+                        'billing_country' => $order->billing_country,
+                        'billing_state' => $order->billing_state,
+                        'base_amount' => $baseAmount,
+                        'request_time' => now()->toDateTimeString(),
+                        'source' => 'TaxZoneService::calculateTaxByEnvironment'
+                    ]);
+                    
+                    return $this->calculateTaxByLocation(
+                        $baseAmount,
+                        $order->billing_country,
+                        $order->billing_state ?? null
+                    );
+                }
+                
                 Log::warning('Environment missing country code for tax calculation, using 0% tax rate', [
                     'environment_id' => $environmentId,
                     'environment_name' => $environment->name,

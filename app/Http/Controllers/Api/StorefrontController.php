@@ -1608,7 +1608,7 @@ class StorefrontController extends Controller
             ];
             
             // We temporally add and Dispatch the event to process the order completion for now
-            event(new \App\Events\OrderCompleted($order));
+            //event(new \App\Events\OrderCompleted($order));
             
             // Get the payment gateway code
             $gatewayCode = null;
@@ -1628,9 +1628,10 @@ class StorefrontController extends Controller
                     $orderService = app()->make(\App\Services\OrderService::class);
                     $gatewayFactory = app()->make(\App\Services\PaymentGateways\PaymentGatewayFactory::class);
                     $commissionService = app()->make(\App\Services\Commission\CommissionService::class);
+                    $taxZoneService = app()->make(\App\Services\Tax\TaxZoneService::class);
                     
                     // Initialize payment service with proper dependencies
-                    $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService);
+                    $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService, $taxZoneService);
                     $paymentResult = $paymentService->createPayment(
                         $order->id,
                         $gatewayCode,
@@ -2111,9 +2112,11 @@ class StorefrontController extends Controller
 
             // Create CommissionService instance
             $commissionService = app()->make(\App\Services\Commission\CommissionService::class);
-            
+
+            $taxZoneService = app()->make(\App\Services\Tax\TaxZoneService::class);
+
             // Initialize payment service with proper dependencies
-            $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService);
+            $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService, $taxZoneService);
             
             // Process the payment - pass order ID as expected by the method
             $result = $paymentService->processPayment($order->id, [  

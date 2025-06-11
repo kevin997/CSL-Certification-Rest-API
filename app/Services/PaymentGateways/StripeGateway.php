@@ -184,6 +184,8 @@ class StripeGateway implements PaymentGatewayInterface
             
             // Update transaction with payment intent ID
             $transaction->gateway_transaction_id = $paymentIntent->id;
+            $transaction->payment_gateway_setting_id = $this->settings->id;
+            $transaction->gateway_response = json_encode($paymentIntent);
             $transaction->save();
             
             Log::info('[StripeGateway] Payment intent created successfully', [

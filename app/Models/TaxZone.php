@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Log;
 
 class TaxZone extends Model
 {
@@ -42,8 +43,17 @@ class TaxZone extends Model
      */
     public static function findByLocation(string $countryCode, ?string $stateCode = null): ?TaxZone
     {
-        $query = self::where('country_code', strtoupper($countryCode))
-            ->where('is_active', true);
+        $countryCode = strtoupper($countryCode);
+        
+        // Debug logging
+        Log::info('Searching for tax zone', [
+            'country_code' => $countryCode,
+            'state_code' => $stateCode,
+            'existing_zones' => self::pluck('country_code')->toArray()
+        ]);
+        
+        $query = self::where('country_code', $countryCode)
+            ->where('is_active', 1); // Changed from 'true' to 1
             
         if ($stateCode) {
             // First try to find a specific state-level tax zone
@@ -57,6 +67,15 @@ class TaxZone extends Model
         }
         
         // If no state-specific zone or no state provided, find country-level zone
-        return $query->whereNull('state_code')->first();
+        $result = $query->whereNull('state_code')->first();
+        
+        // More debug logging
+        Log::info('Tax zone query result', [
+            'found' => $result ? true : false,
+            'country_code' => $countryCode,
+            'state_code' => $stateCode
+        ]);
+        
+        return $result;
     }
 }

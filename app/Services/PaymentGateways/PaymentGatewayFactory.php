@@ -15,7 +15,8 @@ class PaymentGatewayFactory
     protected static $gateways = [
         'stripe' => StripeGateway::class,
         'paypal' => PayPalGateway::class,
-        'lygos' => LygosGateway::class
+        'lygos' => LygosGateway::class,
+        'monetbill' => MonetbillGateway::class
     ];
     
     /**

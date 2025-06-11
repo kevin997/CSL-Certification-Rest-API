@@ -140,6 +140,8 @@ class LygosGateway implements PaymentGatewayInterface
 
             // Update transaction with gateway ID
             $transaction->gateway_transaction_id = $gatewayId;
+            $transaction->payment_gateway_setting_id = $this->settings->id;
+            $transaction->gateway_response = json_encode($responseData);
             $transaction->save();
             
             return [

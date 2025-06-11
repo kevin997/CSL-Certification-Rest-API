@@ -626,6 +626,23 @@ class PaymentGatewayController extends Controller
                 'required_settings' => [
                     'api_key' => 'API Key'
                 ]
+            ],
+            [
+                'code' => 'monetbill',
+                'name' => 'MonetBill',
+                'description' => 'Process mobile money payments with MonetBill',
+                'required_settings' => [
+                    'service_key' => 'Service Key',
+                    'service_secret' => 'Service Secret',
+                    'test_service_key' => 'Test Service Key',
+                    'test_service_secret' => 'Test Service Secret',
+                    'widget_version' => 'Widget Version',
+                    'test_mode' => 'Test Mode',
+                    'logo_url' => 'Logo URL',
+                    'supported_currencies' => 'Supported Currencies',
+                    'display_name' => 'Display Name',
+                    'description' => 'Description'
+                ]
             ]
         ];
 

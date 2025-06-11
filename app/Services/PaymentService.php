@@ -58,12 +58,12 @@ class PaymentService
         OrderService $orderService, 
         PaymentGatewayFactory $gatewayFactory, 
         CommissionService $commissionService,
-        ?TaxZoneService $taxZoneService = null
+        TaxZoneService $taxZoneService
     ) {
         $this->orderService = $orderService;
         $this->commissionService = $commissionService;
         $this->gatewayFactory = $gatewayFactory;
-        $this->taxZoneService = $taxZoneService ?? app(TaxZoneService::class);
+        $this->taxZoneService = $taxZoneService;
     }
 
     /**
@@ -79,6 +79,10 @@ class PaymentService
     {
         // Start a database transaction
         DB::beginTransaction();
+        $environmentId = session('current_environment_id');
+        Log::info('Found environement Id on createPayment', [
+            "env" => $environmentId
+        ]);
         
         try {
             // Get the order
@@ -104,7 +108,7 @@ class PaymentService
             $transaction->amount = $order->total_amount;
             
             // Get environment details for tax calculation
-            $environment = Environment::find($order->environment_id);
+            $environment = Environment::find($environmentId);
             if ($environment) {
                 $transaction->country_code = $environment->country_code ?? $order->billing_country ?? 'CM';
                 $transaction->state_code = $environment->state_code ?? $order->billing_state ?? '';
@@ -114,9 +118,13 @@ class PaymentService
             $this->commissionService->applyCommissionToTransaction($transaction);
             
             // Get tax zone information
-            $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($transaction->amount, $order->environment_id);
+            $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($transaction->amount, $environmentId, $order);
             $transaction->tax_zone = $taxInfo['zone_name'];
             $transaction->tax_rate = $taxInfo['tax_rate'];
+            $transaction->tax_amount = $taxInfo['tax_amount'];
+            
+            // Update total_amount to include tax_amount
+            $transaction->total_amount = $transaction->amount + $transaction->fee_amount + $transaction->tax_amount;
             
             // Log the commission and tax application
             Log::info('Applied commission and tax to transaction for order', [
@@ -310,7 +318,9 @@ class PaymentService
                 
             case 'lygos':
                 return $this->processGatewayPayment($order, 'lygos', $paymentData);
-                
+            
+            case 'monetbill':
+                return $this->processGatewayPayment($order, 'monetbill', $paymentData);
             default:
                 // Check if this is a registered gateway
                 if (PaymentGatewayFactory::isSupported($paymentData['payment_method'])) {
@@ -334,6 +344,8 @@ class PaymentService
      */
     protected function processGatewayPayment(Order $order, string $gatewayCode, array $paymentData): array
     {
+        $environmentId = session('current_environment_id');
+
         Log::info('Processing payment for order ' . $order->id . ' using ' . $gatewayCode);
         try {
             // Get the payment gateway settings
@@ -374,14 +386,19 @@ class PaymentService
             $transaction->currency = $order->currency ?? 'USD';
             $transaction->description = 'Payment for order #' . $order->order_number;
             $transaction->status = 'pending';
+            $transaction->customer_id = $order->user_id;
             
             // Apply commission to calculate fee_amount, tax_amount, and total_amount
             $this->commissionService->applyCommissionToTransaction($transaction);
             
             // Get tax zone information
-            $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($transaction->amount, $order->environment_id);
+            $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($transaction->amount, $environmentId, $order);
             $transaction->tax_zone = $taxInfo['zone_name'];
             $transaction->tax_rate = $taxInfo['tax_rate'];
+            $transaction->tax_amount = $taxInfo['tax_amount'];
+            
+            // Update total_amount to include tax_amount
+            $transaction->total_amount = $transaction->amount + $transaction->fee_amount + $transaction->tax_amount;
             
             // Log the commission and tax application
             Log::info('Applied commission and tax to transaction for gateway payment', [
@@ -485,6 +502,8 @@ class PaymentService
      */
     protected function processCreditCardPayment(Order $order, array $paymentData): array
     {
+        $environmentId = session("current_environment_id");
+
         // Validate credit card data
         if (!isset($paymentData['payment_method_id']) && 
             !isset($paymentData['payment_intent_id'])) {
@@ -529,7 +548,7 @@ class PaymentService
             $this->commissionService->applyCommissionToTransaction($transaction);
             
             // Get tax zone information
-            $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($transaction->amount, $order->environment_id);
+            $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($transaction->amount, $environmentId, $order);
             $transaction->tax_zone = $taxInfo['zone_name'];
             $transaction->tax_rate = $taxInfo['tax_rate'];
             
@@ -625,6 +644,7 @@ class PaymentService
      */
     protected function processPayPalPayment(Order $order, array $paymentData): array
     {
+        $environmentId = session('current_environment_id');
         // Validate PayPal data
         if (!isset($paymentData['order_id'])) {
             return [
@@ -667,9 +687,13 @@ class PaymentService
             $this->commissionService->applyCommissionToTransaction($transaction);
             
             // Get tax zone information
-            $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($transaction->amount, $order->environment_id);
+            $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($transaction->amount, $environmentId, $order);
             $transaction->tax_zone = $taxInfo['zone_name'];
             $transaction->tax_rate = $taxInfo['tax_rate'];
+            $transaction->tax_amount = $taxInfo['tax_amount'];
+            
+            // Update total_amount to include tax_amount
+            $transaction->total_amount = $transaction->amount + $transaction->fee_amount + $transaction->tax_amount;
             
             // Log the commission and tax application
             Log::info('Applied commission and tax to transaction for PayPal payment', [

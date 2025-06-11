@@ -105,6 +105,7 @@ class CommissionService
     {
         // If base amount is not provided, use transaction's amount as base
         $baseAmount = $baseAmount ?? $transaction->amount;
+        $environmentId = session("current_environment_id");
         
         // Check if commission has already been applied
         $commissionAlreadyApplied = 
@@ -114,7 +115,7 @@ class CommissionService
         
         if (!$commissionAlreadyApplied) {
             // Calculate amounts with commission and tax
-            $amounts = $this->calculateTransactionAmounts($baseAmount, $transaction->environment_id);
+            $amounts = $this->calculateTransactionAmounts($baseAmount, $environmentId);
             
             // Update transaction with calculated amounts
             $transaction->fee_amount = $amounts['fee_amount'];
