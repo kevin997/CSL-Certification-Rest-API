@@ -25,6 +25,7 @@ class DatabaseSeeder extends Seeder
             DemoPlanSeeder::class,
             EnvironmentUsersSeeder::class,
             ThirdPartyServiceSeeder::class,
+            TaxZoneSeeder::class,
         ]);
 
         // Development test user

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Commission;
 use App\Models\Course;
 use App\Models\CourseSection;
 use App\Models\CourseSectionItem;
@@ -2181,11 +2182,12 @@ class StorefrontController extends Controller
         
         try {
             // Get tax rate from TaxZoneService
-            $taxZone = $this->taxZoneService->getTaxZoneForLocation($countryCode, $stateCode);
-            $taxRate = $taxZone ? $taxZone->rate : 0;
+            $taxZone = $this->taxZoneService->findTaxZone($countryCode, $stateCode);
+            $taxRate = $taxZone ? $taxZone->tax_rate : 0;
             
-            // Get commission rate (hardcoded for now, can be made dynamic later)
-            $commissionRate = 0.17; // 17% commission
+            // Get commission rate from Commission model
+            $commission = \App\Models\Commission::getActiveCommission($environmentId);
+            $commissionRate = $commission ? ($commission->rate / 100) : 0.17; // Default to 17% if no commission found
             
             return response()->json([
                 'success' => true,
@@ -2197,7 +2199,7 @@ class StorefrontController extends Controller
                         'name' => $taxZone->name,
                         'country_code' => $taxZone->country_code,
                         'state_code' => $taxZone->state_code,
-                        'rate' => $taxZone->rate,
+                        'rate' => $taxZone->tax_rate,
                     ] : null,
                 ],
             ]);
