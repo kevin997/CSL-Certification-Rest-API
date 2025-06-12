@@ -68,7 +68,17 @@ class EnrollmentController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+        $environmentId = session("current_environment_id");
+
         $query = Enrollment::query();
+
+        // Apply environment filter
+        $query->where('environment_id', $environmentId);
+
+        // Eager load course with its template
+        $query->with(['course' => function($query) {
+            $query->with('template');
+        }]);
 
         // Apply course filter
         if ($request->has('course_id')) {
@@ -85,11 +95,6 @@ class EnrollmentController extends Controller
                 ], Response::HTTP_FORBIDDEN);
             }
             $query->where('user_id', $request->input('user_id'));
-        } else {
-            // If no user_id specified, only show enrollments for the current user (unless admin)
-            if (!Auth::user()->is_admin) {
-                $query->where('user_id', Auth::id());
-            }
         }
 
         // Apply status filter

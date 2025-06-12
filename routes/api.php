@@ -559,9 +559,9 @@ Route::post('/storefront/orders/{orderId}/continue-payment', [StorefrontControll
 
 // Payment Routes
 Route::group(['prefix' => 'payments'], function () {
-    Route::post('/transactions/callback/success/{environment_id}', [TransactionController::class, 'callbackSuccess'])->name('api.transactions.callback.success');
-    Route::post('/transactions/callback/failure/{environment_id}', [TransactionController::class, 'callbackFailure'])->name('api.transactions.callback.failure');
-    Route::post('/transactions/webhook/{gateway}/{environment_id}', [TransactionController::class, 'webhook'])->name('api.transactions.webhook');
+    Route::match(['get', 'post'], '/transactions/callback/success/{environment_id}', [TransactionController::class, 'callbackSuccess'])->name('api.transactions.callback.success');
+    Route::match(['get', 'post'], '/transactions/callback/failure/{environment_id}', [TransactionController::class, 'callbackFailure'])->name('api.transactions.callback.failure');
+    Route::match(['get', 'post'], '/transactions/webhook/{gateway}/{environment_id}', [TransactionController::class, 'webhook'])->name('api.transactions.webhook');
 });
 
 // Team Management Routes
