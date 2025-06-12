@@ -108,10 +108,13 @@ class MonetbillGateway implements PaymentGatewayInterface
     public function createPayment(Transaction $transaction, array $paymentData = []): array
     {
         try {
+
+            $environmentId = session("current_environment_id");
+
             // Get environment details
             $environment = null;
-            if ($transaction->environment_id) {
-                $environment = \App\Models\Environment::find($transaction->environment_id);
+            if ($environmentId) {
+                $environment = \App\Models\Environment::find($environmentId);
             }
             
             // Log before attempting to create payment
@@ -148,8 +151,8 @@ class MonetbillGateway implements PaymentGatewayInterface
             ]);
             
             // Create return and cancel URLs
-            $successUrl = $paymentData['success_url'] ?? route('api.transactions.callback.success');
-            $failureUrl = $paymentData['failure_url'] ?? route('api.transactions.callback.failure');
+            $successUrl = $paymentData['success_url'] ?? route('api.transactions.callback.success', ['environment_id' => $environmentId]);
+            $failureUrl = $paymentData['failure_url'] ?? route('api.transactions.callback.failure', ['environment_id' => $environmentId]);
             
             // Prepare payment data for Monetbill
             $paymentData = [
@@ -165,7 +168,7 @@ class MonetbillGateway implements PaymentGatewayInterface
                 'country' => $paymentData['country'] ?? '',
                 'locale' => $paymentData['locale'] ?? 'en',
                 'return_url' => $successUrl,
-                'notify_url' => config('app.url') . '/api/payments/callback/monetbill/notify',
+                'notify_url' => route('api.transactions.webhook', ['gateway' => 'monetbill', 'environment_id' => $environmentId]),
                 'logo' => $this->settings->getSetting('logo_url', ''),
                 'shop_name' => $environment ? $environment->name : 'CSL Certification Platform',
                 'message' => $transaction->description ?? 'Payment for certification services'
@@ -175,11 +178,7 @@ class MonetbillGateway implements PaymentGatewayInterface
             $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
                 'Accept' => 'application/json'
-            ])->post($this->apiBaseUrl . '/widget/v2.1/payment', [
-                'service_key' => $this->serviceKey,
-                'service_secret' => $this->serviceSecret,
-                'data' => $paymentData
-            ]);
+            ])->post($this->apiBaseUrl . '/widget/v2.1/'. $this->serviceKey, $paymentData);
             
             // Check if the request was successful
             if ($response->successful()) {

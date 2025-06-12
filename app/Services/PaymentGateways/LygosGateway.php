@@ -70,10 +70,11 @@ class LygosGateway implements PaymentGatewayInterface
     public function createPayment(Transaction $transaction, array $paymentData = []): array
     {
         try {
+            $environmentId = session("current_environment_id");
             // Get environment details
             $environment = null;
-            if ($transaction->environment_id) {
-                $environment = Environment::find($transaction->environment_id);
+            if ($environmentId) {
+                $environment = Environment::find($environmentId);
             }
 
             // Convert amount to XAF since Lygos requires XAF currency
@@ -98,8 +99,8 @@ class LygosGateway implements PaymentGatewayInterface
             ]);
             
             // Create return and cancel URLs
-            $successUrl = $paymentData['success_url'] ?? route('api.transactions.callback.success');
-            $failureUrl = $paymentData['failure_url'] ?? route('api.transactions.callback.failure');
+            $successUrl = $paymentData['success_url'] ?? route('api.transactions.callback.success', ['environment_id' => $environmentId]);
+            $failureUrl = $paymentData['failure_url'] ?? route('api.transactions.callback.failure', ['environment_id' => $environmentId]);
             
             // Prepare the request data with converted amount
             $requestData = [

@@ -31,6 +31,8 @@ class PaymentGatewaySetting extends Model
         'transaction_fee_percentage',
         'transaction_fee_fixed',
         'webhook_url',
+        'success_url',
+        'failure_url',
         'api_version',
         'mode',
         'sort_order',

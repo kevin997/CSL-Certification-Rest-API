@@ -455,10 +455,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/transactions', [TransactionController::class, 'store']);
     Route::get('/transactions/{id}', [TransactionController::class, 'show']);
     Route::put('/transactions/{id}/status', [TransactionController::class, 'updateStatus']);
-    Route::post('/transactions/callback/success', [TransactionController::class, 'callbackSuccess'])->name('api.transactions.callback.success');
-    Route::post('/transactions/callback/failure', [TransactionController::class, 'callbackFailure'])->name('api.transactions.callback.failure');
-    Route::post('/transactions/webhook/{gateway}', [TransactionController::class, 'webhook'])->name('api.transactions.webhook');
-    
     // Marketing routes
     // Referral routes
     Route::get('/marketing/referrals', [ReferralEnvironmentController::class, 'index']);
@@ -563,27 +559,9 @@ Route::post('/storefront/orders/{orderId}/continue-payment', [StorefrontControll
 
 // Payment Routes
 Route::group(['prefix' => 'payments'], function () {
-    // Create payment
-    Route::post('/create', [TransactionController::class, 'createPayment']);
-    
-    // Payment webhooks
-    Route::post('/stripe/webhook', [TransactionController::class, 'stripeWebhook']);
-    Route::post('/paypal/webhook', [TransactionController::class, 'paypalWebhook']);
-    Route::post('/lygos/webhook', [TransactionController::class, 'lygosWebhook']);
-    
-    // Payment return URLs
-    Route::get('/stripe/return', [TransactionController::class, 'stripeReturn']);
-    
-    Route::get('/paypal/return', [TransactionController::class, 'paypalReturn']);
-    Route::get('/paypal/cancel', [TransactionController::class, 'paypalCancel']);
-   
-    Route::get('/lygos/return', [TransactionController::class, 'lygosReturn']);
-    Route::get('/lygos/cancel', [TransactionController::class, 'lygosCancel']);
-    
-    // Course routes
-    Route::get('/{environment_id}/courses', [StorefrontController::class, 'getCourses']);
-    Route::get('/{environment_id}/courses/{slug}', [StorefrontController::class, 'getCourseBySlug']);
-    Route::get('/{environment_id}/course/{id}', [StorefrontController::class, 'getCourseById']);
+    Route::post('/transactions/callback/success/{environment_id}', [TransactionController::class, 'callbackSuccess'])->name('api.transactions.callback.success');
+    Route::post('/transactions/callback/failure/{environment_id}', [TransactionController::class, 'callbackFailure'])->name('api.transactions.callback.failure');
+    Route::post('/transactions/webhook/{gateway}/{environment_id}', [TransactionController::class, 'webhook'])->name('api.transactions.webhook');
 });
 
 // Team Management Routes

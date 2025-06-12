@@ -203,7 +203,6 @@ class PaymentGatewayController extends Controller
             'status' => 'required|boolean',
             'mode' => 'required|in:sandbox,live',
             'is_default' => 'boolean',
-            'webhook_url' => 'nullable|url',
             'settings' => 'required|array',
             'settings.api_key' => 'required_if:gateway_name,stripe,lygos|string',
             'settings.publishable_key' => 'required_if:gateway_name,stripe|string',
@@ -220,17 +219,36 @@ class PaymentGatewayController extends Controller
 
         // We'll handle the default flag separately after creation
 
-        // Create payment gateway without the is_default flag
+        $environmentId = $request->input('environment_id', null);
+        
+        // Generate callback URLs using route helpers
+        $webhookUrl = route('api.transactions.webhook', [
+            'gateway' => $request->input('code'),
+            'environment_id' => $environmentId
+        ]);
+        
+        $successUrl = route('api.transactions.callback.success', [
+            'environment_id' => $environmentId
+        ]);
+        
+        $failureUrl = route('api.transactions.callback.failure', [
+            'environment_id' => $environmentId
+        ]);
+
+        // Create payment gateway
         $paymentGateway = PaymentGatewaySetting::create([
-            'environment_id' => $request->input('environment_id'),
+            'environment_id' => $environmentId,
             'gateway_name' => $request->input('gateway_name'),
             'code' => $request->input('code'),
             'name' => $request->input('name'),
+            'display_name' => $request->input('name'),
             'description' => $request->input('description'),
             'status' => $request->input('status'),
             'mode' => $request->input('mode'),
             'is_default' => false, // Always set to false initially
-            'webhook_url' => $request->input('webhook_url'),
+            'webhook_url' => $webhookUrl,
+            'success_url' => $successUrl,
+            'failure_url' => $failureUrl,
             'settings' => json_encode($request->input('settings')),
         ]);
         
@@ -370,7 +388,6 @@ class PaymentGatewayController extends Controller
      *             @OA\Property(property="status", type="boolean", example=true),
      *             @OA\Property(property="mode", type="string", enum={"sandbox", "live"}, example="live"),
      *             @OA\Property(property="is_default", type="boolean", example=true),
-     *             @OA\Property(property="webhook_url", type="string", example="https://example.com/updated-webhook", nullable=true),
      *             @OA\Property(property="settings", type="object", example={"api_key": "sk_live_123", "publishable_key": "pk_live_123"})
      *         )
      *     ),
@@ -411,7 +428,6 @@ class PaymentGatewayController extends Controller
             'status' => 'boolean',
             'mode' => 'in:sandbox,live',
             'is_default' => 'boolean',
-            'webhook_url' => 'nullable|url',
             'settings' => 'array',
             'settings.api_key' => 'string|required_if:gateway_name,stripe,lygos',
             'settings.publishable_key' => 'string|required_if:gateway_name,stripe',
@@ -428,9 +444,8 @@ class PaymentGatewayController extends Controller
 
         // We'll handle the default flag separately after the main update
 
-        // Prepare update data
+        // Update basic fields
         $updateData = $request->only([
-            'environment_id',
             'gateway_name',
             'code',
             'name',
@@ -438,7 +453,20 @@ class PaymentGatewayController extends Controller
             'status',
             'mode',
             'is_default',
-            'webhook_url',
+        ]);
+        
+        // Generate callback URLs using route helpers
+        $updateData['webhook_url'] = route('api.transactions.webhook', [
+            'gateway' => $request->input('code') ?: $paymentGateway->code,
+            'environment_id' => $paymentGateway->environment_id
+        ]);
+        
+        $updateData['success_url'] = route('api.transactions.callback.success', [
+            'environment_id' => $paymentGateway->environment_id
+        ]);
+        
+        $updateData['failure_url'] = route('api.transactions.callback.failure', [
+            'environment_id' => $paymentGateway->environment_id
         ]);
 
         // Handle settings update
@@ -607,7 +635,10 @@ class PaymentGatewayController extends Controller
                 'required_settings' => [
                     'api_key' => 'API Key',
                     'publishable_key' => 'Publishable Key',
-                    'webhook_secret' => 'Webhook Secret (optional)'
+                    'webhook_secret' => 'Webhook Secret (optional)',
+                    'success_url' => 'Success URL',
+                    'failure_url' => 'Failure URL',
+                    'webhook_url' => 'Webhook URL'
                 ]
             ],
             [
@@ -616,7 +647,10 @@ class PaymentGatewayController extends Controller
                 'description' => 'Process payments with PayPal',
                 'required_settings' => [
                     'client_id' => 'Client ID',
-                    'client_secret' => 'Client Secret'
+                    'client_secret' => 'Client Secret',
+                    'success_url' => 'Success URL',
+                    'failure_url' => 'Failure URL',
+                    'webhook_url' => 'Webhook URL'
                 ]
             ],
             [
@@ -624,7 +658,10 @@ class PaymentGatewayController extends Controller
                 'name' => 'Lygos',
                 'description' => 'Process payments in Africa with Lygos',
                 'required_settings' => [
-                    'api_key' => 'API Key'
+                    'api_key' => 'API Key',
+                    'success_url' => 'Success URL',
+                    'failure_url' => 'Failure URL',
+                    'webhook_url' => 'Webhook URL'
                 ]
             ],
             [
@@ -641,7 +678,10 @@ class PaymentGatewayController extends Controller
                     'logo_url' => 'Logo URL',
                     'supported_currencies' => 'Supported Currencies',
                     'display_name' => 'Display Name',
-                    'description' => 'Description'
+                    'description' => 'Description',
+                    'success_url' => 'Success URL',
+                    'failure_url' => 'Failure URL',
+                    'webhook_url' => 'Webhook URL'
                 ]
             ]
         ];
