@@ -166,7 +166,7 @@ class QuizContentController extends Controller
             'passing_score' => 'required|integer|min:0|max:100',
             'show_correct_answers' => 'boolean',
             'randomize_questions' => 'boolean',
-            'questions' => 'required|array|min:1',
+            'questions' => 'nullable|array',
             'questions.*.title' => 'required|string',
             'questions.*.question_text' => 'required|string',
             'questions.*.question_type' => 'required|string|in:multiple_choice,multiple_response,true_false,text,fill_blanks_text,fill_blanks_drag,matching,hotspot,essay,questionnaire,matrix',

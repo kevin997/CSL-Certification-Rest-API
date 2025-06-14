@@ -95,6 +95,7 @@ class QuestionController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'required|string',
             'question_text' => 'required|string',
+            'question' => 'required|string',
             'question_type' => 'required|string|in:multiple_choice,multiple_response,true_false,text,fill_blanks_text,fill_blanks_drag,matching,hotspot,essay,questionnaire,matrix,drag_and_drop,ordering,code_snippet,multi_select,short_answer,fill_in_blank',
             'instructions' => 'nullable|string',
             'instruction_format' => 'nullable|string|in:plain,markdown,html,wysiwyg',
@@ -198,6 +199,7 @@ class QuestionController extends Controller
             'quiz_content_id' => $quizContent->id,
             'title' => $request->title,
             'question_text' => $request->question_text,
+            'question' => $request->question,
             'question_type' => $request->question_type,
             'options' => $request->options ? $request->options : null,
             'image_url' => $request->image_url,
@@ -250,6 +252,7 @@ class QuestionController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'string',
             'question_text' => 'string',
+            'question' => 'string',
             'question_type' => 'string|in:multiple_choice,multiple_response,true_false,text,fill_blanks_text,fill_blanks_drag,matching,hotspot,essay,questionnaire,matrix',
             'options' => 'required_if:question_type,multiple_choice,multiple_response,matching,hotspot|array',
             'options.*.text' => 'required_if:question_type,multiple_choice,multiple_response,matching|string',

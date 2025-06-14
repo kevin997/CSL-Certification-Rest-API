@@ -14,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @OA\Schema(
@@ -216,7 +217,7 @@ class LessonContentController extends Controller
             'enable_questions' => $request->enable_questions ?? false,
             'show_results' => $request->show_results ?? false,
         ]);
-        
+
         // Create content parts if provided
         if ($request->has('content_parts') && is_array($request->content_parts)) {
             foreach ($request->content_parts as $index => $partData) {
@@ -231,7 +232,7 @@ class LessonContentController extends Controller
                 ]);
             }
         }
-        
+
         // Create questions if provided
         if ($request->has('questions') && is_array($request->questions)) {
             foreach ($request->questions as $index => $questionData) {
@@ -244,7 +245,7 @@ class LessonContentController extends Controller
                     'content_part_id' => $questionData['content_part_id'] ?? null,
                     'created_by' => Auth::id(),
                 ]);
-                
+
                 // Store additional question data based on question type
                 if (isset($questionData['explanation'])) {
                     $question->explanation = $questionData['explanation'];
@@ -261,7 +262,7 @@ class LessonContentController extends Controller
                 if (isset($questionData['image_alt'])) {
                     $question->image_alt = $questionData['image_alt'];
                 }
-                
+
                 // Handle question type specific data
                 switch ($questionData['question_type']) {
                     case 'fill_blanks_text':
@@ -271,7 +272,7 @@ class LessonContentController extends Controller
                             $question->blanks = $questionData['blanks'];
                         }
                         break;
-                        
+
                     case 'matrix':
                         if (isset($questionData['matrix_rows']) && is_array($questionData['matrix_rows'])) {
                             $question->matrix_rows = $questionData['matrix_rows'];
@@ -284,17 +285,25 @@ class LessonContentController extends Controller
                         }
                         break;
                 }
-                
+
                 $question->save();
-                
+
                 // Create options for questions that use options
                 $optionTypes = [
-                    'multiple_choice', 'multiple_response', 'true_false', 'matching',
-                    'hotspot', 'drag_and_drop', 'ordering', 'multi_select'
+                    'multiple_choice',
+                    'multiple_response',
+                    'true_false',
+                    'matching',
+                    'hotspot',
+                    'drag_and_drop',
+                    'ordering',
+                    'multi_select'
                 ];
-                
-                if (in_array($questionData['question_type'], $optionTypes) && 
-                    isset($questionData['options']) && is_array($questionData['options'])) {
+
+                if (
+                    in_array($questionData['question_type'], $optionTypes) &&
+                    isset($questionData['options']) && is_array($questionData['options'])
+                ) {
                     foreach ($questionData['options'] as $optIndex => $optionData) {
                         $optionData = is_array($optionData) ? $optionData : [];
                         $optionAttributes = [
@@ -302,20 +311,20 @@ class LessonContentController extends Controller
                             'is_correct' => $optionData['is_correct'] ?? false,
                             'order' => $optionData['order'] ?? $optIndex,
                         ];
-                        
+
                         // Add type-specific option attributes
                         if (isset($optionData['feedback'])) {
                             $optionAttributes['feedback'] = $optionData['feedback'];
                         }
-                        
+
                         if ($questionData['question_type'] === 'matching' && isset($optionData['match_text'])) {
                             $optionAttributes['match_text'] = $optionData['match_text'];
                         }
-                        
+
                         if ($questionData['question_type'] === 'hotspot' && isset($optionData['position'])) {
                             $optionAttributes['position'] = $optionData['position'];
                         }
-                        
+
                         $question->options()->create($optionAttributes);
                     }
                 }
@@ -388,7 +397,7 @@ class LessonContentController extends Controller
         $lessonContent = LessonContent::with(['contentParts', 'questions.options'])
             ->where('activity_id', $activityId)
             ->firstOrFail();
-        
+
         // Decode the resources JSON for the response
         if ($lessonContent->resources) {
             $lessonContent->resources = json_decode($lessonContent->resources);
@@ -543,7 +552,7 @@ class LessonContentController extends Controller
 
         // Prepare data for update - exclude relationships
         $updateData = $request->except(['resources', 'content_parts', 'questions']);
-        
+
         // Handle resources separately to encode as JSON
         if ($request->has('resources')) {
             $updateData['resources'] = json_encode($request->resources);
@@ -558,7 +567,7 @@ class LessonContentController extends Controller
                 // Check if this is an existing content part or a new one
                 if (isset($partData['id'])) {
                     $contentPart = $lessonContent->contentParts()->find($partData['id']);
-                    
+
                     // If marked for deletion, delete it
                     if (isset($partData['deleted']) && $partData['deleted']) {
                         if ($contentPart) {
@@ -566,7 +575,7 @@ class LessonContentController extends Controller
                         }
                         continue;
                     }
-                    
+
                     // Otherwise update it
                     if ($contentPart) {
                         $contentPart->update([
@@ -592,113 +601,163 @@ class LessonContentController extends Controller
                 }
             }
         }
-        
+
         // Handle questions
         if ($request->has('questions') && is_array($request->questions)) {
-            foreach ($request->questions as $questionData) {
-                // Check if this is an existing question or a new one
-                if (isset($questionData['id'])) {
-                    $question = $lessonContent->questions()->find($questionData['id']);
-                    
-                    // If marked for deletion, delete it
-                    if (isset($questionData['deleted']) && $questionData['deleted']) {
-                        if ($question) {
-                            $question->delete();
-                        }
-                        continue;
-                    }
-                    
-                    // Otherwise update it
-                    if ($question) {
-                        $question->update([
-                            'question' => $questionData['question'],
-                            'question_type' => $questionData['question_type'],
-                            'is_scorable' => $questionData['is_scorable'] ?? $question->is_scorable,
-                            'points' => $questionData['points'] ?? $question->points,
-                            'order' => $questionData['order'] ?? $question->order,
-                            'content_part_id' => $questionData['content_part_id'] ?? $question->content_part_id,
-                            'image_url' => $questionData['image_url'] ?? $question->image_url,
-                            'image_alt' => $questionData['image_alt'] ?? $question->image_alt,
-                            'explanation' => $questionData['explanation'] ?? $question->explanation,
-                            'title' => $questionData['title'] ?? $question->title,
-                        ]);
-                        
-                        // Handle options for this question
-                        if (isset($questionData['options']) && is_array($questionData['options'])) {
-                            foreach ($questionData['options'] as $optionData) {
-                                // Check if this is an existing option or a new one
-                                if (isset($optionData['id'])) {
-                                    $option = $question->options()->find($optionData['id']);
-                                    
-                                    // If marked for deletion, delete it
-                                    if (isset($optionData['deleted']) && $optionData['deleted']) {
-                                        if ($option) {
-                                            $option->delete();
-                                        }
-                                        continue;
-                                    }
-                                    
-                                    // Otherwise update it
-                                    if ($option) {
-                                        $option->update([
-                                            'option_text' => $optionData['option_text'],
-                                            'is_correct' => $optionData['is_correct'] ?? $option->is_correct,
-                                            'feedback' => $optionData['feedback'] ?? $option->feedback,
-                                            'match_text' => $optionData['match_text'] ?? $option->match_text,
-                                            'position' => $optionData['position'] ?? $option->position,
-                                            'order' => $optionData['order'] ?? $option->order,
-                                        ]);
-                                    }
-                                } else {
-                                    // Create new option
-                                    $question->options()->create([
-                                        'option_text' => $optionData['option_text'],
-                                        'is_correct' => $optionData['is_correct'] ?? false,
-                                        'match_text' => $optionData['match_text'] ?? null,
-                                        'position' => $optionData['position'] ?? null,
-                                        'feedback' => $optionData['feedback'] ?? null,
-                                        'order' => $optionData['order'] ?? 0,
-                                    ]);
+            // Use transaction for consistency
+            DB::transaction(function () use ($lessonContent, $request) {
+                // Get all existing question IDs
+                $existingQuestionIds = $lessonContent->questions()->pluck('id')->toArray();
+
+                // Get question IDs from request (filter out null IDs and deleted questions)
+                $requestQuestionIds = collect($request->questions ?? [])
+                    ->filter(function ($questionData) {
+                        // Filter out questions marked for deletion
+                        return !(isset($questionData['deleted']) && $questionData['deleted']);
+                    })
+                    ->pluck('id')
+                    ->filter() // Remove any null values
+                    ->toArray();
+
+                // Find questions that exist in DB but not in request (to be deleted)
+                $questionsToDelete = array_diff($existingQuestionIds, $requestQuestionIds);
+
+                // Delete questions not in request
+                if (!empty($questionsToDelete)) {
+                    $lessonContent->questions()->whereIn('id', $questionsToDelete)->delete();
+                }
+
+                // Process questions from request
+                if (is_array($request->questions)) {
+                    foreach ($request->questions as $questionData) {
+                        // Skip questions explicitly marked for deletion
+                        if (isset($questionData['deleted']) && $questionData['deleted']) {
+                            if (isset($questionData['id'])) {
+                                $question = $lessonContent->questions()->find($questionData['id']);
+                                if ($question) {
+                                    $question->delete();
                                 }
                             }
+                            continue;
                         }
-                    }
-                } else {
-                    // Create new question
-                    $question = $lessonContent->questions()->create([
-                        'question' => $questionData['question'],
-                        'question_type' => $questionData['question_type'],
-                        'is_scorable' => $questionData['is_scorable'] ?? false,
-                        'points' => $questionData['points'] ?? 0,
-                        'order' => $questionData['order'] ?? 0,
-                        'content_part_id' => $questionData['content_part_id'] ?? null,
-                        'created_by' => Auth::id(),
-                        'image_url' => $questionData['image_url'] ?? null,
-                        'image_alt' => $questionData['image_alt'] ?? null,
-                        'explanation' => $questionData['explanation'] ?? null,
-                        'title' => $questionData['title'] ?? null,
-                    ]);
-                    
-                    // Create options for this new question
-                    if (isset($questionData['options']) && is_array($questionData['options'])) {
-                        foreach ($questionData['options'] as $optIndex => $optionData) {
-                            $question->options()->create([
-                                'option_text' => $optionData['option_text'],
-                                'is_correct' => $optionData['is_correct'] ?? false,
-                                'feedback' => $optionData['feedback'] ?? null,
-                                'match_text' => $optionData['match_text'] ?? null,
-                                'position' => $optionData['position'] ?? null,
-                                'order' => $optionData['order'] ?? $optIndex,
-                            ]);
-                        }
-                    }
-                }
-            }
+
+                        // Check if this is an existing question or a new one
+                        if (isset($questionData['id'])) {
+                            $question = $lessonContent->questions()->find($questionData['id']);
+
+                            // Update existing question
+                            if ($question) {
+                                $question->update([
+                                    'question' => $questionData['question'],
+                                    'question_type' => $questionData['question_type'],
+                                    'is_scorable' => $questionData['is_scorable'] ?? $question->is_scorable,
+                                    'points' => $questionData['points'] ?? $question->points,
+                                    'order' => $questionData['order'] ?? $question->order,
+                                    'content_part_id' => $questionData['content_part_id'] ?? $question->content_part_id,
+                                    'image_url' => $questionData['image_url'] ?? $question->image_url,
+                                    'image_alt' => $questionData['image_alt'] ?? $question->image_alt,
+                                    'explanation' => $questionData['explanation'] ?? $question->explanation,
+                                    'title' => $questionData['title'] ?? $question->title,
+                                ]);
+
+                                // Handle options for this question
+                                if (isset($questionData['options']) && is_array($questionData['options'])) {
+                                    foreach ($questionData['options'] as $optionData) {
+                                        // Check if this is an existing option or a new one
+                                        if (isset($optionData['id'])) {
+                                            $option = $question->options()->find($optionData['id']);
+
+                                            // If marked for deletion, delete it
+                                            if (isset($optionData['deleted']) && $optionData['deleted']) {
+                                                if ($option) {
+                                                    $option->delete();
+                                                }
+                                                continue;
+                                            }
+
+                                            // Otherwise update it
+                                            if ($option) {
+                                                $option->update([
+                                                    'option_text' => $optionData['option_text'],
+                                                    'is_correct' => $optionData['is_correct'] ?? $option->is_correct,
+                                                    'feedback' => $optionData['feedback'] ?? $option->feedback,
+                                                    'match_text' => $optionData['match_text'] ?? $option->match_text,
+                                                    'position' => $optionData['position'] ?? $option->position,
+                                                    'order' => $optionData['order'] ?? $option->order,
+                                                ]);
+                                            }
+                                        } else {
+                                            // Create new option
+                                            $question->options()->create([
+                                                'option_text' => $optionData['option_text'],
+                                                'is_correct' => $optionData['is_correct'] ?? false,
+                                                'feedback' => $optionData['feedback'] ?? null,
+                                                'match_text' => $optionData['match_text'] ?? null,
+                                                'position' => $optionData['position'] ?? null,
+                                                'order' => $optionData['order'] ?? 0,
+                                            ]);
+                                        }
+                                    }
+
+                                    // Also handle option deletion for existing questions
+                                    if (isset($questionData['options']) && is_array($questionData['options'])) {
+                                        // Get existing option IDs for this question
+                                        $existingOptionIds = $question->options()->pluck('id')->toArray();
+
+                                        // Get option IDs from request
+                                        $requestOptionIds = collect($questionData['options'])->filter(function ($optionData) {
+                                            // Filter out options marked for deletion
+                                            return !(isset($optionData['deleted']) && $optionData['deleted']);
+                                        })->pluck('id')->filter()->toArray();
+
+                                        // Find options to delete (in DB but not in request)
+                                        $optionsToDelete = array_diff($existingOptionIds, $requestOptionIds);
+
+                                        // Delete options not in request
+                                        if (!empty($optionsToDelete)) {
+                                            $question->options()->whereIn('id', $optionsToDelete)->delete();
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Create new question
+                                $question = $lessonContent->questions()->create([
+                                    'question' => $questionData['question'],
+                                    'question_type' => $questionData['question_type'],
+                                    'is_scorable' => $questionData['is_scorable'] ?? false,
+                                    'points' => $questionData['points'] ?? 1,
+                                    'order' => $questionData['order'] ?? 0,
+                                    'content_part_id' => $questionData['content_part_id'] ?? null,
+                                    'image_url' => $questionData['image_url'] ?? null,
+                                    'image_alt' => $questionData['image_alt'] ?? null,
+                                    'explanation' => $questionData['explanation'] ?? null,
+                                    'title' => $questionData['title'] ?? null,
+                                    'created_by' => Auth::id(),
+                                ]);
+
+                                // Handle options for the new question
+                                if (isset($questionData['options']) && is_array($questionData['options'])) {
+                                    foreach ($questionData['options'] as $optionData) {
+                                        $question->options()->create([
+                                            'option_text' => $optionData['option_text'],
+                                            'is_correct' => $optionData['is_correct'] ?? false,
+                                            'feedback' => $optionData['feedback'] ?? null,
+                                            'match_text' => $optionData['match_text'] ?? null,
+                                            'position' => $optionData['position'] ?? null,
+                                            'order' => $optionData['order'] ?? 0,
+                                        ]);
+                                    } // End foreach options
+                                } // End if has options
+                            } // End else (new question)
+                        } // End foreach questions
+                    }; 
+                } 
+            }); // End transaction
         }
 
         // Reload the lesson content with its relationships
         $lessonContent->load(['contentParts', 'questions.options']);
-        
+
         // Decode the resources JSON for the response
         if ($lessonContent->resources) {
             $lessonContent->resources = json_decode($lessonContent->resources);

@@ -576,12 +576,12 @@ class BlockController extends Controller
         }
         
         // Check if template is published and enforce restrictions
-        if ($template->status === 'published') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Cannot modify blocks in a published template',
-            ], Response::HTTP_FORBIDDEN);
-        }
+        // if ($template->status === 'published') {
+        //     return response()->json([
+        //         'status' => 'error',
+        //         'message' => 'Cannot modify blocks in a published template',
+        //     ], Response::HTTP_FORBIDDEN);
+        // }
 
         $validator = Validator::make($request->all(), [
             'description' => 'nullable|string',
@@ -625,12 +625,12 @@ class BlockController extends Controller
         }
         
         // Check if template is published and enforce restrictions
-        if ($template->status === 'published') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Cannot delete blocks in a published template',
-            ], Response::HTTP_FORBIDDEN);
-        }
+        // if ($template->status === 'published') {
+        //     return response()->json([
+        //         'status' => 'error',
+        //         'message' => 'Cannot delete blocks in a published template',
+        //     ], Response::HTTP_FORBIDDEN);
+        // }
 
         // Delete the block
         $block->delete();
@@ -671,12 +671,12 @@ class BlockController extends Controller
         }
         
         // Check if template is published and enforce restrictions
-        if ($template->status === 'published') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Cannot reorder blocks in a published template',
-            ], Response::HTTP_FORBIDDEN);
-        }
+        // if ($template->status === 'published') {
+        //     return response()->json([
+        //         'status' => 'error',
+        //         'message' => 'Cannot reorder blocks in a published template',
+        //     ], Response::HTTP_FORBIDDEN);
+        // }
 
         $validator = Validator::make($request->all(), [
             'blocks' => 'required|array',
