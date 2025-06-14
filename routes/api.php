@@ -53,6 +53,7 @@ use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\Onboarding\StandaloneOnboardingController;
 use App\Http\Controllers\Api\Onboarding\SupportedOnboardingController;
 use App\Http\Controllers\Api\Onboarding\DemoOnboardingController;
+use App\Http\Controllers\Api\LessonDiscussionController;
 
 // Health check endpoint for monitoring and deployment verification
 Route::get('/health', function() {
@@ -612,3 +613,13 @@ Route::middleware('auth:sanctum')->prefix('analytics')->group(function () {
     // Get activity engagement leaderboard
     Route::get('/courses/{courseId}/activity-leaderboard', [\App\Http\Controllers\Api\EnrollmentAnalyticsController::class, 'getActivityEngagementLeaderboard']);
 });
+
+// Lesson Discussion Routes
+Route::prefix('lessons/{lessonId}/discussions')
+    ->controller(LessonDiscussionController::class)
+    ->group(function () {
+        Route::get('/', 'index');
+        Route::post('/', 'store');
+        Route::post('{discussionId}/reply', 'reply');
+        Route::delete('{discussionId}', 'destroy');
+    })->middleware("auth:sanctum");

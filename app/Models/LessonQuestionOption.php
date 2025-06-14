@@ -21,6 +21,8 @@ class LessonQuestionOption extends Model
         'option_text',
         'is_correct',
         'feedback',
+        'match_text',     // For matching questions
+        'position',       // JSON object for hotspot questions (x, y coordinates)
         'order',
     ];
 
@@ -33,6 +35,8 @@ class LessonQuestionOption extends Model
     {
         return [
             'is_correct' => 'boolean',
+            'position' => 'array',
+            'order' => 'integer',
         ];
     }
 

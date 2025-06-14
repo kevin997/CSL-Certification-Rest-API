@@ -21,11 +21,20 @@ class LessonQuestion extends Model
         'lesson_content_id',
         'content_part_id', // nullable, if the question is related to a specific content part
         'question',
-        'question_type', // multiple_choice, true_false, short_answer, etc.
+        'question_type', // multiple_choice, multiple_response, true_false, etc.
         'is_scorable',
+        'image_url',    // URL to image used for questions like matching or hotspot
+        'image_alt',    // Alt text description for the image
         'points',
         'order',
         'created_by',
+        'explanation',  // Explanation of the correct answer
+        'question_text', // Additional text for the question (e.g., for fill in blanks)
+        'title',        // Optional title for the question
+        'blanks',       // JSON array for fill in blanks questions
+        'matrix_rows',  // JSON array for matrix questions
+        'matrix_columns', // JSON array for matrix questions
+        'matrix_options', // JSON array for matrix question options
     ];
 
     /**
@@ -37,6 +46,11 @@ class LessonQuestion extends Model
     {
         return [
             'is_scorable' => 'boolean',
+            'blanks' => 'array',
+            'matrix_rows' => 'array',
+            'matrix_columns' => 'array',
+            'matrix_options' => 'array',
+            'points' => 'integer',
         ];
     }
 

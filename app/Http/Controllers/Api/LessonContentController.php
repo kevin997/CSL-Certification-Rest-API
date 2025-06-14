@@ -172,7 +172,7 @@ class LessonContentController extends Controller
             'content_parts.*.order' => 'nullable|integer',
             'questions' => 'nullable|array',
             'questions.*.question' => 'required_with:questions|string',
-            'questions.*.question_type' => 'required_with:questions|string|in:multiple_choice,true_false,short_answer',
+            'questions.*.question_type' => 'required|string|in:multiple_choice,multiple_response,true_false,text,fill_blanks_text,fill_blanks_drag,matching,hotspot,essay,questionnaire,matrix,drag_and_drop,ordering,code_snippet,multi_select,short_answer,fill_in_blank',
             'questions.*.is_scorable' => 'nullable|boolean',
             'questions.*.points' => 'nullable|integer',
             'questions.*.order' => 'nullable|integer',
@@ -245,16 +245,78 @@ class LessonContentController extends Controller
                     'created_by' => Auth::id(),
                 ]);
                 
-                // Create options for multiple choice or true/false questions
-                if (in_array($questionData['question_type'], ['multiple_choice', 'true_false']) && 
+                // Store additional question data based on question type
+                if (isset($questionData['explanation'])) {
+                    $question->explanation = $questionData['explanation'];
+                }
+                if (isset($questionData['question_text'])) {
+                    $question->question_text = $questionData['question_text'];
+                }
+                if (isset($questionData['title'])) {
+                    $question->title = $questionData['title'];
+                }
+                if (isset($questionData['image_url'])) {
+                    $question->image_url = $questionData['image_url'];
+                }
+                if (isset($questionData['image_alt'])) {
+                    $question->image_alt = $questionData['image_alt'];
+                }
+                
+                // Handle question type specific data
+                switch ($questionData['question_type']) {
+                    case 'fill_blanks_text':
+                    case 'fill_blanks_drag':
+                    case 'fill_in_blank':
+                        if (isset($questionData['blanks']) && is_array($questionData['blanks'])) {
+                            $question->blanks = $questionData['blanks'];
+                        }
+                        break;
+                        
+                    case 'matrix':
+                        if (isset($questionData['matrix_rows']) && is_array($questionData['matrix_rows'])) {
+                            $question->matrix_rows = $questionData['matrix_rows'];
+                        }
+                        if (isset($questionData['matrix_columns']) && is_array($questionData['matrix_columns'])) {
+                            $question->matrix_columns = $questionData['matrix_columns'];
+                        }
+                        if (isset($questionData['matrix_options']) && is_array($questionData['matrix_options'])) {
+                            $question->matrix_options = $questionData['matrix_options'];
+                        }
+                        break;
+                }
+                
+                $question->save();
+                
+                // Create options for questions that use options
+                $optionTypes = [
+                    'multiple_choice', 'multiple_response', 'true_false', 'matching',
+                    'hotspot', 'drag_and_drop', 'ordering', 'multi_select'
+                ];
+                
+                if (in_array($questionData['question_type'], $optionTypes) && 
                     isset($questionData['options']) && is_array($questionData['options'])) {
                     foreach ($questionData['options'] as $optIndex => $optionData) {
-                        $question->options()->create([
-                            'option_text' => $optionData['option_text'],
+                        $optionData = is_array($optionData) ? $optionData : [];
+                        $optionAttributes = [
+                            'option_text' => $optionData['option_text'] ?? '',
                             'is_correct' => $optionData['is_correct'] ?? false,
-                            'feedback' => $optionData['feedback'] ?? null,
                             'order' => $optionData['order'] ?? $optIndex,
-                        ]);
+                        ];
+                        
+                        // Add type-specific option attributes
+                        if (isset($optionData['feedback'])) {
+                            $optionAttributes['feedback'] = $optionData['feedback'];
+                        }
+                        
+                        if ($questionData['question_type'] === 'matching' && isset($optionData['match_text'])) {
+                            $optionAttributes['match_text'] = $optionData['match_text'];
+                        }
+                        
+                        if ($questionData['question_type'] === 'hotspot' && isset($optionData['position'])) {
+                            $optionAttributes['position'] = $optionData['position'];
+                        }
+                        
+                        $question->options()->create($optionAttributes);
                     }
                 }
             }
@@ -453,7 +515,7 @@ class LessonContentController extends Controller
             'questions' => 'nullable|array',
             'questions.*.id' => 'nullable|integer|exists:lesson_questions,id',
             'questions.*.question' => 'required_with:questions|string',
-            'questions.*.question_type' => 'required_with:questions|string|in:multiple_choice,true_false,short_answer',
+            'questions.*.question_type' => 'required|string|in:multiple_choice,multiple_response,true_false,text,fill_blanks_text,fill_blanks_drag,matching,hotspot,essay,questionnaire,matrix,drag_and_drop,ordering,code_snippet,multi_select,short_answer,fill_in_blank',
             'questions.*.is_scorable' => 'nullable|boolean',
             'questions.*.points' => 'nullable|integer',
             'questions.*.order' => 'nullable|integer',
@@ -464,8 +526,12 @@ class LessonContentController extends Controller
             'questions.*.options.*.option_text' => 'required_with:questions.*.options|string',
             'questions.*.options.*.is_correct' => 'nullable|boolean',
             'questions.*.options.*.feedback' => 'nullable|string',
+            'questions.*.options.*.match_text' => 'nullable|string',
+            'questions.*.options.*.position' => 'nullable|json',
             'questions.*.options.*.order' => 'nullable|integer',
             'questions.*.options.*.deleted' => 'nullable|boolean',
+            'questions.*.image_url' => 'nullable|string',
+            'questions.*.image_alt' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -551,6 +617,10 @@ class LessonContentController extends Controller
                             'points' => $questionData['points'] ?? $question->points,
                             'order' => $questionData['order'] ?? $question->order,
                             'content_part_id' => $questionData['content_part_id'] ?? $question->content_part_id,
+                            'image_url' => $questionData['image_url'] ?? $question->image_url,
+                            'image_alt' => $questionData['image_alt'] ?? $question->image_alt,
+                            'explanation' => $questionData['explanation'] ?? $question->explanation,
+                            'title' => $questionData['title'] ?? $question->title,
                         ]);
                         
                         // Handle options for this question
@@ -574,6 +644,8 @@ class LessonContentController extends Controller
                                             'option_text' => $optionData['option_text'],
                                             'is_correct' => $optionData['is_correct'] ?? $option->is_correct,
                                             'feedback' => $optionData['feedback'] ?? $option->feedback,
+                                            'match_text' => $optionData['match_text'] ?? $option->match_text,
+                                            'position' => $optionData['position'] ?? $option->position,
                                             'order' => $optionData['order'] ?? $option->order,
                                         ]);
                                     }
@@ -582,6 +654,8 @@ class LessonContentController extends Controller
                                     $question->options()->create([
                                         'option_text' => $optionData['option_text'],
                                         'is_correct' => $optionData['is_correct'] ?? false,
+                                        'match_text' => $optionData['match_text'] ?? null,
+                                        'position' => $optionData['position'] ?? null,
                                         'feedback' => $optionData['feedback'] ?? null,
                                         'order' => $optionData['order'] ?? 0,
                                     ]);
@@ -599,6 +673,10 @@ class LessonContentController extends Controller
                         'order' => $questionData['order'] ?? 0,
                         'content_part_id' => $questionData['content_part_id'] ?? null,
                         'created_by' => Auth::id(),
+                        'image_url' => $questionData['image_url'] ?? null,
+                        'image_alt' => $questionData['image_alt'] ?? null,
+                        'explanation' => $questionData['explanation'] ?? null,
+                        'title' => $questionData['title'] ?? null,
                     ]);
                     
                     // Create options for this new question
@@ -608,6 +686,8 @@ class LessonContentController extends Controller
                                 'option_text' => $optionData['option_text'],
                                 'is_correct' => $optionData['is_correct'] ?? false,
                                 'feedback' => $optionData['feedback'] ?? null,
+                                'match_text' => $optionData['match_text'] ?? null,
+                                'position' => $optionData['position'] ?? null,
                                 'order' => $optionData['order'] ?? $optIndex,
                             ]);
                         }

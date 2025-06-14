@@ -19,11 +19,19 @@ class LessonQuestionResponse extends Model
         'user_id',
         'lesson_question_id',
         'lesson_content_id',
-        'selected_option_id',
-        'text_response',
-        'is_correct',
-        'points_earned',
-        'attempt_number',
+        'selected_option_id',      // For single-selection questions
+        'selected_option_ids',     // JSON array for multiple-selection questions
+        'text_response',           // For short answer, essay, etc.
+        'matrix_responses',        // JSON for matrix question responses
+        'hotspot_responses',       // JSON for hotspot question responses
+        'matching_responses',      // JSON for matching question responses
+        'fill_blanks_responses',   // JSON for fill-in-blanks responses
+        'is_correct',              // Whether the response is correct
+        'points_earned',           // Points earned for this response
+        'attempt_number',          // Which attempt this is
+        'feedback',                // Feedback for this response
+        'graded_by',               // User ID of the grader (for manually graded questions)
+        'graded_at',               // When this response was graded
     ];
 
     /**
@@ -35,6 +43,12 @@ class LessonQuestionResponse extends Model
         'is_correct' => 'boolean',
         'points_earned' => 'float',
         'attempt_number' => 'integer',
+        'selected_option_ids' => 'array',
+        'matrix_responses' => 'array',
+        'hotspot_responses' => 'array',
+        'matching_responses' => 'array',
+        'fill_blanks_responses' => 'array',
+        'graded_at' => 'datetime',
     ];
 
     /**
