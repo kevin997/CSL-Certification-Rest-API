@@ -265,6 +265,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/blocks/activities/{id}', [ActivityController::class, 'show']);
     Route::put('/blocks/activities/{id}', [ActivityController::class, 'update']);
     Route::delete('/blocks/activities/{id}', [ActivityController::class, 'destroy']);
+    Route::delete('/blocks/{blockId}/activities/batch', [ActivityController::class, 'batchDestroy']);
     Route::post('/blocks/activities/{id}/duplicate', [ActivityController::class, 'duplicate']);
     Route::post('/blocks/{blockId}/activities/reorder', [ActivityController::class, 'reorder']);
     
@@ -489,6 +490,7 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // File routes
     Route::post('/files', [FileController::class, 'store']);
+    Route::post('/files/batch', [FileController::class, 'batchStore']); // New batch route
     Route::get('/environments/{environmentId}/files', [FileController::class, 'getByEnvironment']);
     Route::get('/files/{id}', [FileController::class, 'show']);
     Route::put('/files/{id}', [FileController::class, 'update']);

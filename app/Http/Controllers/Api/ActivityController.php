@@ -11,6 +11,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @OA\Schema(
@@ -356,6 +357,62 @@ use Illuminate\Support\Facades\Validator;
  *                     @OA\Property(property="updated_at", type="string", format="date-time")
  *                 )
  *             )
+ *         )
+ *     ),
+ *     @OA\Response(
+ *         response=401,
+ *         description="Unauthenticated"
+ *     ),
+ *     @OA\Response(
+ *         response=403,
+ *         description="Forbidden"
+ *     ),
+ *     @OA\Response(
+ *         response=404,
+ *         description="Block not found"
+ *     ),
+ *     @OA\Response(
+ *         response=422,
+ *         description="Validation error"
+ *     )
+ * )
+ *
+ * @OA\Post(
+ *     path="/api/blocks/{blockId}/activities/batch-delete",
+ *     summary="Batch delete activities",
+ *     description="Deletes multiple activities from a block",
+ *     operationId="batchDeleteActivities",
+ *     tags={"Activities"},
+ *     security={{"sanctum":{}}},
+ *     @OA\Parameter(
+ *         name="blockId",
+ *         in="path",
+ *         description="Block ID",
+ *         required=true,
+ *         @OA\Schema(type="integer")
+ *     ),
+ *     @OA\RequestBody(
+ *         required=true,
+ *         @OA\JsonContent(
+ *             required={"activity_ids"},
+ *             @OA\Property(
+ *                 property="activity_ids",
+ *                 type="array",
+ *                 description="Array of activity IDs to delete",
+ *                 @OA\Items(
+ *                     type="integer",
+ *                     example=1
+ *                 )
+ *             )
+ *         )
+ *     ),
+ *     @OA\Response(
+ *         response=200,
+ *         description="Activities deleted successfully",
+ *         @OA\JsonContent(
+ *             @OA\Property(property="status", type="string", example="success"),
+ *             @OA\Property(property="message", type="string", example="Activities deleted successfully"),
+ *             @OA\Property(property="deleted_count", type="integer", example=1)
  *         )
  *     ),
  *     @OA\Response(
@@ -770,6 +827,90 @@ class ActivityController extends Controller
             'message' => 'Activity duplicated successfully',
             'data' => $newActivity->load($contentRelationship ?? []),
         ]);
+    }
+
+    /**
+     * Batch delete multiple activities from a block.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $blockId
+     * @return \Illuminate\Http\Response
+     */
+    public function batchDestroy(Request $request, $blockId)
+    {
+        // Validate the request
+        $validator = Validator::make($request->all(), [
+            'activity_ids' => 'required|array|min:1',
+            'activity_ids.*' => 'required|integer|exists:activities,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
+        // Get the block
+        $block = Block::findOrFail($blockId);
+        
+        // Check if user has permission to delete activities from this block
+        $template = Template::findOrFail($block->template_id);
+        if ($template->created_by !== Auth::id()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You do not have permission to delete activities from this block',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        $activityIds = $request->activity_ids;
+        
+        // Verify all activities belong to the specified block
+        $activities = Activity::whereIn('id', $activityIds)->get();
+        
+        foreach ($activities as $activity) {
+            if ($activity->block_id != $blockId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'One or more activities do not belong to this block',
+                ], Response::HTTP_BAD_REQUEST);
+            }
+        }
+
+        try {
+            // Use transaction for atomic operation
+            DB::transaction(function () use ($activities) {
+                foreach ($activities as $activity) {
+                    // Delete associated content first
+                    $contentRelationship = $this->getContentRelationship($activity->type);
+                    if ($contentRelationship && $activity->$contentRelationship) {
+                        $activity->$contentRelationship->delete();
+                    }
+                    
+                    // Delete the activity
+                    $activity->delete();
+                }
+            });
+
+            return response()->json([
+                'status' => 'success',
+                'message' => count($activities) . ' activities deleted successfully',
+                'deleted_count' => count($activities),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error in batch delete activities', [
+                'block_id' => $blockId,
+                'activity_ids' => $activityIds,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to delete activities. Please try again.',
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
     }
 
     /**
