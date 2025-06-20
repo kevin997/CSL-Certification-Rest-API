@@ -11,6 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (!Schema::hasTable('tax_zones')) {
         Schema::create('tax_zones', function (Blueprint $table) {
             $table->id();
             $table->string('zone_name');
@@ -26,6 +27,7 @@ return new class extends Migration
             $table->unique(['country_code', 'state_code'], 'tax_zone_location_unique');
         });
     }
+}
 
     /**
      * Reverse the migrations.

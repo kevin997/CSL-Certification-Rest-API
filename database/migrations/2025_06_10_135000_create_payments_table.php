@@ -11,6 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (!Schema::hasTable('payments')) {
         Schema::create('payments', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('user_id');
@@ -30,12 +31,15 @@ return new class extends Migration
             $table->index(['status', 'created_at']);
         });
     }
+}
 
     /**
      * Reverse the migrations.
      */
     public function down(): void
     {
-        Schema::dropIfExists('payments');
+        if (Schema::hasTable('payments')) {
+            Schema::dropIfExists('payments');
+        }
     }
 };
