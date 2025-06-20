@@ -11,14 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        if(!Schema::hasTable('environments')){
-
-            Schema::table('environments', function (Blueprint $table) {
-                // add country_code and state_code to environments table
-                $table->string('country_code', 2)->nullable()->after('name');
-                $table->string('state_code', 10)->nullable()->after('country_code');
-            });
-        }
+        Schema::table('environments', function (Blueprint $table) {
+           // add country_code and state_code to environments table
+           if (!Schema::hasColumn('environments', 'country_code')) {
+           $table->string('country_code', 2)->nullable()->after('name');
+           }
+           if (!Schema::hasColumn('environments', 'state_code')) {
+           $table->string('state_code', 10)->nullable()->after('country_code');
+           }
+        });
     }
 
     /**
@@ -27,8 +28,12 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('environments', function (Blueprint $table) {
-            $table->dropColumn('country_code');
-            $table->dropColumn('state_code');
+            if (Schema::hasColumn('environments', 'country_code')) {
+                $table->dropColumn('country_code');
+            }
+            if (Schema::hasColumn('environments', 'state_code')) {
+                $table->dropColumn('state_code');
+            }
         });
     }
 };

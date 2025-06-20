@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        if (!Schema::hasTable('transactions')) {
+        if (Schema::hasTable('transactions')) {
             Schema::table('transactions', function (Blueprint $table) {
                 // Add fields for currency conversion data
                 $table->decimal('converted_amount', 15, 2)->nullable()->comment('Amount after currency conversion');

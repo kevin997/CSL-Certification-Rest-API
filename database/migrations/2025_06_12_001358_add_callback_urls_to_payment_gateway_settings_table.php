@@ -11,12 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        if (!Schema::hasTable('payment_gateway_settings')) {
-            Schema::table('payment_gateway_settings', function (Blueprint $table) {
+        Schema::table('payment_gateway_settings', function (Blueprint $table) {
+            // Check if columns exist
+            if (!Schema::hasColumn('payment_gateway_settings', 'success_url')) {
                 $table->string('success_url')->nullable()->after('webhook_url');
+            }
+            if (!Schema::hasColumn('payment_gateway_settings', 'failure_url')) {
                 $table->string('failure_url')->nullable()->after('success_url');
-            });
-        }
+            }
+        });
     }
     
     /**
@@ -25,7 +28,13 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('payment_gateway_settings', function (Blueprint $table) {
-            $table->dropColumn(['success_url', 'failure_url']);
+            // Check if columns exist
+            if (Schema::hasColumn('payment_gateway_settings', 'success_url')) {
+                $table->dropColumn('success_url');
+            }
+            if (Schema::hasColumn('payment_gateway_settings', 'failure_url')) {
+                $table->dropColumn('failure_url');
+            }
         });
     }
 };

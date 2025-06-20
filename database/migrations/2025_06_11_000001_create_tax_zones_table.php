@@ -12,11 +12,11 @@ return new class extends Migration
     public function up(): void
     {
         if (!Schema::hasTable('tax_zones')) {
-            Schema::create('tax_zones', function (Blueprint $table) {
-                $table->id();
-                $table->string('zone_name');
-                $table->string('country_code', 2)->index();
-                $table->decimal('tax_rate', 5, 2); // Allows for tax rates up to 999.99%
+        Schema::create('tax_zones', function (Blueprint $table) {
+            $table->id();
+            $table->string('zone_name');
+            $table->string('country_code', 2)->index();
+            $table->decimal('tax_rate', 5, 2); // Allows for tax rates up to 999.99%
             $table->string('state_code', 10)->nullable(); // For countries with state-level taxation like USA
             $table->text('description')->nullable();
             $table->boolean('is_active')->default(true);
@@ -27,7 +27,11 @@ return new class extends Migration
             $table->unique(['country_code', 'state_code'], 'tax_zone_location_unique');
         });
     }
+<<<<<<< HEAD
     }
+=======
+}
+>>>>>>> develop
 
     /**
      * Reverse the migrations.

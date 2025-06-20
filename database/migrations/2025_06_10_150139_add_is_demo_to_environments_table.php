@@ -11,11 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        if (!Schema::hasTable('environments')) {
-            Schema::table('environments', function (Blueprint $table) {
+        Schema::table('environments', function (Blueprint $table) {
+            // Check if column already exists before adding it
+            if (!Schema::hasColumn('environments', 'is_demo')) {
                 $table->boolean('is_demo')->default(true)->after('is_active')->comment('Indicates if this is a demo environment');
-            });
-        }
+            }
+        });
     }
 
     /**
@@ -24,7 +25,10 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('environments', function (Blueprint $table) {
-            $table->dropColumn('is_demo');
+            // Check if column exists before removing it
+            if (Schema::hasColumn('environments', 'is_demo')) {
+                $table->dropColumn('is_demo');
+            }
         });
     }
 };

@@ -12,7 +12,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        if (!Schema::hasTable('quiz_questions')) {
+        if (Schema::hasTable('quiz_questions')) {
             // Check if columns already exist before adding them
             if (!Schema::hasColumn('quiz_questions', 'image_url') && !Schema::hasColumn('quiz_questions', 'image_alt')) {
                 Schema::table('quiz_questions', function (Blueprint $table) {
