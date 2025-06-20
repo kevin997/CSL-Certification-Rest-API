@@ -27,11 +27,7 @@ return new class extends Migration
             $table->unique(['country_code', 'state_code'], 'tax_zone_location_unique');
         });
     }
-<<<<<<< HEAD
-    }
-=======
 }
->>>>>>> develop
 
     /**
      * Reverse the migrations.
