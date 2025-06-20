@@ -4,7 +4,6 @@ use App\Helpers\MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-use Doctrine\DBAL\Types\Type;
 
 return new class extends Migration
 {
@@ -13,10 +12,6 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Need to register the enum type with Doctrine
-        if (!Type::hasType('enum')) {
-            Type::addType('enum', 'Doctrine\DBAL\Types\StringType');
-        }
         
         Schema::table('transactions', function (Blueprint $table) {
             // Modify the transaction_id column to be a string with sufficient length for UUID values
