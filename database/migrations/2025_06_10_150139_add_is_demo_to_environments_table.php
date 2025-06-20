@@ -11,9 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('environments', function (Blueprint $table) {
-            $table->boolean('is_demo')->default(true)->after('is_active')->comment('Indicates if this is a demo environment');
-        });
+        if (!Schema::hasTable('environments')) {
+            Schema::table('environments', function (Blueprint $table) {
+                $table->boolean('is_demo')->default(true)->after('is_active')->comment('Indicates if this is a demo environment');
+            });
+        }
     }
 
     /**

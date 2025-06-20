@@ -11,13 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('lesson_question_options', function (Blueprint $table) {
-            // Add fields for matching questions
-            $table->text('match_text')->nullable()->comment('Text to match in matching questions');
-            
-            // Add position field for hotspot questions
-            $table->json('position')->nullable()->comment('JSON object with x,y coordinates for hotspot questions');
-        });
+        if (!Schema::hasTable('lesson_question_options')) {
+            Schema::table('lesson_question_options', function (Blueprint $table) {
+                // Add fields for matching questions
+                $table->text('match_text')->nullable()->comment('Text to match in matching questions');
+
+                // Add position field for hotspot questions
+                $table->json('position')->nullable()->comment('JSON object with x,y coordinates for hotspot questions');
+            });
+        }
     }
 
     /**

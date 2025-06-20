@@ -11,12 +11,14 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('transactions', function (Blueprint $table) {
-            $table->decimal('tax_rate', 5, 2)->nullable()->after('tax_amount');
-            $table->string('tax_zone', 100)->nullable()->after('tax_rate');
-            $table->string('country_code', 2)->nullable()->after('tax_zone');
-            $table->string('state_code', 10)->nullable()->after('country_code');
-        });
+        if (!Schema::hasTable('transactions')) {
+            Schema::table('transactions', function (Blueprint $table) {
+                $table->decimal('tax_rate', 5, 2)->nullable()->after('tax_amount');
+                $table->string('tax_zone', 100)->nullable()->after('tax_rate');
+                $table->string('country_code', 2)->nullable()->after('tax_zone');
+                $table->string('state_code', 10)->nullable()->after('country_code');
+            });
+        }
     }
 
     /**

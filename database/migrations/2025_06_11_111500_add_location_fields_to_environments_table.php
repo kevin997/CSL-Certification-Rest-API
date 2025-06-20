@@ -11,11 +11,14 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('environments', function (Blueprint $table) {
-           // add country_code and state_code to environments table
-           $table->string('country_code', 2)->nullable()->after('name');
-           $table->string('state_code', 10)->nullable()->after('country_code');
-        });
+        if(!Schema::hasTable('environments')){
+
+            Schema::table('environments', function (Blueprint $table) {
+                // add country_code and state_code to environments table
+                $table->string('country_code', 2)->nullable()->after('name');
+                $table->string('state_code', 10)->nullable()->after('country_code');
+            });
+        }
     }
 
     /**
