@@ -162,7 +162,8 @@ class FeedbackContentController extends Controller
             'completion_message' => 'nullable|string',
             'resource_files' => 'nullable|array',
             'questions' => 'required|array|min:1',
-            'questions.*.title' => 'nullable|string|max:255',
+            // Title is optional and will default to question_text if not provided
+            'questions.*.title' => 'sometimes|nullable|string|max:255',
             'questions.*.question_text' => 'required|string',
             'questions.*.question_type' => 'required|string|in:text,rating,multiple_choice,checkbox,dropdown',
             'questions.*.required' => 'boolean',
@@ -217,9 +218,12 @@ class FeedbackContentController extends Controller
                 }
                 
                 // Create new question with explicit field mapping
+                // If title is not provided, use question_text as the title
+                $questionText = $questionData['question_text'];
+                
                 $newQuestionData = [
                     'feedback_content_id' => $feedbackContent->id,
-                    'question_text' => $questionData['question_text'],
+                    'question_text' => $questionText,
                     'question_type' => $questionData['question_type'],
                     'required' => $questionData['required'] ?? false,
                     'order' => $index,
@@ -427,7 +431,8 @@ class FeedbackContentController extends Controller
             'resource_files' => 'nullable|array',
             'questions' => 'array|min:1',
             'questions.*.id' => 'nullable|integer',
-            'questions.*.title' => 'required_with:questions|string|max:255',
+            // Title is optional and will default to question_text if not provided
+            'questions.*.title' => 'sometimes|nullable|string|max:255',
             'questions.*.question_text' => 'required_with:questions|string',
             'questions.*.question_type' => 'required_with:questions|string|in:text,rating,multiple_choice,checkbox,dropdown',
             'questions.*.required' => 'boolean',
@@ -490,9 +495,12 @@ class FeedbackContentController extends Controller
                     }
                 } else {
                     // Create new question
+                    // If title is not provided, use question_text as the title
+                    $questionText = $questionData['question_text'];
+                    
                     $newQuestionData = [
                         'feedback_content_id' => $feedbackContent->id,
-                        'question_text' => $questionData['question_text'],
+                        'question_text' => $questionText,
                         'question_type' => $questionData['question_type'],
                         'required' => $questionData['required'] ?? false,
                         'order' => $index,
