@@ -1331,80 +1331,127 @@ class PaymentService
      */
     public function getPaymentMethods(?int $environmentId = null): array
     {
-        // Get active payment gateways from the database
-        $query = PaymentGatewaySetting::where('status', true);
-        
-        // Filter by environment if specified
-        if ($environmentId !== null) {
-            $query->where(function($q) use ($environmentId) {
-                $q->where('environment_id', $environmentId)
-                  ->orWhereNull('environment_id');
-            });
+        if (!$environmentId) {
+            return [];
         }
         
-        $gatewaySettings = $query->get();
+        $gateways = PaymentGatewaySetting::where('environment_id', $environmentId)
+            ->where('active', true)
+            ->get()
+            ->mapWithKeys(function ($setting) {
+                return [$setting->gateway_name => $setting->gateway_name];
+            })
+            ->toArray();
         
-        $paymentMethods = [];
-        
-        // Add configured payment gateways
-        foreach ($gatewaySettings as $setting) {
-            // Initialize the gateway to get its configuration
-            $gateway = PaymentGatewayFactory::create($setting->payment_method, $setting);
-            
-            if ($gateway) {
-                $config = $gateway->getConfig();
-                
-                $paymentMethods[] = [
-                    'id' => $setting->code,
-                    'name' => $config['name'] ?? $setting->name,
-                    'description' => $config['description'] ?? $setting->description,
-                    'is_enabled' => $setting->status,
-                    'environment_id' => $setting->environment_id,
-                    'mode' => $setting->mode,
-                    'supports' => $config['supports'] ?? [],
-                    'countries' => $config['countries'] ?? [],
-                    'currencies' => $config['currencies'] ?? [],
-                    'requires_redirect' => $config['redirect_based'] ?? false,
-                    'client_side' => $config['client_side'] ?? false,
-                    'config' => $setting->is_default ? [
-                        'publishable_key' => $setting->getSetting('publishable_key'),
-                        'client_id' => $setting->getSetting('client_id'),
-                        'webhook_url' => $setting->webhook_url
-                    ] : []
-                ];
-            }
-        }
-        
-        // Add legacy payment methods if no gateways are configured
-        if (empty($paymentMethods)) {
-            $paymentMethods = [
-                [
-                    'id' => 'credit_card',
-                    'name' => 'Credit Card',
-                    'description' => 'Pay with Visa, Mastercard, or American Express',
-                    'is_enabled' => true
-                ],
-                [
-                    'id' => 'paypal',
-                    'name' => 'PayPal',
-                    'description' => 'Pay with your PayPal account',
-                    'is_enabled' => true
-                ],
-                [
-                    'id' => 'bank_transfer',
-                    'name' => 'Bank Transfer',
-                    'description' => 'Pay directly from your bank account',
-                    'is_enabled' => true
-                ],
-                [
-                    'id' => 'manual',
-                    'name' => 'Manual Payment',
-                    'description' => 'Pay via other methods and provide a reference number',
-                    'is_enabled' => true
-                ]
-            ];
-        }
-        
-        return $paymentMethods;
+        return $gateways;
     }
+    
+    /**
+     * Process a successful payment callback from a payment gateway
+     *
+     * @param string $gateway The payment gateway name
+     * @param string $transactionId The transaction ID
+     * @param int $environmentId The environment ID
+     * @param array $callbackData The callback data received from the payment gateway
+     * @return bool True if processing was successful, false otherwise
+     */
+    public function processSuccessCallback(string $gateway, string $transactionId, int $environmentId, array $callbackData): bool
+    {
+        try {
+            // Find the transaction
+            $transaction = Transaction::where('transaction_id', $transactionId)
+                ->where('environment_id', $environmentId)
+                ->first();
+            
+            if (!$transaction) {
+                Log::error('Transaction not found for success callback', [
+                    'gateway' => $gateway,
+                    'transaction_id' => $transactionId,
+                    'environment_id' => $environmentId
+                ]);
+                return false;
+            }
+            
+            // Update the transaction status
+            $transaction->status = Transaction::STATUS_COMPLETED;
+            $transaction->gateway_status = 'completed';
+            $transaction->notes = 'Payment completed via ' . $gateway;
+            $transaction->completed_at = now();
+            $transaction->save();
+            
+            // Process any related records (orders, subscriptions, etc.)
+            $this->processRelatedRecords($transaction);
+            
+            return true;
+        } catch (\Exception $e) {
+            Log::error('Error processing payment success callback in service', [
+                'error' => $e->getMessage(),
+                'gateway' => $gateway,
+                'transaction_id' => $transactionId
+            ]);
+            return false;
+        }
+    }
+    
+    /**
+     * Process a failed payment callback from a payment gateway
+     *
+     * @param string $gateway The payment gateway name
+     * @param string $transactionId The transaction ID
+     * @param int $environmentId The environment ID
+     * @param array $callbackData The callback data received from the payment gateway
+     * @return bool True if processing was successful, false otherwise
+     */
+    public function processFailureCallback(string $gateway, string $transactionId, int $environmentId, array $callbackData): bool
+    {
+        try {
+            // Find the transaction
+            $transaction = Transaction::where('transaction_id', $transactionId)
+                ->where('environment_id', $environmentId)
+                ->first();
+            
+            if (!$transaction) {
+                Log::error('Transaction not found for failure callback', [
+                    'gateway' => $gateway, 
+                    'transaction_id' => $transactionId,
+                    'environment_id' => $environmentId
+                ]);
+                return false;
+            }
+            
+            // Update the transaction status
+            $transaction->status = Transaction::STATUS_FAILED;
+            $transaction->gateway_status = 'failed';
+            $transaction->notes = 'Payment failed via ' . $gateway;
+            $transaction->save();
+            
+            return true;
+        } catch (\Exception $e) {
+            Log::error('Error processing payment failure callback in service', [
+                'error' => $e->getMessage(),
+                'gateway' => $gateway,
+                'transaction_id' => $transactionId
+            ]);
+            return false;
+        }
+    }
+    
+    /**
+     * Process any records related to a transaction (orders, subscriptions, etc.)
+     *
+     * @param Transaction $transaction
+     * @return void
+     */
+    protected function processRelatedRecords(Transaction $transaction): void
+    {
+        // Update related order if exists
+        $order = Order::where('transaction_id', $transaction->id)->first();
+        if ($order) {
+            $order->status = 'completed';
+            $order->save();
+        }
+        
+        // Process subscriptions or other related records
+        // Additional logic can be added here as needed
+    } 
 }
