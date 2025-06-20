@@ -20,7 +20,6 @@ class FeedbackQuestion extends Model
      */
     protected $fillable = [
         'feedback_content_id',
-        'title',
         'question_text',
         'question_type', // text, rating, multiple_choice, checkbox, dropdown
         'options', // JSON array of options for multiple_choice, checkbox, dropdown

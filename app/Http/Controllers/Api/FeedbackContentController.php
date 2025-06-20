@@ -154,7 +154,7 @@ class FeedbackContentController extends Controller
 
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
+            'description' => 'nullable|string|sometimes',
             'instructions' => 'nullable|string',
             'instruction_format' => 'nullable|string|in:plain,markdown,html,wysiwyg',
             'feedback_type' => 'required|string|in:survey,evaluation,rating,open_ended',
@@ -162,7 +162,7 @@ class FeedbackContentController extends Controller
             'completion_message' => 'nullable|string',
             'resource_files' => 'nullable|array',
             'questions' => 'required|array|min:1',
-            'questions.*.title' => 'required|string|max:255',
+            'questions.*.title' => 'nullable|string|max:255',
             'questions.*.question_text' => 'required|string',
             'questions.*.question_type' => 'required|string|in:text,rating,multiple_choice,checkbox,dropdown',
             'questions.*.required' => 'boolean',
@@ -185,10 +185,8 @@ class FeedbackContentController extends Controller
         // Check if feedback content already exists for this activity
         $existingContent = FeedbackContent::where('activity_id', $activityId)->first();
         if ($existingContent) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Feedback content already exists for this activity',
-            ], Response::HTTP_CONFLICT);
+            // Instead of returning an error, update the existing content
+            return $this->update($request, $activityId);
         }
 
         // Prepare data for storage
@@ -221,7 +219,6 @@ class FeedbackContentController extends Controller
                 // Create new question with explicit field mapping
                 $newQuestionData = [
                     'feedback_content_id' => $feedbackContent->id,
-                    'title' => $questionData['title'],
                     'question_text' => $questionData['question_text'],
                     'question_type' => $questionData['question_type'],
                     'required' => $questionData['required'] ?? false,
@@ -422,7 +419,7 @@ class FeedbackContentController extends Controller
 
         $validator = Validator::make($request->all(), [
             'title' => 'string|max:255',
-            'description' => 'string',
+            'description' => 'nullable|string|sometimes',
             'instructions' => 'nullable|string',
             'feedback_type' => 'string|in:survey,evaluation,rating,open_ended',
             'allow_anonymous' => 'boolean',
@@ -495,7 +492,6 @@ class FeedbackContentController extends Controller
                     // Create new question
                     $newQuestionData = [
                         'feedback_content_id' => $feedbackContent->id,
-                        'title' => $questionData['title'],
                         'question_text' => $questionData['question_text'],
                         'question_type' => $questionData['question_type'],
                         'required' => $questionData['required'] ?? false,
