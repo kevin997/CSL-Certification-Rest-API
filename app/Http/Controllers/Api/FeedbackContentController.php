@@ -154,7 +154,7 @@ class FeedbackContentController extends Controller
 
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
-            'description' => 'required|string',
+            'description' => 'nullable|string',
             'instructions' => 'nullable|string',
             'instruction_format' => 'nullable|string|in:plain,markdown,html,wysiwyg',
             'feedback_type' => 'required|string|in:survey,evaluation,rating,open_ended',
@@ -194,13 +194,13 @@ class FeedbackContentController extends Controller
         // Prepare data for storage
         $data = $request->except(['questions', 'target_activities', 'resource_files']);
         
-        // Handle arrays that need to be stored as JSON
+        // Set arrays directly - Laravel's attribute casting will handle JSON conversion
         if ($request->has('resource_files')) {
-            $data['resource_files'] = json_encode($request->resource_files);
+            $data['resource_files'] = $request->resource_files;
         }
         
         if ($request->has('target_activities')) {
-            $data['target_activities'] = json_encode($request->target_activities);
+            $data['target_activities'] = $request->target_activities;
         }
         
         // Add activity_id to data
@@ -213,45 +213,43 @@ class FeedbackContentController extends Controller
         // Create questions separately
         if ($request->has('questions') && is_array($request->questions)) {
             foreach ($request->questions as $index => $questionData) {
-                $questionData['feedback_content_id'] = $feedbackContent->id;
-                $questionData['order'] = $index;
-                $questionData['created_by'] = Auth::id();
-                
-                // Handle options as JSON
-                if (isset($questionData['options']) && is_array($questionData['options'])) {
-                    $questionData['options'] = json_encode($questionData['options']);
+                // Skip questions with ID = -1 (frontend placeholder)
+                if (isset($questionData['id']) && $questionData['id'] < 0) {
+                    continue;
                 }
                 
-                FeedbackQuestion::create($questionData);
+                // Create new question with explicit field mapping
+                $newQuestionData = [
+                    'feedback_content_id' => $feedbackContent->id,
+                    'title' => $questionData['title'],
+                    'question_text' => $questionData['question_text'],
+                    'question_type' => $questionData['question_type'],
+                    'required' => $questionData['required'] ?? false,
+                    'order' => $index,
+                    'created_by' => Auth::id()
+                ];
+                
+                // Set options directly - Laravel's attribute casting will handle JSON conversion
+                if (isset($questionData['options']) && is_array($questionData['options'])) {
+                    $newQuestionData['options'] = $questionData['options'];
+                }
+                
+                FeedbackQuestion::create($newQuestionData);
             }
         }
         
         // Get the created feedback content with questions
         $createdFeedbackContent = FeedbackContent::where('id', $feedbackContent->id)->first();
         
-        // Get questions for this feedback content
+        // Get questions for this feedback content - Laravel's attribute casting will handle JSON conversion
         $questions = FeedbackQuestion::where('feedback_content_id', $createdFeedbackContent->id)
             ->orderBy('order')
-            ->get()
-            ->map(function ($question) {
-                // Decode options from JSON
-                if ($question->options) {
-                    $question->options = json_decode($question->options);
-                }
-                return $question;
-            });
+            ->get();
             
         // Add questions to the response
         $createdFeedbackContent->questions = $questions;
         
-        // Decode other JSON fields
-        if ($createdFeedbackContent->resource_files) {
-            $createdFeedbackContent->resource_files = json_decode($createdFeedbackContent->resource_files);
-        }
-        
-        if ($createdFeedbackContent->target_activities) {
-            $createdFeedbackContent->target_activities = json_decode($createdFeedbackContent->target_activities);
-        }
+        // No need to decode JSON fields - Laravel's attribute casting already handles this
 
         return response()->json([
             'status' => 'success',
@@ -315,29 +313,15 @@ class FeedbackContentController extends Controller
 
         $feedbackContent = FeedbackContent::where('activity_id', $activityId)->firstOrFail();
         
-        // Get questions for this feedback content
-        $questions = FeedbackQuestion::where('feedback_content_id', $feedbackContent->id)
+        // Load questions relationship - Laravel's attribute casting will handle JSON conversion
+        $questions = $feedbackContent->questions()
             ->orderBy('order')
-            ->get()
-            ->map(function ($question) {
-                // Decode options from JSON
-                if ($question->options) {
-                    $question->options = json_decode($question->options);
-                }
-                return $question;
-            });
+            ->get();
             
         // Add questions to the response
         $feedbackContent->questions = $questions;
         
-        // Decode other JSON fields
-        if ($feedbackContent->resource_files) {
-            $feedbackContent->resource_files = json_decode($feedbackContent->resource_files);
-        }
-        
-        if ($feedbackContent->target_activities) {
-            $feedbackContent->target_activities = json_decode($feedbackContent->target_activities);
-        }
+        // No need to decode JSON fields - Laravel's attribute casting already handles this
 
         return response()->json([
             'status' => 'success',
@@ -469,13 +453,13 @@ class FeedbackContentController extends Controller
         // Prepare data for update
         $updateData = $request->except(['questions', 'target_activities', 'resource_files']);
         
-        // Handle arrays that need to be stored as JSON
+        // Set arrays directly - Laravel's attribute casting will handle JSON conversion
         if ($request->has('resource_files')) {
-            $updateData['resource_files'] = json_encode($request->resource_files);
+            $updateData['resource_files'] = $request->resource_files;
         }
         
         if ($request->has('target_activities')) {
-            $updateData['target_activities'] = json_encode($request->target_activities);
+            $updateData['target_activities'] = $request->target_activities;
         }
 
         // Update the feedback content
@@ -491,17 +475,17 @@ class FeedbackContentController extends Controller
             $updatedQuestionIds = [];
             
             foreach ($request->questions as $index => $questionData) {
-                // If question has an ID, update it
-                if (isset($questionData['id'])) {
+                // If question has an ID and it's not -1 (frontend placeholder), update it
+                if (isset($questionData['id']) && $questionData['id'] > 0) {
                     $question = FeedbackQuestion::find($questionData['id']);
                     
                     if ($question && $question->feedback_content_id == $feedbackContent->id) {
                         // Update existing question
                         $questionData['order'] = $index;
                         
-                        // Handle options as JSON
+                        // Set options directly - Laravel's attribute casting will handle JSON conversion
                         if (isset($questionData['options']) && is_array($questionData['options'])) {
-                            $questionData['options'] = json_encode($questionData['options']);
+                            $questionData['options'] = $questionData['options'];
                         }
                         
                         $question->update($questionData);
@@ -509,16 +493,22 @@ class FeedbackContentController extends Controller
                     }
                 } else {
                     // Create new question
-                    $questionData['feedback_content_id'] = $feedbackContent->id;
-                    $questionData['order'] = $index;
-                    $questionData['created_by'] = Auth::id();
+                    $newQuestionData = [
+                        'feedback_content_id' => $feedbackContent->id,
+                        'title' => $questionData['title'],
+                        'question_text' => $questionData['question_text'],
+                        'question_type' => $questionData['question_type'],
+                        'required' => $questionData['required'] ?? false,
+                        'order' => $index,
+                        'created_by' => Auth::id()
+                    ];
                     
-                    // Handle options as JSON
+                    // Set options directly - Laravel's attribute casting will handle JSON conversion
                     if (isset($questionData['options']) && is_array($questionData['options'])) {
-                        $questionData['options'] = json_encode($questionData['options']);
+                        $newQuestionData['options'] = $questionData['options'];
                     }
                     
-                    $newQuestion = FeedbackQuestion::create($questionData);
+                    $newQuestion = FeedbackQuestion::create($newQuestionData);
                     $updatedQuestionIds[] = $newQuestion->id;
                 }
             }
@@ -530,32 +520,18 @@ class FeedbackContentController extends Controller
             }
         }
         
-        // Get updated feedback content with questions
-        $updatedFeedbackContent = FeedbackContent::where('id', $feedbackContent->id)->first();
+        // Get updated feedback content
+        $updatedFeedbackContent = FeedbackContent::findOrFail($feedbackContent->id);
         
-        // Get questions for this feedback content
-        $questions = FeedbackQuestion::where('feedback_content_id', $updatedFeedbackContent->id)
+        // Load questions relationship - Laravel's attribute casting will handle JSON conversion
+        $questions = $updatedFeedbackContent->questions()
             ->orderBy('order')
-            ->get()
-            ->map(function ($question) {
-                // Decode options from JSON
-                if ($question->options) {
-                    $question->options = json_decode($question->options);
-                }
-                return $question;
-            });
+            ->get();
             
         // Add questions to the response
         $updatedFeedbackContent->questions = $questions;
         
-        // Decode other JSON fields
-        if ($updatedFeedbackContent->resource_files) {
-            $updatedFeedbackContent->resource_files = json_decode($updatedFeedbackContent->resource_files);
-        }
-        
-        if ($updatedFeedbackContent->target_activities) {
-            $updatedFeedbackContent->target_activities = json_decode($updatedFeedbackContent->target_activities);
-        }
+        // No need to decode JSON fields - Laravel's attribute casting already handles this
 
         return response()->json([
             'status' => 'success',
