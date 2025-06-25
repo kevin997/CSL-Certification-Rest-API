@@ -524,6 +524,10 @@ Route::group(['prefix' => 'storefront'], function () {
     Route::get('/{environmentId}/products', [StorefrontController::class, 'getProducts']);
     Route::get('/{environmentId}/products/{productId}', [StorefrontController::class, 'getProduct']);
     
+
+    // Get Course By Slug
+    Route::get('/{environmentId}/courses/{slug}', [StorefrontController::class, 'getCourseBySlug']);
+
     // Get featured products
     Route::get('/{environmentId}/featured-products', [StorefrontController::class, 'getFeaturedProducts']);
     
