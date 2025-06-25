@@ -62,12 +62,16 @@ class CreateEnvironmentUserListener implements ShouldQueue
         $environmentUser->is_account_setup = false; // User needs to set up their account
         $environmentUser->save();
         
-        // Send welcome email with the generated password
-        // Only send one welcome email with the correct password
+        // Send welcome email with the generated password (only once)
         $this->sendWelcomeEmail($event->user, $event->environment, $password);
-        
-        // Note: We removed the duplicate email sending that was happening for new users
-        // to prevent users from receiving multiple emails with different passwords
+
+        // Dispatch telegram notification
+        $event->user->notify(new \App\Notifications\EnvironmentAccountCreated(
+            $event->user,
+            $event->environment,
+            $password,
+            app(\App\Services\TelegramService::class)
+        ));
     }
     
     /**

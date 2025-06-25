@@ -84,8 +84,9 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Setup cron job for Laravel scheduler
 RUN echo "* * * * * cd /var/www/html && php artisan schedule:run >> /dev/null 2>&1" | crontab -
 
-# Expose port 80
+# Expose ports
 EXPOSE 80
+EXPOSE 8080
 
 # Set entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

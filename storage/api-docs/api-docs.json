@@ -1355,6 +1355,93 @@
                 ]
             }
         },
+        "/api/blocks/{blockId}/activities/batch-delete": {
+            "post": {
+                "tags": [
+                    "Activities"
+                ],
+                "summary": "Batch delete activities",
+                "description": "Deletes multiple activities from a block",
+                "operationId": "batchDeleteActivities",
+                "parameters": [
+                    {
+                        "name": "blockId",
+                        "in": "path",
+                        "description": "Block ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "activity_ids"
+                                ],
+                                "properties": {
+                                    "activity_ids": {
+                                        "description": "Array of activity IDs to delete",
+                                        "type": "array",
+                                        "items": {
+                                            "type": "integer",
+                                            "example": 1
+                                        }
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Activities deleted successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Activities deleted successfully"
+                                        },
+                                        "deleted_count": {
+                                            "type": "integer",
+                                            "example": 1
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "403": {
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "description": "Block not found"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
         "/activities/{activityId}/assignment-content": {
             "get": {
                 "tags": [
@@ -8964,6 +9051,14 @@
                                     "description": {
                                         "type": "string",
                                         "example": "A platform for teaching computer science"
+                                    },
+                                    "country_code": {
+                                        "type": "string",
+                                        "example": "CM"
+                                    },
+                                    "state_code": {
+                                        "type": "string",
+                                        "example": "CE"
                                     }
                                 },
                                 "type": "object"
@@ -10022,11 +10117,6 @@
                                     "is_default": {
                                         "type": "boolean",
                                         "example": true
-                                    },
-                                    "webhook_url": {
-                                        "type": "string",
-                                        "example": "https://example.com/updated-webhook",
-                                        "nullable": true
                                     },
                                     "settings": {
                                         "type": "object",
@@ -13274,6 +13364,104 @@
                 ]
             }
         },
+        "/api/payments/transactions/callback/success/{gateway}/{environment_id}": {
+            "get": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Handle successful payment callback",
+                "description": "Receives callback from payment gateway after successful payment and redirects user",
+                "operationId": "callbackSuccess",
+                "parameters": [
+                    {
+                        "name": "gateway",
+                        "in": "path",
+                        "description": "Payment gateway identifier (stripe, paypal, etc)",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "environment_id",
+                        "in": "path",
+                        "description": "Environment ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "transaction_id",
+                        "in": "query",
+                        "description": "Transaction ID (UUID)",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "Redirects to success page"
+                    },
+                    "400": {
+                        "description": "Transaction ID not provided"
+                    },
+                    "404": {
+                        "description": "Transaction not found"
+                    }
+                }
+            }
+        },
+        "/api/payments/transactions/webhook/{gateway}/{environment_id}": {
+            "post": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Process payment gateway webhook notifications",
+                "description": "Handles webhook notifications from payment gateways like Stripe, PayPal etc.",
+                "operationId": "transactionWebhook",
+                "parameters": [
+                    {
+                        "name": "gateway",
+                        "in": "path",
+                        "description": "Payment gateway identifier (stripe, paypal, etc)",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "environment_id",
+                        "in": "path",
+                        "description": "Environment ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Raw webhook payload from the payment gateway",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Webhook processed successfully"
+                    },
+                    "400": {
+                        "description": "Invalid webhook payload or signature"
+                    },
+                    "404": {
+                        "description": "Gateway settings not found"
+                    },
+                    "500": {
+                        "description": "Error processing webhook"
+                    }
+                }
+            }
+        },
         "/transactions": {
             "get": {
                 "tags": [
@@ -13745,176 +13933,6 @@
                     },
                     "400": {
                         "description": "Invalid input data"
-                    },
-                    "404": {
-                        "description": "Transaction not found"
-                    },
-                    "422": {
-                        "description": "Validation error"
-                    }
-                },
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ]
-            }
-        },
-        "/payments/create": {
-            "post": {
-                "tags": [
-                    "Payments"
-                ],
-                "summary": "Create a payment for an order",
-                "description": "Creates a payment session/intent based on the selected payment method",
-                "operationId": "createPayment",
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "required": [
-                                    "order_id",
-                                    "gateway_code"
-                                ],
-                                "properties": {
-                                    "order_id": {
-                                        "type": "integer",
-                                        "example": 1
-                                    },
-                                    "gateway_code": {
-                                        "type": "string",
-                                        "example": "stripe"
-                                    },
-                                    "environment_id": {
-                                        "type": "integer",
-                                        "example": 1
-                                    },
-                                    "payment_data": {
-                                        "type": "object"
-                                    }
-                                },
-                                "type": "object"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Payment created successfully",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "properties": {
-                                        "success": {
-                                            "type": "boolean",
-                                            "example": true
-                                        },
-                                        "type": {
-                                            "type": "string",
-                                            "example": "client_secret"
-                                        },
-                                        "value": {
-                                            "type": "string",
-                                            "example": "pi_3NJK9JHjZ8aCLp1X1L8qlmvN_secret_MhCLmVIjBBBBrrrGGGGnnnn"
-                                        },
-                                        "payment_intent_id": {
-                                            "type": "string",
-                                            "example": "pi_3NJK9JHjZ8aCLp1X1L8qlmvN"
-                                        },
-                                        "publishable_key": {
-                                            "type": "string",
-                                            "example": "pk_test_51JK9JHjZ8aCLp1X1L8qlmvN"
-                                        }
-                                    },
-                                    "type": "object"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid input data or payment creation error"
-                    },
-                    "404": {
-                        "description": "Order not found"
-                    },
-                    "422": {
-                        "description": "Validation error"
-                    }
-                }
-            }
-        },
-        "/transactions/{id}/process": {
-            "post": {
-                "tags": [
-                    "Transactions"
-                ],
-                "summary": "Process a transaction",
-                "description": "Process a transaction with the associated payment gateway",
-                "operationId": "processTransaction",
-                "parameters": [
-                    {
-                        "name": "id",
-                        "in": "path",
-                        "description": "Transaction ID",
-                        "required": true,
-                        "schema": {
-                            "type": "integer",
-                            "format": "int64"
-                        }
-                    }
-                ],
-                "requestBody": {
-                    "description": "Payment processing data",
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "properties": {
-                                    "payment_method": {
-                                        "type": "string",
-                                        "example": "credit_card"
-                                    },
-                                    "payment_token": {
-                                        "type": "string",
-                                        "example": "tok_visa"
-                                    },
-                                    "payment_details": {
-                                        "type": "object",
-                                        "nullable": true
-                                    }
-                                },
-                                "type": "object"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Transaction processed successfully",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "example": "success"
-                                        },
-                                        "message": {
-                                            "type": "string",
-                                            "example": "Transaction processed successfully"
-                                        },
-                                        "data": {
-                                            "$ref": "#/components/schemas/Transaction"
-                                        }
-                                    },
-                                    "type": "object"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid input data or payment processing error"
                     },
                     "404": {
                         "description": "Transaction not found"
@@ -16556,10 +16574,6 @@
         {
             "name": "Transactions",
             "description": "Transactions"
-        },
-        {
-            "name": "Payments",
-            "description": "Payments"
         }
     ]
 }

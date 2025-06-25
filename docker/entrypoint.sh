@@ -98,6 +98,9 @@ mkdir -p /var/log/supervisor
 if [ "$CONTAINER_ROLE" = "queue" ]; then
   echo "Starting queue worker..."
   exec supervisord -c /etc/supervisor/conf.d/supervisord.conf
+elif [ "$CONTAINER_ROLE" = "reverb" ]; then
+  echo "Starting Laravel Reverb WebSocket server..."
+  exec php artisan reverb:start --host=$REVERB_HOST --port=$REVERB_PORT
 else
   # Start Nginx and PHP-FPM
   echo "Starting Nginx and PHP-FPM..."

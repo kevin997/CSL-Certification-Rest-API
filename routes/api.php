@@ -54,6 +54,12 @@ use App\Http\Controllers\Api\Onboarding\StandaloneOnboardingController;
 use App\Http\Controllers\Api\Onboarding\SupportedOnboardingController;
 use App\Http\Controllers\Api\Onboarding\DemoOnboardingController;
 use App\Http\Controllers\Api\LessonDiscussionController;
+use Illuminate\Support\Facades\Broadcast;
+
+
+Route::middleware('auth:sanctum')->post('/broadcasting/auth', function (Request $request) {
+    return Broadcast::auth($request);
+});
 
 // Health check endpoint for monitoring and deployment verification
 Route::get('/health', function() {
