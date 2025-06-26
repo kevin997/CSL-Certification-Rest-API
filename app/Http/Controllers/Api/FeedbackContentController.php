@@ -212,10 +212,8 @@ class FeedbackContentController extends Controller
         // Create questions separately
         if ($request->has('questions') && is_array($request->questions)) {
             foreach ($request->questions as $index => $questionData) {
-                // Skip questions with ID = -1 (frontend placeholder)
-                if (isset($questionData['id']) && $questionData['id'] < 0) {
-                    continue;
-                }
+                // Don't skip questions with ID = -1 (frontend placeholder) as they need to be created
+                // We just need to remove the ID field since it's not valid for creation
                 
                 // Create new question with explicit field mapping
                 // If title is not provided, use question_text as the title
@@ -230,6 +228,11 @@ class FeedbackContentController extends Controller
                     'created_by' => Auth::id()
                 ];
                 
+                // Set title if available
+                if (isset($questionData['title']) && !empty($questionData['title'])) {
+                    $newQuestionData['title'] = $questionData['title'];
+                }
+                
                 // Set options directly - Laravel's attribute casting will handle JSON conversion
                 if (isset($questionData['options']) && is_array($questionData['options'])) {
                     $newQuestionData['options'] = $questionData['options'];
@@ -239,11 +242,11 @@ class FeedbackContentController extends Controller
             }
         }
         
-        // Get the created feedback content with questions
-        $createdFeedbackContent = FeedbackContent::where('id', $feedbackContent->id)->first();
+        // Get the created feedback content
+        $createdFeedbackContent = FeedbackContent::findOrFail($feedbackContent->id);
         
-        // Get questions for this feedback content - Laravel's attribute casting will handle JSON conversion
-        $questions = FeedbackQuestion::where('feedback_content_id', $createdFeedbackContent->id)
+        // Load questions relationship explicitly - this is what the update method does
+        $questions = $createdFeedbackContent->questions()
             ->orderBy('order')
             ->get();
             
