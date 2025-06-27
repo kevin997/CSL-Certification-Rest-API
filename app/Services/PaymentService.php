@@ -1473,11 +1473,8 @@ class PaymentService
     protected function processRelatedRecords(Transaction $transaction): void
     {
         // Update related order if exists
-        $order = Order::where('transaction_id', $transaction->id)->first();
-        if ($order) {
-            $order->status = 'completed';
-            $order->save();
-        }
+        $order = Order::where('id', $transaction->transaction_id)->first();
+        if ($order) event(new \App\Events\OrderCompleted($order));
         
         // Process subscriptions or other related records
         // Additional logic can be added here as needed

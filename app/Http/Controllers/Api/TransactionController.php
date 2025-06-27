@@ -382,7 +382,7 @@ class TransactionController extends Controller
     private function handleStripeWebhook($payload, $headers, $gatewaySettings)
     {
         // Initialize Stripe with gateway settings
-        $stripeSecretKey = $gatewaySettings->settings['api_key'] ?? null;
+        $stripeSecretKey = $gatewaySettings->getSetting('api_key') ?? null;
         
         if (!$stripeSecretKey) {
             Log::error('Stripe api key(secret key) not found in gateway settings');
@@ -393,7 +393,7 @@ class TransactionController extends Controller
         
         // Get the signature header
         $sigHeader = $headers['stripe-signature'][0] ?? '';
-        $webhookSecret = $gatewaySettings->settings['webhook_secret'] ?? null;
+        $webhookSecret = $gatewaySettings->getSetting('webhook_secret') ?? null;
         
         try {
             // Verify the event
@@ -1157,6 +1157,10 @@ class TransactionController extends Controller
             $transaction->gateway_response = json_encode($event);
             $transaction->paid_at = now();
             $transaction->save();
+            $transaction->refresh();
+            
+            $order = Order::where('id', $transaction->transaction_id)->first();
+            if ($order) event(new \App\Events\OrderCompleted($order));
             
             Log::info('Monetbill payment success processed', [
                 'transaction_id' => $transaction->id,
