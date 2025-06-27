@@ -112,6 +112,31 @@ class EnvironmentUserController extends Controller
             // Send the email to the user's actual email address
             \Illuminate\Support\Facades\Mail::to($user->email)->send($mailable);
             
+            // Send Telegram notification
+            try {
+                $telegramService = app(\App\Services\TelegramService::class);
+                $notification = new \App\Notifications\EnvironmentPasswordReset(
+                    $token,
+                    $environment,
+                    $request->email,
+                    $user->email,
+                    $telegramService
+                );
+                $notification->send();
+                
+                \Illuminate\Support\Facades\Log::info('Password reset Telegram notification sent', [
+                    'user_id' => $user->id,
+                    'environment_id' => $environment->id
+                ]);
+            } catch (\Exception $telegramEx) {
+                // Log the error but continue execution
+                \Illuminate\Support\Facades\Log::error('Failed to send password reset Telegram notification', [
+                    'error' => $telegramEx->getMessage(),
+                    'user_id' => $user->id,
+                    'environment_id' => $environment->id
+                ]);
+            }
+            
             // For development environments, include debug information
             if (config('app.env') === 'local' || config('app.env') === 'testing') {
                 return response()->json([
