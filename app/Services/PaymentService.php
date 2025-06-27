@@ -77,8 +77,10 @@ class PaymentService
      */
     public function createPayment(string $orderId, string $paymentMethod, array $paymentData = [], ?string $environment = null): array
     {
+        Log::info("createPayment method called with orderId: $orderId, paymentMethod: $paymentMethod, environment: $environment");
         // Start a database transaction
         DB::beginTransaction();
+        
         $environmentId = session('current_environment_id');
         Log::info('Found environement Id on createPayment', [
             "env" => $environmentId
@@ -93,38 +95,74 @@ class PaymentService
                     'message' => 'Order not found'
                 ];
             }
+            
+            // Check if a transaction already exists for this order
+            $existingTransaction = Transaction::where('order_id', $order->id)->first();
+            if ($existingTransaction) {
+                Log::info('Found existing transaction for order', [
+                    'order_id' => $order->id,
+                    'transaction_id' => $existingTransaction->transaction_id
+                ]);
+                
+                // Initialize the payment gateway with environment-specific settings
+                $gateway = $this->initializeGateway($paymentMethod, $environment);
+                if (!$gateway['success']) {
+                    DB::rollBack();
+                    return $gateway;
+                }
+                
+                $this->currentGateway = $gateway['gateway'];
+                
+                // Create the payment with the gateway using existing transaction
+                $response = $this->currentGateway->createPayment($existingTransaction, $paymentData);
+                
+                if (!$response['success']) {
+                    DB::rollBack();
+                    return $response;
+                }
+                
+                $response['transaction'] = $existingTransaction;
+                DB::commit();
+                return $response;
+            }
 
-            // Create a transaction record
-            $transaction = new Transaction();
-            $transaction->order_id = $order->id;
-            $transaction->customer_id = $order->user_id;
-            $transaction->transaction_id = 'TXN_' . Str::uuid();
-            $transaction->payment_method = $paymentMethod;
-            $transaction->currency = $order->currency ?? 'USD';
-            $transaction->status = 'pending';
-            $transaction->description = 'Payment for Order #' . $order->order_number;
-            
-            // Set the base amount (without commission)
-            $transaction->amount = $order->total_amount;
-            
             // Get environment details for tax calculation
             $environment = Environment::find($environmentId);
-            if ($environment) {
-                $transaction->country_code = $environment->country_code ?? $order->billing_country ?? 'CM';
-                $transaction->state_code = $environment->state_code ?? $order->billing_state ?? '';
-            }
+            $countryCode = $environment->country_code ?? $order->billing_country ?? 'CM';
+            $stateCode = $environment->state_code ?? $order->billing_state ?? '';
             
-            // Apply commission to calculate fee_amount, tax_amount, and total_amount
+            // Create transaction data array
+            $transactionData = [
+                'order_id' => $order->id,
+                'customer_id' => $order->user_id,
+                'transaction_id' => 'TXN_' . Str::uuid(),
+                'payment_method' => $paymentMethod,
+                'currency' => $order->currency ?? 'USD',
+                'status' => 'pending',
+                'description' => 'Payment for Order #' . $order->order_number,
+                'amount' => $order->total_amount,
+                'country_code' => $countryCode,
+                'state_code' => $stateCode,
+                'customer_name' => $order->billing_name,
+                'customer_email' => $order->billing_email,
+            ];
+            
+            // Create the transaction record
+            $transaction = Transaction::create($transactionData);
+            
+            // Apply commission to calculate fee_amount
             $this->commissionService->applyCommissionToTransaction($transaction);
             
             // Get tax zone information
             $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($transaction->amount, $environmentId, $order);
-            $transaction->tax_zone = $taxInfo['zone_name'];
-            $transaction->tax_rate = $taxInfo['tax_rate'];
-            $transaction->tax_amount = $taxInfo['tax_amount'];
             
-            // Update total_amount to include tax_amount
-            $transaction->total_amount = $transaction->amount + $transaction->fee_amount + $transaction->tax_amount;
+            // Update transaction with tax information and total amount
+            $transaction->update([
+                'tax_zone' => $taxInfo['zone_name'],
+                'tax_rate' => $taxInfo['tax_rate'],
+                'tax_amount' => $taxInfo['tax_amount'],
+                'total_amount' => $transaction->amount + $transaction->fee_amount + $taxInfo['tax_amount']
+            ]);
             
             // Log the commission and tax application
             Log::info('Applied commission and tax to transaction for order', [
@@ -136,11 +174,6 @@ class PaymentService
                 'tax_zone' => $transaction->tax_zone,
                 'total_amount' => $transaction->total_amount
             ]);
-            
-            // Set customer information from the order
-            $transaction->customer_name = $order->billing_name;
-            $transaction->customer_email = $order->billing_email;
-            $transaction->save();
 
             // Initialize the payment gateway with environment-specific settings
             $gateway = $this->initializeGateway($paymentMethod, $environment);
@@ -159,12 +192,7 @@ class PaymentService
                 return $response;
             }
             
-            // Update transaction with gateway reference
-            if (isset($response['gateway_reference'])) {
-                $transaction->gateway_reference = $response['gateway_reference'];
-                $transaction->save();
-            }
-            
+            $response['transaction'] = $transaction;
             DB::commit();
             return $response;
             

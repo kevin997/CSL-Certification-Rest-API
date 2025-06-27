@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
+use App\Services\TelegramService;
+use App\Notifications\EnvironmentAccountCreated;
 
 class CreateEnvironmentUserListener implements ShouldQueue
 {
@@ -66,12 +68,12 @@ class CreateEnvironmentUserListener implements ShouldQueue
         $this->sendWelcomeEmail($event->user, $event->environment, $password);
 
         // Dispatch telegram notification
-        $event->user->notify(new \App\Notifications\EnvironmentAccountCreated(
-            $event->user,
+        $notification = new EnvironmentAccountCreated($event->user,
             $event->environment,
             $password,
-            app(\App\Services\TelegramService::class)
-        ));
+            new TelegramService());
+            
+            $notification->toTelegram($notification);
     }
     
     /**

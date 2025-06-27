@@ -17,16 +17,10 @@ return new class extends Migration
             // Modify the transaction_id column to be a string with sufficient length for UUID values
             // Check if column already exists
 
-            if (!MigrationHelper::columnExists('transactions', 'transaction_id')) {
+            if (MigrationHelper::columnExists('transactions', 'transaction_id')) {
 
                 // Check if column already exists
-
-
-                if (!MigrationHelper::columnExists('transactions', 'transaction_id')) {
-
-
-                    $table->string('transaction_id', 100)->change();
-                }
+                $table->string('transaction_id', 100)->change();
             }
         });
     }

@@ -498,6 +498,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/files', [FileController::class, 'store']);
     Route::post('/files/batch', [FileController::class, 'batchStore']); // New batch route
     Route::get('/environments/{environmentId}/files', [FileController::class, 'getByEnvironment']);
+    
+    // User Notification routes
+    Route::get('/environments/{environmentId}/notifications', [\App\Http\Controllers\Api\UserNotificationController::class, 'index']);
+    Route::get('/environments/{environmentId}/notifications/unread-count', [\App\Http\Controllers\Api\UserNotificationController::class, 'unreadCount']);
+    Route::put('/environments/{environmentId}/notifications/{notificationId}/read', [\App\Http\Controllers\Api\UserNotificationController::class, 'markAsRead']);
+    Route::put('/environments/{environmentId}/notifications/read-all', [\App\Http\Controllers\Api\UserNotificationController::class, 'markAllAsRead']);
     Route::get('/files/{id}', [FileController::class, 'show']);
     Route::put('/files/{id}', [FileController::class, 'update']);
     Route::delete('/files/{id}', [FileController::class, 'destroy']);

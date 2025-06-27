@@ -77,25 +77,26 @@ class StorefrontController extends Controller
      * @param string $orderId
      * @return Order|null
      */
-    public function getOrder(string $environmentId, string $orderId) {
+    public function getOrder(string $environmentId, string $orderId)
+    {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         $order = $this->getOrderById($environmentId, $orderId);
-        
+
         if (!$order) {
             return response()->json(['message' => 'Order not found'], 404);
         }
-        
+
         return response()->json([
             'success' => true,
             'data' => $order,
         ]);
     }
-    
+
     /**
      * Get a list of countries
      *
@@ -106,11 +107,11 @@ class StorefrontController extends Controller
     public function getCountries(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         // List of countries with their codes
         $countries = [
             // Common countries
@@ -161,7 +162,7 @@ class StorefrontController extends Controller
             ['code' => 'TR', 'name' => 'Turkey'],
             ['code' => 'UA', 'name' => 'Ukraine'],
             ['code' => 'VN', 'name' => 'Vietnam'],
-            
+
             // CEMAC Countries (Economic and Monetary Community of Central Africa)
             ['code' => 'CM', 'name' => 'Cameroon'],
             ['code' => 'CF', 'name' => 'Central African Republic'],
@@ -169,7 +170,7 @@ class StorefrontController extends Controller
             ['code' => 'CG', 'name' => 'Republic of Congo'],
             ['code' => 'GQ', 'name' => 'Equatorial Guinea'],
             ['code' => 'GA', 'name' => 'Gabon'],
-            
+
             // ECOWAS/CEDEAO Countries (Economic Community of West African States)
             ['code' => 'BJ', 'name' => 'Benin'],
             ['code' => 'BF', 'name' => 'Burkina Faso'],
@@ -187,14 +188,14 @@ class StorefrontController extends Controller
             ['code' => 'SL', 'name' => 'Sierra Leone'],
             ['code' => 'TG', 'name' => 'Togo'],
         ];
-        
+
         return response()->json([
             'success' => true,
             'data' => $countries,
             'environment' => $environment
         ]);
     }
-    
+
     /**
      * Get a list of states/provinces for a country
      *
@@ -206,13 +207,13 @@ class StorefrontController extends Controller
     public function getStates(Request $request, string $environmentId, string $countryCode)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         $states = [];
-        
+
         // Return states based on country code
         if ($countryCode === 'US') {
             $states = [
@@ -597,14 +598,14 @@ class StorefrontController extends Controller
                 ['code' => 'ZZ', 'name' => 'Zanzan']
             ];
         }
-        
+
         return response()->json([
             'success' => true,
             'data' => $states,
             'environment' => $environment
         ]);
     }
-    
+
     /**
      * Get a list of cities for a state/province
      *
@@ -617,15 +618,15 @@ class StorefrontController extends Controller
     public function getCities(Request $request, string $environmentId, string $countryCode, string $stateCode)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         // For demonstration purposes, return a sample list of cities
         // In a real application, you would query a database or use a third-party API
         $cities = [];
-        
+
         // US Cities
         if ($countryCode === 'US') {
             // California
@@ -647,7 +648,7 @@ class StorefrontController extends Controller
                     ['name' => 'Modesto'],
                     ['name' => 'Fontana']
                 ];
-            } 
+            }
             // New York
             else if ($stateCode === 'NY') {
                 $cities = [
@@ -1156,14 +1157,14 @@ class StorefrontController extends Controller
                 ];
             }
         }
-        
+
         return response()->json([
             'success' => true,
             'data' => $cities,
             'environment' => $environment
         ]);
     }
-    
+
     /**
      * Get featured products for an environment
      *
@@ -1174,18 +1175,18 @@ class StorefrontController extends Controller
     public function getFeaturedProducts(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         $products = Product::where('environment_id', $environment->id)
             ->where('is_featured', true)
             ->where('status', 'active')
             ->with('category')
             ->limit(6)
             ->get();
-        
+
         return response()->json(['data' => $products]);
     }
 
@@ -1199,41 +1200,41 @@ class StorefrontController extends Controller
     public function getAllProducts(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         $query = Product::where('environment_id', $environment->id)
             ->where('status', 'active')
             ->with('category');
-        
+
         // Apply filters
         if ($request->has('search')) {
             $search = $request->input('search');
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%");
+                    ->orWhere('description', 'like', "%{$search}%");
             });
         }
-        
+
         if ($request->has('category')) {
             $categoryIds = explode(',', $request->input('category'));
             $query->whereIn('category_id', $categoryIds);
         }
-        
+
         if ($request->has('min_price')) {
             $query->where('price', '>=', $request->input('min_price'));
         }
-        
+
         if ($request->has('max_price')) {
             $query->where('price', '<=', $request->input('max_price'));
         }
-        
+
         // Apply sorting
         $sortField = 'created_at';
         $sortDirection = 'desc';
-        
+
         if ($request->has('sort')) {
             switch ($request->input('sort')) {
                 case 'price_low':
@@ -1262,18 +1263,18 @@ class StorefrontController extends Controller
                     break;
             }
         }
-        
+
         $query->orderBy($sortField, $sortDirection);
-        
+
         // Get pagination parameters
         $perPage = $request->input('per_page', 12);
-        
+
         // Get categories for filtering
         $categories = ProductCategory::where('environment_id', $environment->id)
             ->get(['id', 'name', 'slug']);
-        
+
         $products = $query->paginate($perPage);
-        
+
         return response()->json([
             'data' => $products->items(),
             'meta' => [
@@ -1300,36 +1301,36 @@ class StorefrontController extends Controller
     public function getProductBySlug(Request $request, string $environmentId, string $slug)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         $product = Product::where('environment_id', $environment->id)
             ->where('slug', $slug)
             ->with(['category', 'courses'])
             ->first();
-        
+
         if (!$product) {
             return response()->json(['message' => 'Product not found'], 404);
         }
-        
+
         // Get related products
         $relatedProducts = Product::where('environment_id', $environment->id)
             ->where('id', '!=', $product->id)
             ->where('status', 'active')
-            ->where(function($query) use ($product) {
+            ->where(function ($query) use ($product) {
                 $query->where('category_id', $product->category_id)
-                      ->orWhere('is_featured', true);
+                    ->orWhere('is_featured', true);
             })
             ->limit(4)
             ->get();
-        
+
         $product->related_products = $relatedProducts;
-        
+
         return response()->json(['data' => $product]);
     }
-    
+
     /**
      * Get a product by ID
      *
@@ -1341,33 +1342,33 @@ class StorefrontController extends Controller
     public function getProductById(Request $request, string $environmentId, int $id)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         $product = Product::where('environment_id', $environment->id)
             ->where('id', $id)
             ->with(['category', 'courses'])
             ->first();
-        
+
         if (!$product) {
             return response()->json(['message' => 'Product not found'], 404);
         }
-        
+
         // Get related products
         $relatedProducts = Product::where('environment_id', $environment->id)
             ->where('id', '!=', $product->id)
             ->where('status', 'active')
-            ->where(function($query) use ($product) {
+            ->where(function ($query) use ($product) {
                 $query->where('category_id', $product->category_id)
-                      ->orWhere('is_featured', true);
+                    ->orWhere('is_featured', true);
             })
             ->limit(4)
             ->get();
-        
+
         $product->related_products = $relatedProducts;
-        
+
         return response()->json(['data' => $product]);
     }
 
@@ -1381,14 +1382,14 @@ class StorefrontController extends Controller
     public function getCategories(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         $categories = ProductCategory::where('environment_id', $environment->id)
             ->get();
-        
+
         return response()->json(['data' => $categories]);
     }
 
@@ -1402,16 +1403,16 @@ class StorefrontController extends Controller
     public function getPaymentMethods(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         $paymentMethods = PaymentGatewaySetting::where('environment_id', $environment->id)
             ->where('is_active', true)
             ->with('paymentGateway')
             ->get()
-            ->map(function($method) {
+            ->map(function ($method) {
                 return [
                     'id' => $method->id,
                     'name' => $method->paymentGateway->name,
@@ -1420,10 +1421,10 @@ class StorefrontController extends Controller
                     'description' => $method->paymentGateway->description,
                 ];
             });
-        
+
         return response()->json(['data' => $paymentMethods]);
     }
-    
+
     /**
      * Get payment gateways
      *
@@ -1434,17 +1435,17 @@ class StorefrontController extends Controller
     public function getPaymentGateways(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         // Get active payment gateways for this environment
         $gateways = PaymentGatewaySetting::where('environment_id', $environment->id)
             ->where('status', true)
             ->orderBy('sort_order')
             ->get();
-        
+
         return response()->json(['data' => $gateways]);
     }
 
@@ -1458,11 +1459,11 @@ class StorefrontController extends Controller
     public function checkout(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         // Validate the request
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
@@ -1478,17 +1479,17 @@ class StorefrontController extends Controller
             'billing_zip' => 'required|string|max:20',
             'billing_country' => 'required|string|max:255',
         ]);
-        
+
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
-        
+
         try {
             DB::beginTransaction();
-            
+
             // Find or create user by email
             $userExists = User::where('email', $request->input('email'))->exists();
-            
+
             $user = User::firstOrCreate(
                 ['email' => $request->input('email')],
                 [
@@ -1496,120 +1497,146 @@ class StorefrontController extends Controller
                     'password' => bcrypt(Str::random(16)),
                 ]
             );
-            
+
             // Dispatch event for user creation/environment association
             event(new \App\Events\UserCreatedDuringCheckout(
                 $user,
                 $environment,
                 !$userExists // isNewUser flag is true if the user didn't exist before
             ));
-            
+
             // Calculate total amount first
             $totalAmount = 0;
             $orderItems = [];
-            
-            // Process products and calculate total
-            foreach ($request->input('products') as $item) {
-                $product = Product::findOrFail($item['id']);
-                
-                // Skip if product doesn't belong to this environment
-                if ($product->environment_id !== $environment->id) {
-                    continue;
+            $order = null;
+            $responseData = [];
+
+            //if order has already been created, use it, nowing that we have many orders with the same user_id and environement_id, we check if the user is making the order for the same product(s) in Order Item
+            $order = Order::where('user_id', $user->id)
+                ->where('environment_id', $environment->id)
+                ->where('status', 'pending')
+                ->whereHas('orderItems', function ($query) use ($request) {
+                    $query->where('product_id', $request->input('products')[0]['id']);
+                })
+                ->first();
+
+            if (!$order) {
+                //if order doesn't exist, create it, this flow avoids creating many orders for the same product(s)
+
+                // Process products and calculate total
+                foreach ($request->input('products') as $item) {
+                    $product = Product::findOrFail($item['id']);
+
+                    // Skip if product doesn't belong to this environment
+                    if ($product->environment_id !== $environment->id) {
+                        continue;
+                    }
+
+                    $price = $product->discount_price ?? $product->price;
+                    $quantity = $item['quantity'];
+                    $total = $price * $quantity;
+
+                    $orderItems[] = [
+                        'product' => $product,
+                        'quantity' => $quantity,
+                        'price' => $price,
+                        'total' => $total
+                    ];
+
+                    $totalAmount += $total;
                 }
-                
-                $price = $product->discount_price ?? $product->price;
-                $quantity = $item['quantity'];
-                $total = $price * $quantity;
-                
-                $orderItems[] = [
-                    'product' => $product,
-                    'quantity' => $quantity,
-                    'price' => $price,
-                    'total' => $total
-                ];
-                
-                $totalAmount += $total;
-            }
-            
-            // Create order with total amount already set
-            $order = new Order();
-            $order->user_id = $user->id;
-            $order->environment_id = $environment->id;
-            $order->order_number = 'ORD-' . strtoupper(Str::random(8));
-            $order->status = 'pending';
-            $order->payment_method = $request->input('payment_method');
-            $order->billing_name = $request->input('name');
-            $order->billing_email = $request->input('email');
-            $order->phone_number = $request->input('phone_number');
-            $order->billing_address = $request->input('billing_address');
-            $order->billing_city = $request->input('billing_city');
-            $order->billing_state = $request->input('billing_state');
-            $order->billing_zip = $request->input('billing_zip');
-            $order->billing_country = $request->input('billing_country');
-            $order->notes = $request->input('notes');
-            $order->referral_id = $request->input('referral_id');
-            $order->total_amount = $totalAmount;
-            $order->currency = 'USD'; // Default currency
-            $order->save();
-            
-            // Save order items to the database
-            foreach ($orderItems as $item) {
-                $orderItem = new OrderItem();
-                $orderItem->order_id = $order->id;
-                $orderItem->product_id = $item['product']->id;
-                $orderItem->quantity = $item['quantity'];
-                $orderItem->price = $item['price'];
-                $orderItem->total = $item['total'];
-                $orderItem->save();
-            }
-            
-            // Check if a referral code was provided
-            if ($request->has('referral_code') && !empty($request->input('referral_code'))) {
-                $referralCode = $request->input('referral_code');
-                
-                // Find the referral by code and environment
-                $referral = \App\Models\EnvironmentReferral::where('code', $referralCode)
-                    ->where('environment_id', $environment->id)
-                    ->where('is_active', true)
-                    ->first();
-                    
-                if ($referral) {
-                    // Check if referral has expired
-                    if (!$referral->expiration_date || now()->isBefore($referral->expiration_date)) {
-                        // Check if referral has reached max uses
-                        if ($referral->max_uses <= 0 || $referral->uses_count < $referral->max_uses) {
-                            // Set the referral ID on the order
-                            $order->referral_id = $referral->id;
-                            $order->save();
-                            
-                            // Dispatch the event to process the referral usage
-                            event(new \App\Events\OrderCompletedWithReferral($order, $referral));
-                            
-                            // Log the referral usage
-                            Log::info('Referral code used in order', [
-                                'referral_id' => $referral->id,
-                                'referral_code' => $referral->code,
-                                'order_id' => $order->id,
-                                'order_number' => $order->order_number
-                            ]);
+
+                $products = $request->input('products');
+                //fin the first product in the array
+                $firstProduct = $products[0];
+                $product = Product::findOrFail($firstProduct['id']);
+
+                // Create order with total amount already set
+                $order = new Order();
+                $order->user_id = $user->id;
+                $order->environment_id = $environment->id;
+                $order->order_number = 'ORD-' . strtoupper(Str::random(8));
+                $order->status = 'pending';
+                $order->payment_method = $request->input('payment_method');
+                $order->billing_name = $request->input('name');
+                $order->billing_email = $request->input('email');
+                $order->phone_number = $request->input('phone_number');
+                $order->billing_address = $request->input('billing_address');
+                $order->billing_city = $request->input('billing_city');
+                $order->billing_state = $request->input('billing_state');
+                $order->billing_zip = $request->input('billing_zip');
+                $order->billing_country = $request->input('billing_country');
+                $order->notes = $request->input('notes');
+                $order->referral_id = $request->input('referral_id');
+                $order->total_amount = $totalAmount;
+                $order->currency = $product->currency;
+                $order->save();
+
+                // Save order items to the database
+                foreach ($orderItems as $item) {
+                    $orderItem = new OrderItem();
+                    $orderItem->order_id = $order->id;
+                    $orderItem->product_id = $item['product']->id;
+                    $orderItem->quantity = $item['quantity'];
+                    $orderItem->price = $item['price'];
+                    $orderItem->total = $item['total'];
+                    $orderItem->save();
+                }
+
+                // Check if a referral code was provided
+                if ($request->has('referral_code') && !empty($request->input('referral_code'))) {
+                    $referralCode = $request->input('referral_code');
+
+                    // Find the referral by code and environment
+                    $referral = \App\Models\EnvironmentReferral::where('code', $referralCode)
+                        ->where('environment_id', $environment->id)
+                        ->where('is_active', true)
+                        ->first();
+
+                    if ($referral) {
+                        // Check if referral has expired
+                        if (!$referral->expiration_date || now()->isBefore($referral->expiration_date)) {
+                            // Check if referral has reached max uses
+                            if ($referral->max_uses <= 0 || $referral->uses_count < $referral->max_uses) {
+                                // Set the referral ID on the order
+                                $order->referral_id = $referral->id;
+                                $order->save();
+
+                                // Dispatch the event to process the referral usage
+                                event(new \App\Events\OrderCompletedWithReferral($order, $referral));
+
+                                // Log the referral usage
+                                Log::info('Referral code used in order', [
+                                    'referral_id' => $referral->id,
+                                    'referral_code' => $referral->code,
+                                    'order_id' => $order->id,
+                                    'order_number' => $order->order_number
+                                ]);
+                            }
                         }
                     }
                 }
+
+                DB::commit();
+
+                // Prepare the response data
+                $responseData = [
+                    'order_id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'total_amount' => $totalAmount,
+                    'status' => 'pending'
+                ];
+            } else {
+                $orderItems = $order->orderItems;
+                $totalAmount = $order->total_amount;
+                $responseData = [
+                    'order_id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'total_amount' => $totalAmount,
+                    'status' => 'pending'
+                ];
             }
-            
-            DB::commit();
-            
-            // Prepare the response data
-            $responseData = [
-                'order_id' => $order->id,
-                'order_number' => $order->order_number,
-                'total_amount' => $totalAmount,
-                'status' => 'pending'
-            ];
-            
-            // We temporally add and Dispatch the event to process the order completion for now
-            //event(new \App\Events\OrderCompleted($order));
-            
+
             // Get the payment gateway code
             $gatewayCode = null;
             if ($request->has('payment_method')) {
@@ -1618,9 +1645,9 @@ class StorefrontController extends Controller
                     $gatewayCode = $gatewaySettings->code;
                 }
             }
-            
+
             Log::info('Gateway Code: ' . $gatewayCode);
-            
+
             // If we have a valid gateway, create a payment session/intent
             if ($gatewayCode) {
                 try {
@@ -1629,7 +1656,7 @@ class StorefrontController extends Controller
                     $gatewayFactory = app()->make(\App\Services\PaymentGateways\PaymentGatewayFactory::class);
                     $commissionService = app()->make(\App\Services\Commission\CommissionService::class);
                     $taxZoneService = app()->make(\App\Services\Tax\TaxZoneService::class);
-                    
+
                     // Initialize payment service with proper dependencies
                     $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService, $taxZoneService);
                     $paymentResult = $paymentService->createPayment(
@@ -1638,10 +1665,13 @@ class StorefrontController extends Controller
                         [],
                         $environment->id
                     );
-                    
+
                     // Get transaction ID from payment result if available
                     $transactionId = $paymentResult['transaction_id'] ?? null;
-                    
+                    $transaction = $paymentResult['transaction'] ?? null;
+                    $responseData["total_amount"] = $transaction->total_amount;
+                    $responseData["currency"] = $transaction->currency;
+
                     if ($paymentResult['success']) {
                         // Add payment-specific data to the response based on the gateway type
                         switch ($paymentResult['type']) {
@@ -1651,19 +1681,19 @@ class StorefrontController extends Controller
                                 $responseData['client_secret'] = $paymentResult['value'];
                                 $responseData['publishable_key'] = $paymentResult['publishable_key'] ?? null;
                                 break;
-                                
+
                             case 'checkout_url':
                                 // For PayPal redirect-based payments
                                 $responseData['payment_type'] = 'paypal';
                                 $responseData['redirect_url'] = $paymentResult['value'];
                                 break;
-                                
+
                             case 'payment_url':
                                 // For Lygos redirect-based payments
                                 $responseData['payment_type'] = 'lygos';
                                 $responseData['redirect_url'] = $paymentResult['value'];
                                 break;
-                                
+
                             default:
                                 // Fallback to standard payment type
                                 $responseData['payment_type'] = 'standard';
@@ -1687,13 +1717,12 @@ class StorefrontController extends Controller
                 $responseData['payment_type'] = 'standard';
                 // No payment_url needed - frontend will redirect to success page
             }
-            
+
             return response()->json([
                 'success' => true,
                 'message' => 'Order created successfully',
                 'data' => $responseData
             ]);
-            
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -1703,7 +1732,7 @@ class StorefrontController extends Controller
             ], 500);
         }
     }
-    
+
     /**
      * Get product reviews
      *
@@ -1715,36 +1744,36 @@ class StorefrontController extends Controller
     public function getProductReviews(Request $request, string $environmentId, int $productId)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         $product = Product::where('environment_id', $environment->id)
             ->where('id', $productId)
             ->first();
-            
+
         if (!$product) {
             return response()->json(['message' => 'Product not found'], 404);
         }
-        
+
         // Get approved reviews for this product
         $reviews = ProductReview::where('product_id', $product->id)
             ->where('environment_id', $environment->id)
             ->where('status', 'approved')
             ->orderBy('created_at', 'desc')
             ->get();
-            
+
         // Get average rating
         $averageRating = $reviews->avg('rating') ?: 0;
-        
+
         return response()->json([
             'data' => $reviews,
             'average_rating' => round($averageRating, 1),
             'total_reviews' => $reviews->count()
         ]);
     }
-    
+
     /**
      * Submit a product review
      *
@@ -1756,19 +1785,19 @@ class StorefrontController extends Controller
     public function submitProductReview(Request $request, string $environmentId, int $productId)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         $product = Product::where('environment_id', $environment->id)
             ->where('id', $productId)
             ->first();
-            
+
         if (!$product) {
             return response()->json(['message' => 'Product not found'], 404);
         }
-        
+
         // Validate the request
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
@@ -1776,17 +1805,17 @@ class StorefrontController extends Controller
             'rating' => 'required|integer|min:1|max:5',
             'comment' => 'required|string',
         ]);
-        
+
         if ($validator->fails()) {
             return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
         }
-        
+
         // Check if user is authenticated
         $userId = null;
         if ($request->user()) {
             $userId = $request->user()->id;
         }
-        
+
         // Create the review
         $review = new ProductReview();
         $review->product_id = $product->id;
@@ -1798,10 +1827,10 @@ class StorefrontController extends Controller
         $review->comment = $request->comment;
         $review->status = 'pending'; // Reviews are pending by default
         $review->save();
-        
+
         return response()->json(['message' => 'Review submitted successfully', 'data' => $review]);
     }
-    
+
     /**
      * Get all courses for an environment
      *
@@ -1812,38 +1841,38 @@ class StorefrontController extends Controller
     public function getCourses(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         $query = Course::where('environment_id', $environment->id);
-        
+
         // Filter by status (default to published)
         $status = $request->get('status', 'published');
         if ($status !== 'all') {
             $query->where('status', $status);
         }
-        
+
         // Filter by featured
         if ($request->has('featured')) {
             $query->where('is_featured', true);
         }
-        
+
         // Search by title
         if ($request->has('search')) {
             $search = $request->get('search');
             $query->where('title', 'like', "%{$search}%");
         }
-        
+
         // Pagination
         $perPage = $request->get('per_page', 12);
         $courses = $query->orderBy('created_at', 'desc')
             ->paginate($perPage);
-        
+
         return response()->json(['data' => $courses]);
     }
-    
+
     /**
      * Get a course by slug
      *
@@ -1855,60 +1884,60 @@ class StorefrontController extends Controller
     public function getCourseBySlug(Request $request, string $environmentId, string $slug)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         $course = Course::where('environment_id', $environment->id)
             ->where('slug', $slug)
             ->with([
-                'sections' => function($query) {
+                'sections' => function ($query) {
                     $query->orderBy('order');
                 },
-                'sections.items' => function($query) {
+                'sections.items' => function ($query) {
                     $query->orderBy('order');
                 },
                 'sections.items.activity'
             ])
             ->first();
-        
+
         if (!$course) {
             return response()->json(['message' => 'Course not found'], 404);
         }
-        
+
         // Get related courses
         $relatedCourses = Course::where('environment_id', $environment->id)
             ->where('id', '!=', $course->id)
             ->where('status', 'published')
-            ->where(function($query) use ($course) {
+            ->where(function ($query) use ($course) {
                 $query->where('difficulty_level', $course->difficulty_level)
-                      ->orWhere('is_featured', true);
+                    ->orWhere('is_featured', true);
             })
             ->limit(4)
             ->get();
-        
+
         $course->related_courses = $relatedCourses;
-        
+
         // Get the product that contains this course
         $productCourse = DB::table('product_courses')
             ->where('course_id', $course->id)
             ->first();
-        
+
         if ($productCourse) {
             $product = Product::where('id', $productCourse->product_id)
                 ->where('environment_id', $environment->id)
                 ->first();
-                
+
             if ($product) {
                 $course->product_id = $product->id;
                 $course->product_slug = $product->slug;
             }
         }
-        
+
         return response()->json(['data' => $course]);
     }
-    
+
     /**
      * Get a course by ID
      *
@@ -1920,44 +1949,44 @@ class StorefrontController extends Controller
     public function getCourseById(Request $request, string $environmentId, int $id)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         $course = Course::where('environment_id', $environment->id)
             ->where('id', $id)
             ->with([
-                'sections' => function($query) {
+                'sections' => function ($query) {
                     $query->orderBy('order');
                 },
-                'sections.items' => function($query) {
+                'sections.items' => function ($query) {
                     $query->orderBy('order');
                 },
                 'sections.items.activity'
             ])
             ->first();
-        
+
         if (!$course) {
             return response()->json(['message' => 'Course not found'], 404);
         }
-        
+
         // Get related courses
         $relatedCourses = Course::where('environment_id', $environment->id)
             ->where('id', '!=', $course->id)
             ->where('status', 'published')
-            ->where(function($query) use ($course) {
+            ->where(function ($query) use ($course) {
                 $query->where('difficulty_level', $course->difficulty_level)
-                      ->orWhere('is_featured', true);
+                    ->orWhere('is_featured', true);
             })
             ->limit(4)
             ->get();
-        
+
         $course->related_courses = $relatedCourses;
-        
+
         return response()->json(['data' => $course]);
     }
-    
+
     /**
      * Get products for an environment (maps to getAllProducts)
      * 
@@ -1970,7 +1999,7 @@ class StorefrontController extends Controller
         // This method maps to getAllProducts to maintain API compatibility
         return $this->getAllProducts($request, $environmentId);
     }
-    
+
     /**
      * Get a product by ID or slug
      * 
@@ -1988,7 +2017,7 @@ class StorefrontController extends Controller
             return $this->getProductBySlug($request, $environmentId, $productId);
         }
     }
-    
+
     /**
      * Get a category by ID
      * 
@@ -2000,32 +2029,32 @@ class StorefrontController extends Controller
     public function getCategory(Request $request, string $environmentId, int $categoryId)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         $category = ProductCategory::where('environment_id', $environment->id)
             ->where('id', $categoryId)
             ->first();
-        
+
         if (!$category) {
             return response()->json(['message' => 'Category not found'], 404);
         }
-        
+
         // Get products in this category
-        $products = Product::whereHas('categories', function($query) use ($categoryId) {
-                $query->where('product_category_id', $categoryId);
-            })
+        $products = Product::whereHas('categories', function ($query) use ($categoryId) {
+            $query->where('product_category_id', $categoryId);
+        })
             ->where('environment_id', $environment->id)
             ->where('status', 'published')
             ->paginate(12);
-        
+
         $category->products = $products;
-        
+
         return response()->json(['data' => $category]);
     }
-    
+
     /**
      * Continue payment for a pending order
      *
@@ -2037,10 +2066,10 @@ class StorefrontController extends Controller
     {
         // Get the authenticated user
         $user = $request->user();
-        
+
         // Fetch the order by ID
         $order = Order::find($orderId);
-        
+
         // Check if order exists
         if (!$order) {
             return response()->json([
@@ -2048,7 +2077,7 @@ class StorefrontController extends Controller
                 'message' => 'Order not found'
             ], 404);
         }
-        
+
         // Validate that the order belongs to the current user
         if ($user->id !== $order->user_id) {
             return response()->json([
@@ -2056,7 +2085,7 @@ class StorefrontController extends Controller
                 'message' => 'Unauthorized access to this order'
             ], 403);
         }
-        
+
         // Check that order status is pending
         if ($order->status !== 'pending') {
             return response()->json([
@@ -2065,13 +2094,13 @@ class StorefrontController extends Controller
                 'order_status' => $order->status
             ], 400);
         }
-        
+
         // Validate the payment method data
         $validator = Validator::make($request->all(), [
             'payment_method' => 'required|string',
             'payment_data' => 'sometimes|array',
         ]);
-        
+
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -2079,34 +2108,34 @@ class StorefrontController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
-        
+
         // Load order items and related products
         $order->load(['items.product', 'user']);
-        
+
         // Process the payment based on the payment method
         $paymentMethod = $request->input('payment_method');
         $paymentData = $request->input('payment_data', []);
-        
+
         try {
             // Get the payment gateway settings
             $paymentGatewaySetting = PaymentGatewaySetting::where('environment_id', $order->environment_id)
-                ->where(function($query) use ($paymentMethod) {
+                ->where(function ($query) use ($paymentMethod) {
                     $query->where('code', $paymentMethod)
-                          ->orWhere('id', $paymentMethod)
-                          ->orWhere('gateway_name', $paymentMethod);
+                        ->orWhere('id', $paymentMethod)
+                        ->orWhere('gateway_name', $paymentMethod);
                 })
                 ->first();
-            
+
             if (!$paymentGatewaySetting) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Payment method not available'
                 ], 400);
             }
-            
+
             // Create OrderService instance
             $orderService = app()->make(\App\Services\OrderService::class);
-            
+
             // Create PaymentGatewayFactory instance
             $gatewayFactory = app()->make(\App\Services\PaymentGateways\PaymentGatewayFactory::class);
 
@@ -2117,25 +2146,24 @@ class StorefrontController extends Controller
 
             // Initialize payment service with proper dependencies
             $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService, $taxZoneService);
-            
+
             // Process the payment - pass order ID as expected by the method
-            $result = $paymentService->processPayment($order->id, [  
+            $result = $paymentService->processPayment($order->id, [
                 'payment_method' => $paymentGatewaySetting->code, // Use the gateway code from settings
                 'environment_id' => $order->environment_id,
                 ...$paymentData
             ]);
-            
+
             // Update the order with payment method
             $order->payment_method = $paymentGatewaySetting->id;
             $order->save();
-        
+
             return response()->json([
                 'success' => true,
                 'message' => 'Payment processing initiated',
                 'data' => $result,
                 'order' => $order
             ]);
-            
         } catch (\Exception $e) {
             Log::error('Payment continuation error: ' . $e->getMessage(), [
                 'order_id' => $order->id,
@@ -2143,14 +2171,14 @@ class StorefrontController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Payment processing failed: ' . $e->getMessage()
             ], 500);
         }
     }
-    
+
     /**
      * Get tax rate for a specific location
      *
@@ -2161,17 +2189,17 @@ class StorefrontController extends Controller
     public function getTaxRateForLocation(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
-        
+
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         // Validate the request
         $validator = Validator::make($request->all(), [
             'country_code' => 'required|string|size:2',
             'state_code' => 'nullable|string',
         ]);
-        
+
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -2179,19 +2207,19 @@ class StorefrontController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
-        
+
         $countryCode = $request->input('country_code');
         $stateCode = $request->input('state_code');
-        
+
         try {
             // Get tax rate from TaxZoneService
             $taxZone = $this->taxZoneService->findTaxZone($countryCode, $stateCode);
             $taxRate = $taxZone ? $taxZone->tax_rate : 0;
-            
+
             // Get commission rate from Commission model
             $commission = \App\Models\Commission::getActiveCommission($environmentId);
             $commissionRate = $commission ? ($commission->rate / 100) : 0.17; // Default to 17% if no commission found
-            
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -2213,7 +2241,7 @@ class StorefrontController extends Controller
                 'state_code' => $stateCode,
                 'error' => $e->getMessage(),
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch tax rate',

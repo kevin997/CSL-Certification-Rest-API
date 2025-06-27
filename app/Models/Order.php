@@ -39,6 +39,16 @@ class Order extends Model
     ];
 
     /**
+     * Order statuses
+     */
+    const STATUS_PENDING = 'pending';
+    const STATUS_PROCESSING = 'processing';
+    const STATUS_COMPLETED = 'completed';
+    const STATUS_FAILED = 'failed';
+    const STATUS_REFUNDED = 'refunded';
+    const STATUS_PARTIALLY_REFUNDED = 'partially_refunded';
+
+    /**
      * The attributes that should be cast.
      *
      * @var array<string, string>

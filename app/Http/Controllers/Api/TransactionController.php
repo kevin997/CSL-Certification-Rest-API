@@ -295,7 +295,6 @@ class TransactionController extends Controller
             // Find the gateway settings for this environment
             $gatewaySettings = PaymentGatewaySetting::where('environment_id', $environment_id)
                 ->where('code', $gateway)
-                ->where('is_active', true)
                 ->first();
             
             if (!$gatewaySettings) {
@@ -383,10 +382,10 @@ class TransactionController extends Controller
     private function handleStripeWebhook($payload, $headers, $gatewaySettings)
     {
         // Initialize Stripe with gateway settings
-        $stripeSecretKey = $gatewaySettings->settings['secret_key'] ?? null;
+        $stripeSecretKey = $gatewaySettings->settings['api_key'] ?? null;
         
         if (!$stripeSecretKey) {
-            Log::error('Stripe secret key not found in gateway settings');
+            Log::error('Stripe api key(secret key) not found in gateway settings');
             return response()->json(['error' => 'Configuration error'], 500);
         }
         
@@ -499,6 +498,10 @@ class TransactionController extends Controller
             
             Log::info('Subscription activated', ['subscription_id' => $subscription->id]);
         }
+
+        //check if this is an order payment
+        $order = Order::where('id', $transaction->transaction_id)->first();
+        if($order) event(new \App\Events\OrderCompleted($order));
         
         return response()->json(['status' => 'success', 'message' => 'Payment success processed']);
     }
