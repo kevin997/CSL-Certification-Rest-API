@@ -121,7 +121,7 @@
 
                 <!-- Retry button -->
                 <div class="mt-6">
-                    <a href="{{ config('app.frontend_url') }}/checkout" class="inline-flex items-center px-4 py-2 bg-primary text-white font-medium rounded-md hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
+                    <a href="{{ $protocol }}://{{ $environment->primary_domain }}/storefront/{{ $environment->id }}" class="inline-flex items-center px-4 py-2 bg-primary text-white font-medium rounded-md hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
                         Try Again
                     </a>
                 </div>
@@ -131,7 +131,7 @@
         <!-- Footer -->
         <div class="mt-8 text-center text-sm text-gray-500">
             <p>&copy; {{ date('Y') }} {{ isset($branding) && $branding->company_name ? $branding->company_name : (isset($environment) ? $environment->name : 'CSL Brands Learning') }}. All rights reserved.</p>
-            <p class="mt-2">If you continue to experience issues, please <a href="{{ config('app.frontend_url') }}/contact" class="text-primary hover:underline">contact support</a>.</p>
+            <p class="mt-2">If you continue to experience issues, please <a href="{{ $protocol }}://{{ $environment->primary_domain }}/support" class="text-primary hover:underline">contact support</a>.</p>
         </div>
     </div>
 
