@@ -1440,9 +1440,13 @@ class StorefrontController extends Controller
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
+        //create an array of gateways we don't fetch
+        $excludeGateways = ['lygos'];
+
         // Get active payment gateways for this environment
         $gateways = PaymentGatewaySetting::where('environment_id', $environment->id)
             ->where('status', true)
+            ->whereNotIn('code', $excludeGateways)
             ->orderBy('sort_order')
             ->get();
 

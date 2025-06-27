@@ -117,6 +117,12 @@ class LygosGateway implements PaymentGatewayInterface
                 'api-key' => $this->apiKey,
                 'Content-Type' => 'application/json'
             ])->post($this->apiUrl, $requestData);
+
+            // Log the response
+            Log::info('Lygos payment gateway response', [
+                'transaction_id' => $transaction->transaction_id,
+                'response' => $response->json()
+            ]);
             
             // Check if the API call was successful
             if (!$response->successful()) {
@@ -226,6 +232,12 @@ class LygosGateway implements PaymentGatewayInterface
                 'Content-Type' => 'application/json'
             ])->post('https://api.lygosapp.com/v1/gateway', $requestData);
             
+            // Log the response
+            Log::info('Lygos payment gateway response', [
+                'transaction_id' => $transaction->transaction_id,
+                'response' => $response->json()
+            ]);
+
             // Check if the API call was successful
             if (!$response->successful()) {
                 Log::error('Lygos payment gateway creation failed: ' . $response->body());

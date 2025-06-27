@@ -130,4 +130,23 @@ class TelegramService
             return false;
         }
     }
+
+    /**
+     * Escape special characters for Telegram's MarkdownV2 format.
+     * 
+     * @param string $text
+     * @return string
+     */
+    public function escapeMarkdownV2(string $text): string
+    {
+        // Characters that need to be escaped in MarkdownV2:
+        // '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'
+        $specialChars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'];
+
+        foreach ($specialChars as $char) {
+            $text = str_replace($char, "\\{$char}", $text);
+        }
+
+        return $text;
+    }
 }

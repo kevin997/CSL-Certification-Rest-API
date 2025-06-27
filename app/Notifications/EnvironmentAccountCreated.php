@@ -62,15 +62,15 @@ class EnvironmentAccountCreated extends Notification implements ShouldQueue
         }
         
         // Escape special characters for MarkdownV2
-        $environmentName = $this->escapeMarkdownV2($this->environment->name);
-        $userEmail = $this->escapeMarkdownV2($this->user->email);
-        $plainPassword = $this->escapeMarkdownV2($this->plainPassword);
-        $createdAt = $this->escapeMarkdownV2(now()->format('Y-m-d H:i:s'));
+        $environmentName = $this->telegramService->escapeMarkdownV2($this->environment->name);
+        $userEmail = $this->telegramService->escapeMarkdownV2($this->user->email);
+        $plainPassword = $this->telegramService->escapeMarkdownV2($this->plainPassword);
+        $createdAt = $this->telegramService->escapeMarkdownV2(now()->format('Y-m-d H:i:s'));
         
         // Generate login URL with appropriate protocol
         $protocol = app()->environment('production') ? 'https' : 'http';
         $loginUrl = "{$protocol}://{$this->environment->primary_domain}/auth/login";
-        $escapedLoginUrl = $this->escapeMarkdownV2($loginUrl);
+        $escapedLoginUrl = $this->telegramService->escapeMarkdownV2($loginUrl);
 
         $message = "🆕 *Environment Account Created*\n\n";
         $message .= "Environment: `{$environmentName}`\n";
@@ -89,25 +89,6 @@ class EnvironmentAccountCreated extends Notification implements ShouldQueue
             $message,
             $buttons
         );
-    }
-    
-    /**
-     * Escape special characters for Telegram's MarkdownV2 format.
-     * 
-     * @param string $text
-     * @return string
-     */
-    private function escapeMarkdownV2(string $text): string
-    {
-        // Characters that need to be escaped in MarkdownV2:
-        // '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'
-        $specialChars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'];
-        
-        foreach ($specialChars as $char) {
-            $text = str_replace($char, "\\{$char}", $text);
-        }
-        
-        return $text;
     }
 
     /**

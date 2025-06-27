@@ -92,6 +92,7 @@ class Transaction extends Model
     const STATUS_FAILED = 'failed';
     const STATUS_REFUNDED = 'refunded';
     const STATUS_PARTIALLY_REFUNDED = 'partially_refunded';
+    const STATUS_CANCELLED = 'cancelled';
 
     /**
      * Boot the model.
@@ -126,7 +127,7 @@ class Transaction extends Model
      */
     public function paymentGatewaySetting(): BelongsTo
     {
-        return $this->belongsTo(PaymentGatewaySetting::class);
+        return $this->belongsTo(PaymentGatewaySetting::class, 'payment_gateway_setting_id');
     }
     
     /**

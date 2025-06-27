@@ -40,17 +40,17 @@ class EnvironmentUserController extends Controller
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         // First check if this is an environment owner
         $user = null;
-        
+
         if ($environment->owner_id) {
             $ownerUser = User::find($environment->owner_id);
             if ($ownerUser && $ownerUser->email === $request->email) {
                 $user = $ownerUser;
             }
         }
-        
+
         // If not an owner, check the environment_user table
         if (!$user) {
             $environmentUser = DB::table('environment_user')
@@ -63,7 +63,7 @@ class EnvironmentUserController extends Controller
                 $user = User::find($environmentUser->user_id);
             }
         }
-        
+
         // If no user found in either case, return generic message for security
         if (!$user) {
             // Don't reveal that the user doesn't exist for security reasons
@@ -74,7 +74,7 @@ class EnvironmentUserController extends Controller
 
         // Create a password reset token
         $token = Str::random(64);
-        
+
         // Store the token in the password_reset_tokens table
         DB::table('password_reset_tokens')->updateOrInsert(
             ['email' => $user->email],
@@ -108,10 +108,10 @@ class EnvironmentUserController extends Controller
                 $request->email,
                 $user->email
             );
-            
+
             // Send the email to the user's actual email address
             \Illuminate\Support\Facades\Mail::to($user->email)->send($mailable);
-            
+
             // Send Telegram notification
             try {
                 $telegramService = app(\App\Services\TelegramService::class);
@@ -123,7 +123,7 @@ class EnvironmentUserController extends Controller
                     $telegramService
                 );
                 $notification->send();
-                
+
                 \Illuminate\Support\Facades\Log::info('Password reset Telegram notification sent', [
                     'user_id' => $user->id,
                     'environment_id' => $environment->id
@@ -136,7 +136,7 @@ class EnvironmentUserController extends Controller
                     'environment_id' => $environment->id
                 ]);
             }
-            
+
             // For development environments, include debug information
             if (config('app.env') === 'local' || config('app.env') === 'testing') {
                 return response()->json([
@@ -194,11 +194,13 @@ class EnvironmentUserController extends Controller
         }
 
         $metadataArray = json_decode($metadata->metadata, true);
-        
+
         // Verify this is an environment reset and matches the requested environment
-        if (!isset($metadataArray['is_environment_reset']) || 
-            !$metadataArray['is_environment_reset'] || 
-            $metadataArray['environment_id'] != $request->environment_id) {
+        if (
+            !isset($metadataArray['is_environment_reset']) ||
+            !$metadataArray['is_environment_reset'] ||
+            $metadataArray['environment_id'] != $request->environment_id
+        ) {
             return response()->json(['message' => 'Invalid token for this environment'], 400);
         }
 
@@ -216,15 +218,15 @@ class EnvironmentUserController extends Controller
         if (!$resetRecord) {
             return response()->json(['message' => 'Invalid token'], 400);
         }
-        
+
         // Get the environment to check if this is the owner
         $environment = Environment::find($request->environment_id);
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         $isOwner = ($environment->owner_id === $user->id);
-        
+
         // If this is the environment owner, update their main password
         $updated = false;
         if ($isOwner && $user->email === $request->email) {
@@ -248,7 +250,7 @@ class EnvironmentUserController extends Controller
         DB::table('password_reset_tokens')
             ->where('email', $user->email)
             ->delete();
-            
+
         DB::table('password_reset_metadata')
             ->where('token', $request->token)
             ->delete();

@@ -162,7 +162,7 @@ class Environment extends Model
      */
     public function brandings(): HasMany
     {
-        return $this->hasMany(Branding::class);
+        return $this->hasMany(Branding::class, "environment_id");
     }
     
     /**

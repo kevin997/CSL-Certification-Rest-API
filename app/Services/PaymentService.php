@@ -66,6 +66,17 @@ class PaymentService
         $this->taxZoneService = $taxZoneService;
     }
 
+
+
+    /***
+     * @param string|null|int $environment_id
+     * @return App\Models\Environment
+     */
+    public function getEnvironmentById($environment_id): Environment
+    {
+        return Environment::find($environment_id);
+    }
+
     /**
      * Create a payment for an order with environment-specific configuration
      *
@@ -96,13 +107,23 @@ class PaymentService
             }
             
             // Check if a transaction already exists for this order
-            $existingTransaction = Transaction::where('order_id', $order->id)->first();
+            $existingTransaction = Transaction::where('order_id', $order->id)
+            ->where("status", "pending")
+            ->first();
+
             if ($existingTransaction) {
                 Log::info('Found existing transaction for order', [
                     'order_id' => $order->id,
                     'transaction_id' => $existingTransaction->transaction_id
                 ]);
-                
+
+                //update the transaction with a new transaction_id 'TXN_' . Str::uuid(),
+                $existingTransaction->update([
+                    'transaction_id' => 'TXN_' . Str::uuid(),
+                    'payment_method'=> $paymentMethod,
+                    'environment_id'=> $environmentId
+                ]);
+
                 // Initialize the payment gateway with environment-specific settings
                 $gateway = $this->initializeGateway($paymentMethod, $environment);
                 if (!$gateway['success']) {
@@ -385,6 +406,10 @@ class PaymentService
      */
     protected function processGatewayPayment(Order $order, string $gatewayCode, array $paymentData): array
     {
+
+        // refactor this method to not create a new transaction but just updated the transaction_id 'TXN_' . Str::uuid(),
+
+
         $environmentId = session('current_environment_id');
 
         Log::info('Processing payment for order ' . $order->id . ' using ' . $gatewayCode);
@@ -1417,7 +1442,7 @@ class PaymentService
             $transaction->status = Transaction::STATUS_COMPLETED;
             $transaction->gateway_status = 'completed';
             $transaction->notes = 'Payment completed via ' . $gateway;
-            $transaction->completed_at = now();
+            $transaction->paid_at = now();
             $transaction->save();
             
             // Process any related records (orders, subscriptions, etc.)
@@ -1476,6 +1501,50 @@ class PaymentService
             return false;
         }
     }
+
+    /**
+     * Process a cancelled payment callback from a payment gateway
+     *
+     * @param string $gateway The payment gateway name
+     * @param string $transactionId The transaction ID
+     * @param int $environmentId The environment ID
+     * @param array $callbackData The callback data received from the payment gateway
+     * @return bool True if processing was successful, false otherwise
+     */
+    public function processCancelledCallback(string $gateway, string $transactionId, int $environmentId, array $callbackData): bool
+    {
+        try {
+            // Find the transaction
+            $transaction = Transaction::where('transaction_id', $transactionId)
+                ->where('environment_id', $environmentId)
+                ->first();
+            
+            if (!$transaction) {
+                Log::error('Transaction not found for cancelled callback', [
+                    'gateway' => $gateway,
+                    'transaction_id' => $transactionId,
+                    'environment_id' => $environmentId
+                ]);
+                return false;
+            }
+            
+            // Update the transaction status
+            $transaction->status = Transaction::STATUS_CANCELLED;
+            $transaction->gateway_status = 'cancelled';
+            $transaction->notes = 'Payment cancelled via ' . $gateway;
+            $transaction->save();
+            
+            return true;
+        } catch (\Exception $e) {
+            Log::error('Error processing payment cancelled callback in service', [
+                'error' => $e->getMessage(),
+                'gateway' => $gateway,
+                'transaction_id' => $transactionId
+            ]);
+            return false;
+        }
+    }
+
     
     /**
      * Process any records related to a transaction (orders, subscriptions, etc.)
@@ -1485,6 +1554,9 @@ class PaymentService
      */
     protected function processRelatedRecords(Transaction $transaction): void
     {
+
+
+
         // Update related order if exists
         $order = Order::where('id', $transaction->transaction_id)->first();
         if ($order) event(new \App\Events\OrderCompleted($order));

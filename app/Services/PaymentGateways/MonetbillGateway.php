@@ -174,6 +174,9 @@ class MonetbillGateway implements PaymentGatewayInterface
                 'message' => $transaction->description ?? 'Payment for certification services'
             ];
             
+            // Generate signature for the payment request
+            $paymentData['sign'] = $this->monetbill_sign($this->serviceSecret, $paymentData);
+            
             // Generate payment URL using Monetbill API
             $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
@@ -436,6 +439,66 @@ class MonetbillGateway implements PaymentGatewayInterface
     }
     
     /**
+     * Generate a signature for Monetbill API requests
+     *
+     * @param string $service_secret Your service secret
+     * @param array $params Request parameters
+     * @return string
+     */
+    public function monetbill_sign(string $service_secret, array $params): string
+    {
+        // Sort parameters alphabetically by key
+        ksort($params);
+        
+        // Create signature by concatenating service_secret with parameters
+        $signature = md5($service_secret . implode('', $params));
+        
+        Log::debug('[MonetbillGateway] Generated signature', [
+            'params_count' => count($params),
+            'signature' => $signature
+        ]);
+        
+        return $signature;
+    }
+    
+    /**
+     * Verify a signature from Monetbill
+     *
+     * @param string $service_secret Your service secret
+     * @param array $params Request parameters
+     * @return bool
+     */
+    public function monetbill_check_sign(string $service_secret, array $params): bool
+    {
+        // Check if sign parameter exists
+        if (!array_key_exists('sign', $params)) {
+            Log::error('[MonetbillGateway] Missing signature in parameters');
+            return false;
+        }
+        
+        // Extract the sign parameter
+        $sign = $params['sign'];
+        
+        // Remove sign from parameters before generating comparison signature
+        unset($params['sign']);
+        
+        // Generate signature for comparison
+        $signature = $this->monetbill_sign($service_secret, $params);
+        
+        // Compare signatures
+        $result = ($sign === $signature);
+        
+        if (!$result) {
+            Log::error('[MonetbillGateway] Invalid signature', [
+                'received' => $sign,
+                'calculated' => $signature
+            ]);
+        }
+        
+        return $result;
+    }
+    
+    /**
      * Verify webhook signature
      *
      * @param mixed $payload
@@ -445,8 +508,6 @@ class MonetbillGateway implements PaymentGatewayInterface
      */
     public function verifyWebhookSignature($payload, string $signature, string $secret): bool
     {
-        // Monetbill may use a different verification method
-        // This is a placeholder implementation based on common practices
         try {
             // Check if we have the necessary data
             if (empty($payload) || empty($signature) || empty($secret)) {
@@ -458,20 +519,16 @@ class MonetbillGateway implements PaymentGatewayInterface
                 return false;
             }
             
-            // Convert payload to string if it's an array or object
-            $payloadString = is_string($payload) ? $payload : json_encode($payload);
+            // Convert payload to array if it's not already
+            $params = is_array($payload) ? $payload : (array)$payload;
             
-            // Calculate expected signature
-            $expectedSignature = hash_hmac('sha256', $payloadString, $secret);
+            // If signature is provided separately, add it to params
+            if (!empty($signature) && !isset($params['sign'])) {
+                $params['sign'] = $signature;
+            }
             
-            // Compare signatures
-            $isValid = hash_equals($expectedSignature, $signature);
-            
-            Log::info('[MonetbillGateway] Webhook signature verification', [
-                'is_valid' => $isValid
-            ]);
-            
-            return $isValid;
+            // Use monetbill_check_sign to verify the signature
+            return $this->monetbill_check_sign($secret ?: $this->serviceSecret, $params);
         } catch (\Exception $e) {
             Log::error('[MonetbillGateway] Exception while verifying webhook signature', [
                 'error' => $e->getMessage()
