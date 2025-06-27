@@ -150,7 +150,7 @@ class TransactionController extends Controller
         //Get The Transaction with relationship to PaymentGate
         $transaction = Transaction::where("transaction_id", $transactionId)
             ->where("environment_id", $environment_id)
-            // ->where("status", Transaction::STATUS_PENDING)
+            ->where("status", Transaction::STATUS_PENDING)
             ->whereHas("paymentGatewaySetting")
             ->first();
 
