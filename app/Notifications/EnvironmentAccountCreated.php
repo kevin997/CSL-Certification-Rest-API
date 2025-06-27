@@ -60,17 +60,28 @@ class EnvironmentAccountCreated extends Notification implements ShouldQueue
             Log::error('Could not determine Telegram chat ID');
             return null;
         }
+        
+        // Escape special characters for MarkdownV2
+        $environmentName = $this->escapeMarkdownV2($this->environment->name);
+        $userEmail = $this->escapeMarkdownV2($this->user->email);
+        $plainPassword = $this->escapeMarkdownV2($this->plainPassword);
+        $createdAt = $this->escapeMarkdownV2(now()->format('Y-m-d H:i:s'));
+        
+        // Generate login URL with appropriate protocol
+        $protocol = app()->environment('production') ? 'https' : 'http';
+        $loginUrl = "{$protocol}://{$this->environment->primary_domain}/auth/login";
+        $escapedLoginUrl = $this->escapeMarkdownV2($loginUrl);
 
         $message = "🆕 *Environment Account Created*\n\n";
-        $message .= "Environment: `{$this->environment->name}`\n";
-        $message .= "URL: {$this->environment->primary_domain}/auth/login\n";
-        $message .= "User: `{$this->user->email}`\n";
-        $message .= "Password: `{$this->plainPassword}`\n";
-        $message .= "Created at: " . now()->format('Y-m-d H:i:s') . "\n";
+        $message .= "Environment: `{$environmentName}`\n";
+        $message .= "URL: [Login URL]({$escapedLoginUrl})\n";
+        $message .= "User: `{$userEmail}`\n";
+        $message .= "Password: `{$plainPassword}`\n";
+        $message .= "Created at: {$createdAt}\n";
 
         $buttons = [
             'text' => 'Go to Login',
-            'url' => urlencode($this->environment->primary_domain . '/auth/login')
+            'url' => $loginUrl
         ];
 
         $this->telegramService->sendMessage(
@@ -78,6 +89,25 @@ class EnvironmentAccountCreated extends Notification implements ShouldQueue
             $message,
             $buttons
         );
+    }
+    
+    /**
+     * Escape special characters for Telegram's MarkdownV2 format.
+     * 
+     * @param string $text
+     * @return string
+     */
+    private function escapeMarkdownV2(string $text): string
+    {
+        // Characters that need to be escaped in MarkdownV2:
+        // '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'
+        $specialChars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'];
+        
+        foreach ($specialChars as $char) {
+            $text = str_replace($char, "\\{$char}", $text);
+        }
+        
+        return $text;
     }
 
     /**

@@ -87,22 +87,37 @@ class EnvironmentPasswordReset extends Notification implements ShouldQueue
      *
      * @return void
      */
-    public function send(): void
+    public function send()
     {
         try {
             $chatId = $this->telegramService->getChatId();
             if (!$chatId) {
-                Log::warning('Telegram chat ID not configured for password reset notification');
+                Log::error('Could not determine Telegram chat ID for password reset notification');
                 return;
             }
 
+            // Generate the reset URL for both message and button
+            $resetUrl = $this->generateResetUrl();
+            
+            // Create button for reset URL
+            $buttons = [
+                'text' => 'Reset Password',
+                'url' => $resetUrl
+            ];
+
             $message = $this->formatTelegramMessage();
-            $this->telegramService->sendMessage($chatId, $message, []);
+            $this->telegramService->sendMessage($chatId, $message, $buttons);
+            
+            Log::info('Password reset Telegram notification sent', [
+                'user_id' => $this->userEmail,
+                'environment_id' => $this->environment->id
+            ]);
         } catch (\Exception $e) {
             Log::error('Failed to send password reset Telegram notification: ' . $e->getMessage(), [
                 'environment_id' => $this->environment->id,
                 'user_email' => $this->userEmail,
-                'environment_email' => $this->environmentEmail
+                'environment_email' => $this->environmentEmail,
+                'exception' => $e->getTraceAsString()
             ]);
         }
     }
@@ -117,13 +132,20 @@ class EnvironmentPasswordReset extends Notification implements ShouldQueue
         // Generate the reset URL
         $resetUrl = $this->generateResetUrl();
 
-        return "🔐 *Password Reset Requested*\n\n" .
-               "Environment: *{$this->environment->name}*\n" .
-               "User Email: *{$this->userEmail}*\n" .
-               "Environment Email: *{$this->environmentEmail}*\n\n" .
-               "Reset Password URL: [Click here to reset password]({$resetUrl})\n\n" .
-               "This link will expire in " . config('auth.passwords.users.expire', 60) . " minutes.\n\n" .
-               "If you did not request this password reset, please ignore this message.";
+        // Escape special characters for MarkdownV2
+     $environmentName = $this->escapeMarkdownV2($this->environment->name);
+     $userEmail = $this->escapeMarkdownV2($this->userEmail);
+     $environmentEmail = $this->escapeMarkdownV2($this->environmentEmail);
+     $escapedResetUrl = $this->escapeMarkdownV2($resetUrl);
+     $expireTime = config('auth.passwords.users.expire', 60);
+     
+     return "🔐 *Password Reset Requested*\n\n" .
+               "Environment: *{$environmentName}*\n" .
+               "User Email: *{$userEmail}*\n" .
+               "Environment Email: *{$environmentEmail}*\n\n" .
+               "Reset Password URL: [Click here to reset password]({$escapedResetUrl})\n\n" .
+               "This link will expire in {$expireTime} minutes\.\n\n" .
+               "If you did not request this password reset, please ignore this message\.";
     }
 
     /**
@@ -134,8 +156,36 @@ class EnvironmentPasswordReset extends Notification implements ShouldQueue
     private function generateResetUrl(): string
     {
         // Default Laravel reset URL
-        $resetUrl = "https://{$this->environment->primary_domain}/reset-password?token={$this->token}&email={$this->userEmail}";
+        $resetUrl = url(route('password.reset', [
+            'token' => $this->token,
+            'email' => $this->userEmail,
+        ], false));
 
+        // If environment has a primary domain, use that for the reset URL
+        if ($this->environment->primary_domain) {
+            $protocol = app()->environment('production') ? 'https' : 'http';
+            $resetUrl = "{$protocol}://{$this->environment->primary_domain}/auth/reset-password?token={$this->token}&email={$this->userEmail}";
+        }
+        
         return $resetUrl;
+    }
+    
+    /**
+     * Escape special characters for Telegram's MarkdownV2 format.
+     * 
+     * @param string $text
+     * @return string
+     */
+    private function escapeMarkdownV2(string $text): string
+    {
+        // Characters that need to be escaped in MarkdownV2:
+        // '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'
+        $specialChars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'];
+        
+        foreach ($specialChars as $char) {
+            $text = str_replace($char, "\\{$char}", $text);
+        }
+        
+        return $text;
     }
 }
