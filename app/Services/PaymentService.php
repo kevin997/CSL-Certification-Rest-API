@@ -78,6 +78,7 @@ class PaymentService
     public function createPayment(string $orderId, string $paymentMethod, array $paymentData = [], ?string $environment = null): array
     {
         Log::info("createPayment method called with orderId: $orderId, paymentMethod: $paymentMethod, environment: $environment");
+        
         // Start a database transaction
         DB::beginTransaction();
         
@@ -149,6 +150,12 @@ class PaymentService
             
             // Create the transaction record
             $transaction = Transaction::create($transactionData);
+
+            if($transaction) {
+                Log::info("Transaction was created with", [
+                    'transaction_id' => $transaction->transaction_id
+                ]);
+            }
             
             // Apply commission to calculate fee_amount
             $this->commissionService->applyCommissionToTransaction($transaction);
@@ -178,6 +185,10 @@ class PaymentService
             // Initialize the payment gateway with environment-specific settings
             $gateway = $this->initializeGateway($paymentMethod, $environment);
             if (!$gateway['success']) {
+                Log::warning("Payment Gateway initialization failed", [
+                    'success' => false,
+                    'message' => "Payment gateway '$paymentMethod' not supported"
+                ]);
                 DB::rollBack();
                 return $gateway;
             }
@@ -188,6 +199,10 @@ class PaymentService
             $response = $this->currentGateway->createPayment($transaction, $paymentData);
             
             if (!$response['success']) {
+                Log::warning("Payment creation failed", [
+                    'success' => false,
+                    'message' => "Payment gateway '$paymentMethod' not supported"
+                ]);
                 DB::rollBack();
                 return $response;
             }
@@ -218,21 +233,16 @@ class PaymentService
         try {
             // Get environment ID based on environment name
             $environmentId = session('current_environment_id');
-            if ($environment) {
-                // Cache environment lookups to avoid repeated database queries
-                if (!isset($this->environmentCache[$environment])) {
-                    $env = Environment::where('name', $environment)->first();
-                    $this->environmentCache[$environment] = $env ? $env->id : null;
-                }
-                $environmentId = $this->environmentCache[$environment];
-            }
-
             Log::info('Enviroment id in payment service '.$environmentId);
             
             // Get gateway settings for the specified environment
             $gatewaySettings = $this->getGatewaySettings($gatewayCode, $environmentId);
             
             if (!$gatewaySettings) {
+                Log::warning("Payment Gateway settings retrieval failed", [
+                    'success' => false,
+                    'message' => "Payment gateway '$gatewayCode' not configured for the specified environment"
+                ]);
                 return [
                     'success' => false,
                     'message' => "Payment gateway '$gatewayCode' not configured for the specified environment"
@@ -243,6 +253,10 @@ class PaymentService
             $gateway = $this->gatewayFactory->create($gatewayCode, $gatewaySettings);
             
             if (!$gateway) {
+                Log::warning("Payment Gateway creation failed", [
+                    'success' => false,
+                    'message' => "Payment gateway '$gatewayCode' not supported"
+                ]);
                 return [
                     'success' => false,
                     'message' => "Payment gateway '$gatewayCode' not supported"
@@ -284,7 +298,6 @@ class PaymentService
                 $query->where('environment_id', $environmentId)
                     ->orWhereNull('environment_id');
             })
-            ->where('status', true)
             ->first();
     }
     

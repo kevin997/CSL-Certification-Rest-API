@@ -1663,7 +1663,7 @@ class StorefrontController extends Controller
                         $order->id,
                         $gatewayCode,
                         [],
-                        $environment->id
+                        $environment->name
                     );
 
                     // Get transaction ID from payment result if available
