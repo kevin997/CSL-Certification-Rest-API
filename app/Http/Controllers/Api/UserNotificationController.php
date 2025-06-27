@@ -20,18 +20,18 @@ class UserNotificationController extends Controller
     {
         $perPage = $request->input('per_page', 15);
         $userId = Auth::id();
-        
+
         $notifications = UserNotification::where('environment_id', $environmentId)
             ->where('user_id', $userId)
             ->orderBy('created_at', 'desc')
             ->paginate($perPage);
-            
+
         return response()->json([
             'status' => 'success',
             'data' => $notifications
         ]);
     }
-    
+
     /**
      * Get unread notifications count for the authenticated user in the current environment.
      *
@@ -41,12 +41,12 @@ class UserNotificationController extends Controller
     public function unreadCount(int $environmentId)
     {
         $userId = Auth::id();
-        
+
         $count = UserNotification::where('environment_id', $environmentId)
             ->where('user_id', $userId)
             ->whereNull('read_at')
             ->count();
-            
+
         return response()->json([
             'status' => 'success',
             'data' => [
@@ -54,7 +54,7 @@ class UserNotificationController extends Controller
             ]
         ]);
     }
-    
+
     /**
      * Mark a notification as read.
      *
@@ -65,27 +65,27 @@ class UserNotificationController extends Controller
     public function markAsRead(int $environmentId, int $notificationId)
     {
         $userId = Auth::id();
-        
+
         $notification = UserNotification::where('environment_id', $environmentId)
             ->where('user_id', $userId)
             ->where('id', $notificationId)
             ->first();
-            
+
         if (!$notification) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Notification not found'
             ], 404);
         }
-        
+
         $notification->markAsRead();
-        
+
         return response()->json([
             'status' => 'success',
             'message' => 'Notification marked as read'
         ]);
     }
-    
+
     /**
      * Mark all notifications as read for the authenticated user in the current environment.
      *
@@ -95,12 +95,12 @@ class UserNotificationController extends Controller
     public function markAllAsRead(int $environmentId)
     {
         $userId = Auth::id();
-        
+
         UserNotification::where('environment_id', $environmentId)
             ->where('user_id', $userId)
             ->whereNull('read_at')
             ->update(['read_at' => now()]);
-            
+
         return response()->json([
             'status' => 'success',
             'message' => 'All notifications marked as read'
