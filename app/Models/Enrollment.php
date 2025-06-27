@@ -31,6 +31,11 @@ class Enrollment extends Model
         'enrolled_by',
     ];
 
+    const STATUS_ENROLLED = 'enrolled';
+    const STATUS_IN_PROGRESS = 'in-progress';
+    const STATUS_COMPLETED = 'completed';
+    const STATUS_DROPPED = 'dropped';
+
     /**
      * The attributes that should be cast.
      *

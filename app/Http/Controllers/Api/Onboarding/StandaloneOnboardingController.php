@@ -136,7 +136,7 @@ class StandaloneOnboardingController extends Controller
                     'billing_cycle' => 'monthly', // Free plan, but set a default
                     'start_date' => now(),
                     'end_date' => null, // No end date for free plan
-                    'status' => 'active',
+                    'status' => Subscription::STATUS_ACTIVE,
                     'is_trial' => false,
                 ]);
                 

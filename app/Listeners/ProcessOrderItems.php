@@ -5,6 +5,7 @@ namespace App\Listeners;
 use App\Events\OrderCompleted;
 use App\Models\Product;
 use App\Models\Enrollment;
+use App\Models\Order;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +36,10 @@ class ProcessOrderItems implements ShouldQueue
     public function handle(OrderCompleted $event): void
     {
         $order = $event->order;
+
+        //set order status as completed
+        $order->status = Order::STATUS_COMPLETED;
+        $order->save();
         
         // Get the order items
         $orderItems = DB::table('order_items')->where('order_id', $order->id)->get();
@@ -57,7 +62,7 @@ class ProcessOrderItems implements ShouldQueue
             
             // Handle subscriptions if the product is a subscription
             if ($product->is_subscription) {
-                $this->processSubscription($product, $order);
+                //$this->processSubscription($product, $order);
             }
         }
     }
@@ -88,7 +93,7 @@ class ProcessOrderItems implements ShouldQueue
                     'user_id' => $order->user_id,
                     'course_id' => $productCourse->course_id,
                     'environment_id' => $order->environment_id,
-                    'status' => 'enrolled',
+                    'status' => Enrollment::STATUS_ENROLLED,
                     'progress_percentage' => 0,
                     'last_activity_at' => now(),
                 ]);

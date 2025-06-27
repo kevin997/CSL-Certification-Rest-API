@@ -31,6 +31,12 @@ class Subscription extends Model
         'setup_fee_paid',
     ];
 
+
+    const STATUS_ACTIVE = 'active';
+    const STATUS_CANCELED = 'canceled';
+    const STATUS_EXPIRED = 'expired';
+    const STATUS_TRIAL = 'trial';
+
     /**
      * The attributes that should be cast.
      *
@@ -68,7 +74,7 @@ class Subscription extends Model
      */
     public function isActive(): bool
     {
-        return $this->status === 'active' && 
+        return $this->status === self::STATUS_ACTIVE && 
                ($this->ends_at === null || $this->ends_at->isFuture());
     }
 
@@ -86,7 +92,8 @@ class Subscription extends Model
      */
     public function isCanceled(): bool
     {
-        return $this->canceled_at !== null;
+        return $this->canceled_at !== null && 
+               $this->canceled_at->isFuture();
     }
 
     /**

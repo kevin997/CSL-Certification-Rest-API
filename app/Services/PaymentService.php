@@ -78,9 +78,7 @@ class PaymentService
     public function createPayment(string $orderId, string $paymentMethod, array $paymentData = [], ?string $environment = null): array
     {
         Log::info("createPayment method called with orderId: $orderId, paymentMethod: $paymentMethod, environment: $environment");
-        
-        // Start a database transaction
-        DB::beginTransaction();
+
         
         $environmentId = session('current_environment_id');
         Log::info('Found environement Id on createPayment', [
@@ -108,8 +106,7 @@ class PaymentService
                 // Initialize the payment gateway with environment-specific settings
                 $gateway = $this->initializeGateway($paymentMethod, $environment);
                 if (!$gateway['success']) {
-                    DB::rollBack();
-                    return $gateway;
+                        return $gateway;
                 }
                 
                 $this->currentGateway = $gateway['gateway'];
@@ -118,12 +115,11 @@ class PaymentService
                 $response = $this->currentGateway->createPayment($existingTransaction, $paymentData);
                 
                 if (!$response['success']) {
-                    DB::rollBack();
-                    return $response;
+                        return $response;
                 }
                 
                 $response['transaction'] = $existingTransaction;
-                DB::commit();
+
                 return $response;
             }
 
@@ -189,7 +185,6 @@ class PaymentService
                     'success' => false,
                     'message' => "Payment gateway '$paymentMethod' not supported"
                 ]);
-                DB::rollBack();
                 return $gateway;
             }
             
@@ -203,16 +198,21 @@ class PaymentService
                     'success' => false,
                     'message' => "Payment gateway '$paymentMethod' not supported"
                 ]);
-                DB::rollBack();
                 return $response;
             }
-            
+
+            if (isset($response['payment_intent_id'])) {
+                $transaction->gateway_transaction_id = $response['payment_intent_id'];
+                $transaction->save();
+            }
+
+
+
+            $transaction->refresh();
             $response['transaction'] = $transaction;
-            DB::commit();
             return $response;
             
         } catch (\Exception $e) {
-            DB::rollBack();
             Log::error('Payment creation failed: ' . $e->getMessage());
             return [
                 'success' => false,

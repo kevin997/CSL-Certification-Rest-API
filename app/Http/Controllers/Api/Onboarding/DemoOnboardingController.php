@@ -143,7 +143,7 @@ class DemoOnboardingController extends Controller
                     'billing_cycle' => 'monthly',
                     'start_date' => now(),
                     'end_date' => $expiresAt, // Demo expires after 14 days
-                    'status' => 'active',
+                    'status' => Subscription::STATUS_ACTIVE,
                     'is_trial' => true,
                     'referral_code' => $request->referral_code,
                 ]);

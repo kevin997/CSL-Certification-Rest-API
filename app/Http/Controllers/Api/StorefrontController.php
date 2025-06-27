@@ -1671,7 +1671,9 @@ class StorefrontController extends Controller
                     $transaction = $paymentResult['transaction'] ?? null;
                     $responseData["total_amount"] = $transaction->total_amount;
                     $responseData["currency"] = $transaction->currency;
-
+                    $responseData['transaction'] = $transaction;
+                    DB::commit();
+                    
                     if ($paymentResult['success']) {
                         // Add payment-specific data to the response based on the gateway type
                         switch ($paymentResult['type']) {

@@ -114,7 +114,7 @@ class TransactionController extends Controller
             ]);
             return response()->json(['error' => 'Transaction ID is required'], 400);
         }
-        
+
         // Log the callback to AuditLog
         $auditLog = AuditLog::logCallback(
             $gateway,
@@ -126,39 +126,38 @@ class TransactionController extends Controller
             'Payment success callback received',
             AuditLog::STATUS_SUCCESS
         );
-        
+
         Log::info('Payment success callback received', [
             'gateway' => $gateway,
             'environment_id' => $environment_id,
             'transaction_id' => $transactionId,
             'audit_log_id' => $auditLog->id
         ]);
-        
+
         try {
             // Update transaction status through PaymentService
             $paymentService = app(PaymentService::class);
             $result = $paymentService->processSuccessCallback($gateway, $transactionId, $environment_id, $request->all());
-            
+
             if (!$result) {
                 Log::error('Failed to process payment success callback', [
                     'gateway' => $gateway,
                     'environment_id' => $environment_id,
                     'transaction_id' => $transactionId
                 ]);
-                
+
                 // Update audit log with failure
                 $auditLog->update([
                     'status' => AuditLog::STATUS_FAILURE,
                     'notes' => 'Failed to process payment success callback'
                 ]);
-                
+
                 return response()->json(['error' => 'Failed to process payment callback'], 500);
             }
-            
+
             // Return redirect response based on gateway
             $redirectUrl = config('app.frontend_url') . '/payment/success?transaction_id=' . $transactionId;
             return Redirect::to($redirectUrl);
-            
         } catch (\Exception $e) {
             Log::error('Error in payment success callback', [
                 'error' => $e->getMessage(),
@@ -166,20 +165,136 @@ class TransactionController extends Controller
                 'environment_id' => $environment_id,
                 'transaction_id' => $transactionId
             ]);
-            
+
             // Update audit log with error
             $auditLog->update([
                 'status' => AuditLog::STATUS_ERROR,
                 'notes' => 'Exception: ' . $e->getMessage()
             ]);
-            
+
             // Fallback redirect to dashboard with error
             return Redirect::away(config('app.frontend_url') . '/dashboard?payment=error');
         }
     }
     
+    public function callbackFailure(Request $request, $gateway, $environment_id)
+    {
+        // Get transaction ID from request parameters
+        $transactionId = $request->input('transaction_id') ?? $request->query('transaction_id');
 
-    
+        if (!$transactionId) {
+            Log::error('Transaction ID not provided in failure callback', [
+                'gateway' => $gateway,
+                'environment_id' => $environment_id
+            ]);
+            return response()->json(['error' => 'Transaction ID is required'], 400);
+        }
+
+        // Log the callback to AuditLog
+        $auditLog = AuditLog::logCallback(
+            $gateway,
+            'failure',
+            $request->all(),
+            'Transaction',
+            $transactionId,
+            $environment_id,
+            'Payment failure callback received',
+            AuditLog::STATUS_SUCCESS // Initial success means the callback was received, not that the payment was successful
+        );
+
+        Log::info('Payment failure callback received', [
+            'gateway' => $gateway,
+            'environment_id' => $environment_id,
+            'transaction_id' => $transactionId,
+            'audit_log_id' => $auditLog->id
+        ]);
+
+        try {
+            // Process the failure callback using PaymentService
+            $paymentService = app(PaymentService::class);
+            $result = $paymentService->processFailureCallback($gateway, $transactionId, $environment_id, $request->all());
+
+            if (!$result) {
+                Log::error('Failed to process payment failure callback', [
+                    'gateway' => $gateway,
+                    'environment_id' => $environment_id,
+                    'transaction_id' => $transactionId
+                ]);
+
+                // Update audit log with failure
+                $auditLog->update([
+                    'status' => AuditLog::STATUS_FAILURE,
+                    'notes' => 'Failed to process payment failure callback'
+                ]);
+
+                return response()->json(['error' => 'Failed to process payment callback'], 500);
+            }
+
+            // Find the transaction by transaction_id and environment_id
+            $transaction = Transaction::where('transaction_id', $transactionId)
+                ->where('environment_id', $environment_id)
+                ->first();
+
+            if (!$transaction) {
+                Log::error('Transaction not found for failure callback', ['transaction_id' => $transactionId, 'environment_id' => $environment_id]);
+
+                // Update audit log with transaction not found error
+                $auditLog->update([
+                    'status' => AuditLog::STATUS_ERROR,
+                    'notes' => 'Transaction not found'
+                ]);
+
+                return response()->json(['error' => 'Transaction not found'], 404);
+            }
+
+            // Get environment info for redirection
+            $environment = Environment::find($transaction->environment_id);
+            if (!$environment) {
+                Log::error('Environment not found for transaction', ['environment_id' => $transaction->environment_id]);
+
+                // Update audit log with environment not found error
+                $auditLog->update([
+                    'status' => AuditLog::STATUS_ERROR,
+                    'notes' => 'Environment not found'
+                ]);
+
+                return response()->json(['error' => 'Environment not found'], 404);
+            }
+
+            // Update transaction status
+            $transaction->status = Transaction::STATUS_FAILED;
+            $transaction->gateway_status = $request->input('status') ?? 'failed';
+            $transaction->notes = $request->has('error') ? ('Error: ' . $request->input('error')) : 'Payment failed';
+            $transaction->save();
+
+            // Update audit log with successful processing
+            $auditLog->update([
+                'response_data' => json_encode(['transaction_status' => $transaction->status]),
+                'notes' => 'Payment failure processed successfully'
+            ]);
+
+            // Return redirect response based on payment type
+            $redirectUrl = config('app.frontend_url') . '/payment/failure?transaction_id=' . $transactionId;
+            return Redirect::to($redirectUrl);
+        } catch (\Exception $e) {
+            Log::error('Error processing payment failure callback', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'transaction_id' => $transactionId
+            ]);
+
+            // Update audit log with error status
+            $auditLog->update([
+                'status' => AuditLog::STATUS_ERROR,
+                'notes' => 'Exception: ' . $e->getMessage()
+            ]);
+
+            // Fallback redirect to dashboard with error
+            return Redirect::away(config('app.frontend_url') . '/dashboard?payment=error');
+        }
+    }
+
+
     /**
      * Handle failed payment callback
      *
@@ -283,7 +398,7 @@ class TransactionController extends Controller
                 ['headers' => $request->header()],
                 AuditLog::STATUS_SUCCESS // Initial status
             );
-            
+
             Log::info('Payment webhook received', [
                 'gateway' => $gateway,
                 'environment_id' => $environment_id,
@@ -291,77 +406,76 @@ class TransactionController extends Controller
                 'headers' => $request->header(),
                 'payload' => $request->all(),
             ]);
-            
+
             // Find the gateway settings for this environment
             $gatewaySettings = PaymentGatewaySetting::where('environment_id', $environment_id)
                 ->where('code', $gateway)
                 ->first();
-            
+
             if (!$gatewaySettings) {
                 Log::error('Gateway settings not found', [
                     'gateway' => $gateway,
                     'environment_id' => $environment_id
                 ]);
-                
+
                 // Update audit log with error information
                 $auditLog->update([
                     'status' => AuditLog::STATUS_ERROR,
                     'notes' => 'Gateway settings not found'
                 ]);
-                
+
                 return response()->json(['error' => 'Gateway settings not found'], 404);
             }
-            
+
             // Get the raw payload
             $payload = $request->getContent();
             $headers = $request->headers->all();
-            
+
             $response = null;
-            
+
             // Process the webhook based on the gateway
             switch ($gateway) {
                 case 'stripe':
                     $response = $this->handleStripeWebhook($payload, $headers, $gatewaySettings);
                     break;
-                    
+
                 case 'paypal':
                     $response = $this->handlePayPalWebhook($payload, $headers, $gatewaySettings);
                     break;
-                    
+
                 case 'lygos':
                     $response = $this->handleLygosWebhook($payload, $headers, $gatewaySettings);
                     break;
-                    
+
                 case 'monetbill':
                     $response = $this->handleMonetbillWebhook($payload, $headers, $gatewaySettings);
                     break;
-                    
+
                 default:
                     Log::error('Unsupported gateway for webhook', ['gateway' => $gateway]);
-                    
+
                     // Update audit log with error information
                     $auditLog->update([
                         'status' => AuditLog::STATUS_ERROR,
                         'notes' => 'Unsupported payment gateway'
                     ]);
-                    
+
                     return response()->json(['error' => 'Unsupported payment gateway'], 400);
             }
-            
+
             // Update audit log with success information
             $auditLog->update([
                 'status' => AuditLog::STATUS_SUCCESS,
                 'response_data' => $response instanceof JsonResponse ? $response->getData(true) : null
             ]);
-            
+
             return $response;
-            
         } catch (\Exception $e) {
             Log::error('Error processing webhook', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             // Update audit log with error information if we have one
             if (isset($auditLog)) {
                 $auditLog->update([
@@ -369,13 +483,13 @@ class TransactionController extends Controller
                     'notes' => 'Exception: ' . $e->getMessage()
                 ]);
             }
-            
+
             // Always return 200 to the gateway to prevent retries
             // This is a common practice with webhooks to avoid duplicate processing
             return response()->json(['status' => 'error', 'message' => 'Error processing webhook']);
         }
     }
-    
+
     /**
      * Handle Stripe webhook events
      */
@@ -383,18 +497,18 @@ class TransactionController extends Controller
     {
         // Initialize Stripe with gateway settings
         $stripeSecretKey = $gatewaySettings->getSetting('api_key') ?? null;
-        
+
         if (!$stripeSecretKey) {
             Log::error('Stripe api key(secret key) not found in gateway settings');
             return response()->json(['error' => 'Configuration error'], 500);
         }
-        
+
         \Stripe\Stripe::setApiKey($stripeSecretKey);
-        
+
         // Get the signature header
         $sigHeader = $headers['stripe-signature'][0] ?? '';
         $webhookSecret = $gatewaySettings->getSetting('webhook_secret') ?? null;
-        
+
         try {
             // Verify the event
             if ($webhookSecret) {
@@ -403,30 +517,32 @@ class TransactionController extends Controller
                 // If no webhook secret, just decode the payload
                 $event = json_decode($payload, true);
             }
-            
+
             // Process the event based on its type
             $eventType = $event->type ?? $event['type'] ?? null;
-            
+
             switch ($eventType) {
                 case 'payment_intent.succeeded':
+                case 'charge.succeeded':
                     return $this->handleStripePaymentSuccess($event->data->object ?? $event['data']['object'], $gatewaySettings);
-                    
+
                 case 'payment_intent.payment_failed':
+                case 'charge.failed':
                     return $this->handleStripePaymentFailure($event->data->object ?? $event['data']['object'], $gatewaySettings);
-                    
+
                 case 'checkout.session.completed':
                     return $this->handleStripeCheckoutSessionCompleted($event->data->object ?? $event['data']['object'], $gatewaySettings);
-                    
+
                 case 'invoice.payment_succeeded':
                     return $this->handleStripeInvoicePaymentSucceeded($event->data->object ?? $event['data']['object'], $gatewaySettings);
-                
+
                 case 'invoice.payment_failed':
                     return $this->handleStripeInvoicePaymentFailed($event->data->object ?? $event['data']['object'], $gatewaySettings);
-                    
+
                 case 'customer.subscription.created':
                 case 'customer.subscription.updated':
                     return $this->handleStripeSubscriptionUpdated($event->data->object ?? $event['data']['object'], $gatewaySettings);
-                    
+
                 default:
                     // For unhandled events, just acknowledge receipt
                     return response()->json(['status' => 'success', 'message' => 'Unhandled event acknowledged']);
@@ -445,7 +561,7 @@ class TransactionController extends Controller
             return response()->json(['error' => 'Webhook processing error'], 500);
         }
     }
-    
+
     /**
      * Handle Stripe payment success event
      *
@@ -457,17 +573,28 @@ class TransactionController extends Controller
     {
         // Extract payment intent ID from object
         $paymentIntentId = $paymentIntent->id ?? $paymentIntent['id'] ?? null;
-        
+
         if (!$paymentIntentId) {
             Log::error('Payment intent ID not found in Stripe webhook');
             return response()->json(['status' => 'error', 'message' => 'Invalid payload']);
         }
-        
+
         // Find the transaction by gateway_transaction_id
-        $transaction = Transaction::where('gateway_transaction_id', $paymentIntentId)
-            ->where('environment_id', $gatewaySettings->environment_id)
-            ->first();
-            
+        // Better way - use the transaction ID from metadata
+        $metadata = $paymentIntent->metadata ?? $paymentIntent['metadata'] ?? [];
+        $transactionId = $metadata['transaction_id'] ?? null;
+
+        if ($transactionId) {
+            $transaction = Transaction::where('id', $transactionId)
+                ->where('environment_id', $gatewaySettings->environment_id)
+                ->first();
+        } else {
+            // Fallback to the old method
+            $transaction = Transaction::where('gateway_transaction_id', $paymentIntentId)
+                ->where('environment_id', $gatewaySettings->environment_id)
+                ->first();
+        }
+
         if (!$transaction) {
             Log::error('Transaction not found for Stripe payment intent', [
                 'payment_intent_id' => $paymentIntentId,
@@ -475,37 +602,69 @@ class TransactionController extends Controller
             ]);
             return response()->json(['status' => 'success', 'message' => 'No matching transaction']);
         }
-        
+
         // Update transaction status
         $transaction->status = Transaction::STATUS_COMPLETED;
         $transaction->gateway_status = $paymentIntent->status ?? $paymentIntent['status'] ?? 'succeeded';
         $transaction->gateway_response = json_encode($paymentIntent);
         $transaction->paid_at = now();
         $transaction->save();
-        
+
         Log::info('Transaction marked as completed from webhook', [
             'transaction_id' => $transaction->id,
             'gateway_transaction_id' => $transaction->gateway_transaction_id
         ]);
-        
-        // Check if this is a subscription payment
-        $subscription = Subscription::where('transaction_id', $transaction->transaction_id)->first();
-        
-        if ($subscription) {
+
+        // Check if this is a subscription payment (For environement owners)
+        $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
+
+        if ($payment) {
             // Update subscription status to active
-            $subscription->status = 'active';
-            $subscription->save();
-            
-            Log::info('Subscription activated', ['subscription_id' => $subscription->id]);
+            $payment->status = Payment::STATUS_COMPLETED;
+            $payment->save();
+
+            //check if this is a subscription payment
+            $subscription = Subscription::where('id', $payment->subscription_id)->first();
+            if ($subscription) {
+                $subscription->status = Subscription::STATUS_ACTIVE;
+                $subscription->last_payment_at = now();
+
+                if($subscription->billing_cycle == 'monthly'){
+                    $subscription->next_payment_at = now()->addMonth();
+                }else{
+                    $subscription->next_payment_at = now()->addYear();
+                }
+
+                //update end date of subcription
+                if($subscription->billing_cycle == 'monthly'){
+                    $subscription->ends_at = now()->addMonth();
+                }else{
+                    $subscription->ends_at = now()->addYear();
+                }
+
+                $subscription->save();
+                /**
+                 * To-do
+                 * Send notification of subcription renewed and payment success /mail/telegram/database
+                 */
+            }
+            Log::info('Payment activated', ['payment_id' => $payment->id]);
         }
 
-        //check if this is an order payment
-        $order = Order::where('id', $transaction->transaction_id)->first();
-        if($order) event(new \App\Events\OrderCompleted($order));
+        /**
+         * To-do
+         */
+
+        //implement check for EnrollementSubscription Payment
+
         
+        //check if this is an order payment
+        $order = Order::where('id', $transaction->order_id)->first();
+        if ($order) event(new \App\Events\OrderCompleted($order));
+
         return response()->json(['status' => 'success', 'message' => 'Payment success processed']);
     }
-    
+
     /**
      * Handle Stripe payment failure event
      *
@@ -517,17 +676,28 @@ class TransactionController extends Controller
     {
         // Extract payment intent ID from object
         $paymentIntentId = $paymentIntent->id ?? $paymentIntent['id'] ?? null;
-        
+
         if (!$paymentIntentId) {
             Log::error('Payment intent ID not found in Stripe webhook');
             return response()->json(['status' => 'error', 'message' => 'Invalid payload']);
         }
-        
+
         // Find the transaction by gateway_transaction_id
-        $transaction = Transaction::where('gateway_transaction_id', $paymentIntentId)
-            ->where('environment_id', $gatewaySettings->environment_id)
-            ->first();
-            
+        // Better way - use the transaction ID from metadata
+        $metadata = $paymentIntent->metadata ?? $paymentIntent['metadata'] ?? [];
+        $transactionId = $metadata['transaction_id'] ?? null;
+
+        if ($transactionId) {
+            $transaction = Transaction::where('id', $transactionId)
+                ->where('environment_id', $gatewaySettings->environment_id)
+                ->first();
+        } else {
+            // Fallback to the old method
+            $transaction = Transaction::where('gateway_transaction_id', $paymentIntentId)
+                ->where('environment_id', $gatewaySettings->environment_id)
+                ->first();
+        }
+
         if (!$transaction) {
             Log::error('Transaction not found for Stripe payment intent', [
                 'payment_intent_id' => $paymentIntentId,
@@ -535,7 +705,7 @@ class TransactionController extends Controller
             ]);
             return response()->json(['status' => 'success', 'message' => 'No matching transaction']);
         }
-        
+
         // Get error information
         $errorMessage = '';
         if (isset($paymentIntent->last_payment_error)) {
@@ -543,23 +713,39 @@ class TransactionController extends Controller
         } elseif (isset($paymentIntent['last_payment_error'])) {
             $errorMessage = $paymentIntent['last_payment_error']['message'] ?? '';
         }
-        
+
         // Update transaction status
         $transaction->status = Transaction::STATUS_FAILED;
         $transaction->gateway_status = $paymentIntent->status ?? $paymentIntent['status'] ?? 'failed';
         $transaction->gateway_response = json_encode($paymentIntent);
         $transaction->notes = $errorMessage ? 'Error: ' . $errorMessage : 'Payment failed';
         $transaction->save();
-        
+
         Log::info('Transaction marked as failed from webhook', [
             'transaction_id' => $transaction->id,
             'gateway_transaction_id' => $transaction->gateway_transaction_id,
             'error' => $errorMessage
         ]);
-        
-        return response()->json(['status' => 'success', 'message' => 'Payment failure processed']);
+
+        // Check if this is a subscription payment (For environement owners)
+        $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
+
+        if ($payment) {
+            // Update subscription status to active
+            $payment->status = Payment::STATUS_FAILED;
+            $payment->save();
+
+            /**
+             * To-do
+             */
+            // send notification of payment failing through telegram/database/mail
+
+            Log::info('Payment failed', ['payment_id' => $payment->id]);
+        }
+        return response()->json(['status' => 'success', 'message' => 'Payment success processed']);
+
     }
-    
+
     /**
      * Handle Stripe checkout session completed event
      *
@@ -571,7 +757,7 @@ class TransactionController extends Controller
     {
         // The payment_intent ID is nested in the checkout session
         $paymentIntentId = $session->payment_intent ?? $session['payment_intent'] ?? null;
-        
+
         if (!$paymentIntentId) {
             // Try to find by checkout session ID instead
             $sessionId = $session->id ?? $session['id'] ?? null;
@@ -579,34 +765,91 @@ class TransactionController extends Controller
                 $transaction = Transaction::where('gateway_transaction_id', $sessionId)
                     ->where('environment_id', $gatewaySettings->environment_id)
                     ->first();
-                
+
                 if ($transaction) {
                     $transaction->status = Transaction::STATUS_COMPLETED;
                     $transaction->gateway_status = 'completed';
                     $transaction->gateway_response = json_encode($session);
                     $transaction->paid_at = now();
                     $transaction->save();
-                    
+
                     Log::info('Transaction marked as completed from checkout session', [
                         'transaction_id' => $transaction->id,
                         'session_id' => $sessionId
                     ]);
-                    
-                    return response()->json(['status' => 'success', 'message' => 'Checkout session processed']);
+                    // Check if this is a subscription payment (For environement owners)
+                    $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
+
+                    if ($payment) {
+                        // Update subscription status to active
+                        $payment->status = Payment::STATUS_COMPLETED;
+                        $payment->save();
+
+                        //check if this is a subscription payment
+                        $subscription = Subscription::where('id', $payment->subscription_id)->first();
+                        if ($subscription) {
+                            $subscription->status = Subscription::STATUS_ACTIVE;
+                            $subscription->last_payment_at = now();
+
+                            if ($subscription->billing_cycle == 'monthly') {
+                                $subscription->next_payment_at = now()->addMonth();
+                            } else {
+                                $subscription->next_payment_at = now()->addYear();
+                            }
+
+                            //update end date of subcription
+                            if ($subscription->billing_cycle == 'monthly') {
+                                $subscription->ends_at = now()->addMonth();
+                            } else {
+                                $subscription->ends_at = now()->addYear();
+                            }
+
+                            $subscription->save();
+                            /**
+                             * To-do
+                             * Send notification of subcription renewed and payment success /mail/telegram/database
+                             */
+                        }
+                        Log::info('Payment activated', ['payment_id' => $payment->id]);
+                    }
+
+                    /**
+                     * To-do
+                     */
+
+                    //implement check for EnrollementSubscription Payment
+
+
+                    //check if this is an order payment
+                    $order = Order::where('id', $transaction->order_id)->first();
+                    if ($order) event(new \App\Events\OrderCompleted($order));
+
+                    return response()->json(['status' => 'success', 'message' => 'Payment success processed']);
                 }
             }
-            
+
             Log::error('Payment intent ID not found in checkout session', [
                 'session_id' => $session->id ?? $session['id'] ?? 'unknown'
             ]);
             return response()->json(['status' => 'error', 'message' => 'Payment intent not found']);
         }
-        
+
         // Find the transaction by gateway_transaction_id
-        $transaction = Transaction::where('gateway_transaction_id', $paymentIntentId)
-            ->where('environment_id', $gatewaySettings->environment_id)
-            ->first();
-            
+        // Better way - use the transaction ID from metadata
+        $metadata = $paymentIntent->metadata ?? $paymentIntent['metadata'] ?? [];
+        $transactionId = $metadata['transaction_id'] ?? null;
+
+        if ($transactionId) {
+            $transaction = Transaction::where('id', $transactionId)
+                ->where('environment_id', $gatewaySettings->environment_id)
+                ->first();
+        } else {
+            // Fallback to the old method
+            $transaction = Transaction::where('gateway_transaction_id', $paymentIntentId)
+                ->where('environment_id', $gatewaySettings->environment_id)
+                ->first();
+        }
+
         if (!$transaction) {
             Log::error('Transaction not found for Stripe checkout session', [
                 'payment_intent_id' => $paymentIntentId,
@@ -614,22 +857,69 @@ class TransactionController extends Controller
             ]);
             return response()->json(['status' => 'error', 'message' => 'Transaction not found']);
         }
-        
+
         // Update transaction status
         $transaction->status = Transaction::STATUS_COMPLETED;
         $transaction->gateway_status = 'completed';
         $transaction->gateway_response = json_encode($session);
         $transaction->paid_at = now();
         $transaction->save();
-        
+
         Log::info('Transaction marked as completed from checkout session', [
             'transaction_id' => $transaction->id,
             'gateway_transaction_id' => $transaction->gateway_transaction_id
         ]);
-        
-        return response()->json(['status' => 'success', 'message' => 'Checkout session processed']);
+
+        // Check if this is a subscription payment (For environement owners)
+        $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
+
+        if ($payment) {
+            // Update subscription status to active
+            $payment->status = Payment::STATUS_COMPLETED;
+            $payment->save();
+
+            //check if this is a subscription payment
+            $subscription = Subscription::where('id', $payment->subscription_id)->first();
+            if ($subscription) {
+                $subscription->status = Subscription::STATUS_ACTIVE;
+                $subscription->last_payment_at = now();
+
+                if ($subscription->billing_cycle == 'monthly') {
+                    $subscription->next_payment_at = now()->addMonth();
+                } else {
+                    $subscription->next_payment_at = now()->addYear();
+                }
+
+                //update end date of subcription
+                if ($subscription->billing_cycle == 'monthly') {
+                    $subscription->ends_at = now()->addMonth();
+                } else {
+                    $subscription->ends_at = now()->addYear();
+                }
+
+                $subscription->save();
+                /**
+                 * To-do
+                 * Send notification of subcription renewed and payment success /mail/telegram/database
+                 */
+            }
+            Log::info('Payment activated', ['payment_id' => $payment->id]);
+        }
+
+        /**
+         * To-do
+         */
+
+        //implement check for EnrollementSubscription Payment
+
+
+        //check if this is an order payment
+        $order = Order::where('id', $transaction->order_id)->first();
+        if ($order) event(new \App\Events\OrderCompleted($order));
+
+        return response()->json(['status' => 'success', 'message' => 'Payment success processed']);
     }
-    
+
     /**
      * Handle Stripe invoice payment succeeded event
      *
@@ -639,73 +929,73 @@ class TransactionController extends Controller
      */
     private function handleStripeInvoicePaymentSucceeded($invoice, $gatewaySettings)
     {
-        // For subscriptions, the invoice will have a subscription ID
-        $subscriptionId = $invoice->subscription ?? $invoice['subscription'] ?? null;
-        
-        if (!$subscriptionId) {
-            Log::error('Subscription ID not found in invoice', [
-                'invoice_id' => $invoice->id ?? $invoice['id'] ?? 'unknown'
-            ]);
-            return response()->json(['status' => 'error', 'message' => 'Subscription ID not found']);
-        }
-        
-        // Find subscription by gateway_subscription_id
-        $subscription = Subscription::where('gateway_subscription_id', $subscriptionId)
-            ->where('environment_id', $gatewaySettings->environment_id)
-            ->first();
-        
-        if (!$subscription) {
-            Log::error('Subscription not found for invoice', [
-                'subscription_id' => $subscriptionId,
-                'environment_id' => $gatewaySettings->environment_id
-            ]);
-            return response()->json(['status' => 'success', 'message' => 'No matching subscription']);
-        }
-        
-        // Create a new transaction record for this invoice payment
-        $transaction = new Transaction();
-        $transaction->transaction_id = (string) Str::uuid();
-        $transaction->environment_id = $gatewaySettings->environment_id;
-        $transaction->payment_gateway_setting_id = $gatewaySettings->id;
-        $transaction->customer_id = $subscription->customer_id;
-        $transaction->amount = $invoice->amount_paid / 100 ?? $invoice['amount_paid'] / 100 ?? 0; // Convert from cents
-        $transaction->total_amount = $invoice->amount_paid / 100 ?? $invoice['amount_paid'] / 100 ?? 0;
-        $transaction->currency = $invoice->currency ?? $invoice['currency'] ?? 'usd';
-        $transaction->status = Transaction::STATUS_COMPLETED;
-        $transaction->payment_method = 'credit_card';
-        $transaction->gateway_transaction_id = $invoice->payment_intent ?? $invoice['payment_intent'] ?? $invoice->id ?? $invoice['id'];
-        $transaction->gateway_status = 'succeeded';
-        $transaction->description = 'Subscription payment for ' . $subscription->plan_name;
-        $transaction->gateway_response = json_encode($invoice);
-        $transaction->paid_at = now();
-        $transaction->save();
-        
-        // Update subscription status if needed
-        if ($subscription->status !== 'active') {
-            $subscription->status = 'active';
-            $subscription->save();
-        }
-        
-        // Update subscription's next_billing_date
-        if (isset($invoice->lines->data[0]->period->end) || isset($invoice['lines']['data'][0]['period']['end'])) {
-            $periodEnd = $invoice->lines->data[0]->period->end ?? $invoice['lines']['data'][0]['period']['end'];
-            $subscription->next_billing_date = date('Y-m-d H:i:s', $periodEnd);
-            $subscription->save();
-            
-            Log::info('Subscription next billing date updated', [
-                'subscription_id' => $subscription->id,
-                'next_billing_date' => $subscription->next_billing_date
-            ]);
-        }
-        
-        Log::info('Invoice payment succeeded processed', [
-            'subscription_id' => $subscription->id,
-            'transaction_id' => $transaction->id
-        ]);
-        
-        return response()->json(['status' => 'success', 'message' => 'Invoice payment succeeded processed']);
+        // // For subscriptions, the invoice will have a subscription ID
+        // $subscriptionId = $invoice->subscription ?? $invoice['subscription'] ?? null;
+
+        // if (!$subscriptionId) {
+        //     Log::error('Subscription ID not found in invoice', [
+        //         'invoice_id' => $invoice->id ?? $invoice['id'] ?? 'unknown'
+        //     ]);
+        //     return response()->json(['status' => 'error', 'message' => 'Subscription ID not found']);
+        // }
+
+        // // Find subscription by gateway_subscription_id
+        // $subscription = Subscription::where('gateway_subscription_id', $subscriptionId)
+        //     ->where('environment_id', $gatewaySettings->environment_id)
+        //     ->first();
+
+        // if (!$subscription) {
+        //     Log::error('Subscription not found for invoice', [
+        //         'subscription_id' => $subscriptionId,
+        //         'environment_id' => $gatewaySettings->environment_id
+        //     ]);
+        //     return response()->json(['status' => 'success', 'message' => 'No matching subscription']);
+        // }
+
+        // // Create a new transaction record for this invoice payment
+        // $transaction = new Transaction();
+        // $transaction->transaction_id = (string) Str::uuid();
+        // $transaction->environment_id = $gatewaySettings->environment_id;
+        // $transaction->payment_gateway_setting_id = $gatewaySettings->id;
+        // $transaction->customer_id = $subscription->customer_id;
+        // $transaction->amount = $invoice->amount_paid / 100 ?? $invoice['amount_paid'] / 100 ?? 0; // Convert from cents
+        // $transaction->total_amount = $invoice->amount_paid / 100 ?? $invoice['amount_paid'] / 100 ?? 0;
+        // $transaction->currency = $invoice->currency ?? $invoice['currency'] ?? 'usd';
+        // $transaction->status = Transaction::STATUS_COMPLETED;
+        // $transaction->payment_method = 'credit_card';
+        // $transaction->gateway_transaction_id = $invoice->payment_intent ?? $invoice['payment_intent'] ?? $invoice->id ?? $invoice['id'];
+        // $transaction->gateway_status = 'succeeded';
+        // $transaction->description = 'Subscription payment for ' . $subscription->plan_name;
+        // $transaction->gateway_response = json_encode($invoice);
+        // $transaction->paid_at = now();
+        // $transaction->save();
+
+        // // Update subscription status if needed
+        // if ($subscription->status !== 'active') {
+        //     $subscription->status = 'active';
+        //     $subscription->save();
+        // }
+
+        // // Update subscription's next_billing_date
+        // if (isset($invoice->lines->data[0]->period->end) || isset($invoice['lines']['data'][0]['period']['end'])) {
+        //     $periodEnd = $invoice->lines->data[0]->period->end ?? $invoice['lines']['data'][0]['period']['end'];
+        //     $subscription->next_billing_date = date('Y-m-d H:i:s', $periodEnd);
+        //     $subscription->save();
+
+        //     Log::info('Subscription next billing date updated', [
+        //         'subscription_id' => $subscription->id,
+        //         'next_billing_date' => $subscription->next_billing_date
+        //     ]);
+        // }
+
+        // Log::info('Invoice payment succeeded processed', [
+        //     'subscription_id' => $subscription->id,
+        //     'transaction_id' => $transaction->id
+        // ]);
+
+        // return response()->json(['status' => 'success', 'message' => 'Invoice payment succeeded processed']);
     }
-    
+
     /**
      * Handle Stripe invoice payment failed event
      *
@@ -715,58 +1005,58 @@ class TransactionController extends Controller
      */
     private function handleStripeInvoicePaymentFailed($invoice, $gatewaySettings)
     {
-        // For subscriptions, the invoice will have a subscription ID
-        $subscriptionId = $invoice->subscription ?? $invoice['subscription'] ?? null;
-        
-        if (!$subscriptionId) {
-            Log::error('Subscription ID not found in failed invoice', [
-                'invoice_id' => $invoice->id ?? $invoice['id'] ?? 'unknown'
-            ]);
-            return response()->json(['status' => 'error', 'message' => 'Subscription ID not found']);
-        }
-        
-        // Find subscription by gateway_subscription_id
-        $subscription = Subscription::where('gateway_subscription_id', $subscriptionId)
-            ->where('environment_id', $gatewaySettings->environment_id)
-            ->first();
-        
-        if (!$subscription) {
-            Log::error('Subscription not found for failed invoice', [
-                'subscription_id' => $subscriptionId,
-                'environment_id' => $gatewaySettings->environment_id
-            ]);
-            return response()->json(['status' => 'success', 'message' => 'No matching subscription']);
-        }
-        
-        // Create a transaction record for this failed payment
-        $transaction = new Transaction();
-        $transaction->transaction_id = (string) Str::uuid();
-        $transaction->environment_id = $gatewaySettings->environment_id;
-        $transaction->payment_gateway_setting_id = $gatewaySettings->id;
-        $transaction->customer_id = $subscription->customer_id;
-        $transaction->amount = $invoice->amount_due / 100 ?? $invoice['amount_due'] / 100 ?? 0; // Convert from cents
-        $transaction->total_amount = $invoice->amount_due / 100 ?? $invoice['amount_due'] / 100 ?? 0;
-        $transaction->currency = $invoice->currency ?? $invoice['currency'] ?? 'usd';
-        $transaction->status = Transaction::STATUS_FAILED;
-        $transaction->payment_method = 'credit_card';
-        $transaction->gateway_transaction_id = $invoice->payment_intent ?? $invoice['payment_intent'] ?? $invoice->id ?? $invoice['id'];
-        $transaction->gateway_status = 'failed';
-        $transaction->description = 'Failed subscription payment for ' . $subscription->plan_name;
-        $transaction->gateway_response = json_encode($invoice);
-        $transaction->save();
-        
-        // Update subscription status
-        $subscription->status = 'past_due';
-        $subscription->save();
-        
-        Log::info('Invoice payment failed processed', [
-            'subscription_id' => $subscription->id,
-            'transaction_id' => $transaction->id
-        ]);
-        
-        return response()->json(['status' => 'success', 'message' => 'Invoice payment failed processed']);
+        // // For subscriptions, the invoice will have a subscription ID
+        // $subscriptionId = $invoice->subscription ?? $invoice['subscription'] ?? null;
+
+        // if (!$subscriptionId) {
+        //     Log::error('Subscription ID not found in failed invoice', [
+        //         'invoice_id' => $invoice->id ?? $invoice['id'] ?? 'unknown'
+        //     ]);
+        //     return response()->json(['status' => 'error', 'message' => 'Subscription ID not found']);
+        // }
+
+        // // Find subscription by gateway_subscription_id
+        // $subscription = Subscription::where('gateway_subscription_id', $subscriptionId)
+        //     ->where('environment_id', $gatewaySettings->environment_id)
+        //     ->first();
+
+        // if (!$subscription) {
+        //     Log::error('Subscription not found for failed invoice', [
+        //         'subscription_id' => $subscriptionId,
+        //         'environment_id' => $gatewaySettings->environment_id
+        //     ]);
+        //     return response()->json(['status' => 'success', 'message' => 'No matching subscription']);
+        // }
+
+        // // Create a transaction record for this failed payment
+        // $transaction = new Transaction();
+        // $transaction->transaction_id = (string) Str::uuid();
+        // $transaction->environment_id = $gatewaySettings->environment_id;
+        // $transaction->payment_gateway_setting_id = $gatewaySettings->id;
+        // $transaction->customer_id = $subscription->customer_id;
+        // $transaction->amount = $invoice->amount_due / 100 ?? $invoice['amount_due'] / 100 ?? 0; // Convert from cents
+        // $transaction->total_amount = $invoice->amount_due / 100 ?? $invoice['amount_due'] / 100 ?? 0;
+        // $transaction->currency = $invoice->currency ?? $invoice['currency'] ?? 'usd';
+        // $transaction->status = Transaction::STATUS_FAILED;
+        // $transaction->payment_method = 'credit_card';
+        // $transaction->gateway_transaction_id = $invoice->payment_intent ?? $invoice['payment_intent'] ?? $invoice->id ?? $invoice['id'];
+        // $transaction->gateway_status = 'failed';
+        // $transaction->description = 'Failed subscription payment for ' . $subscription->plan_name;
+        // $transaction->gateway_response = json_encode($invoice);
+        // $transaction->save();
+
+        // // Update subscription status
+        // $subscription->status = 'past_due';
+        // $subscription->save();
+
+        // Log::info('Invoice payment failed processed', [
+        //     'subscription_id' => $subscription->id,
+        //     'transaction_id' => $transaction->id
+        // ]);
+
+        // return response()->json(['status' => 'success', 'message' => 'Invoice payment failed processed']);
     }
-    
+
     /**
      * Handle Stripe subscription updated event
      *
@@ -776,92 +1066,92 @@ class TransactionController extends Controller
      */
     private function handleStripeSubscriptionUpdated($subscriptionObj, $gatewaySettings)
     {
-        // Get subscription ID
-        $subscriptionId = $subscriptionObj->id ?? $subscriptionObj['id'] ?? null;
-        
-        if (!$subscriptionId) {
-            Log::error('Subscription ID not found in subscription update');
-            return response()->json(['status' => 'error', 'message' => 'Subscription ID not found']);
-        }
-        
-        // Find subscription by gateway_subscription_id
-        $subscription = Subscription::where('gateway_subscription_id', $subscriptionId)
-            ->where('environment_id', $gatewaySettings->environment_id)
-            ->first();
-            
-        if (!$subscription) {
-            Log::error('Subscription not found for update', [
-                'subscription_id' => $subscriptionId,
-                'environment_id' => $gatewaySettings->environment_id
-            ]);
-            return response()->json(['status' => 'success', 'message' => 'No matching subscription']);
-        }
-        
-        // Get subscription details from Stripe
-        $status = $subscriptionObj->status ?? $subscriptionObj['status'] ?? null;
-        
-        if ($status) {
-            // Map Stripe subscription status to our status
-            $statusMap = [
-                'active' => 'active',
-                'canceled' => 'canceled',
-                'incomplete' => 'pending',
-                'incomplete_expired' => 'expired',
-                'past_due' => 'past_due',
-                'trialing' => 'trial',
-                'unpaid' => 'past_due'
-            ];
-            
-            $subscription->status = $statusMap[$status] ?? $status;
-            
-            // Update current_period_end if available
-            if (isset($subscriptionObj->current_period_end) || isset($subscriptionObj['current_period_end'])) {
-                $periodEnd = $subscriptionObj->current_period_end ?? $subscriptionObj['current_period_end'];
-                $subscription->next_billing_date = date('Y-m-d H:i:s', $periodEnd);
-            }
-            
-            // Get plan details if available
-            if (isset($subscriptionObj->plan) || isset($subscriptionObj['plan'])) {
-                $plan = $subscriptionObj->plan ?? $subscriptionObj['plan'];
-                $planName = $plan->nickname ?? $plan['nickname'] ?? $plan->product ?? $plan['product'] ?? null;
-                
-                if ($planName) {
-                    $subscription->plan_name = $planName;
-                }
-                
-                // Update amount if available
-                if (isset($plan->amount) || isset($plan['amount'])) {
-                    $amount = $plan->amount ?? $plan['amount'];
-                    $subscription->amount = $amount / 100; // Convert from cents
-                }
-                
-                // Update currency if available
-                if (isset($plan->currency) || isset($plan['currency'])) {
-                    $subscription->currency = $plan->currency ?? $plan['currency'];
-                }
-                
-                // Update interval if available
-                if (isset($plan->interval) || isset($plan['interval'])) {
-                    $interval = $plan->interval ?? $plan['interval'];
-                    $intervalCount = $plan->interval_count ?? $plan['interval_count'] ?? 1;
-                    
-                    $subscription->plan_interval = $interval;
-                    $subscription->plan_interval_count = $intervalCount;
-                }
-            }
-            
-            $subscription->save();
-            
-            Log::info('Subscription updated from webhook', [
-                'subscription_id' => $subscription->id,
-                'status' => $subscription->status,
-                'next_billing_date' => $subscription->next_billing_date
-            ]);
-        }
-        
-        return response()->json(['status' => 'success', 'message' => 'Subscription update processed']);
+        // // Get subscription ID
+        // $subscriptionId = $subscriptionObj->id ?? $subscriptionObj['id'] ?? null;
+
+        // if (!$subscriptionId) {
+        //     Log::error('Subscription ID not found in subscription update');
+        //     return response()->json(['status' => 'error', 'message' => 'Subscription ID not found']);
+        // }
+
+        // // Find subscription by gateway_subscription_id
+        // $subscription = Subscription::where('gateway_subscription_id', $subscriptionId)
+        //     ->where('environment_id', $gatewaySettings->environment_id)
+        //     ->first();
+
+        // if (!$subscription) {
+        //     Log::error('Subscription not found for update', [
+        //         'subscription_id' => $subscriptionId,
+        //         'environment_id' => $gatewaySettings->environment_id
+        //     ]);
+        //     return response()->json(['status' => 'success', 'message' => 'No matching subscription']);
+        // }
+
+        // // Get subscription details from Stripe
+        // $status = $subscriptionObj->status ?? $subscriptionObj['status'] ?? null;
+
+        // if ($status) {
+        //     // Map Stripe subscription status to our status
+        //     $statusMap = [
+        //         'active' => 'active',
+        //         'canceled' => 'canceled',
+        //         'incomplete' => 'pending',
+        //         'incomplete_expired' => 'expired',
+        //         'past_due' => 'past_due',
+        //         'trialing' => 'trial',
+        //         'unpaid' => 'past_due'
+        //     ];
+
+        //     $subscription->status = $statusMap[$status] ?? $status;
+
+        //     // Update current_period_end if available
+        //     if (isset($subscriptionObj->current_period_end) || isset($subscriptionObj['current_period_end'])) {
+        //         $periodEnd = $subscriptionObj->current_period_end ?? $subscriptionObj['current_period_end'];
+        //         $subscription->next_billing_date = date('Y-m-d H:i:s', $periodEnd);
+        //     }
+
+        //     // Get plan details if available
+        //     if (isset($subscriptionObj->plan) || isset($subscriptionObj['plan'])) {
+        //         $plan = $subscriptionObj->plan ?? $subscriptionObj['plan'];
+        //         $planName = $plan->nickname ?? $plan['nickname'] ?? $plan->product ?? $plan['product'] ?? null;
+
+        //         if ($planName) {
+        //             $subscription->plan_name = $planName;
+        //         }
+
+        //         // Update amount if available
+        //         if (isset($plan->amount) || isset($plan['amount'])) {
+        //             $amount = $plan->amount ?? $plan['amount'];
+        //             $subscription->amount = $amount / 100; // Convert from cents
+        //         }
+
+        //         // Update currency if available
+        //         if (isset($plan->currency) || isset($plan['currency'])) {
+        //             $subscription->currency = $plan->currency ?? $plan['currency'];
+        //         }
+
+        //         // Update interval if available
+        //         if (isset($plan->interval) || isset($plan['interval'])) {
+        //             $interval = $plan->interval ?? $plan['interval'];
+        //             $intervalCount = $plan->interval_count ?? $plan['interval_count'] ?? 1;
+
+        //             $subscription->plan_interval = $interval;
+        //             $subscription->plan_interval_count = $intervalCount;
+        //         }
+        //     }
+
+        //     $subscription->save();
+
+        //     Log::info('Subscription updated from webhook', [
+        //         'subscription_id' => $subscription->id,
+        //         'status' => $subscription->status,
+        //         'next_billing_date' => $subscription->next_billing_date
+        //     ]);
+        // }
+
+        // return response()->json(['status' => 'success', 'message' => 'Subscription update processed']);
     }
-    
+
     /**
      * Handle PayPal webhook notifications
      *
@@ -872,162 +1162,163 @@ class TransactionController extends Controller
      */
     private function handlePayPalWebhook($payload, $headers, $gatewaySettings)
     {
-        Log::info('Processing PayPal webhook', ['environment_id' => $gatewaySettings->environment_id]);
-        
-        // Parse the payload
-        $event = json_decode($payload, true);
-        
-        if (!$event || !isset($event['event_type'])) {
-            Log::error('Invalid PayPal webhook payload');
-            return response()->json(['error' => 'Invalid payload'], 400);
-        }
-        
-        // Basic verification of webhook signature (can be expanded with PayPal SDK)
-        // For now, just log the event type
-        Log::info('PayPal webhook event received', ['event_type' => $event['event_type']]);
-        
-        // Handle different event types
-        switch ($event['event_type']) {
-            case 'PAYMENT.CAPTURE.COMPLETED':
-                // Payment successfully captured
-                $resource = $event['resource'] ?? [];
-                $paymentId = $resource['id'] ?? null;
-                
-                if ($paymentId) {
-                    // Find the transaction by gateway_transaction_id
-                    $transaction = Transaction::where('gateway_transaction_id', $paymentId)
-                        ->where('environment_id', $gatewaySettings->environment_id)
-                        ->first();
-                    
-                    if ($transaction) {
-                        // Update transaction status
-                        $transaction->status = Transaction::STATUS_COMPLETED;
-                        $transaction->gateway_status = 'COMPLETED';
-                        $transaction->gateway_response = json_encode($event);
-                        $transaction->paid_at = now();
-                        $transaction->save();
-                        
-                        Log::info('PayPal transaction marked as completed', [
-                            'transaction_id' => $transaction->id,
-                            'gateway_transaction_id' => $paymentId
-                        ]);
-                    }
-                }
-                break;
-                
-            case 'PAYMENT.CAPTURE.DENIED':
-            case 'PAYMENT.CAPTURE.DECLINED':
-            case 'PAYMENT.CAPTURE.REFUNDED':
-                // Payment failed or was refunded
-                $resource = $event['resource'] ?? [];
-                $paymentId = $resource['id'] ?? null;
-                
-                if ($paymentId) {
-                    // Find the transaction by gateway_transaction_id
-                    $transaction = Transaction::where('gateway_transaction_id', $paymentId)
-                        ->where('environment_id', $gatewaySettings->environment_id)
-                        ->first();
-                    
-                    if ($transaction) {
-                        // Update transaction status
-                        $transaction->status = Transaction::STATUS_FAILED;
-                        $transaction->gateway_status = $event['event_type'];
-                        $transaction->gateway_response = json_encode($event);
-                        $transaction->notes = 'Payment ' . strtolower(str_replace('PAYMENT.CAPTURE.', '', $event['event_type']));
-                        $transaction->save();
-                        
-                        Log::info('PayPal transaction marked as failed/refunded', [
-                            'transaction_id' => $transaction->id,
-                            'gateway_transaction_id' => $paymentId,
-                            'event_type' => $event['event_type']
-                        ]);
-                    }
-                }
-                break;
-                
-            case 'BILLING.SUBSCRIPTION.CREATED':
-            case 'BILLING.SUBSCRIPTION.ACTIVATED':
-            case 'BILLING.SUBSCRIPTION.UPDATED':
-                // Subscription was created or updated
-                $resource = $event['resource'] ?? [];
-                $subscriptionId = $resource['id'] ?? null;
-                
-                if ($subscriptionId) {
-                    // Find subscription by gateway_subscription_id
-                    $subscription = Subscription::where('gateway_subscription_id', $subscriptionId)
-                        ->where('environment_id', $gatewaySettings->environment_id)
-                        ->first();
-                    
-                    if ($subscription) {
-                        // Get status from PayPal event
-                        $status = $resource['status'] ?? '';
-                        
-                        // Map PayPal status to our status
-                        $statusMap = [
-                            'ACTIVE' => 'active',
-                            'APPROVAL_PENDING' => 'pending',
-                            'APPROVED' => 'pending',
-                            'SUSPENDED' => 'past_due',
-                            'CANCELLED' => 'cancelled',
-                            'EXPIRED' => 'expired'
-                        ];
-                        
-                        $subscription->status = $statusMap[$status] ?? $subscription->status;
-                        
-                        // Update billing details if available
-                        if (isset($resource['billing_info'])) {
-                            $billingInfo = $resource['billing_info'];
-                            
-                            // Next billing date
-                            if (isset($billingInfo['next_billing_time'])) {
-                                $subscription->next_billing_date = date('Y-m-d H:i:s', strtotime($billingInfo['next_billing_time']));
-                            }
-                            
-                            // Last payment date
-                            if (isset($billingInfo['last_payment']['time'])) {
-                                $subscription->last_payment_date = date('Y-m-d H:i:s', strtotime($billingInfo['last_payment']['time']));
-                            }
-                        }
-                        
-                        $subscription->save();
-                        
-                        Log::info('PayPal subscription updated', [
-                            'subscription_id' => $subscription->id,
-                            'status' => $subscription->status
-                        ]);
-                    }
-                }
-                break;
-                
-            case 'BILLING.SUBSCRIPTION.CANCELLED':
-                // Subscription was cancelled
-                $resource = $event['resource'] ?? [];
-                $subscriptionId = $resource['id'] ?? null;
-                
-                if ($subscriptionId) {
-                    // Find subscription by gateway_subscription_id
-                    $subscription = Subscription::where('gateway_subscription_id', $subscriptionId)
-                        ->where('environment_id', $gatewaySettings->environment_id)
-                        ->first();
-                    
-                    if ($subscription) {
-                        $subscription->status = 'cancelled';
-                        $subscription->cancelled_at = now();
-                        $subscription->cancellation_reason = 'Cancelled via PayPal';
-                        $subscription->save();
-                        
-                        Log::info('PayPal subscription cancelled', [
-                            'subscription_id' => $subscription->id
-                        ]);
-                    }
-                }
-                break;
-        }
-        
-        // Return 200 OK to acknowledge receipt of the webhook
-        return response()->json(['status' => 'success', 'message' => 'PayPal webhook received']);
+    //     Log::info('Processing PayPal webhook', ['environment_id' => $gatewaySettings->environment_id]);
+
+    //     // Parse the payload
+    //     $event = json_decode($payload, true);
+
+    //     if (!$event || !isset($event['event_type'])) {
+    //         Log::error('Invalid PayPal webhook payload');
+    //         return response()->json(['error' => 'Invalid payload'], 400);
+    //     }
+
+    //     // Basic verification of webhook signature (can be expanded with PayPal SDK)
+    //     // For now, just log the event type
+    //     Log::info('PayPal webhook event received', ['event_type' => $event['event_type']]);
+
+    //     // Handle different event types
+    //     switch ($event['event_type']) {
+    //         case 'PAYMENT.CAPTURE.COMPLETED':
+    //             // Payment successfully captured
+    //             $resource = $event['resource'] ?? [];
+    //             $paymentId = $resource['id'] ?? null;
+
+    //             if ($paymentId) {
+    //                 // Find the transaction by gateway_transaction_id
+    //                 $transaction = Transaction::where('gateway_transaction_id', $paymentId)
+    //                     ->where('environment_id', $gatewaySettings->environment_id)
+    //                     ->first();
+
+    //                 if ($transaction) {
+    //                     // Update transaction status
+    //                     $transaction->status = Transaction::STATUS_COMPLETED;
+    //                     $transaction->gateway_status = 'COMPLETED';
+    //                     $transaction->gateway_response = json_encode($event);
+    //                     $transaction->paid_at = now();
+    //                     $transaction->save();
+
+    //                     Log::info('PayPal transaction marked as completed', [
+    //                         'transaction_id' => $transaction->id,
+    //                         'gateway_transaction_id' => $paymentId
+    //                     ]);
+    //                 }
+    //             }
+    //             break;
+
+    //         case 'PAYMENT.CAPTURE.DENIED':
+    //         case 'PAYMENT.CAPTURE.DECLINED':
+    //         case 'PAYMENT.CAPTURE.REFUNDED':
+    //             // Payment failed or was refunded
+    //             $resource = $event['resource'] ?? [];
+    //             $paymentId = $resource['id'] ?? null;
+
+    //             if ($paymentId) {
+    //                 // Find the transaction by gateway_transaction_id
+    //                 $transaction = Transaction::where('gateway_transaction_id', $paymentId)
+    //                     ->where('environment_id', $gatewaySettings->environment_id)
+    //                     ->first();
+
+    //                 if ($transaction) {
+    //                     // Update transaction status
+    //                     $transaction->status = Transaction::STATUS_FAILED;
+    //                     $transaction->gateway_status = $event['event_type'];
+    //                     $transaction->gateway_response = json_encode($event);
+    //                     $transaction->notes = 'Payment ' . strtolower(str_replace('PAYMENT.CAPTURE.', '', $event['event_type']));
+    //                     $transaction->save();
+
+    //                     Log::info('PayPal transaction marked as failed/refunded', [
+    //                         'transaction_id' => $transaction->id,
+    //                         'gateway_transaction_id' => $paymentId,
+    //                         'event_type' => $event['event_type']
+    //                     ]);
+    //                 }
+    //             }
+    //             break;
+
+    //         case 'BILLING.SUBSCRIPTION.CREATED':
+    //         case 'BILLING.SUBSCRIPTION.ACTIVATED':
+    //         case 'BILLING.SUBSCRIPTION.UPDATED':
+    //             // Subscription was created or updated
+    //             $resource = $event['resource'] ?? [];
+    //             $subscriptionId = $resource['id'] ?? null;
+
+    //             if ($subscriptionId) {
+    //                 // Find subscription by gateway_subscription_id
+    //                 $subscription = Subscription::where('gateway_subscription_id', $subscriptionId)
+    //                     ->where('environment_id', $gatewaySettings->environment_id)
+    //                     ->first();
+
+    //                 if ($subscription) {
+    //                     // Get status from PayPal event
+    //                     $status = $resource['status'] ?? '';
+
+    //                     // Map PayPal status to our status
+    //                     $statusMap = [
+    //                         'ACTIVE' => 'active',
+    //                         'APPROVAL_PENDING' => 'pending',
+    //                         'APPROVED' => 'pending',
+    //                         'SUSPENDED' => 'past_due',
+    //                         'CANCELLED' => 'cancelled',
+    //                         'EXPIRED' => 'expired'
+    //                     ];
+
+    //                     $subscription->status = $statusMap[$status] ?? $subscription->status;
+
+    //                     // Update billing details if available
+    //                     if (isset($resource['billing_info'])) {
+    //                         $billingInfo = $resource['billing_info'];
+
+    //                         // Next billing date
+    //                         if (isset($billingInfo['next_billing_time'])) {
+    //                             $subscription->next_billing_date = date('Y-m-d H:i:s', strtotime($billingInfo['next_billing_time']));
+    //                         }
+
+    //                         // Last payment date
+    //                         if (isset($billingInfo['last_payment']['time'])) {
+    //                             $subscription->last_payment_date = date('Y-m-d H:i:s', strtotime($billingInfo['last_payment']['time']));
+    //                         }
+    //                     }
+
+    //                     $subscription->save();
+
+    //                     Log::info('PayPal subscription updated', [
+    //                         'subscription_id' => $subscription->id,
+    //                         'status' => $subscription->status
+    //                     ]);
+    //                 }
+    //             }
+    //             break;
+
+    //         case 'BILLING.SUBSCRIPTION.CANCELLED':
+    //             // Subscription was cancelled
+    //             $resource = $event['resource'] ?? [];
+    //             $subscriptionId = $resource['id'] ?? null;
+
+    //             if ($subscriptionId) {
+    //                 // Find subscription by gateway_subscription_id
+    //                 $subscription = Subscription::where('gateway_subscription_id', $subscriptionId)
+    //                     ->where('environment_id', $gatewaySettings->environment_id)
+    //                     ->first();
+
+    //                 if ($subscription) {
+    //                     $subscription->status = 'cancelled';
+    //                     $subscription->cancelled_at = now();
+    //                     $subscription->cancellation_reason = 'Cancelled via PayPal';
+    //                     $subscription->save();
+
+    //                     Log::info('PayPal subscription cancelled', [
+    //                         'subscription_id' => $subscription->id
+    //                     ]);
+    //                 }
+    //             }
+    //             break;
+    //     }
+
+    //     // Return 200 OK to acknowledge receipt of the webhook
+    //     return response()->json(['status' => 'success', 'message' => 'PayPal webhook received']);
+    // 
     }
-    
+
     /**
      * Handle Lygos webhook notifications
      *
@@ -1038,81 +1329,81 @@ class TransactionController extends Controller
      */
     private function handleLygosWebhook($payload, $headers, $gatewaySettings)
     {
-        Log::info('Processing Lygos webhook', ['environment_id' => $gatewaySettings->environment_id]);
-        
-        // Parse the payload
-        $event = json_decode($payload, true);
-        
-        if (!$event) {
-            Log::error('Invalid Lygos webhook payload');
-            return response()->json(['error' => 'Invalid payload'], 400);
-        }
-        
-        // Extract event type and transaction reference
-        $eventType = $event['type'] ?? $event['event'] ?? null;
-        $reference = $event['reference'] ?? $event['transaction_reference'] ?? null;
-        
-        if (!$eventType || !$reference) {
-            Log::error('Missing required fields in Lygos webhook', [
-                'event_type' => $eventType,
-                'reference' => $reference
-            ]);
-            return response()->json(['error' => 'Missing required fields'], 400);
-        }
-        
-        // Find the transaction by gateway_transaction_id
-        $transaction = Transaction::where('gateway_transaction_id', $reference)
-            ->where('environment_id', $gatewaySettings->environment_id)
-            ->first();
-            
-        if (!$transaction) {
-            Log::error('Transaction not found for Lygos webhook', [
-                'reference' => $reference,
-                'event_type' => $eventType
-            ]);
-            return response()->json(['status' => 'error', 'message' => 'Transaction not found']);
-        }
-        
-        // Process based on event type
-        switch ($eventType) {
-            case 'payment.success':
-            case 'payment_success':
-                $transaction->status = Transaction::STATUS_COMPLETED;
-                $transaction->gateway_status = 'success';
-                $transaction->gateway_response = json_encode($event);
-                $transaction->paid_at = now();
-                $transaction->save();
-                
-                Log::info('Lygos payment success processed', [
-                    'transaction_id' => $transaction->id,
-                    'gateway_transaction_id' => $reference
-                ]);
-                break;
-                
-            case 'payment.failed':
-            case 'payment_failed':
-                $transaction->status = Transaction::STATUS_FAILED;
-                $transaction->gateway_status = 'failed';
-                $transaction->gateway_response = json_encode($event);
-                $transaction->notes = 'Payment failed: ' . ($event['reason'] ?? 'Unknown reason');
-                $transaction->save();
-                
-                Log::info('Lygos payment failure processed', [
-                    'transaction_id' => $transaction->id,
-                    'gateway_transaction_id' => $reference
-                ]);
-                break;
-                
-            default:
-                Log::info('Unhandled Lygos event type', [
-                    'event_type' => $eventType,
-                    'transaction_id' => $transaction->id
-                ]);
-        }
-        
-        return response()->json(['status' => 'success', 'message' => 'Lygos webhook processed']);
+        // Log::info('Processing Lygos webhook', ['environment_id' => $gatewaySettings->environment_id]);
+
+        // // Parse the payload
+        // $event = json_decode($payload, true);
+
+        // if (!$event) {
+        //     Log::error('Invalid Lygos webhook payload');
+        //     return response()->json(['error' => 'Invalid payload'], 400);
+        // }
+
+        // // Extract event type and transaction reference
+        // $eventType = $event['type'] ?? $event['event'] ?? null;
+        // $reference = $event['reference'] ?? $event['transaction_reference'] ?? null;
+
+        // if (!$eventType || !$reference) {
+        //     Log::error('Missing required fields in Lygos webhook', [
+        //         'event_type' => $eventType,
+        //         'reference' => $reference
+        //     ]);
+        //     return response()->json(['error' => 'Missing required fields'], 400);
+        // }
+
+        // // Find the transaction by gateway_transaction_id
+        // $transaction = Transaction::where('gateway_transaction_id', $reference)
+        //     ->where('environment_id', $gatewaySettings->environment_id)
+        //     ->first();
+
+        // if (!$transaction) {
+        //     Log::error('Transaction not found for Lygos webhook', [
+        //         'reference' => $reference,
+        //         'event_type' => $eventType
+        //     ]);
+        //     return response()->json(['status' => 'error', 'message' => 'Transaction not found']);
+        // }
+
+        // // Process based on event type
+        // switch ($eventType) {
+        //     case 'payment.success':
+        //     case 'payment_success':
+        //         $transaction->status = Transaction::STATUS_COMPLETED;
+        //         $transaction->gateway_status = 'success';
+        //         $transaction->gateway_response = json_encode($event);
+        //         $transaction->paid_at = now();
+        //         $transaction->save();
+
+        //         Log::info('Lygos payment success processed', [
+        //             'transaction_id' => $transaction->id,
+        //             'gateway_transaction_id' => $reference
+        //         ]);
+        //         break;
+
+        //     case 'payment.failed':
+        //     case 'payment_failed':
+        //         $transaction->status = Transaction::STATUS_FAILED;
+        //         $transaction->gateway_status = 'failed';
+        //         $transaction->gateway_response = json_encode($event);
+        //         $transaction->notes = 'Payment failed: ' . ($event['reason'] ?? 'Unknown reason');
+        //         $transaction->save();
+
+        //         Log::info('Lygos payment failure processed', [
+        //             'transaction_id' => $transaction->id,
+        //             'gateway_transaction_id' => $reference
+        //         ]);
+        //         break;
+
+        //     default:
+        //         Log::info('Unhandled Lygos event type', [
+        //             'event_type' => $eventType,
+        //             'transaction_id' => $transaction->id
+        //         ]);
+        // }
+
+        // return response()->json(['status' => 'success', 'message' => 'Lygos webhook processed']);
     }
-    
+
     /**
      * Handle Monetbill webhook notifications
      *
@@ -1124,32 +1415,32 @@ class TransactionController extends Controller
     private function handleMonetbillWebhook($payload, $headers, $gatewaySettings)
     {
         Log::info('Processing Monetbill webhook', ['environment_id' => $gatewaySettings->environment_id]);
-        
+
         // Monetbill typically sends data as form parameters, not JSON
         // Extract from request body or parse as needed
         $event = json_decode($payload, true) ?: [];
-        
+
         // Get the transaction reference
         $reference = $event['transaction_id'] ?? $event['reference'] ?? null;
         $status = $event['status'] ?? null;
-        
+
         if (!$reference) {
             Log::error('Missing transaction reference in Monetbill webhook');
             return response()->json(['error' => 'Missing transaction reference'], 400);
         }
-        
+
         // Find the transaction by gateway_transaction_id
         $transaction = Transaction::where('gateway_transaction_id', $reference)
             ->where('environment_id', $gatewaySettings->environment_id)
             ->first();
-            
+
         if (!$transaction) {
             Log::error('Transaction not found for Monetbill webhook', [
                 'reference' => $reference
             ]);
             return response()->json(['status' => 'error', 'message' => 'Transaction not found']);
         }
-        
+
         // Process based on status
         if ($status === 'successful' || $status === 'success' || $status === '1') {
             $transaction->status = Transaction::STATUS_COMPLETED;
@@ -1158,10 +1449,10 @@ class TransactionController extends Controller
             $transaction->paid_at = now();
             $transaction->save();
             $transaction->refresh();
-            
-            $order = Order::where('id', $transaction->transaction_id)->first();
+
+            $order = Order::where('id', $transaction->order_id)->first();
             if ($order) event(new \App\Events\OrderCompleted($order));
-            
+
             Log::info('Monetbill payment success processed', [
                 'transaction_id' => $transaction->id,
                 'gateway_transaction_id' => $reference
@@ -1172,7 +1463,7 @@ class TransactionController extends Controller
             $transaction->gateway_response = json_encode($event);
             $transaction->notes = 'Payment failed: ' . ($event['message'] ?? 'Unknown reason');
             $transaction->save();
-            
+
             Log::info('Monetbill payment failure processed', [
                 'transaction_id' => $transaction->id,
                 'gateway_transaction_id' => $reference
@@ -1183,127 +1474,10 @@ class TransactionController extends Controller
                 'transaction_id' => $transaction->id
             ]);
         }
-        
+
         return response()->json(['status' => 'success', 'message' => 'Monetbill webhook processed']);
     }
 
-    public function callbackFailure(Request $request, $gateway, $environment_id)
-    {
-        // Get transaction ID from request parameters
-        $transactionId = $request->input('transaction_id') ?? $request->query('transaction_id');
-        
-        if (!$transactionId) {
-            Log::error('Transaction ID not provided in failure callback', [
-                'gateway' => $gateway,
-                'environment_id' => $environment_id
-            ]);
-            return response()->json(['error' => 'Transaction ID is required'], 400);
-        }
-        
-        // Log the callback to AuditLog
-        $auditLog = AuditLog::logCallback(
-            $gateway,
-            'failure',
-            $request->all(),
-            'Transaction',
-            $transactionId,
-            $environment_id,
-            'Payment failure callback received',
-            AuditLog::STATUS_SUCCESS // Initial success means the callback was received, not that the payment was successful
-        );
-        
-        Log::info('Payment failure callback received', [
-            'gateway' => $gateway,
-            'environment_id' => $environment_id,
-            'transaction_id' => $transactionId,
-            'audit_log_id' => $auditLog->id
-        ]);
-        
-        try {
-            // Process the failure callback using PaymentService
-            $paymentService = app(PaymentService::class);
-            $result = $paymentService->processFailureCallback($gateway, $transactionId, $environment_id, $request->all());
-            
-            if (!$result) {
-                Log::error('Failed to process payment failure callback', [
-                    'gateway' => $gateway,
-                    'environment_id' => $environment_id,
-                    'transaction_id' => $transactionId
-                ]);
-                
-                // Update audit log with failure
-                $auditLog->update([
-                    'status' => AuditLog::STATUS_FAILURE,
-                    'notes' => 'Failed to process payment failure callback'
-                ]);
-                
-                return response()->json(['error' => 'Failed to process payment callback'], 500);
-            }
-            
-            // Find the transaction by transaction_id and environment_id
-            $transaction = Transaction::where('transaction_id', $transactionId)
-                ->where('environment_id', $environment_id)
-                ->first();
-            
-            if (!$transaction) {
-                Log::error('Transaction not found for failure callback', ['transaction_id' => $transactionId, 'environment_id' => $environment_id]);
-                
-                // Update audit log with transaction not found error
-                $auditLog->update([
-                    'status' => AuditLog::STATUS_ERROR,
-                    'notes' => 'Transaction not found'
-                ]);
-                
-                return response()->json(['error' => 'Transaction not found'], 404);
-            }
-            
-            // Get environment info for redirection
-            $environment = Environment::find($transaction->environment_id);
-            if (!$environment) {
-                Log::error('Environment not found for transaction', ['environment_id' => $transaction->environment_id]);
-                
-                // Update audit log with environment not found error
-                $auditLog->update([
-                    'status' => AuditLog::STATUS_ERROR,
-                    'notes' => 'Environment not found'
-                ]);
-                
-                return response()->json(['error' => 'Environment not found'], 404);
-            }
-            
-            // Update transaction status
-            $transaction->status = Transaction::STATUS_FAILED;
-            $transaction->gateway_status = $request->input('status') ?? 'failed';
-            $transaction->notes = $request->has('error') ? ('Error: ' . $request->input('error')) : 'Payment failed';
-            $transaction->save();
-            
-            // Update audit log with successful processing
-            $auditLog->update([
-                'response_data' => json_encode(['transaction_status' => $transaction->status]),
-                'notes' => 'Payment failure processed successfully'
-            ]);
-            
-            // Return redirect response based on payment type
-            $redirectUrl = config('app.frontend_url') . '/payment/failure?transaction_id=' . $transactionId;
-            return Redirect::to($redirectUrl);
-            
-        } catch (\Exception $e) {
-            Log::error('Error processing payment failure callback', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'transaction_id' => $transactionId
-            ]);
-            
-            // Update audit log with error status
-            $auditLog->update([
-                'status' => AuditLog::STATUS_ERROR,
-                'notes' => 'Exception: ' . $e->getMessage()
-            ]);
-            
-            // Fallback redirect to dashboard with error
-            return Redirect::away(config('app.frontend_url') . '/dashboard?payment=error');
-        }
-    }
     /**
      * Display a listing of transactions.
      *
@@ -1583,21 +1757,21 @@ class TransactionController extends Controller
 
         // Create transaction
         $data = $validator->validated();
-        
+
         // Generate a UUID for the transaction
         $data['transaction_id'] = (string) Str::uuid();
-        
+
         // Set default status to pending
         $data['status'] = Transaction::STATUS_PENDING;
-        
+
         // Calculate total amount if not provided
         $data['fee_amount'] = $data['fee_amount'] ?? 0;
         $data['tax_amount'] = $data['tax_amount'] ?? 0;
         $data['total_amount'] = $data['amount'] + $data['fee_amount'] + $data['tax_amount'];
-        
+
         // Add created_by field
         $data['created_by'] = Auth::id();
-        
+
         $transaction = Transaction::create($data);
 
         return response()->json([
@@ -1747,10 +1921,10 @@ class TransactionController extends Controller
 
         $data = $validator->validated();
         $newStatus = $data['status'];
-        
+
         // Add updated_by field
         $data['updated_by'] = Auth::id();
-        
+
         // Handle status-specific updates
         switch ($newStatus) {
             case Transaction::STATUS_COMPLETED:
@@ -1760,7 +1934,7 @@ class TransactionController extends Controller
                     $data['gateway_response'] ?? null
                 );
                 break;
-                
+
             case Transaction::STATUS_FAILED:
                 $transaction->markAsFailed(
                     $data['gateway_transaction_id'] ?? null,
@@ -1768,7 +1942,7 @@ class TransactionController extends Controller
                     $data['gateway_response'] ?? null
                 );
                 break;
-                
+
             case Transaction::STATUS_REFUNDED:
             case Transaction::STATUS_PARTIALLY_REFUNDED:
                 $transaction->markAsRefunded(
@@ -1778,7 +1952,7 @@ class TransactionController extends Controller
                     $data['gateway_response'] ?? null
                 );
                 break;
-                
+
             default:
                 // For other statuses, just update the fields
                 $transaction->status = $newStatus;

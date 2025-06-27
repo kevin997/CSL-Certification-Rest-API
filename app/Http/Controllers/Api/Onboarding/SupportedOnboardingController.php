@@ -170,7 +170,7 @@ class SupportedOnboardingController extends Controller
                     'currency' => 'USD',
                     'payment_method' => $request->payment_method,
                     'transaction_id' => $paymentResult['transaction_id'],
-                    'status' => 'completed',
+                    'status' => Payment::STATUS_PENDING,
                     'description' => 'Initial setup fee for Supported plan',
                 ]);
                 
