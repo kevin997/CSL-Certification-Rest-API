@@ -2164,11 +2164,43 @@ class StorefrontController extends Controller
             $order->payment_method = $paymentGatewaySetting->id;
             $order->save();
 
+            $responseData = [];
+            $responseData['user'] = $user;
+            $responseData['transaction'] = $result['transaction'];
+            $responseData['order'] = $order;
+
+            switch ($result['type']) {
+                case 'client_secret':
+                    // For Stripe inline payments
+                    $responseData['payment_type'] = 'stripe';
+                    $responseData['client_secret'] = $result['value'];
+                    $responseData['publishable_key'] = $result['publishable_key'] ?? null;
+                    break;
+
+                case 'checkout_url':
+                    // For PayPal redirect-based payments
+                    $responseData['payment_type'] = 'paypal';
+                    $responseData['redirect_url'] = $result['value'];
+                    break;
+
+                case 'payment_url':
+                    // For Lygos redirect-based payments
+                    $responseData['payment_type'] = 'lygos';
+                    $responseData['redirect_url'] = $result['value'];
+                    break;
+
+                default:
+                    // Fallback to standard payment type
+                    $responseData['payment_type'] = 'standard';
+                    // No payment_url needed for standard payment type
+                    break;
+            }
+            
+
             return response()->json([
                 'success' => true,
                 'message' => 'Payment processing initiated',
-                'data' => $result,
-                'order' => $order
+                'data' => $responseData
             ]);
         } catch (\Exception $e) {
             Log::error('Payment continuation error: ' . $e->getMessage(), [

@@ -23,6 +23,7 @@ class OrderController extends Controller
         
         $orders = Order::where('user_id', $user->id)
             ->where('environment_id', $environmentId)
+            ->with('transaction')
             ->with(['items.product'])
             ->orderBy('created_at', 'desc')
             ->paginate($request->input('per_page', 10));
@@ -48,6 +49,7 @@ class OrderController extends Controller
         $order = Order::where('id', $id)
             ->where('user_id', $user->id)
             ->where('environment_id', $environmentId)
+            ->with('transaction')
             ->with([
                 'items.product' => function($query) {
                     $query->with('courses');

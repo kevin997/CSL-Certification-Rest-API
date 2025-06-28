@@ -363,15 +363,6 @@ class PaymentService
         
         // Process payment based on payment method
         switch ($paymentData['payment_method']) {
-            case 'credit_card':
-                return $this->processCreditCardPayment($order, $paymentData);
-                
-            case 'paypal':
-                return $this->processPayPalPayment($order, $paymentData);
-                
-            case 'bank_transfer':
-                return $this->processBankTransferPayment($order, $paymentData);
-                
             case 'manual':
                 return $this->processManualPayment($order, $paymentData);
                 
@@ -407,9 +398,6 @@ class PaymentService
     protected function processGatewayPayment(Order $order, string $gatewayCode, array $paymentData): array
     {
 
-        // refactor this method to not create a new transaction but just updated the transaction_id 'TXN_' . Str::uuid(),
-
-
         $environmentId = session('current_environment_id');
 
         Log::info('Processing payment for order ' . $order->id . ' using ' . $gatewayCode);
@@ -426,89 +414,127 @@ class PaymentService
                     'message' => 'Payment gateway settings not found'
                 ];
             }
-            
-            // Create a new transaction with validated data
-            $transaction = new Transaction();
-            $transaction->order_id = $order->id;
-            $transaction->environment_id = $paymentData['environment_id'] ?? $gatewaySettings->environment_id;
-            $transaction->payment_gateway_setting_id = $gatewaySettings->id;
-            $transaction->payment_method = $gatewayCode;
-            $transaction->transaction_id = 'TXN-' . Str::random(16);
-            
-            // Validate customer name and email
-            $transaction->customer_name = !empty($order->billing_name) ? $order->billing_name : 'Guest Customer';
-            
-            // Only set customer email if it's valid
-            if (!empty($order->billing_email) && filter_var($order->billing_email, FILTER_VALIDATE_EMAIL)) {
-                $transaction->customer_email = $order->billing_email;
-                Log::info('Valid customer email found for order ' . $order->id, ['email' => $order->billing_email]);
-            } else {
-                $transaction->customer_email = null;
-                Log::info('Invalid or missing customer email for order ' . $order->id, ['raw_email' => $order->billing_email ?? 'null']);
-            }
-            
-            // Set base amount (without commission)
-            $transaction->amount = $order->total_amount ?? $order->total; // Fallback if total_amount is not set
-            $transaction->currency = $order->currency ?? 'USD';
-            $transaction->description = 'Payment for order #' . $order->order_number;
-            $transaction->status = 'pending';
-            $transaction->customer_id = $order->user_id;
-            
-            // Apply commission to calculate fee_amount, tax_amount, and total_amount
-            $this->commissionService->applyCommissionToTransaction($transaction);
-            
-            // Get tax zone information
-            $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($transaction->amount, $environmentId, $order);
-            $transaction->tax_zone = $taxInfo['zone_name'];
-            $transaction->tax_rate = $taxInfo['tax_rate'];
-            $transaction->tax_amount = $taxInfo['tax_amount'];
-            
-            // Update total_amount to include tax_amount
-            $transaction->total_amount = $transaction->amount + $transaction->fee_amount + $transaction->tax_amount;
-            
-            // Log the commission and tax application
-            Log::info('Applied commission and tax to transaction for gateway payment', [
-                'order_id' => $order->id,
-                'gateway' => $gatewayCode,
-                'base_amount' => $transaction->amount,
-                'fee_amount' => $transaction->fee_amount,
-                'tax_amount' => $transaction->tax_amount,
-                'tax_rate' => $transaction->tax_rate,
-                'tax_zone' => $transaction->tax_zone,
-                'total_amount' => $transaction->total_amount
-            ]);
-            
-            $transaction->save();
-            
-            // Process the payment using the gateway
-            $gateway = PaymentGatewayFactory::create($gatewayCode, $gatewaySettings);
-            
-            if (!$gateway) {
-                return [
-                    'success' => false,
-                    'message' => 'Failed to initialize payment gateway'
-                ];
-            }
-            
-            // For Stripe, first create a payment intent before processing
-            if ($gatewayCode === 'stripe') {
-                Log::info('Creating Stripe payment intent for order ' . $order->id);
-                // First create the payment intent
-                $paymentResponse = $gateway->createPayment($transaction, $paymentData);
-                
-                if (!$paymentResponse['success']) {
-                    return $paymentResponse;
+
+            $environment = Environment::find($environmentId);
+
+            // Check if a transaction already exists for this order
+            $existingTransaction = Transaction::where('order_id', $order->id)
+                ->whereIn("status", ["pending", "failed", "processing", "cancelled"])
+                ->first();
+
+            if ($existingTransaction) {
+                Log::info('Found existing transaction for order', [
+                    'order_id' => $order->id,
+                    'transaction_id' => $existingTransaction->transaction_id
+                ]);
+
+                //update the transaction with a new transaction_id 'TXN_' . Str::uuid(),
+                $existingTransaction->update([
+                    'transaction_id' => 'TXN_' . Str::uuid(),
+                    'payment_method' => $gatewayCode,
+                    'environment_id' => $environmentId,
+                    "status" => "pending"
+                ]);
+
+                // Initialize the payment gateway with environment-specific settings
+                $gateway = $this->initializeGateway($gatewayCode, $environment->name);
+                if (!$gateway['success']) {
+                    return $gateway;
                 }
+
+                $this->currentGateway = $gateway['gateway'];
+
+                // Create the payment with the gateway using existing transaction
+                $response = $this->currentGateway->createPayment($existingTransaction, $paymentData);
+
+                if (!$response['success']) {
+                    return $response;
+                }
+
+                $response['transaction'] = $existingTransaction;
+
+                return $response;
+            }
+            
+            // Create a new transaction if one doesn't exist
+            if (!$existingTransaction) {
+                Log::info('Creating new transaction for order', ['order_id' => $order->id]);
+                
+                $transaction = new Transaction();
+                $transaction->order_id = $order->id;
+                $transaction->environment_id = $paymentData['environment_id'] ?? $gatewaySettings->environment_id;
+                $transaction->payment_gateway_setting_id = $gatewaySettings->id;
+                $transaction->payment_method = $gatewayCode;
+                $transaction->transaction_id = 'TXN-' . Str::random(16);
+                
+                // Validate customer name and email
+                $transaction->customer_name = !empty($order->billing_name) ? $order->billing_name : 'Guest Customer';
+                
+                // Only set customer email if it's valid
+                if (!empty($order->billing_email) && filter_var($order->billing_email, FILTER_VALIDATE_EMAIL)) {
+                    $transaction->customer_email = $order->billing_email;
+                    Log::info('Valid customer email found for order ' . $order->id, ['email' => $order->billing_email]);
+                } else {
+                    $transaction->customer_email = null;
+                    Log::info('Invalid or missing customer email for order ' . $order->id, ['raw_email' => $order->billing_email ?? 'null']);
+                }
+                
+                // Set base amount (without commission)
+                $transaction->amount = $order->total_amount ?? $order->total; // Fallback if total_amount is not set
+                $transaction->currency = $order->currency ?? 'USD';
+                $transaction->description = 'Payment for order #' . $order->order_number;
+                $transaction->status = 'pending';
+                $transaction->customer_id = $order->user_id;
+                
+                // Apply commission to calculate fee_amount, tax_amount, and total_amount
+                $this->commissionService->applyCommissionToTransaction($transaction);
+                
+                // Get tax zone information
+                $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($transaction->amount, $environmentId, $order);
+                $transaction->tax_zone = $taxInfo['zone_name'];
+                $transaction->tax_rate = $taxInfo['tax_rate'];
+                $transaction->tax_amount = $taxInfo['tax_amount'];
+                
+                // Update total_amount to include tax_amount
+                $transaction->total_amount = $transaction->amount + $transaction->fee_amount + $transaction->tax_amount;
+                
+                $transaction->save();
             } else {
-                // For other gateways, process payment directly
-                $paymentResponse = $gateway->processPayment($transaction, $paymentData);
+                // Use the existing transaction
+                $transaction = $existingTransaction;
+                
+                // Update the transaction with new payment details
+                $transaction->transaction_id = 'TXN_' . Str::uuid();
+                $transaction->payment_method = $gatewayCode;
+                $transaction->environment_id = $environmentId;
+                $transaction->status = "pending";
+                $transaction->save();
+                
+                Log::info('Updated existing transaction for order', [
+                    'order_id' => $order->id,
+                    'transaction_id' => $transaction->transaction_id
+                ]);
+            }
+            
+            // Initialize the payment gateway with environment-specific settings
+            $gateway = $this->initializeGateway($gatewayCode, $environment->name);
+            if (!$gateway['success']) {
+                return $gateway;
+            }
+            
+            $this->currentGateway = $gateway['gateway'];
+            
+            // Create the payment with the gateway
+            $paymentResponse = $this->currentGateway->createPayment($transaction, $paymentData);
+            
+            if (!$paymentResponse['success']) {
+                return $paymentResponse;
             }
             
             // Update the transaction with the gateway response
             $transaction->gateway_transaction_id = $paymentResponse['transaction_id'] ?? null;
             $transaction->status = $paymentResponse['success'] ? ($paymentResponse['status'] ?? 'pending') : 'failed';
             $transaction->gateway_response = json_encode($paymentResponse);
-           
             $transaction->save();
             
             // Update the order payment status if payment was successful
@@ -526,7 +552,7 @@ class PaymentService
                     $this->orderService->updateOrderStatus($order->id, 'processing');
                 }
                 
-                return [
+                $response = [
                     'success' => true,
                     'message' => $paymentResponse['message'] ?? 'Payment processed successfully',
                     'transaction_id' => $transaction->transaction_id,
@@ -541,6 +567,9 @@ class PaymentService
                     'client_secret' => $paymentResponse['client_secret'] ?? null,
                     'publishable_key' => $paymentResponse['publishable_key'] ?? null
                 ];
+                
+                $response['transaction'] = $transaction;
+                return $response;
             } else {
                 return [
                     'success' => false,
@@ -568,137 +597,10 @@ class PaymentService
      */
     protected function processCreditCardPayment(Order $order, array $paymentData): array
     {
-        $environmentId = session("current_environment_id");
-
-        // Validate credit card data
-        if (!isset($paymentData['payment_method_id']) && 
-            !isset($paymentData['payment_intent_id'])) {
-            
-            return [
-                'success' => false,
-                'message' => 'Missing payment method ID or payment intent ID'
-            ];
-        }
-        
-        try {
-            // Get the Stripe gateway settings
-            $gatewaySettings = PaymentGatewaySetting::where('code', 'stripe')
-                ->where('environment_id', $paymentData['environment_id'] ?? null)
-                ->where('status', true)
-                ->first();
-            
-            if (!$gatewaySettings) {
-                return [
-                    'success' => false,
-                    'message' => 'Stripe gateway settings not found'
-                ];
-            }
-            
-            // Create a new transaction
-            $transaction = new Transaction();
-            $transaction->order_id = $order->id;
-            $transaction->environment_id = $paymentData['environment_id'] ?? $gatewaySettings->environment_id;
-            $transaction->payment_gateway_setting_id = $gatewaySettings->id;
-            $transaction->payment_method = 'stripe';
-            $transaction->transaction_id = 'TXN-' . Str::random(16);
-            $transaction->customer_name = $order->customer_name;
-            $transaction->customer_email = $order->customer_email;
-            $transaction->currency = $order->currency ?? 'USD';
-            $transaction->description = 'Payment for order #' . $order->order_number;
-            $transaction->status = 'pending';
-            
-            // Set base amount (without commission)
-            $transaction->amount = $order->total_amount;
-            
-            // Apply commission to calculate fee_amount, tax_amount, and total_amount
-            $this->commissionService->applyCommissionToTransaction($transaction);
-            
-            // Get tax zone information
-            $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($transaction->amount, $environmentId, $order);
-            $transaction->tax_zone = $taxInfo['zone_name'];
-            $transaction->tax_rate = $taxInfo['tax_rate'];
-            
-            // Log the commission and tax application
-            Log::info('Applied commission and tax to transaction for credit card payment', [
-                'order_id' => $order->id,
-                'base_amount' => $transaction->amount,
-                'fee_amount' => $transaction->fee_amount,
-                'tax_amount' => $transaction->tax_amount,
-                'tax_rate' => $transaction->tax_rate,
-                'tax_zone' => $transaction->tax_zone,
-                'total_amount' => $transaction->total_amount
-            ]);
-            
-            $transaction->save();
-            
-            // Initialize the Stripe gateway
-            $gateway = PaymentGatewayFactory::create('stripe', $gatewaySettings);
-            
-            if (!$gateway) {
-                return [
-                    'success' => false,
-                    'message' => 'Failed to initialize Stripe gateway'
-                ];
-            }
-            
-            // Process the payment using the Stripe gateway
-            $paymentResponse = $gateway->processPayment($transaction, $paymentData);
-            
-            // Update the transaction with the gateway response
-            $transaction->gateway_transaction_id = $paymentResponse['transaction_id'] ?? null;
-            $transaction->status = $paymentResponse['success'] ? ($paymentResponse['status'] ?? 'pending') : 'failed';
-            $transaction->gateway_response = json_encode($paymentResponse);
-           
-            $transaction->save();
-            
-            // Update the order payment status if payment was successful
-            if ($paymentResponse['success']) {
-                // If the payment is completed immediately
-                if (($paymentResponse['status'] ?? '') === 'succeeded') {
-                    $this->orderService->updatePaymentStatus($order->id, 'paid', [
-                        'transaction_id' => $transaction->transaction_id,
-                        'gateway_transaction_id' => $transaction->gateway_transaction_id,
-                        'payment_method' => 'credit_card',
-                        'card_last_four' => $paymentResponse['card_last_four'] ?? null,
-                        'payment_date' => now()->format('Y-m-d H:i:s')
-                    ]);
-                    
-                    // Update order status
-                    $this->orderService->updateOrderStatus($order->id, 'processing');
-                    
-                    // Dispatch the OrderCompleted event
-                    event(new \App\Events\OrderCompleted($order));
-                }
-                
-                return [
-                    'success' => true,
-                    'message' => $paymentResponse['message'] ?? 'Credit card payment processed successfully',
-                    'transaction_id' => $transaction->transaction_id,
-                    'gateway_transaction_id' => $transaction->gateway_transaction_id,
-                    'order_number' => $order->order_number,
-                    'amount' => $order->total,
-                    'currency' => $transaction->currency,
-                    'status' => $transaction->status,
-                    'payment_date' => $transaction->paid_at ? $transaction->paid_at->format('Y-m-d H:i:s') : now()->format('Y-m-d H:i:s'),
-                    'payment_type' => 'credit_card',
-                    'client_secret' => $paymentResponse['client_secret'] ?? null
-                ];
-            } else {
-                return [
-                    'success' => false,
-                    'message' => $paymentResponse['message'] ?? 'Credit card payment processing failed',
-                    'error' => $paymentResponse['error'] ?? null,
-                    'error_code' => $paymentResponse['error_code'] ?? null
-                ];
-            }
-        } catch (\Exception $e) {
-            Log::error('Credit card payment error: ' . $e->getMessage());
-            
-            return [
-                'success' => false,
-                'message' => 'Payment processing failed: ' . $e->getMessage()
-            ];
-        }
+      return [
+        'success' => false,
+        'message' => 'Credit card payment is not supported'
+      ];
     }
     
     /**
@@ -710,136 +612,10 @@ class PaymentService
      */
     protected function processPayPalPayment(Order $order, array $paymentData): array
     {
-        $environmentId = session('current_environment_id');
-        // Validate PayPal data
-        if (!isset($paymentData['order_id'])) {
-            return [
-                'success' => false,
-                'message' => 'Missing PayPal order ID'
-            ];
-        }
-        
-        try {
-            // Get the PayPal gateway settings
-            $gatewaySettings = PaymentGatewaySetting::where('code', 'paypal')
-                ->where('environment_id', $paymentData['environment_id'] ?? null)
-                ->where('status', true)
-                ->first();
-            
-            if (!$gatewaySettings) {
-                return [
-                    'success' => false,
-                    'message' => 'PayPal gateway settings not found'
-                ];
-            }
-            
-            // Create a new transaction
-            $transaction = new Transaction();
-            $transaction->order_id = $order->id;
-            $transaction->environment_id = $paymentData['environment_id'] ?? $gatewaySettings->environment_id;
-            $transaction->payment_gateway_setting_id = $gatewaySettings->id;
-            $transaction->payment_method = 'paypal';
-            $transaction->transaction_id = 'TXN-' . Str::random(16);
-            $transaction->customer_name = $order->customer_name;
-            $transaction->customer_email = $order->customer_email;
-            $transaction->currency = $order->currency ?? 'USD';
-            $transaction->description = 'Payment for order #' . $order->order_number;
-            $transaction->status = 'pending';
-            
-            // Set base amount (without commission)
-            $transaction->amount = $order->total_amount;
-            
-            // Apply commission to calculate fee_amount, tax_amount, and total_amount
-            $this->commissionService->applyCommissionToTransaction($transaction);
-            
-            // Get tax zone information
-            $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($transaction->amount, $environmentId, $order);
-            $transaction->tax_zone = $taxInfo['zone_name'];
-            $transaction->tax_rate = $taxInfo['tax_rate'];
-            $transaction->tax_amount = $taxInfo['tax_amount'];
-            
-            // Update total_amount to include tax_amount
-            $transaction->total_amount = $transaction->amount + $transaction->fee_amount + $transaction->tax_amount;
-            
-            // Log the commission and tax application
-            Log::info('Applied commission and tax to transaction for PayPal payment', [
-                'order_id' => $order->id,
-                'base_amount' => $transaction->amount,
-                'fee_amount' => $transaction->fee_amount,
-                'tax_amount' => $transaction->tax_amount,
-                'tax_rate' => $transaction->tax_rate,
-                'tax_zone' => $transaction->tax_zone,
-                'total_amount' => $transaction->total_amount
-            ]);
-            
-            $transaction->save();
-            
-            // Initialize the PayPal gateway
-            $gateway = PaymentGatewayFactory::create('paypal', $gatewaySettings);
-            
-            if (!$gateway) {
-                return [
-                    'success' => false,
-                    'message' => 'Failed to initialize PayPal gateway'
-                ];
-            }
-            
-            // Process the payment using the PayPal gateway
-            $paymentResponse = $gateway->processPayment($transaction, $paymentData);
-            
-            // Update the transaction with the gateway response
-            $transaction->gateway_transaction_id = $paymentResponse['transaction_id'] ?? null;
-            $transaction->status = $paymentResponse['success'] ? ($paymentResponse['status'] ?? 'pending') : 'failed';
-            $transaction->gateway_response = json_encode($paymentResponse);
-           
-            $transaction->save();
-            
-            // Update the order payment status if payment was successful
-            if ($paymentResponse['success']) {
-                // If the payment is completed immediately
-                if (($paymentResponse['status'] ?? '') === 'COMPLETED') {
-                    $this->orderService->updatePaymentStatus($order->id, 'paid', [
-                        'transaction_id' => $transaction->transaction_id,
-                        'gateway_transaction_id' => $transaction->gateway_transaction_id,
-                        'payment_method' => 'paypal',
-                        'payment_date' => now()->format('Y-m-d H:i:s')
-                    ]);
-                    
-                    // Update order status
-                    $this->orderService->updateOrderStatus($order->id, 'processing');
-                    
-                    // Dispatch the OrderCompleted event
-                    event(new \App\Events\OrderCompleted($order));
-                }
-                
-                return [
-                    'success' => true,
-                    'message' => $paymentResponse['message'] ?? 'PayPal payment processed successfully',
-                    'transaction_id' => $transaction->transaction_id,
-                    'gateway_transaction_id' => $transaction->gateway_transaction_id,
-                    'order_number' => $order->order_number,
-                    'amount' => $order->total,
-                    'currency' => $transaction->currency,
-                    'status' => $transaction->status,
-                    'payment_type' => 'paypal',
-                    'payment_date' => $transaction->paid_at ? $transaction->paid_at->format('Y-m-d H:i:s') : now()->format('Y-m-d H:i:s')
-                ];
-            } else {
-                return [
-                    'success' => false,
-                    'message' => $paymentResponse['message'] ?? 'PayPal payment processing failed',
-                    'error' => $paymentResponse['error'] ?? null,
-                    'error_code' => $paymentResponse['error_code'] ?? null
-                ];
-            }
-        } catch (\Exception $e) {
-            Log::error('PayPal payment error: ' . $e->getMessage());
-            
-            return [
-                'success' => false,
-                'message' => 'Payment processing failed: ' . $e->getMessage()
-            ];
-        }
+      return [
+        'success' => false,
+        'message' => 'PayPal payment is not supported'
+      ];
     }
     
     /**
@@ -851,43 +627,10 @@ class PaymentService
      */
     protected function processBankTransferPayment(Order $order, array $paymentData): array
     {
-        // For bank transfers, we'll mark the payment as pending
-        // and provide bank details for the customer
-        
-        try {
-            // Update order payment status
-            $this->orderService->updatePaymentStatus($order->id, 'pending', [
-                'payment_method' => 'bank_transfer',
-                'reference_number' => 'BT-' . $order->order_number,
-                'instructions_sent' => now()->format('Y-m-d H:i:s')
-            ]);
-            
-            // Bank details (these would be stored in configuration in a real app)
-            $bankDetails = [
-                'bank_name' => 'CSL Bank',
-                'account_name' => 'CSL Certification Platform',
-                'account_number' => '1234567890',
-                'routing_number' => '987654321',
-                'swift_code' => 'CSLBANKXXX',
-                'reference' => 'BT-' . $order->order_number
-            ];
-            
-            return [
-                'success' => true,
-                'message' => 'Bank transfer instructions generated',
-                'order_number' => $order->order_number,
-                'amount' => $order->total,
-                'bank_details' => $bankDetails,
-                'instructions' => 'Please transfer the exact amount and include the reference number in your payment description.'
-            ];
-        } catch (\Exception $e) {
-            Log::error('Bank transfer processing error: ' . $e->getMessage());
-            
-            return [
-                'success' => false,
-                'message' => 'Failed to process bank transfer instructions: ' . $e->getMessage()
-            ];
-        }
+      return [
+        'success' => false,
+        'message' => 'Bank transfer payment is not supported'
+      ];
     }
     
     /**
