@@ -642,7 +642,7 @@ class LessonContentController extends Controller
                         }
 
                         // Check if this is an existing question or a new one
-                        if (isset($questionData['id'])) {
+                        if (isset($questionData['id']) && !empty($questionData['id'])) {
                             $question = $lessonContent->questions()->find($questionData['id']);
 
                             // Update existing question
@@ -720,7 +720,7 @@ class LessonContentController extends Controller
                                     }
                                 }
                             } else {
-                                // Create new question
+                                // Create new question if ID not found
                                 $question = $lessonContent->questions()->create([
                                     'question' => $questionData['question'],
                                     'question_type' => $questionData['question_type'],
@@ -746,11 +746,40 @@ class LessonContentController extends Controller
                                             'position' => $optionData['position'] ?? null,
                                             'order' => $optionData['order'] ?? 0,
                                         ]);
-                                    } // End foreach options
-                                } // End if has options
-                            } // End else (new question)
-                        } // End foreach questions
-                    }; 
+                                    }
+                                }
+                            }
+                        } else {
+                            // Create new question when no ID is provided
+                            $question = $lessonContent->questions()->create([
+                                'question' => $questionData['question'],
+                                'question_type' => $questionData['question_type'],
+                                'is_scorable' => $questionData['is_scorable'] ?? false,
+                                'points' => $questionData['points'] ?? 1,
+                                'order' => $questionData['order'] ?? 0,
+                                'content_part_id' => $questionData['content_part_id'] ?? null,
+                                'image_url' => $questionData['image_url'] ?? null,
+                                'image_alt' => $questionData['image_alt'] ?? null,
+                                'explanation' => $questionData['explanation'] ?? null,
+                                'title' => $questionData['title'] ?? null,
+                                'created_by' => Auth::id(),
+                            ]);
+
+                            // Handle options for the new question
+                            if (isset($questionData['options']) && is_array($questionData['options'])) {
+                                foreach ($questionData['options'] as $optionData) {
+                                    $question->options()->create([
+                                        'option_text' => $optionData['option_text'],
+                                        'is_correct' => $optionData['is_correct'] ?? false,
+                                        'feedback' => $optionData['feedback'] ?? null,
+                                        'match_text' => $optionData['match_text'] ?? null,
+                                        'position' => $optionData['position'] ?? null,
+                                        'order' => $optionData['order'] ?? 0,
+                                    ]);
+                                }
+                            }
+                        }
+                    } 
                 } 
             }); // End transaction
         }

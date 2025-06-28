@@ -111,7 +111,7 @@ class TextContentController extends Controller
             'title' => 'sometimes|nullable|string|max:255',
             'description' => 'sometimes|nullable|string',
             'content' => 'required|string',
-            'format' => 'required|string|in:plain,markdown,html',
+            'format' => 'required|string|in:plain,markdown,html,wysiwyg',
         ]);
 
         if ($validator->fails()) {
