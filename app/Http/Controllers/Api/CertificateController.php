@@ -320,6 +320,67 @@ class CertificateController extends Controller
     }
 
     /**
+     * Get user certificates
+     * 
+     * @param Request $request
+     * @return Response
+     * 
+     * @OA\Get(
+     *     path="/user/certificates",
+     *     summary="Get user certificates",
+     *     description="Retrieves all certificates issued to the authenticated user",
+     *     operationId="getUserCertificates",
+     *     tags={"Certificates"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Response(
+     *         response=200,
+     *         description="User certificates retrieved successfully",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="data", type="array",
+     *                 @OA\Items(type="object",
+     *                     @OA\Property(property="id", type="integer"),
+     *                     @OA\Property(property="certificate_number", type="string"),
+     *                     @OA\Property(property="access_code", type="string"),
+     *                     @OA\Property(property="file_path", type="string"),
+     *                     @OA\Property(property="issued_date", type="string"),
+     *                     @OA\Property(property="expiry_date", type="string"),
+     *                     @OA\Property(property="is_active", type="boolean"),
+     *                     @OA\Property(property="custom_fields", type="object"),
+     *                     @OA\Property(property="certificate_content", type="object")
+     *                 )
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Unauthorized"
+     *     )
+     * )
+     */
+    public function getUserCertificates(Request $request)
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User not authenticated',
+            ], Response::HTTP_UNAUTHORIZED);
+        }
+
+        $certificates = IssuedCertificate::with(['certificateContent'])
+            ->where('user_id', $user->id)
+            ->orderBy('issued_date', 'desc')
+            ->get();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $certificates,
+        ]);
+    }
+
+    /**
      * Issue a certificate for a user and store it in the IssuedCertificate model
      * 
      * @param Request $request

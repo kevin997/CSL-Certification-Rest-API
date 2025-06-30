@@ -525,6 +525,7 @@ Route::get('/certificates/preview/{path}', [CertificateController::class, 'previ
 // Certificate routes
 Route::post('/certificates/verify', [CertificateController::class, 'verify']);
 Route::post('/certificate-content/{certificateContentId}/issue', [CertificateController::class, 'issueCertificate'])->middleware('auth:sanctum');
+Route::get('/user/certificates', [CertificateController::class, 'getUserCertificates'])->middleware('auth:sanctum');
 
 Route::group(['prefix' => 'storefront'], function () {
     // Public storefront routes that don't require authentication
