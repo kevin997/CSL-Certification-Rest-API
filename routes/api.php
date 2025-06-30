@@ -317,6 +317,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Quiz Submission Routes
     Route::post('/quiz/{quizContentId}/submissions', [\App\Http\Controllers\QuizSubmissionController::class, 'store']);
     Route::get('/quiz/{quizContentId}/submissions', [\App\Http\Controllers\QuizSubmissionController::class, 'index']);
+    Route::get('/quiz/{quizContentId}/user/submissions', [\App\Http\Controllers\QuizSubmissionController::class, 'getUserSubmissions']);
     Route::get('/quiz/submissions/{submissionId}', [\App\Http\Controllers\QuizSubmissionController::class, 'show']);
     Route::get('/enrollments/{enrollmentId}/quiz-submissions', [\App\Http\Controllers\QuizSubmissionController::class, 'getByEnrollment']);
     Route::get('/lessons/{lessonId}/responses', [LessonQuestionResponseController::class, 'getResponses']);

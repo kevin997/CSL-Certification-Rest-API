@@ -145,4 +145,43 @@ class QuizSubmissionController extends Controller
 
         return response()->json($submissions);
     }
+
+    /**
+     * Get all submissions for the current authenticated user for a specific quiz
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $quizContentId
+     * @return \Illuminate\Http\Response
+     */
+    public function getUserSubmissions(Request $request, $quizContentId)
+    {
+        Log::info("Request from getUserSubmissions for quiz", [
+            'quiz_content_id' => $quizContentId, 
+            'user_id' => Auth::id(),
+            'query_params' => $request->all()
+        ]);
+
+        // Check if quiz content exists
+        $quizContent = QuizContent::find($quizContentId);
+        if (!$quizContent) {
+            return response()->json(['error' => 'Quiz content not found'], 404);
+        }
+
+        $query = QuizSubmission::where('user_id', Auth::id())
+            ->where('quiz_content_id', $quizContentId)
+            ->with(['responses']);
+            
+        // Filter by enrollment if provided
+        $enrollmentId = $request->query('enrollment_id');
+        if ($enrollmentId) {
+            $query->where('enrollment_id', $enrollmentId);
+        }
+        
+        $submissions = $query->orderBy('created_at', 'desc')->get();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $submissions,
+        ]);
+    }
 }
