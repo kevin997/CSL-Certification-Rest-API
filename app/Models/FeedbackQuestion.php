@@ -8,10 +8,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Traits\BelongsToEnvironment;
+
 
 class FeedbackQuestion extends Model
 {
-    use HasFactory, SoftDeletes, HasCreatedBy;
+    use HasFactory, SoftDeletes, HasCreatedBy, BelongsToEnvironment;
 
     /**
      * The attributes that are mass assignable.
@@ -26,6 +28,7 @@ class FeedbackQuestion extends Model
         'required',
         'order',
         'created_by',
+        'environment_id',
     ];
 
     /**

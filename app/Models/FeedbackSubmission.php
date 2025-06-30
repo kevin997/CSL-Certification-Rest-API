@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToEnvironment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,8 +12,7 @@ use App\Traits\HasReviewedBy;
 
 class FeedbackSubmission extends Model
 {
-    use HasFactory, SoftDeletes, HasReviewedBy;
-
+    use HasFactory, SoftDeletes, HasReviewedBy, BelongsToEnvironment;
     /**
      * The attributes that are mass assignable.
      *
@@ -25,6 +25,7 @@ class FeedbackSubmission extends Model
         'status', // draft, submitted, reviewed
         'reviewed_at',
         'reviewed_by',
+        'environment_id',
     ];
 
     /**

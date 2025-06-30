@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 
 class FeedbackSubmissionController extends Controller
 {
@@ -376,11 +377,23 @@ class FeedbackSubmissionController extends Controller
      *
      * @return \Illuminate\Http\Response
      */
-    public function getUserSubmissions()
+    public function getUserSubmissions(Request $request)
     {
-        $submissions = FeedbackSubmission::where('user_id', Auth::id())
-            ->with(['feedbackContent', 'answers.question'])
-            ->get();
+        Log::info("Request from getUserSubmissions", $request->all());
+        Log::info("User making request", ['user_id' => Auth::id()]);
+
+        // Get feedback_content_id from query parameters if provided
+        $feedbackContentId = $request->query('feedback_content_id');
+        
+        $query = FeedbackSubmission::where('user_id', Auth::id())
+            ->with(['feedbackContent', 'answers.question']);
+            
+        // Filter by feedback content ID if provided
+        if ($feedbackContentId) {
+            $query->where('feedback_content_id', $feedbackContentId);
+        }
+        
+        $submissions = $query->get();
 
         return response()->json([
             'status' => 'success',
@@ -396,15 +409,6 @@ class FeedbackSubmissionController extends Controller
      */
     public function getUserSubmissionsById($userId)
     {
-        // Check if the authenticated user is an admin
-        $user = User::findOrFail(Auth::id());
-        if (!$user->hasRole('admin')) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'You do not have permission to view these submissions',
-            ], Response::HTTP_FORBIDDEN);
-        }
-
         $submissions = FeedbackSubmission::where('user_id', $userId)
             ->with(['feedbackContent', 'answers.question'])
             ->get();

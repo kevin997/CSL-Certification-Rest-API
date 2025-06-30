@@ -368,14 +368,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/activities/{activityId}/feedback', [FeedbackContentController::class, 'destroy']);
 
     // Feedback Submission routes
+    Route::get('/feedback/user/submissions', [FeedbackSubmissionController::class, 'getUserSubmissions']);
+    Route::get('/feedback/user/{userId}/submissions', [FeedbackSubmissionController::class, 'getUserSubmissionsById']);
     Route::get('/feedback/{feedbackContentId}/submissions', [FeedbackSubmissionController::class, 'index']);
     Route::post('/feedback/{feedbackContentId}/submissions', [FeedbackSubmissionController::class, 'store']);
     Route::get('/feedback/submissions/{submissionId}', [FeedbackSubmissionController::class, 'show']);
     Route::put('/feedback/submissions/{submissionId}', [FeedbackSubmissionController::class, 'update']);
     Route::post('/feedback/submissions/{submissionId}/submit', [FeedbackSubmissionController::class, 'submit']);
     Route::delete('/feedback/submissions/{submissionId}', [FeedbackSubmissionController::class, 'destroy']);
-    Route::get('/feedback/user/submissions', [FeedbackSubmissionController::class, 'getUserSubmissions']);
-    Route::get('/feedback/user/{userId}/submissions', [FeedbackSubmissionController::class, 'getUserSubmissionsById']);
 
     // Course Delivery routes
     // Course routes

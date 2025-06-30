@@ -6,10 +6,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Traits\BelongsToEnvironment;
 
 class FeedbackAnswer extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, BelongsToEnvironment;
 
     /**
      * The attributes that are mass assignable.
@@ -22,6 +23,7 @@ class FeedbackAnswer extends Model
         'answer_text',
         'answer_value', // For numeric ratings/scales
         'answer_options', // JSON array for checkbox selections
+        'environment_id',
     ];
 
     /**

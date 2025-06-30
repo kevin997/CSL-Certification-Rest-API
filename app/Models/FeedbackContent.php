@@ -8,10 +8,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\HasCreatedBy;
+use App\Traits\BelongsToEnvironment;
+
 
 class FeedbackContent extends Model
 {
-    use HasFactory, SoftDeletes, HasCreatedBy;
+    use HasFactory, SoftDeletes, HasCreatedBy, BelongsToEnvironment;
 
     /**
      * The attributes that are mass assignable.
@@ -32,6 +34,7 @@ class FeedbackContent extends Model
         'start_date',
         'end_date',
         'created_by',
+        'environment_id',
     ];
 
     /**
