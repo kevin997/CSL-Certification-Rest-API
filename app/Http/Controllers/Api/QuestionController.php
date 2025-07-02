@@ -7,11 +7,13 @@ use App\Models\Activity;
 use App\Models\Block;
 use App\Models\QuizContent;
 use App\Models\QuizQuestion;
+use App\Models\QuizQuestionOption;
 use App\Models\Template;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 
 class QuestionController extends Controller
 {
@@ -53,12 +55,118 @@ class QuestionController extends Controller
             ]);
         }
 
-        // If questions are stored in related table
-        $questions = QuizQuestion::where('quiz_content_id', $quizContent->id)->get();
+        // If questions are stored in related table  
+        $questions = QuizQuestion::where('quiz_content_id', $quizContent->id)
+            ->with('options')
+            ->get();
+            
+        // Debug: Check what questions we got
+        Log::info('Questions query result', [
+            'quiz_content_id' => $quizContent->id,
+            'questions_count' => $questions->count(),
+            'questions' => $questions->map(function($q) {
+                // Handle different types of options: relationship collection vs JSON array
+                $optionsCount = 'null';
+                if ($q->question_type === 'questionnaire') {
+                    // For questionnaire, options refers to the relationship
+                    $optionsCount = $q->options ? $q->options->count() : 'null';
+                } else {
+                    // For other types, options is a JSON array in the options column
+                    $optionsArray = $q->getAttributes()['options'] ?? null;
+                    if (is_array($optionsArray)) {
+                        $optionsCount = count($optionsArray);
+                    } elseif (is_string($optionsArray)) {
+                        $decoded = json_decode($optionsArray, true);
+                        $optionsCount = is_array($decoded) ? count($decoded) : 'invalid_json';
+                    }
+                }
+                
+                return [
+                    'id' => $q->id,
+                    'question_type' => $q->question_type,
+                    'options_count' => $optionsCount
+                ];
+            })
+        ]);
+
+        // Transform questionnaire questions to include answer_options and subquestions
+        $transformedQuestions = $questions->map(function ($question) {
+            $questionArray = $question->toArray();
+            
+            if ($question->question_type === 'questionnaire') {
+                // Extract answer_options and subquestions from QuizQuestionOption records
+                // Use manual query instead of relationship since relationship isn't working
+                $options = \App\Models\QuizQuestionOption::where('quiz_question_id', $question->id)->get();
+                $answerOptions = [];
+                $subquestions = [];
+                $subquestionMap = [];
+                
+                Log::info('Questionnaire reconstruction debug', [
+                    'question_id' => $question->id,
+                    'options_count' => $options ? count($options) : 'null',
+                    'options_data' => $options ? $options->toArray() : 'null'
+                ]);
+                
+                if ($options && count($options) > 0) {
+                    foreach ($options as $option) {
+                        // Handle answer options (subquestion_text is null)
+                        if (is_null($option->subquestion_text)) {
+                            $answerOptions[$option->answer_option_id] = [
+                                'id' => $option->answer_option_id,
+                                'text' => $option->option_text
+                            ];
+                        } else {
+                            // Handle assignments (subquestion_text is not null)
+                            $subquestionText = $option->subquestion_text;
+                            if (!isset($subquestionMap[$subquestionText])) {
+                                $subquestionMap[$subquestionText] = [
+                                    'text' => $subquestionText,
+                                    'assignments' => []
+                                ];
+                            }
+                            
+                            $assignment = [
+                                'answer_option_id' => $option->answer_option_id,
+                                'points' => $option->points ?? 0,
+                                'feedback' => $option->feedback ?? ''
+                            ];
+                            
+                            $subquestionMap[$subquestionText]['assignments'][] = $assignment;
+                            
+                            Log::info('Adding assignment', [
+                                'subquestion' => $subquestionText,
+                                'assignment' => $assignment,
+                                'current_assignments' => $subquestionMap[$subquestionText]['assignments']
+                            ]);
+                        }
+                    }
+                } else {
+                    // No options found, provide defaults
+                    $answerOptions = [
+                        ['id' => 0, 'text' => 'Option A'],
+                        ['id' => 1, 'text' => 'Option B']
+                    ];
+                    $subquestionMap = [
+                        ['text' => 'Subquestion 1', 'assignments' => []]
+                    ];
+                }
+                
+                $questionArray['answer_options'] = array_values($answerOptions);
+                $questionArray['subquestions'] = array_values($subquestionMap);
+                
+                Log::info('Final questionnaire data', [
+                    'question_id' => $question->id,
+                    'final_answer_options' => $questionArray['answer_options'],
+                    'final_subquestions' => $questionArray['subquestions']
+                ]);
+            }
+            
+            return $questionArray;
+        });
         
         return response()->json([
             'status' => 'success',
-            'data' => $questions,
+            'data' => $transformedQuestions,
         ]);
     }
 
@@ -100,9 +208,18 @@ class QuestionController extends Controller
             'instructions' => 'nullable|string',
             'instruction_format' => 'nullable|string|in:plain,markdown,html,wysiwyg',
             // Common question options
-            'options' => 'required_if:question_type,multiple_choice,multiple_response,matching,hotspot,drag_and_drop,ordering,multi_select|array',
-            'options.*.text' => 'required_if:question_type,multiple_choice,multiple_response,matching,drag_and_drop,ordering,multi_select|string',
-            'options.*.is_correct' => 'required_if:question_type,multiple_choice,multiple_response,multi_select,hotspot|boolean',
+            'options' => 'required_if:question_type,multiple_choice,multiple_response,matching,hotspot,drag_and_drop,ordering,multi_select,questionnaire|array',
+            'options.*.text' => 'required_if:question_type,multiple_choice,multiple_response,matching,drag_and_drop,ordering,multi_select,questionnaire|string',
+            'options.*.is_correct' => 'required_if:question_type,multiple_choice,multiple_response,multi_select,hotspot,questionnaire|boolean',
+            'options.*.points' => 'required_if:question_type,questionnaire|integer|min:0',
+            // Matrix-style questionnaire fields
+            'answer_options' => 'required_if:question_type,questionnaire|array',
+            'answer_options.*.text' => 'required_if:question_type,questionnaire|string',
+            'subquestions' => 'required_if:question_type,questionnaire|array',
+            'subquestions.*.text' => 'required_if:question_type,questionnaire|string',
+            'subquestions.*.assignments' => 'required_if:question_type,questionnaire|array',
+            'subquestions.*.assignments.*.answer_option_id' => 'required_if:question_type,questionnaire|integer',
+            'subquestions.*.assignments.*.points' => 'required_if:question_type,questionnaire|integer|min:0',
             'options.*.match_text' => 'required_if:question_type,matching|string',
             'options.*.value' => 'nullable|string',
             'options.*.feedback' => 'nullable|string',
@@ -201,7 +318,7 @@ class QuestionController extends Controller
             'question_text' => $request->question_text,
             'question' => $request->question,
             'question_type' => $request->question_type,
-            'options' => $request->options ? $request->options : null,
+            'options' => $request->question_type === 'questionnaire' ? null : ($request->options ? $request->options : null),
             'image_url' => $request->image_url,
             'image_alt' => $request->image_alt,
             'blanks' => $request->blanks ? $request->blanks : null,
@@ -219,10 +336,63 @@ class QuestionController extends Controller
         
         $question->save();
         
+        // Handle questionnaire type options in QuizQuestionOption table
+        if ($request->question_type === 'questionnaire') {
+            if ($request->has('subquestions') && $request->has('answer_options')) {
+                // Matrix-style questionnaire with reusable answer options
+                
+                // First: Store ALL answer options (the complete set of choices)
+                foreach ($request->answer_options as $answerOption) {
+                    $question->options()->create([
+                        'subquestion_text' => null, // This is an answer option, not tied to a specific subquestion
+                        'answer_option_id' => $answerOption['id'],
+                        'option_text' => $answerOption['text'],
+                        'is_correct' => false, // Answer options themselves aren't correct/incorrect
+                        'points' => 0, // Base answer options have no points
+                        'feedback' => null,
+                        'order' => $answerOption['id'] + 1,
+                    ]);
+                }
+                
+                // Second: Store assignments (which subquestion uses which answer option with what points)
+                foreach ($request->subquestions as $subIndex => $subquestion) {
+                    foreach ($subquestion['assignments'] as $assignment) {
+                        $question->options()->create([
+                            'subquestion_text' => $subquestion['text'],
+                            'answer_option_id' => $assignment['answer_option_id'],
+                            'option_text' => $request->answer_options[$assignment['answer_option_id']]['text'] ?? '',
+                            'is_correct' => true, // Assignment means it's correct for this subquestion
+                            'points' => $assignment['points'] ?? 0,
+                            'feedback' => $assignment['feedback'] ?? null,
+                            'order' => $subIndex + 1,
+                        ]);
+                    }
+                }
+            } elseif ($request->options) {
+                // Legacy single-question style
+                foreach ($request->options as $index => $option) {
+                    $question->options()->create([
+                        'option_text' => $option['text'],
+                        'is_correct' => $option['is_correct'] ?? false,
+                        'points' => $option['points'] ?? 0,
+                        'feedback' => $option['feedback'] ?? null,
+                        'order' => $index + 1,
+                    ]);
+                }
+            }
+        }
+
+        // Format the response data to include questionnaire-specific fields
+        $responseData = $question->toArray();
+        if ($request->question_type === 'questionnaire') {
+            $responseData['answer_options'] = $request->answer_options ?? [];
+            $responseData['subquestions'] = $request->subquestions ?? [];
+        }
+        
         return response()->json([
             'status' => 'success',
             'message' => 'Question added successfully',
-            'data' => $question,
+            'data' => $responseData,
         ], Response::HTTP_CREATED);
     }
 
@@ -254,9 +424,18 @@ class QuestionController extends Controller
             'question_text' => 'string',
             'question' => 'string',
             'question_type' => 'string|in:multiple_choice,multiple_response,true_false,text,fill_blanks_text,fill_blanks_drag,matching,hotspot,essay,questionnaire,matrix',
-            'options' => 'required_if:question_type,multiple_choice,multiple_response,matching,hotspot|array',
-            'options.*.text' => 'required_if:question_type,multiple_choice,multiple_response,matching|string',
-            'options.*.is_correct' => 'required_if:question_type,multiple_choice,multiple_response|boolean',
+            'options' => 'required_if:question_type,multiple_choice,multiple_response,matching,hotspot,questionnaire|array',
+            'options.*.text' => 'required_if:question_type,multiple_choice,multiple_response,matching,questionnaire|string',
+            'options.*.is_correct' => 'required_if:question_type,multiple_choice,multiple_response,questionnaire|boolean',
+            'options.*.points' => 'required_if:question_type,questionnaire|integer|min:0',
+            // Matrix-style questionnaire fields
+            'answer_options' => 'required_if:question_type,questionnaire|array',
+            'answer_options.*.text' => 'required_if:question_type,questionnaire|string',
+            'subquestions' => 'required_if:question_type,questionnaire|array',
+            'subquestions.*.text' => 'required_if:question_type,questionnaire|string',
+            'subquestions.*.assignments' => 'required_if:question_type,questionnaire|array',
+            'subquestions.*.assignments.*.answer_option_id' => 'required_if:question_type,questionnaire|integer',
+            'subquestions.*.assignments.*.points' => 'required_if:question_type,questionnaire|integer|min:0',
             'options.*.match_text' => 'required_if:question_type,matching|string',
             'options.*.position' => 'required_if:question_type,hotspot|array',
             'options.*.position.x' => 'required_if:question_type,hotspot|numeric',
@@ -330,13 +509,74 @@ class QuestionController extends Controller
         // Handle naming convention mapping for compatibility between front-end and back-end
         $requestData = $request->all();
         
+        // For questionnaire type, don't store options in the options column
+        if ($request->question_type === 'questionnaire') {
+            unset($requestData['options']);
+        }
+        
         $question->fill($requestData);
         $question->save();
+        
+        // Handle questionnaire type options in QuizQuestionOption table
+        if ($request->question_type === 'questionnaire') {
+            // Delete existing options
+            $question->options()->delete();
+            
+            if ($request->has('subquestions') && $request->has('answer_options')) {
+                // Matrix-style questionnaire with reusable answer options
+                
+                // First: Store ALL answer options (the complete set of choices)
+                foreach ($request->answer_options as $answerOption) {
+                    $question->options()->create([
+                        'subquestion_text' => null, // This is an answer option, not tied to a specific subquestion
+                        'answer_option_id' => $answerOption['id'],
+                        'option_text' => $answerOption['text'],
+                        'is_correct' => false, // Answer options themselves aren't correct/incorrect
+                        'points' => 0, // Base answer options have no points
+                        'feedback' => null,
+                        'order' => $answerOption['id'] + 1,
+                    ]);
+                }
+                
+                // Second: Store assignments (which subquestion uses which answer option with what points)
+                foreach ($request->subquestions as $subIndex => $subquestion) {
+                    foreach ($subquestion['assignments'] as $assignment) {
+                        $question->options()->create([
+                            'subquestion_text' => $subquestion['text'],
+                            'answer_option_id' => $assignment['answer_option_id'],
+                            'option_text' => $request->answer_options[$assignment['answer_option_id']]['text'] ?? '',
+                            'is_correct' => true, // Assignment means it's correct for this subquestion
+                            'points' => $assignment['points'] ?? 0,
+                            'feedback' => $assignment['feedback'] ?? null,
+                            'order' => $subIndex + 1,
+                        ]);
+                    }
+                }
+            } elseif ($request->options) {
+                // Legacy single-question style
+                foreach ($request->options as $index => $option) {
+                    $question->options()->create([
+                        'option_text' => $option['text'],
+                        'is_correct' => $option['is_correct'] ?? false,
+                        'points' => $option['points'] ?? 0,
+                        'feedback' => $option['feedback'] ?? null,
+                        'order' => $index + 1,
+                    ]);
+                }
+            }
+        }
+
+        // Format the response data to include questionnaire-specific fields
+        $responseData = $question->toArray();
+        if ($request->question_type === 'questionnaire') {
+            $responseData['answer_options'] = $request->answer_options ?? [];
+            $responseData['subquestions'] = $request->subquestions ?? [];
+        }
         
         return response()->json([
             'status' => 'success',
             'message' => 'Question updated successfully',
-            'data' => $question,
+            'data' => $responseData,
         ]);
     }
 
@@ -425,6 +665,11 @@ class QuestionController extends Controller
         $question = QuizQuestion::where('quiz_content_id', $quizContent->id)
             ->where('id', $questionId)
             ->firstOrFail();
+        
+        // Delete associated options for questionnaire type
+        if ($question->question_type === 'questionnaire') {
+            $question->options()->delete();
+        }
         
         $question->delete();
         

@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class QuizQuestionOption extends Model
 {
-    use HasFactory, SoftDeletes, HasCreatedBy;
+    use HasFactory, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -23,6 +23,9 @@ class QuizQuestionOption extends Model
         'is_correct',
         'feedback',
         'order',
+        'points',
+        'subquestion_text',
+        'answer_option_id',
     ];
 
     /**
