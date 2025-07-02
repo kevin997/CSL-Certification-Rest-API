@@ -153,12 +153,14 @@ class QuestionController extends Controller
                 
                 $questionArray['answer_options'] = array_values($answerOptions);
                 $questionArray['subquestions'] = array_values($subquestionMap);
-                
-                Log::info('Final questionnaire data', [
-                    'question_id' => $question->id,
-                    'final_answer_options' => $questionArray['answer_options'],
-                    'final_subquestions' => $questionArray['subquestions']
-                ]);
+            } else {
+                // For all other types, use the options column (not the relationship)
+                $questionArray['options'] = $question->getAttributes()['options'] ?? [];
+                // If options is a JSON string, decode it
+                if (is_string($questionArray['options'])) {
+                    $decoded = json_decode($questionArray['options'], true);
+                    $questionArray['options'] = is_array($decoded) ? $decoded : [];
+                }
             }
             
             return $questionArray;
