@@ -121,18 +121,24 @@ class QuestionController extends Controller
                             if (!isset($subquestionMap[$subquestionText])) {
                                 $subquestionMap[$subquestionText] = [
                                     'text' => $subquestionText,
-                                    'assignments' => []
+                                    'assignments' => [],
+                                    'image_url' => $option->image_url,
+                                    'image_alt' => $option->image_alt
                                 ];
                             }
-                            
+                            // If this assignment has an image, update the subquestion's image fields
+                            if ($option->image_url) {
+                                $subquestionMap[$subquestionText]['image_url'] = $option->image_url;
+                            }
+                            if ($option->image_alt) {
+                                $subquestionMap[$subquestionText]['image_alt'] = $option->image_alt;
+                            }
                             $assignment = [
                                 'answer_option_id' => $option->answer_option_id,
                                 'points' => $option->points ?? 0,
                                 'feedback' => $option->feedback ?? ''
                             ];
-                            
                             $subquestionMap[$subquestionText]['assignments'][] = $assignment;
-                            
                             Log::info('Adding assignment', [
                                 'subquestion' => $subquestionText,
                                 'assignment' => $assignment,
@@ -147,7 +153,7 @@ class QuestionController extends Controller
                         ['id' => 1, 'text' => 'Option B']
                     ];
                     $subquestionMap = [
-                        ['text' => 'Subquestion 1', 'assignments' => []]
+                        ['text' => 'Subquestion 1', 'assignments' => [], 'image_url' => null, 'image_alt' => null]
                     ];
                 }
                 
@@ -353,6 +359,8 @@ class QuestionController extends Controller
                         'points' => 0, // Base answer options have no points
                         'feedback' => null,
                         'order' => $answerOption['id'] + 1,
+                        'image_url' => null,
+                        'image_alt' => null,
                     ]);
                 }
                 
@@ -367,6 +375,8 @@ class QuestionController extends Controller
                             'points' => $assignment['points'] ?? 0,
                             'feedback' => $assignment['feedback'] ?? null,
                             'order' => $subIndex + 1,
+                            'image_url' => $subquestion['image_url'] ?? null,
+                            'image_alt' => $subquestion['image_alt'] ?? null,
                         ]);
                     }
                 }
@@ -379,6 +389,8 @@ class QuestionController extends Controller
                         'points' => $option['points'] ?? 0,
                         'feedback' => $option['feedback'] ?? null,
                         'order' => $index + 1,
+                        'image_url' => null,
+                        'image_alt' => null,
                     ]);
                 }
             }
@@ -537,6 +549,8 @@ class QuestionController extends Controller
                         'points' => 0, // Base answer options have no points
                         'feedback' => null,
                         'order' => $answerOption['id'] + 1,
+                        'image_url' => null,
+                        'image_alt' => null,
                     ]);
                 }
                 
@@ -551,6 +565,8 @@ class QuestionController extends Controller
                             'points' => $assignment['points'] ?? 0,
                             'feedback' => $assignment['feedback'] ?? null,
                             'order' => $subIndex + 1,
+                            'image_url' => $subquestion['image_url'] ?? null,
+                            'image_alt' => $subquestion['image_alt'] ?? null,
                         ]);
                     }
                 }
@@ -563,6 +579,8 @@ class QuestionController extends Controller
                         'points' => $option['points'] ?? 0,
                         'feedback' => $option['feedback'] ?? null,
                         'order' => $index + 1,
+                        'image_url' => null,
+                        'image_alt' => null,
                     ]);
                 }
             }

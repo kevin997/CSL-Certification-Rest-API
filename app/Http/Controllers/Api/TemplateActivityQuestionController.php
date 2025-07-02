@@ -147,6 +147,8 @@ class TemplateActivityQuestionController extends Controller
                     'explanation' => $sourceQuestion->explanation,
                     'points' => $sourceQuestion->points,
                     'is_scorable' => $sourceQuestion->is_scorable,
+                    'image_url' => $sourceQuestion->image_url,
+                    'image_alt' => $sourceQuestion->image_alt,
                     'created_by' => Auth::id(),
                 ]);
                 
@@ -159,8 +161,10 @@ class TemplateActivityQuestionController extends Controller
                 
                 $newQuestion->save();
                 
-                // Copy options if they exist
-                if ($sourceQuestion->options()->count() > 0) {
+                // Special handling for questionnaire-type questions
+                if ($sourceQuestion->question_type === 'questionnaire') {
+                    $this->importQuestionnaireOptions($sourceQuestion, $newQuestion);
+                } else if ($sourceQuestion->options()->count() > 0) {
                     foreach ($sourceQuestion->options as $option) {
                         $newQuestion->options()->create([
                             'option_text' => $option->option_text,
@@ -193,6 +197,32 @@ class TemplateActivityQuestionController extends Controller
                 'status' => 'error',
                 'message' => 'Failed to import questions: ' . $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Import all options for a questionnaire-type question, including subquestion assignments and images
+     *
+     * @param QuizQuestion $sourceQuestion
+     * @param QuizQuestion $newQuestion
+     * @return void
+     */
+    private function importQuestionnaireOptions($sourceQuestion, $newQuestion)
+    {
+        // Copy all options, including answer options and subquestion assignments
+        foreach ($sourceQuestion->options as $option) {
+            $newQuestion->options()->create([
+                'subquestion_text' => $option->subquestion_text,
+                'answer_option_id' => $option->answer_option_id,
+                'option_text' => $option->option_text,
+                'is_correct' => $option->is_correct,
+                'points' => $option->points,
+                'feedback' => $option->feedback,
+                'order' => $option->order,
+                'image_url' => $option->image_url,
+                'image_alt' => $option->image_alt,
+                'created_by' => Auth::id(),
+            ]);
         }
     }
 }
