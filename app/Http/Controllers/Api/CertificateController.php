@@ -617,4 +617,60 @@ class CertificateController extends Controller
             ],
         ]);
     }
+
+    /**
+     * Get the issued certificate for the current user and a specific activity (if any)
+     *
+     * @param Request $request
+     * @param int $activityId
+     * @return Response
+     */
+    public function getIssuedCertificateForActivity(Request $request, $activityId)
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User not authenticated',
+            ], Response::HTTP_UNAUTHORIZED);
+        }
+
+        // Find the latest certificate content for this activity
+        $certificateContent = \App\Models\CertificateContent::where('activity_id', $activityId)
+            ->latest()
+            ->first();
+
+        if (!$certificateContent) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No certificate content found for this activity',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        // Find the issued certificate for this user and certificate content
+        $issuedCertificate = \App\Models\IssuedCertificate::where('user_id', $user->id)
+            ->where('certificate_content_id', $certificateContent->id)
+            ->first();
+
+        if (!$issuedCertificate) {
+            return response()->json([
+                'status' => 'success',
+                'data' => null,
+            ]);
+        }
+
+        // Get file URL and preview URL
+        $fileUrl = $issuedCertificate->file_path;
+        $previewUrl = $issuedCertificate->custom_fields['preview_url'] ?? null;
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'fileUrl' => $fileUrl,
+                'previewUrl' => $previewUrl,
+                'accessCode' => $issuedCertificate->certificate_number,
+                'issuedCertificateId' => $issuedCertificate->id,
+            ],
+        ]);
+    }
 }

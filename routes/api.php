@@ -347,6 +347,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Certificate Generation routes
     Route::post('/activities/{activityId}/certificate-content/{id}/generate', [CertificateController::class, 'generate']);
+    Route::get('/activities/{activityId}/certificate/issued', [CertificateController::class, 'getIssuedCertificateForActivity']);
     Route::put('/activities/{activityId}/documentation', [DocumentationContentController::class, 'update']);
     Route::delete('/activities/{activityId}/documentation', [DocumentationContentController::class, 'destroy']);
 
