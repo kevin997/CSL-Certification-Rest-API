@@ -1827,6 +1827,9 @@ class TransactionController extends Controller
 
         // Build query with filters
         $query = Transaction::query();
+        
+        // Eager load order and user
+        $query = $query->with(['order.user'], 'user');
 
         // Apply environment filter if provided
         if ($request->has('environment_id')) {

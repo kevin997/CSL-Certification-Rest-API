@@ -55,6 +55,18 @@ class FinanceController extends Controller
             ->take(10)
             ->get();
 
+        // Ensure only fillable attributes are returned for each model
+        $subscription = $subscription ? $subscription->only($subscription->getFillable()) : null;
+        $topProducts = $topProducts->map(function($product) {
+            // Only return fillable fields for Product
+            return collect($product)->only([
+                'id', 'name', 'type', 'total_quantity', 'total_revenue'
+            ]);
+        });
+        $recentTransactions = $recentTransactions->map(function($transaction) {
+            return collect($transaction)->only((new \App\Models\Transaction)->getFillable());
+        });
+
         return response()->json([
             'success' => true,
             'data' => [
@@ -83,7 +95,7 @@ class FinanceController extends Controller
             ->where('status', 'completed')
             ->count();
         $canceledOrders = Order::where('environment_id', $environmentId)
-            ->where('status', 'canceled')
+            ->where('status', 'canceled') // 'canceled' is not a fillable status, but is a valid status value
             ->count();
 
         return [
@@ -104,18 +116,18 @@ class FinanceController extends Controller
     {
         $totalRevenue = Order::where('environment_id', $environmentId)
             ->where('status', 'completed')
-            ->sum('total');
+            ->sum('total_amount');
 
         $monthlyRevenue = Order::where('environment_id', $environmentId)
             ->where('status', 'completed')
             ->whereMonth('created_at', now()->month)
             ->whereYear('created_at', now()->year)
-            ->sum('total');
+            ->sum('total_amount');
 
         $yearlyRevenue = Order::where('environment_id', $environmentId)
             ->where('status', 'completed')
             ->whereYear('created_at', now()->year)
-            ->sum('total');
+            ->sum('total_amount');
 
         // Get monthly revenue for the last 12 months
         $monthlyRevenueData = Order::where('environment_id', $environmentId)
@@ -124,7 +136,7 @@ class FinanceController extends Controller
             ->select(
                 DB::raw('YEAR(created_at) as year'),
                 DB::raw('MONTH(created_at) as month'),
-                DB::raw('SUM(total) as revenue')
+                DB::raw('SUM(total_amount) as revenue')
             )
             ->groupBy('year', 'month')
             ->orderBy('year')
@@ -133,14 +145,14 @@ class FinanceController extends Controller
             ->map(function ($item) {
                 return [
                     'month' => $item->year . '-' . str_pad($item->month, 2, '0', STR_PAD_LEFT),
-                    'revenue' => $item->revenue
+                    'revenue' => (float) $item->revenue
                 ];
             });
 
         return [
-            'total' => $totalRevenue,
-            'monthly' => $monthlyRevenue,
-            'yearly' => $yearlyRevenue,
+            'total' => (float) $totalRevenue,
+            'monthly' => (float) $monthlyRevenue,
+            'yearly' => (float) $yearlyRevenue,
             'monthly_data' => $monthlyRevenueData
         ];
     }
@@ -154,6 +166,7 @@ class FinanceController extends Controller
      */
     private function getTopProducts($environmentId, $limit = 5)
     {
+        // Only select fields that exist in Product and aggregate fields
         return DB::table('order_items')
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->join('products', 'order_items.product_id', '=', 'products.id')
@@ -162,11 +175,10 @@ class FinanceController extends Controller
             ->select(
                 'products.id',
                 'products.name',
-                'products.type',
                 DB::raw('SUM(order_items.quantity) as total_quantity'),
                 DB::raw('SUM(order_items.price * order_items.quantity) as total_revenue')
             )
-            ->groupBy('products.id', 'products.name', 'products.type')
+            ->groupBy('products.id', 'products.name')
             ->orderBy('total_revenue', 'desc')
             ->limit($limit)
             ->get();
@@ -180,7 +192,6 @@ class FinanceController extends Controller
      */
     public function subscription(Request $request)
     {
-        // Get the environment ID from the authenticated user
         $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
@@ -202,6 +213,9 @@ class FinanceController extends Controller
             ], 404);
         }
 
+        // Only return fillable fields
+        $subscription = $subscription->only($subscription->getFillable());
+
         return response()->json([
             'success' => true,
             'data' => $subscription
@@ -216,7 +230,6 @@ class FinanceController extends Controller
      */
     public function orders(Request $request)
     {
-        // Get the environment ID from the authenticated user
         $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
@@ -255,7 +268,7 @@ class FinanceController extends Controller
         // Apply sorting
         $sortField = $request->input('sort_field', 'created_at');
         $sortDirection = $request->input('sort_direction', 'desc');
-        $allowedSortFields = ['created_at', 'order_number', 'total', 'status'];
+        $allowedSortFields = ['created_at', 'order_number', 'total_amount', 'status'];
         
         if (in_array($sortField, $allowedSortFields)) {
             $query->orderBy($sortField, $sortDirection === 'asc' ? 'asc' : 'desc');
@@ -263,9 +276,13 @@ class FinanceController extends Controller
             $query->orderBy('created_at', 'desc');
         }
 
-        // Get paginated results with relationships
         $perPage = $request->input('per_page', 10);
         $orders = $query->with(['user', 'items.product'])->paginate($perPage);
+
+        // Only return fillable fields for each order
+        $orders->getCollection()->transform(function($order) {
+            return collect($order)->only((new \App\Models\Order)->getFillable());
+        });
 
         return response()->json([
             'success' => true,
@@ -281,7 +298,6 @@ class FinanceController extends Controller
      */
     public function transactions(Request $request)
     {
-        // Get the environment ID from the authenticated user
         $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
@@ -291,7 +307,10 @@ class FinanceController extends Controller
             ], 400);
         }
 
-        $query = Transaction::where('environment_id', $environmentId);
+        $query = Transaction::where('environment_id', $environmentId)
+        ->with(['order.user', 'user']);
+        // Eager load order and user
+        $query = $query->with(['order.user', 'user']);
 
         // Apply filters if provided
         if ($request->has('status')) {
@@ -321,9 +340,9 @@ class FinanceController extends Controller
             $query->orderBy('created_at', 'desc');
         }
 
-        // Get paginated results with relationships
         $perPage = $request->input('per_page', 10);
-        $transactions = $query->with(['order', 'user'])->paginate($perPage);
+        $transactions = $query->paginate($perPage);
+
 
         return response()->json([
             'success' => true,
@@ -339,7 +358,6 @@ class FinanceController extends Controller
      */
     public function revenueByProductType(Request $request)
     {
-        // Get the environment ID from the authenticated user
         $environmentId = session('current_environment_id');
         
         if (!$environmentId) {
@@ -355,11 +373,19 @@ class FinanceController extends Controller
             ->where('orders.environment_id', $environmentId)
             ->where('orders.status', 'completed')
             ->select(
-                'products.type',
+                'products.name',
                 DB::raw('SUM(order_items.price * order_items.quantity) as total_revenue')
             )
-            ->groupBy('products.type')
+            ->groupBy('products.name')
             ->get();
+
+        // Only return type and total_revenue
+        $revenueByType = $revenueByType->map(function($row) {
+            return [
+                'type' => $row->name,
+                'total_revenue' => $row->total_revenue
+            ];
+        });
 
         return response()->json([
             'success' => true,

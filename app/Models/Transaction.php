@@ -13,6 +13,7 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use App\Models\User;
 
 class Transaction extends Model
 {
@@ -444,5 +445,21 @@ class Transaction extends Model
     public function isRefunded(): bool
     {
         return $this->status === self::STATUS_REFUNDED || $this->status === self::STATUS_PARTIALLY_REFUNDED;
+    }
+
+    /**
+     * Get the order associated with this transaction.
+     */
+    public function order()
+    {
+        return $this->belongsTo(Order::class, 'order_id');
+    }
+
+    /**
+     * Get the user associated with this transaction via customer_id.
+     */
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'customer_id');
     }
 }

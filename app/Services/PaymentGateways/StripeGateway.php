@@ -546,4 +546,16 @@ class StripeGateway implements PaymentGatewayInterface
             return false;
         }
     }
+
+    /**
+     * Create a payment link for an invoice (stub implementation)
+     *
+     * @param \App\Models\Invoice $invoice
+     * @return string
+     */
+    public function createInvoicePaymentLink(\App\Models\Invoice $invoice)
+    {
+        // TODO: Implement real Stripe invoice payment link creation
+        return 'https://dummy.stripe.com/pay/' . $invoice->id;
+    }
 }

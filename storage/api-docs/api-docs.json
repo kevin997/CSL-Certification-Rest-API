@@ -4383,6 +4383,77 @@
                 }
             }
         },
+        "/user/certificates": {
+            "get": {
+                "tags": [
+                    "Certificates"
+                ],
+                "summary": "Get user certificates",
+                "description": "Retrieves all certificates issued to the authenticated user",
+                "operationId": "getUserCertificates",
+                "responses": {
+                    "200": {
+                        "description": "User certificates retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "certificate_number": {
+                                                        "type": "string"
+                                                    },
+                                                    "access_code": {
+                                                        "type": "string"
+                                                    },
+                                                    "file_path": {
+                                                        "type": "string"
+                                                    },
+                                                    "issued_date": {
+                                                        "type": "string"
+                                                    },
+                                                    "expiry_date": {
+                                                        "type": "string"
+                                                    },
+                                                    "is_active": {
+                                                        "type": "boolean"
+                                                    },
+                                                    "custom_fields": {
+                                                        "type": "object"
+                                                    },
+                                                    "certificate_content": {
+                                                        "type": "object"
+                                                    }
+                                                },
+                                                "type": "object"
+                                            }
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
         "/certificate-content/{certificateContentId}/issue": {
             "post": {
                 "tags": [

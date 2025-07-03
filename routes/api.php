@@ -249,6 +249,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
 // Template Management Routes
 Route::middleware('auth:sanctum')->group(function () {
+
+    // Invoice routes
+    Route::get('/invoices', [App\Http\Controllers\Api\InvoiceController::class, 'index']);
+    Route::get('/invoices/{id}', [App\Http\Controllers\Api\InvoiceController::class, 'show']);
+    Route::post('/invoices', [App\Http\Controllers\Api\InvoiceController::class, 'generateMonthlyInvoices']);
+    Route::put('/invoices/{id}', [App\Http\Controllers\Api\InvoiceController::class, 'markAsPaid']);
+    Route::get('/invoices/{id}/download', [App\Http\Controllers\Api\InvoiceController::class, 'downloadPDF']);
+
     // Template routes
     Route::get('/templates', [TemplateController::class, 'index']);
     Route::post('/templates', [TemplateController::class, 'store']);

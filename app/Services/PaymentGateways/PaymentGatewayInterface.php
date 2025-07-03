@@ -4,6 +4,7 @@ namespace App\Services\PaymentGateways;
 
 use App\Models\Transaction;
 use App\Models\PaymentGatewaySetting;
+use App\Models\Invoice;
 
 interface PaymentGatewayInterface
 {
@@ -72,4 +73,13 @@ interface PaymentGatewayInterface
      * @return bool
      */
     public function verifyWebhookSignature($payload, string $signature, string $secret): bool;
+
+
+    /**
+     * Create a payment link for an invoice
+     *
+     * @param \App\Models\Invoice $invoice
+     * @return string
+     */
+    public function createInvoicePaymentLink(\App\Models\Invoice $invoice);
 }
