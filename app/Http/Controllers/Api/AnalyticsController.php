@@ -392,27 +392,19 @@ class AnalyticsController extends Controller
                 ];
             });
 
-        // Get user retention data (users who enrolled and were active in the last 30 days)
-        $retentionData = DB::table('enrollments')
-            ->where('enrollments.environment_id', $environmentId)
-            ->select(
-                DB::raw('DATEDIFF(MAX(last_activity_at), enrolled_at) as days_active'),
-                DB::raw('COUNT(DISTINCT user_id) as user_count')
-            )
-            ->whereNotNull('last_activity_at')
-            ->where('enrolled_at', '<=', now()->subDays(30))
-            ->groupBy(DB::raw('FLOOR(DATEDIFF(MAX(last_activity_at), enrolled_at) / 30)'))
-            ->orderBy(DB::raw('FLOOR(DATEDIFF(MAX(last_activity_at), enrolled_at) / 30)'))
-            ->get()
-            ->map(function ($item) {
-                $monthRange = floor($item->days_active / 30);
-                return [
-                    'month_range' => $monthRange == 0 ? '0-1 month' : 
-                                    ($monthRange == 1 ? '1-2 months' : 
-                                    ($monthRange == 2 ? '2-3 months' : '3+ months')),
-                    'user_count' => $item->user_count
-                ];
-            });
+        // FIX: Use a subquery to get MAX(last_activity_at) per user, then group by months active
+        $subquery = "SELECT user_id, enrolled_at, MAX(last_activity_at) as last_activity_at FROM enrollments WHERE environment_id = ? AND last_activity_at IS NOT NULL AND enrolled_at <= ? GROUP BY user_id, enrolled_at";
+        $bindings = [$environmentId, now()];
+        $retentionRaw = DB::select("SELECT FLOOR(DATEDIFF(user_max.last_activity_at, user_max.enrolled_at) / 30) as months_active, COUNT(*) as user_count FROM ( $subquery ) as user_max GROUP BY months_active ORDER BY months_active ASC", $bindings);
+        $retentionData = collect($retentionRaw)->map(function ($item) {
+            $monthRange = $item->months_active;
+            return [
+                'month_range' => $monthRange == 0 ? '0-1 month' : 
+                                ($monthRange == 1 ? '1-2 months' : 
+                                ($monthRange == 2 ? '2-3 months' : '3+ months')),
+                'user_count' => $item->user_count
+            ];
+        });
 
         return response()->json([
             'success' => true,

@@ -258,4 +258,22 @@ class User extends Authenticatable
             'use_environment_credentials' => $useEnvironmentCredentials,
         ]);
     }
+
+    /**
+     * Get the enrollments for this user.
+     */
+    public function enrollments(): HasMany
+    {
+        return $this->hasMany(Enrollment::class, 'user_id');
+    }
+
+    /**
+     * Get the disk that profile photos are stored on.
+     *
+     * @return string
+     */
+    protected function profilePhotoDisk(): string
+    {
+        return 'public';
+    }
 }
