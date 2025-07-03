@@ -10,6 +10,8 @@ use App\Models\Environment;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\InvoiceMail;
 
 class InvoiceService
 {
@@ -95,9 +97,20 @@ class InvoiceService
         return $query->orderBy('month', 'desc')->paginate(20);
     }
 
+    /**
+     * Send invoice notification to the environment owner (per-invoice, not batch summary)
+     *
+     * @param Invoice $invoice
+     * @return void
+     */
     public function sendInvoiceNotification(Invoice $invoice)
     {
-        // Implement notification logic (email, in-app, etc.)
-        // Example: Notification::send($invoice->environment->owner, new InvoiceCreated($invoice));
+        // Send invoice email to environment owner
+        $environment = $invoice->environment;
+        $owner = (is_object($environment) && isset($environment->owner) && is_object($environment->owner)) ? $environment->owner : null;
+        $email = $owner && isset($owner->email) ? $owner->email : null;
+        if ($email) {
+            Mail::to($email)->send(new InvoiceMail($invoice));
+        }
     }
 }

@@ -50,17 +50,11 @@ class CertificateIssueListener implements ShouldQueue
                 Log::warning('User or user email missing for certificate email', ['certificate_id' => $issuedCertificate->id]);
             }
 
-            // Send certificate notification to Telegram
-            try {
-                $telegramService = app(TelegramService::class);
-                $user->notify(new CertificateIsuued($user, $environment, $telegramService));
-                Log::info('Certificate Telegram notification sent', ['user_id' => $user->id, 'certificate_id' => $issuedCertificate->id]);
-            } catch (\Exception $e) {
-                Log::error('Failed to send Telegram notification for certificate', [
-                    'certificate_id' => $issuedCertificate->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            $notification = new CertificateIsuued($user,
+            $environment,
+            new TelegramService());
+            
+            $notification->toTelegram($notification);
         } catch (\Exception $e) {
             Log::error('Failed to handle CertificateIssued event', [
                 'certificate_id' => $issuedCertificate->id,
