@@ -58,7 +58,7 @@ class DashboardController extends Controller
     public function getDashboardData(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = $request->user()->current_environment_id;
+        $environmentId = session()->get('current_environment_id');
 
         return response()->json([
             'success' => true,

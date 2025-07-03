@@ -80,4 +80,9 @@ class IssuedCertificate extends Model
     {
         return $this->belongsTo(User::class, 'revoked_by');
     }
+
+    public function environment(): BelongsTo
+    {
+        return $this->belongsTo(Environment::class);
+    }
 }

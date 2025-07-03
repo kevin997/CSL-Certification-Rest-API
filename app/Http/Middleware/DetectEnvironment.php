@@ -63,6 +63,8 @@ class DetectEnvironment
         if (!$environment) {
             $knownFrontendDomains = [
                 'csl-certification.vercel.app',
+                'learning.cfpcsl.com',
+                'learning.csl-brands.com',
                 'csl-certification-git-develop-kevin997s-projects.vercel.app'
             ];
             

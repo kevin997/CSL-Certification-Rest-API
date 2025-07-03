@@ -593,7 +593,22 @@ class OrderController extends Controller
         $order = Order::with(['user', 'items.product'])->findOrFail($id);
 
         // Check if user has permission to view this order
-        if ($order->user_id !== Auth::id() && !Auth::user()->is_admin) {
+        $user = Auth::user();
+        $hasPermission = false;
+        if ($user->is_admin) {
+            $hasPermission = true;
+        } elseif ($order->environment_id) {
+            $environment = \App\Models\Environment::find($order->environment_id);
+            if ($environment && $environment->owner_id === $user->id) {
+                $hasPermission = true;
+            }
+        } else {
+            // Fallback: allow if user is the order owner
+            if ($order->user_id === $user->id) {
+                $hasPermission = true;
+            }
+        }
+        if (!$hasPermission) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to view this order',
@@ -674,11 +689,26 @@ class OrderController extends Controller
     {
         $order = Order::findOrFail($id);
 
-        // Check if user has permission to update this order
-        if (!Auth::user()->is_admin) {
+        // Check if user has permission to view this order
+        $user = Auth::user();
+        $hasPermission = false;
+        if ($user->is_admin) {
+            $hasPermission = true;
+        } elseif ($order->environment_id) {
+            $environment = \App\Models\Environment::find($order->environment_id);
+            if ($environment && $environment->owner_id === $user->id) {
+                $hasPermission = true;
+            }
+        } else {
+            // Fallback: allow if user is the order owner
+            if ($order->user_id === $user->id) {
+                $hasPermission = true;
+            }
+        }
+        if (!$hasPermission) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'You do not have permission to update order status',
+                'message' => 'You do not have permission to view this order',
             ], Response::HTTP_FORBIDDEN);
         }
 

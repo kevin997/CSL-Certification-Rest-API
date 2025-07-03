@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use App\Events\CertificateIssued;
 
 class CertificateGenerationService
 {
@@ -537,10 +538,8 @@ class CertificateGenerationService
             // Set expiry date if provided in userData
             if (isset($userData['expiry_date'])) {
                 $issuedCertificate->expiry_date = new \DateTime($userData['expiry_date']);
-            } elseif ($certificateContent->expiry_period && $certificateContent->expiry_period_unit) {
                 // Calculate expiry date based on certificate content settings
                 $expiryDate = clone $issuedCertificate->issued_date;
-
                 switch ($certificateContent->expiry_period_unit) {
                     case 'days':
                         $expiryDate->modify("+{$certificateContent->expiry_period} days");
@@ -552,7 +551,6 @@ class CertificateGenerationService
                         $expiryDate->modify("+{$certificateContent->expiry_period} years");
                         break;
                 }
-
                 $issuedCertificate->expiry_date = $expiryDate;
             }
 
@@ -566,6 +564,11 @@ class CertificateGenerationService
             ];
 
             $issuedCertificate->save();
+
+            // Trigger the event after successful creation
+            if ($issuedCertificate && $issuedCertificate->id) {
+                event(new CertificateIssued($issuedCertificate));
+            }
 
             return $issuedCertificate;
         } catch (\Exception $e) {
