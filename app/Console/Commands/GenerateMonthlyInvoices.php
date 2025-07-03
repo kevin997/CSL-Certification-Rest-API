@@ -57,6 +57,7 @@ class GenerateMonthlyInvoices extends Command
             }
         }
 
+
         // Send batch summary notification to Telegram
         $notification = new InvoiceNotification($successCount, $failCount, $failedEnvironments, $telegramService);
         $notification->toTelegram($notification);
