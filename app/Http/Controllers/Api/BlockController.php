@@ -439,9 +439,7 @@ use Illuminate\Support\Facades\Validator;
  *     )
  * )
  *
- * @OA\Post(
- *     path="/api/templates/{templateId}/blocks/batch",
- *     summary="Batch create blocks with activities",
+
  *     description="Creates multiple blocks and their activities for a specific template in one request.",
  *     operationId="batchCreateBlocks",
  *     tags={"Blocks"},
