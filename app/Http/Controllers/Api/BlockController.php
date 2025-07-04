@@ -438,6 +438,57 @@ use Illuminate\Support\Facades\Validator;
  *         description="Template or block not found"
  *     )
  * )
+ *
+ * @OA\Post(
+ *     path="/api/templates/{templateId}/blocks/batch",
+ *     summary="Batch create blocks with activities",
+ *     description="Creates multiple blocks and their activities for a specific template in one request.",
+ *     operationId="batchCreateBlocks",
+ *     tags={"Blocks"},
+ *     security={{"sanctum":{}}},
+ *     @OA\Parameter(
+ *         name="templateId",
+ *         in="path",
+ *         description="Template ID",
+ *         required=true,
+ *         @OA\Schema(type="integer")
+ *     ),
+ *     @OA\RequestBody(
+ *         required=true,
+ *         @OA\JsonContent(
+ *             type="array",
+ *             @OA\Items(
+ *                 required={"title"},
+ *                 @OA\Property(property="title", type="string"),
+ *                 @OA\Property(property="description", type="string"),
+ *                 @OA\Property(property="order", type="integer"),
+ *                 @OA\Property(property="is_required", type="boolean"),
+ *                 @OA\Property(property="activities", type="array",
+ *                     @OA\Items(
+ *                         required={"title", "type"},
+ *                         @OA\Property(property="title", type="string"),
+ *                         @OA\Property(property="type", type="string"),
+ *                         @OA\Property(property="description", type="string"),
+ *                         @OA\Property(property="order", type="integer"),
+ *                         @OA\Property(property="is_required", type="boolean")
+ *                     )
+ *                 )
+ *             )
+ *         )
+ *     ),
+ *     @OA\Response(
+ *         response=201,
+ *         description="Blocks and activities created successfully",
+ *         @OA\JsonContent(
+ *             @OA\Property(property="status", type="string", example="success"),
+ *             @OA\Property(property="message", type="string", example="Blocks and activities created successfully"),
+ *             @OA\Property(property="data", type="array", @OA\Items(type="object"))
+ *         )
+ *     ),
+ *     @OA\Response(response=401, description="Unauthenticated"),
+ *     @OA\Response(response=403, description="Forbidden"),
+ *     @OA\Response(response=422, description="Validation error")
+ * )
  */
 
 class BlockController extends Controller
@@ -715,5 +766,144 @@ class BlockController extends Controller
             'message' => 'Blocks reordered successfully',
             'data' => $updatedBlocks,
         ]);
+    }
+
+    /**
+     * Batch create blocks with activities for a template.
+     *
+     * @OA\Post(
+     *     path="/api/templates/{templateId}/blocks/batch",
+     *     summary="Batch create blocks with activities",
+     *     description="Creates multiple blocks and their activities for a specific template in one request.",
+     *     operationId="batchCreateBlocks",
+     *     tags={"Blocks"},
+     *     security={{"sanctum":{}}},
+     *     @OA\Parameter(
+     *         name="templateId",
+     *         in="path",
+     *         description="Template ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             type="array",
+     *             @OA\Items(
+     *                 required={"title"},
+     *                 @OA\Property(property="title", type="string"),
+     *                 @OA\Property(property="description", type="string"),
+     *                 @OA\Property(property="order", type="integer"),
+     *                 @OA\Property(property="is_required", type="boolean"),
+     *                 @OA\Property(property="activities", type="array",
+     *                     @OA\Items(
+     *                         required={"title", "type"},
+     *                         @OA\Property(property="title", type="string"),
+     *                         @OA\Property(property="type", type="string"),
+     *                         @OA\Property(property="description", type="string"),
+     *                         @OA\Property(property="order", type="integer"),
+     *                         @OA\Property(property="is_required", type="boolean")
+     *                     )
+     *                 )
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=201,
+     *         description="Blocks and activities created successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="message", type="string", example="Blocks and activities created successfully"),
+     *             @OA\Property(property="data", type="array", @OA\Items(type="object"))
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthenticated"),
+     *     @OA\Response(response=403, description="Forbidden"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
+     */
+    public function batchStore(Request $request, $templateId)
+    {
+        $template = \App\Models\Template::findOrFail($templateId);
+        if ($template->created_by !== \Illuminate\Support\Facades\Auth::id()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You do not have permission to add blocks to this template',
+            ], 403);
+        }
+        $data = $request->all();
+        if (!is_array($data)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Invalid input format. Expected an array of blocks.'
+            ], 422);
+        }
+        $created = [];
+        \Illuminate\Support\Facades\DB::beginTransaction();
+        try {
+            foreach ($data as $blockData) {
+                $blockValidator = \Illuminate\Support\Facades\Validator::make($blockData, [
+                    'title' => 'required|string|max:255',
+                    'description' => 'nullable|string',
+                    'is_required' => 'boolean',
+                    'order' => 'nullable|integer',
+                    'activities' => 'array',
+                    'activities.*.title' => 'required|string|max:255',
+                    'activities.*.type' => 'required|string',
+                    'activities.*.description' => 'nullable|string',
+                    'activities.*.order' => 'nullable|integer',
+                    'activities.*.is_required' => 'boolean',
+                ]);
+                if ($blockValidator->fails()) {
+                    \Illuminate\Support\Facades\DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Validation failed for block',
+                        'errors' => $blockValidator->errors(),
+                    ], 422);
+                }
+                // If order is not provided, place the block at the end
+                $order = $blockData['order'] ?? (\App\Models\Block::where('template_id', $templateId)->max('order') + 1);
+                $block = \App\Models\Block::create([
+                    'template_id' => $templateId,
+                    'title' => $blockData['title'],
+                    'description' => $blockData['description'] ?? null,
+                    'is_required' => $blockData['is_required'] ?? false,
+                    'order' => $order,
+                    'created_by' => \Illuminate\Support\Facades\Auth::id(),
+                    'status' => 'active',
+                ]);
+                $blockActivities = [];
+                if (!empty($blockData['activities']) && is_array($blockData['activities'])) {
+                    foreach ($blockData['activities'] as $activityData) {
+                        $activity = $block->activities()->create([
+                            'title' => $activityData['title'],
+                            'type' => $activityData['type'],
+                            'description' => $activityData['description'] ?? null,
+                            'is_required' => $activityData['is_required'] ?? false,
+                            'order' => $activityData['order'] ?? (\App\Models\Activity::where('block_id', $block->id)->max('order') + 1),
+                            'created_by' => \Illuminate\Support\Facades\Auth::id(),
+                            'status' => 'active',
+                        ]);
+                        $blockActivities[] = $activity;
+                    }
+                }
+                $block->setRelation('activities', collect($blockActivities));
+                $created[] = $block;
+            }
+            \Illuminate\Support\Facades\DB::commit();
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Blocks and activities created successfully',
+                'data' => $created,
+            ], 201);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to create blocks and activities',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 }

@@ -272,6 +272,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/blocks/{id}', [BlockController::class, 'update']);
     Route::delete('/blocks/{id}', [BlockController::class, 'destroy']);
     Route::post('/templates/{templateId}/blocks/reorder', [BlockController::class, 'reorder']);
+    Route::post('/templates/{templateId}/blocks/batch', [\App\Http\Controllers\Api\BlockController::class, 'batchStore']);
 
     // Activity routes
     Route::get('/blocks/{blockId}/activities', [ActivityController::class, 'index']);
