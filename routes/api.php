@@ -46,7 +46,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use App\Http\Controllers\Api\StorefrontController;
-use App\Http\Controllers\Api\Onboarding\AfterPlanSelectionOnboarding;
+use App\Http\Controllers\Api\Onboarding\OnboardingController;
 use App\Http\Controllers\Api\ReferralEnvironmentController;
 use App\Http\Controllers\Api\FinanceController;
 use App\Http\Controllers\Api\AnalyticsController;
@@ -85,6 +85,11 @@ Route::prefix('onboarding')->group(function () {
     // Get available plans
     Route::get('/plans', [PlanController::class, 'getOnboardingPlans']);
     Route::post('/referral/validate', [ReferralController::class, 'validate']);
+
+    // Validation routes
+    Route::post('/validate-email', [OnboardingController::class, 'validateEmail']);
+    Route::post('/validate-domain', [OnboardingController::class, 'validateDomain']);
+    Route::post('/validate', [OnboardingController::class, 'validate']);
 });
 
 // Queue status endpoint
@@ -182,7 +187,6 @@ Route::get('/public/plans', [PlanController::class, 'index']);
 Route::get('/public/plans/{id}', [PlanController::class, 'show']);
 Route::get('/public/plans/type/{type}', [PlanController::class, 'getByType']);
 Route::post('/public/plans/compare', [PlanController::class, 'compare']);
-Route::post('/public/onboarding/after-plan-selection', [AfterPlanSelectionOnboarding::class, 'store']);
 // Environment management routes
 Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('environments', EnvironmentController::class);

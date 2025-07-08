@@ -28,7 +28,7 @@ touch /var/www/html/storage/logs/laravel.log
 chmod 777 /var/www/html/storage/logs/laravel.log
 
 # Check AWS RDS connection
-if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ]; then
+if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ] || [ "$CONTAINER_ROLE" = "scheduler" ] || [ "$CONTAINER_ROLE" = "nightwatch" ]; then
     echo "Checking AWS RDS connection..."
     RETRY_COUNT=0
     MAX_RETRIES=15
@@ -58,7 +58,7 @@ if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ]; then
 fi
 
 # Run migrations and seed database
-if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ]; then
+if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ] || [ "$CONTAINER_ROLE" = "scheduler" ] || [ "$CONTAINER_ROLE" = "nightwatch" ]; then
     # Run migrations with error handling
     echo "Running database migrations..."
     if php artisan migrate --force; then
@@ -97,6 +97,20 @@ mkdir -p /var/log/supervisor
 # Determine container role
 if [ "$CONTAINER_ROLE" = "queue" ]; then
   echo "Starting queue worker..."
+  exec supervisord -c /etc/supervisor/conf.d/supervisord.conf
+elif [ "$CONTAINER_ROLE" = "scheduler" ]; then
+  echo "Starting scheduler service..."
+  # Install cron if not present
+  apt-get update && apt-get install -y cron
+  # Start cron service
+  service cron start
+  # Copy scheduler supervisor config
+  cp /var/www/html/docker/supervisor/scheduler.conf /etc/supervisor/conf.d/
+  exec supervisord -c /etc/supervisor/conf.d/supervisord.conf
+elif [ "$CONTAINER_ROLE" = "nightwatch" ]; then
+  echo "Starting Nightwatch agent with supervisor..."
+  # Copy nightwatch supervisor config
+  cp /var/www/html/docker/supervisor/nightwatch.conf /etc/supervisor/conf.d/
   exec supervisord -c /etc/supervisor/conf.d/supervisord.conf
 elif [ "$CONTAINER_ROLE" = "reverb" ]; then
   echo "Starting Laravel Reverb WebSocket server..."

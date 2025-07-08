@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Artisan;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Schedule;
 use App\Console\Commands\GenerateMonthlyInvoices;
+use App\Console\Commands\RegularizeCompletedOrders;
 
 
 
@@ -17,3 +18,9 @@ Artisan::command('inspire', function () {
 
 Schedule::command(GenerateMonthlyInvoices::class)
     ->lastDayOfMonth('23:59');
+
+// Regularize orders with completed transactions every 5 minutes
+Schedule::command(RegularizeCompletedOrders::class)
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();

@@ -95,6 +95,65 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+      
+  # Scheduler Service for Order Regularization
+  scheduler:
+    image: localhost:5000/csl-certification-rest-api:latest
+    container_name: csl-certification-rest-api-scheduler
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_started
+    volumes:
+      - ./storage:/var/www/html/storage
+    environment:
+      - CONTAINER_ROLE=scheduler
+      # AWS RDS connection settings
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - APP_ENV=${APP_ENV}
+      - APP_DEBUG=${APP_DEBUG:-false}
+    networks:
+      - csl-network
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -v grep | grep 'cron' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      
+  # Nightwatch Agent Service
+  nightwatch:
+    image: localhost:5000/csl-certification-rest-api:latest
+    container_name: csl-certification-rest-api-nightwatch
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_started
+    volumes:
+      - ./storage:/var/www/html/storage
+    environment:
+      - CONTAINER_ROLE=nightwatch
+      # AWS RDS connection settings
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - APP_ENV=${APP_ENV}
+      - APP_DEBUG=${APP_DEBUG:-false}
+      # Nightwatch configuration
+      - NIGHTWATCH_TOKEN=${NIGHTWATCH_TOKEN}
+      - NIGHTWATCH_REQUEST_SAMPLE_RATE=${NIGHTWATCH_REQUEST_SAMPLE_RATE:-0.1}
+    networks:
+      - csl-network
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -v grep | grep 'nightwatch:agent' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 networks:
   csl-network:

@@ -106,11 +106,11 @@ class StorefrontController extends Controller
      */
     public function getCountries(Request $request, string $environmentId)
     {
-        $environment = $this->getEnvironmentById($environmentId);
+        // $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
-            return response()->json(['message' => 'Environment not found'], 404);
-        }
+        // if (!$environment) {
+        //     return response()->json(['message' => 'Environment not found'], 404);
+        // }
 
         // List of countries with their codes
         $countries = [
@@ -192,7 +192,6 @@ class StorefrontController extends Controller
         return response()->json([
             'success' => true,
             'data' => $countries,
-            'environment' => $environment
         ]);
     }
 
@@ -206,11 +205,11 @@ class StorefrontController extends Controller
      */
     public function getStates(Request $request, string $environmentId, string $countryCode)
     {
-        $environment = $this->getEnvironmentById($environmentId);
+        // $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
-            return response()->json(['message' => 'Environment not found'], 404);
-        }
+        // if (!$environment) {
+        //     return response()->json(['message' => 'Environment not found'], 404);
+        // }
 
         $states = [];
 
@@ -601,8 +600,7 @@ class StorefrontController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $states,
-            'environment' => $environment
+            'data' => $states
         ]);
     }
 
@@ -1160,8 +1158,7 @@ class StorefrontController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $cities,
-            'environment' => $environment
+            'data' => $cities
         ]);
     }
 

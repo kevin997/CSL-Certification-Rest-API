@@ -8943,128 +8943,6 @@
                 }
             }
         },
-        "/api/onboarding/teacher": {
-            "post": {
-                "tags": [
-                    "Onboarding"
-                ],
-                "summary": "Onboard a new individual teacher",
-                "description": "Create a new user account, environment, and subscription for an individual teacher",
-                "operationId": "onboardTeacher",
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "required": [
-                                    "name",
-                                    "email",
-                                    "password",
-                                    "environment_name",
-                                    "domain",
-                                    "plan_id",
-                                    "billing_cycle"
-                                ],
-                                "properties": {
-                                    "name": {
-                                        "type": "string",
-                                        "example": "John Doe"
-                                    },
-                                    "email": {
-                                        "type": "string",
-                                        "format": "email",
-                                        "example": "john@example.com"
-                                    },
-                                    "password": {
-                                        "type": "string",
-                                        "format": "password",
-                                        "example": "password123"
-                                    },
-                                    "environment_name": {
-                                        "type": "string",
-                                        "example": "John's Academy"
-                                    },
-                                    "domain": {
-                                        "type": "string",
-                                        "example": "johns-academy.csl-cert.com"
-                                    },
-                                    "plan_id": {
-                                        "type": "integer",
-                                        "example": 1
-                                    },
-                                    "billing_cycle": {
-                                        "type": "string",
-                                        "enum": [
-                                            "monthly",
-                                            "annual"
-                                        ],
-                                        "example": "monthly"
-                                    },
-                                    "theme_color": {
-                                        "type": "string",
-                                        "example": "#FF5733"
-                                    },
-                                    "logo_url": {
-                                        "type": "string",
-                                        "example": "https://example.com/logo.png"
-                                    },
-                                    "description": {
-                                        "type": "string",
-                                        "example": "A platform for teaching computer science"
-                                    }
-                                },
-                                "type": "object"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "201": {
-                        "description": "Teacher onboarded successfully",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "example": "success"
-                                        },
-                                        "message": {
-                                            "type": "string",
-                                            "example": "Teacher onboarded successfully"
-                                        },
-                                        "data": {
-                                            "properties": {
-                                                "user_id": {
-                                                    "type": "integer",
-                                                    "example": 1
-                                                },
-                                                "environment_id": {
-                                                    "type": "integer",
-                                                    "example": 1
-                                                },
-                                                "subscription_id": {
-                                                    "type": "integer",
-                                                    "example": 1
-                                                }
-                                            },
-                                            "type": "object"
-                                        }
-                                    },
-                                    "type": "object"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation error"
-                    },
-                    "500": {
-                        "description": "Server error"
-                    }
-                }
-            }
-        },
         "/api/onboarding/demo": {
             "post": {
                 "tags": [
@@ -9183,6 +9061,276 @@
                     },
                     "500": {
                         "description": "Server error"
+                    }
+                }
+            }
+        },
+        "/api/onboarding/validate-email": {
+            "post": {
+                "tags": [
+                    "Onboarding"
+                ],
+                "summary": "Check if email already exists",
+                "description": "Validates if an email address is already registered in the system",
+                "operationId": "validateEmail",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "email"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "john@example.com"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Email validation result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "available": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Email is available"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Invalid email format"
+                                        },
+                                        "errors": {
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/onboarding/validate-domain": {
+            "post": {
+                "tags": [
+                    "Onboarding"
+                ],
+                "summary": "Check if domain/subdomain is available",
+                "description": "Validates if a domain or subdomain is already in use by checking primary_domain and additional_domains in environments table",
+                "operationId": "validateDomain",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "domain",
+                                    "type"
+                                ],
+                                "properties": {
+                                    "domain": {
+                                        "type": "string",
+                                        "example": "john.csl-brands.com"
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "subdomain",
+                                            "custom"
+                                        ],
+                                        "example": "subdomain"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Domain validation result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "available": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Domain is available"
+                                        },
+                                        "suggestions": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            },
+                                            "example": [
+                                                "john2.csl-brands.com",
+                                                "john-dev.csl-brands.com"
+                                            ]
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Invalid domain format"
+                                        },
+                                        "errors": {
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/onboarding/validate": {
+            "post": {
+                "tags": [
+                    "Onboarding"
+                ],
+                "summary": "Validate email and domain availability",
+                "description": "Validates both email and domain/subdomain availability in a single request",
+                "operationId": "validateOnboarding",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "email",
+                                    "domain",
+                                    "type"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "john@example.com"
+                                    },
+                                    "domain": {
+                                        "type": "string",
+                                        "example": "john.csl-brands.com"
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "subdomain",
+                                            "custom"
+                                        ],
+                                        "example": "subdomain"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Validation result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "email": {
+                                            "properties": {
+                                                "available": {
+                                                    "type": "boolean",
+                                                    "example": true
+                                                },
+                                                "message": {
+                                                    "type": "string",
+                                                    "example": "Email is available"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "domain": {
+                                            "properties": {
+                                                "available": {
+                                                    "type": "boolean",
+                                                    "example": true
+                                                },
+                                                "message": {
+                                                    "type": "string",
+                                                    "example": "Domain is available"
+                                                },
+                                                "suggestions": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -16826,6 +16974,10 @@
             "description": "API Endpoints for managing environments"
         },
         {
+            "name": "Onboarding",
+            "description": "Onboarding validation endpoints"
+        },
+        {
             "name": "Content Types",
             "description": "Content Types"
         },
@@ -16852,10 +17004,6 @@
         {
             "name": "Lesson Responses",
             "description": "Lesson Responses"
-        },
-        {
-            "name": "Onboarding",
-            "description": "Onboarding"
         },
         {
             "name": "Payment Gateways",

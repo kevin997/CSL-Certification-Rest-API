@@ -147,12 +147,22 @@ class TransactionController extends Controller
             return response()->json(['error' => 'Transaction ID is required'], 400);
         }
 
-        //Get The Transaction with relationship to PaymentGate
+        //Get The Transaction with relationship to PaymentGate (first try pending)
         $transaction = Transaction::where("transaction_id", $transactionId)
             ->where("environment_id", $environment_id)
             ->where("status", Transaction::STATUS_PENDING)
             ->whereHas("paymentGatewaySetting")
             ->first();
+
+        // If no pending transaction found, check for completed transaction
+        $completedTransaction = null;
+        if (!$transaction) {
+            $completedTransaction = Transaction::where("transaction_id", $transactionId)
+                ->where("environment_id", $environment_id)
+                ->where("status", Transaction::STATUS_COMPLETED)
+                ->whereHas("paymentGatewaySetting")
+                ->first();
+        }
 
         //Get The Environment with relationship to Branding
         $environment = Environment::where("id", $environment_id)
@@ -160,14 +170,64 @@ class TransactionController extends Controller
         $branding = Branding::where("environment_id", $environment_id)
             ->first();
 
-        // Check if transaction exists
-        if (!$transaction) {
+        // Check if transaction exists (either pending or completed)
+        if (!$transaction && !$completedTransaction) {
             Log::error('Transaction not found for callback', [
                 'transaction_id' => $transactionId,
                 'environment_id' => $environment_id
             ]);
             return view('payment.error', [
-                'transaction' => $transaction,
+                'transaction' => null,
+                'environment' => $environment,
+                "branding" => $branding,
+                "protocol" => $protocol
+            ]);
+        }
+        
+        // Handle completed transaction with pending order
+        if ($completedTransaction) {
+            Log::info('Transaction already completed, checking order status', [
+                'transaction_id' => $transactionId,
+                'environment_id' => $environment_id
+            ]);
+            
+            // Check if the order is still pending
+            $order = Order::where('id', $completedTransaction->order_id)->first();
+            if ($order && $order->status === Order::STATUS_PENDING) {
+                Log::info('Order is pending for completed transaction, regularizing', [
+                    'transaction_id' => $transactionId,
+                    'order_id' => $order->id,
+                    'order_number' => $order->order_number
+                ]);
+                
+                // Process the success callback for the completed transaction
+                $status = $request->get("status", "");
+                $successStatuses = ["success", "successful", "1", 1];
+                
+                if (in_array($status, $successStatuses, true)) {
+                    $paymentService = app(PaymentService::class);
+                    $gateway = $completedTransaction->paymentGatewaySetting->code;
+                    
+                    try {
+                        $result = $paymentService->processSuccessCallback($gateway, $transactionId, $environment_id, $request->all());
+                        
+                        Log::info('Order regularized successfully for completed transaction', [
+                            'transaction_id' => $transactionId,
+                            'order_id' => $order->id
+                        ]);
+                    } catch (\Exception $e) {
+                        Log::error('Error regularizing order for completed transaction', [
+                            'transaction_id' => $transactionId,
+                            'order_id' => $order->id,
+                            'error' => $e->getMessage()
+                        ]);
+                    }
+                }
+            }
+            
+            // Return success view for completed transaction
+            return view('payment.success', [
+                'transaction' => $completedTransaction,
                 'environment' => $environment,
                 "branding" => $branding,
                 "protocol" => $protocol
@@ -1587,7 +1647,7 @@ class TransactionController extends Controller
         }
 
         // Get the transaction reference
-        $reference = $event['transaction_id'] ?? $event['reference'] ?? $event['payment_ref'] ?? null;
+        $reference = $event['payment_ref'] ?? null;
         $status = $event['status'] ?? null;
 
         if (!$reference) {

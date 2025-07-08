@@ -100,4 +100,12 @@ class Order extends Model
     {
         return $this->hasOne(Transaction::class);
     }
+    
+    /**
+     * Get all transactions associated with this order
+     */
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class);
+    }
 }

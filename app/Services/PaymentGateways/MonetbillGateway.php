@@ -310,6 +310,11 @@ class MonetbillGateway implements PaymentGatewayInterface
                 'payment_ref' => $paymentRef
             ]);
             
+            Log::info('[MonetbillGateway] Verifying payment', [
+                'transaction_id' => $transactionId,
+                'payment_ref' => $paymentRef
+            ]);
+
             if ($response->successful()) {
                 $responseData = $response->json();
                 
