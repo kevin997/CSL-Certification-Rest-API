@@ -47,7 +47,7 @@ return new class extends Migration
                 'description' => 'Full-service configuration by CSL Brands support team',
                 'price_monthly' => 0.00,
                 'price_annual' => 0.00,
-                'setup_fee' => 177.00,
+                'setup_fee' => 1167.00,
                 'features' => json_encode([
                     'full_service_configuration' => true,
                     'custom_domain_connection' => true,

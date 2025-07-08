@@ -171,47 +171,59 @@ class TaxZoneService
                 ];
             }
             
-            if (!$environment->country_code) {
-                // Check if we have an order with billing country
-                if ($order && $order->billing_country) {
-                    Log::info('Using order billing country for tax calculation', [
-                        'environment_id' => $environmentId,
-                        'environment_name' => $environment->name,
-                        'order_id' => $order->id,
-                        'billing_country' => $order->billing_country,
-                        'billing_state' => $order->billing_state,
-                        'base_amount' => $baseAmount,
-                        'request_time' => now()->toDateTimeString(),
-                        'source' => 'TaxZoneService::calculateTaxByEnvironment'
-                    ]);
-                    
-                    return $this->calculateTaxByLocation(
-                        $baseAmount,
-                        $order->billing_country,
-                        $order->billing_state ?? null
-                    );
-                }
-                
-                Log::warning('Environment missing country code for tax calculation, using 0% tax rate', [
+            // Prioritize order billing country if available
+            if ($order && $order->billing_country) {
+                Log::info('Using order billing country for tax calculation', [
                     'environment_id' => $environmentId,
                     'environment_name' => $environment->name,
+                    'order_id' => $order->id,
+                    'billing_country' => $order->billing_country,
+                    'billing_state' => $order->billing_state,
                     'base_amount' => $baseAmount,
                     'request_time' => now()->toDateTimeString(),
                     'source' => 'TaxZoneService::calculateTaxByEnvironment'
                 ]);
                 
-                return [
-                    'tax_rate' => 0.0,
-                    'tax_amount' => 0.0,
-                    'zone_name' => null
-                ];
+                return $this->calculateTaxByLocation(
+                    $baseAmount,
+                    $order->billing_country,
+                    $order->billing_state ?? null
+                );
             }
             
-            return $this->calculateTaxByLocation(
-                $baseAmount,
-                $environment->country_code,
-                $environment->state_code ?? null
-            );
+            // Fall back to environment country code if available
+            if ($environment->country_code) {
+                Log::info('Using environment country code for tax calculation', [
+                    'environment_id' => $environmentId,
+                    'environment_name' => $environment->name,
+                    'country_code' => $environment->country_code,
+                    'state_code' => $environment->state_code,
+                    'base_amount' => $baseAmount,
+                    'request_time' => now()->toDateTimeString(),
+                    'source' => 'TaxZoneService::calculateTaxByEnvironment'
+                ]);
+                
+                return $this->calculateTaxByLocation(
+                    $baseAmount,
+                    $environment->country_code,
+                    $environment->state_code ?? null
+                );
+            }
+            
+            // No country information available
+            Log::warning('No country information available for tax calculation, using 0% tax rate', [
+                'environment_id' => $environmentId,
+                'environment_name' => $environment->name,
+                'base_amount' => $baseAmount,
+                'request_time' => now()->toDateTimeString(),
+                'source' => 'TaxZoneService::calculateTaxByEnvironment'
+            ]);
+            
+            return [
+                'tax_rate' => 0.0,
+                'tax_amount' => 0.0,
+                'zone_name' => null
+            ];
         } catch (\Exception $e) {
             Log::error('Error calculating tax by environment, using 0% tax rate', [
                 'environment_id' => $environmentId,

@@ -587,6 +587,9 @@ Route::group(['prefix' => 'storefront'], function () {
 
     // Get tax rate for location
     Route::post('/{environmentId}/tax-rate', [StorefrontController::class, 'getTaxRateForLocation']);
+    
+    // Calculate product price with commission (for product creation)
+    Route::post('/{environmentId}/calculate-product-price', [StorefrontController::class, 'calculateProductPriceWithCommission']);
 });
 
 // Continue payment for a pending order

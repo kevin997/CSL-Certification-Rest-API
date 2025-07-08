@@ -132,6 +132,8 @@ services:
     depends_on:
       app:
         condition: service_started
+    ports:
+      - "2407:2407"
     volumes:
       - ./storage:/var/www/html/storage
     environment:

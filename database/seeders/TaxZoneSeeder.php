@@ -89,7 +89,7 @@ class TaxZoneSeeder extends Seeder
         $allTaxZones = array_merge($euTaxZones, $usTaxZones, $otherTaxZones);
         
         foreach ($allTaxZones as [$countryCode, $stateCode, $zoneName, $taxRate]) {
-            TaxZone::create([
+            TaxZone::firstOrCreate([
                 'country_code' => $countryCode,
                 'state_code' => $stateCode,
                 'zone_name' => $zoneName,

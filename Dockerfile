@@ -87,6 +87,7 @@ RUN echo "* * * * * cd /var/www/html && php artisan schedule:run >> /dev/null 2>
 # Expose ports
 EXPOSE 80
 EXPOSE 8080
+EXPOSE 2407
 
 # Set entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

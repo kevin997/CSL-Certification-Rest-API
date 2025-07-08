@@ -3,6 +3,7 @@
 namespace App\Services\Commission;
 
 use App\Models\Commission;
+use App\Models\Order;
 use App\Models\Transaction;
 use App\Services\Tax\TaxZoneService;
 use Illuminate\Support\Facades\Log;
@@ -39,7 +40,92 @@ class CommissionService
     }
     
     /**
-     * Calculate transaction amounts including commission and tax
+     * Extract commission from product price (new flow - commission already included in product price)
+     *
+     * @param float $productPriceWithCommission The product price that already includes commission
+     * @param int|null $environmentId The environment ID to get commission for
+     * @return array Returns ['original_price' => float, 'commission_amount' => float, 'commission_rate' => float]
+     */
+    public function extractCommissionFromProductPrice(float $productPriceWithCommission, ?int $environmentId = null): array
+    {
+        // Get the active commission
+        $commission = $this->getActiveCommission($environmentId);
+        
+        if (!$commission) {
+            Log::warning('No active commission found, using default 17% commission', [
+                'environment_id' => $environmentId,
+                'product_price_with_commission' => $productPriceWithCommission
+            ]);
+            
+            // Create a temporary commission object with default rate
+            $commission = new Commission();
+            $commission->rate = 17.0; // Default 17% if no commission record found
+        }
+        
+        $commissionRate = $commission->rate / 100; // Convert percentage to decimal
+        
+        // Calculate original price: productPriceWithCommission = originalPrice + (originalPrice * commissionRate)
+        // So: productPriceWithCommission = originalPrice * (1 + commissionRate)
+        // Therefore: originalPrice = productPriceWithCommission / (1 + commissionRate)
+        $originalPrice = $productPriceWithCommission / (1 + $commissionRate);
+        $commissionAmount = $productPriceWithCommission - $originalPrice;
+        
+        return [
+            'original_price' => $originalPrice,
+            'commission_amount' => $commissionAmount,
+            'commission_rate' => $commission->rate
+        ];
+    }
+    
+    /**
+     * Calculate transaction amounts with tax only (commission already included in product price)
+     *
+     * @param float $productPriceWithCommission The product price that already includes commission
+     * @param int|null $environmentId The environment ID to get commission for
+     * @param Order|null $order Optional order to use for billing country if environment has no country code
+     * @return array Returns ['fee_amount' => float, 'tax_amount' => float, 'total_amount' => float, 'base_amount' => float, 'commission_rate' => float, 'tax_rate' => float, 'tax_zone' => string|null]
+     */
+    public function calculateTransactionAmountsWithCommissionIncluded(float $productPriceWithCommission, ?int $environmentId = null, ?Order $order = null): array
+    {
+        // Extract commission from product price
+        $commissionInfo = $this->extractCommissionFromProductPrice($productPriceWithCommission, $environmentId);
+        
+        $originalPrice = $commissionInfo['original_price'];
+        $commissionAmount = $commissionInfo['commission_amount'];
+        $commissionRate = $commissionInfo['commission_rate'];
+        
+        // Calculate the tax amount using the tax zone service (tax is applied to the original price, not the price with commission)
+        $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($originalPrice, $environmentId, $order);
+        $taxAmount = $taxInfo['tax_amount'];
+        $taxRate = $taxInfo['tax_rate'];
+        $taxZone = $taxInfo['zone_name'];
+        
+        // Total amount = product price with commission + tax
+        $totalAmount = $productPriceWithCommission + $taxAmount;
+        
+        // Log tax zone information
+        if ($taxZone === null) {
+            Log::warning('No tax zone found for environment, using 0% tax rate', [
+                'environment_id' => $environmentId,
+                'product_price_with_commission' => $productPriceWithCommission,
+                'original_price' => $originalPrice,
+                'commission_amount' => $commissionAmount
+            ]);
+        }
+        
+        return [
+            'fee_amount' => $commissionAmount, // Commission amount extracted from product price
+            'tax_amount' => $taxAmount,
+            'total_amount' => $totalAmount,
+            'base_amount' => $originalPrice, // Original price without commission
+            'commission_rate' => $commissionRate,
+            'tax_rate' => $taxRate,
+            'tax_zone' => $taxZone
+        ];
+    }
+    
+    /**
+     * Calculate transaction amounts including commission and tax (legacy method - for backward compatibility)
      *
      * @param float $baseAmount The original amount without commission
      * @param int|null $environmentId The environment ID to get commission for

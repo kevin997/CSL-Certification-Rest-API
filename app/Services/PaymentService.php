@@ -174,18 +174,28 @@ class PaymentService
                 ]);
             }
             
-            // Apply commission to calculate fee_amount
-            $this->commissionService->applyCommissionToTransaction($transaction);
+            // Use new commission calculation method - commission is already included in product price
+            $transactionAmounts = $this->commissionService->calculateTransactionAmountsWithCommissionIncluded(
+                $transaction->amount, 
+                $environmentId,
+                $order
+            );
             
-            // Get tax zone information
-            $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($transaction->amount, $environmentId, $order);
-            
-            // Update transaction with tax information and total amount
+            // Update transaction with extracted commission, tax information and total amount
             $transaction->update([
-                'tax_zone' => $taxInfo['zone_name'],
-                'tax_rate' => $taxInfo['tax_rate'],
-                'tax_amount' => $taxInfo['tax_amount'],
-                'total_amount' => $transaction->amount + $transaction->fee_amount + $taxInfo['tax_amount']
+                'fee_amount' => $transactionAmounts['fee_amount'], // Commission extracted from product price
+                'tax_zone' => $transactionAmounts['tax_zone'],
+                'tax_rate' => $transactionAmounts['tax_rate'],
+                'tax_amount' => $transactionAmounts['tax_amount'],
+                'total_amount' => $transactionAmounts['total_amount']
+            ]);
+            
+            Log::info('Transaction amounts calculated with commission included in product price', [
+                'transaction_id' => $transaction->transaction_id,
+                'original_amount' => $transaction->amount,
+                'extracted_commission' => $transactionAmounts['fee_amount'],
+                'tax_amount' => $transactionAmounts['tax_amount'],
+                'total_amount' => $transactionAmounts['total_amount']
             ]);
             
             // Log the commission and tax application
@@ -486,17 +496,28 @@ class PaymentService
                 $transaction->status = 'pending';
                 $transaction->customer_id = $order->user_id;
                 
-                // Apply commission to calculate fee_amount, tax_amount, and total_amount
-                $this->commissionService->applyCommissionToTransaction($transaction);
+                // Use new commission calculation method - commission is already included in product price
+                $transactionAmounts = $this->commissionService->calculateTransactionAmountsWithCommissionIncluded(
+                    $transaction->amount, 
+                    $environmentId,
+                    $order
+                );
                 
-                // Get tax zone information
-                $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($transaction->amount, $environmentId, $order);
-                $transaction->tax_zone = $taxInfo['zone_name'];
-                $transaction->tax_rate = $taxInfo['tax_rate'];
-                $transaction->tax_amount = $taxInfo['tax_amount'];
+                // Update transaction with extracted commission, tax information and total amount
+                $transaction->fee_amount = $transactionAmounts['fee_amount']; // Commission extracted from product price
+                $transaction->tax_zone = $transactionAmounts['tax_zone'];
+                $transaction->tax_rate = $transactionAmounts['tax_rate'];
+                $transaction->tax_amount = $transactionAmounts['tax_amount'];
+                $transaction->total_amount = $transactionAmounts['total_amount'];
                 
-                // Update total_amount to include tax_amount
-                $transaction->total_amount = $transaction->amount + $transaction->fee_amount + $transaction->tax_amount;
+                Log::info('Transaction amounts calculated with commission included in product price (continue payment)', [
+                    'transaction_id' => $transaction->transaction_id,
+                    'order_id' => $order->id,
+                    'original_amount' => $transaction->amount,
+                    'extracted_commission' => $transactionAmounts['fee_amount'],
+                    'tax_amount' => $transactionAmounts['tax_amount'],
+                    'total_amount' => $transactionAmounts['total_amount']
+                ]);
                 
                 $transaction->save();
             } else {

@@ -138,7 +138,7 @@ class ProductController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Product::query()->with('category');
+        $query = Product::query()->with(['category', 'courses']);
         
         // Apply filters
         if ($request->has('search')) {
@@ -308,6 +308,7 @@ class ProductController extends Controller
 
         // Load the category relationship
         $product->load('category');
+        $product->load('courses');
 
         return response()->json([
             'status' => 'success',
@@ -548,6 +549,7 @@ class ProductController extends Controller
 
         // Load the category relationship
         $product->load('category');
+        $product->load('courses');
 
         return response()->json([
             'status' => 'success',

@@ -1477,7 +1477,7 @@ class StorefrontController extends Controller
             'billing_address' => 'required|string|max:255',
             'billing_city' => 'required|string|max:255',
             'billing_state' => 'required|string|max:255',
-            'billing_zip' => 'required|string|max:20',
+            'billing_zip' => 'nullable|string|max:20',
             'billing_country' => 'required|string|max:255',
         ]);
 
@@ -1565,7 +1565,7 @@ class StorefrontController extends Controller
                 $order->billing_address = $request->input('billing_address');
                 $order->billing_city = $request->input('billing_city');
                 $order->billing_state = $request->input('billing_state');
-                $order->billing_zip = $request->input('billing_zip');
+                $order->billing_zip = $request->input('billing_zip') ?? '00000';
                 $order->billing_country = $request->input('billing_country');
                 $order->notes = $request->input('notes');
                 $order->referral_id = $request->input('referral_id');
@@ -2280,6 +2280,84 @@ class StorefrontController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch tax rate',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Calculate product price with commission included (for product creation)
+     *
+     * @param Request $request
+     * @param string $environmentId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function calculateProductPriceWithCommission(Request $request)
+    {
+        $environmentId = session("current_environment_id");
+        $environment = $this->getEnvironmentById($environmentId);
+
+        if (!$environment) {
+            return response()->json(['message' => 'Environment not found'], 404);
+        }
+
+        // Validate the request
+        $validator = Validator::make($request->all(), [
+            'base_price' => 'required|numeric|min:0',
+            'discount_price' => 'nullable|numeric|min:0',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $basePrice = (float) $request->input('base_price');
+        $discountPrice = $request->input('discount_price') ? (float) $request->input('discount_price') : null;
+
+        try {
+            // Get commission rate from Commission model
+            $commission = \App\Models\Commission::getActiveCommission($environmentId);
+            $commissionRate = $commission ? ($commission->rate / 100) : 0.17; // Default to 17% if no commission found
+
+            // Calculate commission for base price
+            $baseCommission = $basePrice * $commissionRate;
+            $finalBasePrice = $basePrice + $baseCommission;
+
+            // Calculate commission for discount price if provided
+            $finalDiscountPrice = null;
+            $discountCommission = null;
+            if ($discountPrice !== null) {
+                $discountCommission = $discountPrice * $commissionRate;
+                $finalDiscountPrice = $discountPrice + $discountCommission;
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'original_base_price' => $basePrice,
+                    'commission_rate' => $commissionRate,
+                    'base_commission' => $baseCommission,
+                    'final_base_price' => $finalBasePrice,
+                    'original_discount_price' => $discountPrice,
+                    'discount_commission' => $discountCommission,
+                    'final_discount_price' => $finalDiscountPrice,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error calculating product price with commission: ' . $e->getMessage(), [
+                'environment_id' => $environmentId,
+                'base_price' => $basePrice,
+                'discount_price' => $discountPrice,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to calculate product price with commission',
                 'error' => $e->getMessage(),
             ], 500);
         }
