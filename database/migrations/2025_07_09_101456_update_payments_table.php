@@ -12,25 +12,64 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('payments', function (Blueprint $table) {
-            $table->decimal('fee_amount', 10, 2)->nullable();
-            $table->decimal('tax_amount', 10, 2)->nullable();
-            $table->decimal('tax_rate', 5, 2)->nullable();
-            $table->string('tax_zone')->nullable();
-            $table->decimal('total_amount', 10, 2)->nullable();
-            $table->decimal('converted_amount', 10, 2)->nullable();
-            $table->string('target_currency')->nullable();
-            $table->decimal('exchange_rate', 10, 6)->nullable();
-            $table->string('source_currency')->nullable();
-            $table->decimal('original_amount', 10, 2)->nullable();
-            $table->timestamp('conversion_date')->nullable();
-            $table->string('conversion_provider')->nullable();
-            $table->json('conversion_meta')->nullable();
-            $table->string('gateway_transaction_id')->nullable();
-            $table->string('gateway_status')->nullable();
-            $table->json('gateway_response')->nullable();
-            $table->timestamp('paid_at')->nullable();
-            $table->timestamp('refunded_at')->nullable();
-            $table->string('refund_reason')->nullable();
+            // Check if columns don't exist before adding them
+            if (!Schema::hasColumn('payments', 'fee_amount')) {
+                $table->decimal('fee_amount', 10, 2)->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'tax_amount')) {
+                $table->decimal('tax_amount', 10, 2)->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'tax_rate')) {
+                $table->decimal('tax_rate', 5, 2)->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'tax_zone')) {
+                $table->string('tax_zone')->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'total_amount')) {
+                $table->decimal('total_amount', 10, 2)->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'converted_amount')) {
+                $table->decimal('converted_amount', 10, 2)->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'target_currency')) {
+                $table->string('target_currency')->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'exchange_rate')) {
+                $table->decimal('exchange_rate', 10, 6)->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'source_currency')) {
+                $table->string('source_currency')->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'original_amount')) {
+                $table->decimal('original_amount', 10, 2)->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'conversion_date')) {
+                $table->timestamp('conversion_date')->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'conversion_provider')) {
+                $table->string('conversion_provider')->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'conversion_meta')) {
+                $table->json('conversion_meta')->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'gateway_transaction_id')) {
+                $table->string('gateway_transaction_id')->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'gateway_status')) {
+                $table->string('gateway_status')->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'gateway_response')) {
+                $table->json('gateway_response')->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'paid_at')) {
+                $table->timestamp('paid_at')->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'refunded_at')) {
+                $table->timestamp('refunded_at')->nullable();
+            }
+            if (!Schema::hasColumn('payments', 'refund_reason')) {
+                $table->string('refund_reason')->nullable();
+            }
         });
     }
 
