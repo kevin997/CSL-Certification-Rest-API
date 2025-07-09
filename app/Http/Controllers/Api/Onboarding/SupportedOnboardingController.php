@@ -3,16 +3,23 @@
 namespace App\Http\Controllers\Api\Onboarding;
 
 use App\Http\Controllers\Controller;
+use App\Mail\EnvironmentSetupMail;
 use App\Models\Environment;
 use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Notifications\EnvironmentCreatedNotification;
+use App\Services\SubscriptionManager;
 use App\Services\Tax\TaxZoneService;
+use App\Services\TelegramService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class SupportedOnboardingController extends Controller
@@ -40,7 +47,7 @@ class SupportedOnboardingController extends Controller
      *             @OA\Property(property="domain_type", type="string", enum={"subdomain", "custom"}, example="subdomain"),
      *             @OA\Property(property="domain", type="string", example="johns-academy"),
      *             @OA\Property(property="description", type="string", example="A platform for teaching computer science"),
-     *             @OA\Property(property="payment_method", type="string", enum={"stripe", "lygos"}, example="stripe"),
+     *             @OA\Property(property="payment_method", type="string", enum={"stripe", "lygos", "paypal", "monetbill"}, example="stripe"),
      *             @OA\Property(property="payment_token", type="string", example="tok_visa")
      *         )
      *     ),
@@ -57,7 +64,7 @@ class SupportedOnboardingController extends Controller
      *                 @OA\Property(property="environment_id", type="integer", example=1),
      *                 @OA\Property(property="subscription_id", type="integer", example=1),
      *                 @OA\Property(property="payment_id", type="integer", example=1),
-     *                 @OA\Property(property="domain", type="string", example="johns-academy.csl-cert.com")
+     *                 @OA\Property(property="domain", type="string", example="johns-academy.csl-brands.com")
      *             )
      *         )
      *     ),
@@ -73,10 +80,35 @@ class SupportedOnboardingController extends Controller
      */
     public function store(Request $request)
     {
-        // Validate the request
+        // First check if this is a retry for an existing user with failed payment
+        $existingUser = User::where('email', $request->email)->first();
+        $isRetryAttempt = false;
+        
+        if ($existingUser) {
+            // Check if user has a supported plan subscription with failed/pending payment
+            $failedSubscription = Subscription::where('user_id', $existingUser->id)
+                ->whereHas('plan', function($query) {
+                    $query->where('type', 'supported');
+                })
+                ->whereHas('payments', function($query) {
+                    $query->whereIn('status', ['failed', 'pending', 'processing']);
+                })
+                ->first();
+            
+            if ($failedSubscription) {
+                $isRetryAttempt = true;
+                Log::info('Retry attempt detected for supported onboarding', [
+                    'email' => $request->email,
+                    'user_id' => $existingUser->id,
+                    'subscription_id' => $failedSubscription->id
+                ]);
+            }
+        }
+        
+        // Validate the request with conditional email uniqueness
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
+            'email' => $isRetryAttempt ? 'required|string|email|max:255' : 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8',
             'environment_name' => 'required|string|max:255',
             'domain_type' => 'required|in:subdomain,custom',
@@ -84,7 +116,7 @@ class SupportedOnboardingController extends Controller
             'description' => 'nullable|string',
             'country_code' => 'nullable|string|size:2',
             'state_code' => 'nullable|string',
-            'payment_method' => 'required|in:stripe,lygos',
+            'payment_method' => 'required|in:stripe,lygos,paypal,monetbill',
             'payment_token' => 'required|string',
         ]);
 
@@ -94,10 +126,17 @@ class SupportedOnboardingController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
+        
+        // If this is a retry attempt, handle it differently
+        if ($isRetryAttempt) {
+            return $this->handleRetryPayment($request, $existingUser);
+        }
 
         try {
-            // Start a database transaction
-            return DB::transaction(function () use ($request) {
+            // Start a database transaction with explicit handling
+            DB::beginTransaction();
+            
+            try {
                 // Get the supported plan
                 $plan = Plan::where('type', 'supported')->firstOrFail();
                 
@@ -109,23 +148,6 @@ class SupportedOnboardingController extends Controller
                     return response()->json([
                         'status' => 'error',
                         'errors' => ['domain' => 'This domain is already taken']
-                    ], 422);
-                }
-                
-                // Process payment
-                $paymentResult = $this->processPayment(
-                    $request->payment_method,
-                    $request->payment_token,
-                    $plan->pricing['setup_fee'] ?? 177.00, // Default to $177 if not specified in plan
-                    $request->email,
-                    'CSL Brands Learning Platform Setup Fee'
-                );
-                
-                if (!$paymentResult['success']) {
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Payment processing failed',
-                        'error' => $paymentResult['error']
                     ], 422);
                 }
                 
@@ -150,50 +172,142 @@ class SupportedOnboardingController extends Controller
                     'state_code' => $request->state_code, // Null by default if not provided
                 ]);
                 
-                // Create the subscription
-                $subscription = Subscription::create([
+                // Use SubscriptionManager to handle subscription and payment creation
+                $subscriptionManager = app(SubscriptionManager::class);
+                
+                $subscriptionData = [
                     'user_id' => $user->id,
                     'plan_id' => $plan->id,
                     'environment_id' => $environment->id,
                     'billing_cycle' => 'monthly',
                     'start_date' => now(),
-                    'end_date' => now()->addMonth(), // Initial 1-month subscription
-                    'status' => 'active',
+                    'end_date' => now()->addMonth(),
+                    'status' => Subscription::STATUS_ACTIVE,
                     'is_trial' => false,
-                ]);
+                ];
                 
-                // Record the payment
-                $payment = Payment::create([
-                    'user_id' => $user->id,
-                    'subscription_id' => $subscription->id,
-                    'amount' => $plan->setup_fee ?? 177.00,
-                    'currency' => 'USD',
+                $paymentData = [
                     'payment_method' => $request->payment_method,
-                    'transaction_id' => $paymentResult['transaction_id'],
-                    'status' => Payment::STATUS_PENDING,
-                    'description' => 'Initial setup fee for Supported plan',
-                ]);
+                    'payment_token' => $request->payment_token,
+                    'currency' => 'USD',
+                    'amount' => $plan->setup_fee ?? 177.00,
+                ];
+                
+                $subscriptionResult = $subscriptionManager->createSubscriptionWithPayment(
+                    $subscriptionData,
+                    $paymentData
+                );
+                
+                if (!$subscriptionResult['success']) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Payment processing failed',
+                        'error' => $subscriptionResult['message']
+                    ], 422);
+                }
+                
+                $subscription = $subscriptionResult['subscription'];
+                $payment = $subscriptionResult['payment'];
+                $paymentResponseData = $subscriptionResult['payment_data'] ?? [];
                 
                 // Assign a CSL support representative (this would be implemented in a real application)
                 // SupportAssignment::create(['user_id' => $user->id, 'support_rep_id' => $availableRep->id]);
                 
-                // Send welcome email and notify support team (this would be implemented in a real application)
-                // Mail::to($user->email)->send(new SupportedWelcomeEmail($user, $environment));
-                // Mail::to('support@csl-brands.com')->send(new NewSupportedCustomerNotification($user, $environment));
+                // Generate admin credentials for the environment
+                $adminEmail = $user->email;
+                $adminPassword = $request->password;
+                
+                // Send environment setup mail
+                Mail::to($user->email)->send(new EnvironmentSetupMail(
+                    $environment,
+                    $user,
+                    $adminEmail,
+                    $adminPassword
+                ));
+                
+                // Send Telegram notification
+                try {
+                    $telegramService = app(TelegramService::class);
+                    $notification = 
+                        new EnvironmentCreatedNotification(
+                            $environment,
+                            $user,
+                            $adminEmail,
+                            $adminPassword,
+                            $telegramService
+                        );
+                   $notification->toTelegram($notification); 
+                } catch (\Exception $e) {
+                    // Log the error but don't fail the entire process
+                    Log::error('Failed to send Telegram notification for supported environment creation: ' . $e->getMessage());
+                }
+                
+                // Prepare response data with payment information
+                $responseData = [
+                    'user_id' => $user->id,
+                    'environment_id' => $environment->id,
+                    'subscription_id' => $subscription->id,
+                    'payment_id' => $payment->id,
+                    'domain' => $primaryDomain,
+                    'total_amount' => $payment->total_amount,
+                    'currency' => $payment->currency,
+                    'payment_method' => $payment->payment_method,
+                    'transaction_id' => $payment->transaction_id,
+                ];
+                
+                // Add payment-specific data based on payment method
+                if ($paymentResponseData) {
+                    if ($request->payment_method === 'stripe') {
+                        $responseData['payment_type'] = 'stripe';
+                        $responseData['client_secret'] = $paymentResponseData['client_secret'] ?? null;
+                        $responseData['publishable_key'] = $paymentResponseData['publishable_key'] ?? null;
+                        $responseData['payment_intent_id'] = $paymentResponseData['payment_intent_id'] ?? null;
+                    } elseif ($request->payment_method === 'monetbill') {
+                        $responseData['payment_type'] = 'monetbill';
+                        $responseData['redirect_url'] = $paymentResponseData['checkout_url'] ?? null;
+                        $responseData['converted_amount'] = $paymentResponseData['converted_amount'] ?? null;
+                        $responseData['converted_currency'] = $paymentResponseData['converted_currency'] ?? null;
+                    } else {
+                        $responseData['payment_type'] = 'standard';
+                        $responseData['redirect_url'] = $paymentResponseData['checkout_url'] ?? null;
+                    }
+                } else {
+                    $responseData['payment_type'] = 'standard';
+                }
+                
+                DB::commit();
                 
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Your supported learning environment has been created successfully!',
-                    'data' => [
-                        'user_id' => $user->id,
-                        'environment_id' => $environment->id,
-                        'subscription_id' => $subscription->id,
-                        'payment_id' => $payment->id,
-                        'domain' => $primaryDomain,
-                    ]
+                    'data' => $responseData
                 ], 201);
-            });
+                
+            } catch (\Exception $innerException) {
+                // Explicitly roll back the transaction if anything fails
+                DB::rollBack();
+                
+                Log::error('Failed to create supported environment', [
+                    'error' => $innerException->getMessage(),
+                    'trace' => $innerException->getTraceAsString(),
+                    'request_data' => $request->except(['password', 'payment_token'])
+                ]);
+                
+                throw $innerException; // Re-throw to be caught by outer catch
+            }
         } catch (\Exception $e) {
+            // Ensure transaction is rolled back in case the inner catch didn't execute
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+            
+            Log::error('Exception in supported environment creation', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request_email' => $request->email ?? null,
+                'request_domain' => $request->domain ?? null
+            ]);
+            
             return response()->json([
                 'status' => 'error',
                 'message' => 'An error occurred while creating your environment',
@@ -212,72 +326,182 @@ class SupportedOnboardingController extends Controller
     private function formatDomain($domainType, $domain)
     {
         if ($domainType === 'subdomain') {
-            // Sanitize subdomain (remove special characters, convert to lowercase)
-            $sanitizedDomain = Str::slug($domain);
-            return $sanitizedDomain . '.csl-cert.com';
-        } else {
-            // For custom domains, return as is
+            // Remove http:// or https:// if present
+            $domain = preg_replace('#^https?://#', '', $domain);
+            
+            // Convert to lowercase
+            $domain = strtolower($domain);
+            
+            // Remove any special characters not allowed in domains
+            $domain = preg_replace('/[^a-z0-9.-]/', '-', $domain);
+            
             return $domain;
+        } else {
+            // For custom domains, return as is after removing protocol
+            return preg_replace('#^https?://#', '', $domain);
         }
     }
     
     /**
-     * Process payment using the specified payment gateway.
+     * Handle retry payment for existing user with failed/pending payment
      *
-     * @param  string  $paymentMethod
-     * @param  string  $paymentToken
-     * @param  float  $amount
-     * @param  string  $email
-     * @param  string  $description
-     * @return array
+     * @param  \Illuminate\Http\Request  $request
+     * @param  \App\Models\User  $existingUser
+     * @return \Illuminate\Http\Response
      */
-    private function processPayment($paymentMethod, $paymentToken, $amount, $email, $description)
+    private function handleRetryPayment(Request $request, User $existingUser)
     {
-        // In a real application, this would integrate with actual payment gateways
-        // For now, we'll simulate a successful payment
-        
-        if ($paymentMethod === 'stripe') {
-            try {
-                // Simulate Stripe API call
-                // In a real application, you would use the Stripe SDK
-                // \Stripe\Charge::create([
-                //     'amount' => $amount * 100, // Stripe uses cents
-                //     'currency' => 'usd',
-                //     'source' => $paymentToken,
-                //     'description' => $description,
-                //     'receipt_email' => $email,
-                // ]);
-                
-                return [
-                    'success' => true,
-                    'transaction_id' => 'stripe_' . Str::random(16),
-                ];
-            } catch (\Exception $e) {
-                return [
-                    'success' => false,
-                    'error' => $e->getMessage(),
-                ];
+        try {
+            DB::beginTransaction();
+            
+            // Get the supported plan
+            $plan = Plan::where('type', 'supported')->firstOrFail();
+            
+            // Find the existing subscription with failed/pending payment
+            $subscription = Subscription::where('user_id', $existingUser->id)
+                ->whereHas('plan', function($query) {
+                    $query->where('type', 'supported');
+                })
+                ->whereHas('payments', function($query) {
+                    $query->whereIn('status', ['failed', 'pending', 'processing']);
+                })
+                ->first();
+            
+            if (!$subscription) {
+                throw new \Exception('No pending subscription found for retry');
             }
-        } elseif ($paymentMethod === 'lygos') {
-            try {
-                // Simulate Lygos payment processing
-                // In a real application, you would integrate with the Lygos API
-                
-                return [
-                    'success' => true,
-                    'transaction_id' => 'lygos_' . Str::random(16),
-                ];
-            } catch (\Exception $e) {
-                return [
-                    'success' => false,
-                    'error' => $e->getMessage(),
-                ];
+            
+            // Get the environment associated with this subscription
+            $environment = Environment::where('id', $subscription->environment_id)->first();
+            
+            if (!$environment) {
+                throw new \Exception('Environment not found for existing subscription');
             }
+            
+            // Find the most recent failed/pending payment for this subscription
+            $existingPayment = Payment::where('subscription_id', $subscription->id)
+                ->whereIn('status', ['failed', 'pending', 'processing'])
+                ->orderBy('created_at', 'desc')
+                ->first();
+            
+            if ($existingPayment) {
+                // Update the existing payment record with new payment attempt
+                $existingPayment->update([
+                    'payment_method' => $request->payment_method,
+                    'status' => 'processing',
+                    'updated_at' => now()
+                ]);
+                
+                Log::info('Retrying payment for existing subscription', [
+                    'user_id' => $existingUser->id,
+                    'subscription_id' => $subscription->id,
+                    'payment_id' => $existingPayment->id,
+                    'payment_method' => $request->payment_method
+                ]);
+            }
+            
+            // Use SubscriptionManager to retry the payment
+            $subscriptionManager = app(SubscriptionManager::class);
+            
+            $paymentData = [
+                'payment_method' => $request->payment_method,
+                'payment_token' => $request->payment_token,
+                'currency' => 'USD',
+                'amount' => $plan->setup_fee ?? 177.00,
+            ];
+            
+            // Try to process the payment using the existing subscription
+            $subscriptionResult = $subscriptionManager->retryPayment($subscription, $paymentData);
+            
+            if (!$subscriptionResult['success']) {
+                // Payment failed again - log and return error
+                Log::error('Payment retry failed for supported onboarding', [
+                    'user_id' => $existingUser->id,
+                    'subscription_id' => $subscription->id,
+                    'error' => $subscriptionResult['message']
+                ]);
+                
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Payment processing failed',
+                    'error' => $subscriptionResult['message']
+                ], 422);
+            }
+            
+            $payment = $subscriptionResult['payment'];
+            $paymentResponseData = $subscriptionResult['payment_data'] ?? [];
+            
+            // Update subscription status to active if payment succeeded
+            $subscription->update([
+                'status' => Subscription::STATUS_ACTIVE,
+                'updated_at' => now()
+            ]);
+            
+            // Update environment to active if not already
+            $environment->update([
+                'is_active' => true,
+                'updated_at' => now()
+            ]);
+            
+            
+            // Prepare response data
+            $responseData = [
+                'user_id' => $existingUser->id,
+                'environment_id' => $environment->id,
+                'subscription_id' => $subscription->id,
+                'payment_id' => $payment->id,
+                'domain' => $environment->primary_domain,
+                'total_amount' => $payment->total_amount,
+                'currency' => $payment->currency,
+                'payment_method' => $payment->payment_method,
+                'transaction_id' => $payment->transaction_id,
+                'retry_attempt' => true,
+            ];
+            
+            // Add payment-specific data based on payment method
+            if ($paymentResponseData) {
+                if ($request->payment_method === 'stripe') {
+                    $responseData['payment_type'] = 'stripe';
+                    $responseData['client_secret'] = $paymentResponseData['client_secret'] ?? null;
+                    $responseData['publishable_key'] = $paymentResponseData['publishable_key'] ?? null;
+                    $responseData['payment_intent_id'] = $paymentResponseData['payment_intent_id'] ?? null;
+                } elseif ($request->payment_method === 'monetbill') {
+                    $responseData['payment_type'] = 'monetbill';
+                    $responseData['redirect_url'] = $paymentResponseData['checkout_url'] ?? null;
+                    $responseData['converted_amount'] = $paymentResponseData['converted_amount'] ?? null;
+                    $responseData['converted_currency'] = $paymentResponseData['converted_currency'] ?? null;
+                } else {
+                    $responseData['payment_type'] = 'standard';
+                    $responseData['redirect_url'] = $paymentResponseData['checkout_url'] ?? null;
+                }
+            } else {
+                $responseData['payment_type'] = 'standard';
+            }
+            
+            DB::commit();
+            
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Payment retry successful! Your supported learning environment is now active.',
+                'data' => $responseData
+            ], 200);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Exception in supported onboarding retry', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'user_id' => $existingUser->id,
+                'request_email' => $request->email
+            ]);
+            
+            return response()->json([
+                'status' => 'error',
+                'message' => 'An error occurred while retrying your payment',
+                'error' => $e->getMessage()
+            ], 500);
         }
-        
-        return [
-            'success' => false,
-            'error' => 'Invalid payment method',
-        ];
     }
+    
 }

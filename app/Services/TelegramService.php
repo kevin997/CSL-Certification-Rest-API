@@ -14,28 +14,36 @@ class TelegramService
     
     /**
      * Ensure URL is valid for Telegram buttons.
-     * Telegram doesn't allow localhost URLs, so we need to convert them to a valid format.
+     * - Converts HTTP URLs to HTTPS
+     * - Handles localhost URLs for development environments
      *
      * @param string $url
      * @return string
      */
     private function ensureValidTelegramUrl(string $url): string
     {
+        $originalUrl = $url;
+        
+        // Convert HTTP to HTTPS for all URLs
+        if (strpos($url, 'http://') === 0) {
+            $url = str_replace('http://', 'https://', $url);
+        }
+        
         // Check if URL contains localhost or 127.0.0.1
         if (strpos($url, 'localhost') !== false || strpos($url, '127.0.0.1') !== false) {
             // For development/testing, we'll use a placeholder domain that redirects properly
             // In a real-world scenario, you might want to use a URL shortener service or a proper domain
             
-            // Option 1: Use a service like ngrok or localtunnel for local development
-            // Option 2: Use a placeholder that clearly indicates it's a development URL
-            
-            // For now, we'll use example.com as a placeholder
-            // In production, you should replace this with your actual domain
-            $url = str_replace(['http://localhost', 'http://127.0.0.1'], 'https://example.com', $url);
-            
-            // Log that we've modified the URL for Telegram compatibility
-            Log::info('Modified localhost URL for Telegram button compatibility', [
-                'original_url' => $url,
+            // Replace localhost URLs with https://example.com
+            $url = str_replace(['https://localhost', 'https://127.0.0.1', 'http://localhost', 'http://127.0.0.1'], 
+                               'https://example.com', 
+                               $url);
+        }
+        
+        // Log if we've modified the URL
+        if ($originalUrl !== $url) {
+            Log::info('Modified URL for Telegram button compatibility', [
+                'original_url' => $originalUrl,
                 'modified_url' => $url
             ]);
         }

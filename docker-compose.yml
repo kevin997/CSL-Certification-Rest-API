@@ -157,6 +157,57 @@ services:
       timeout: 5s
       retries: 3
 
+  # Wiki.js Documentation Service
+  wiki-db:
+    image: postgres:15-alpine
+    container_name: csl-wiki-db
+    environment:
+      POSTGRES_DB: wiki
+      POSTGRES_PASSWORD: ${WIKI_DB_PASSWORD:-wikijsrocks}
+      POSTGRES_USER: ${WIKI_DB_USER:-wikijs}
+    restart: unless-stopped
+    volumes:
+      - wiki-db-data:/var/lib/postgresql/data
+    networks:
+      - csl-network
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "wikijs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  wiki:
+    image: ghcr.io/requarks/wiki:2
+    container_name: csl-wiki
+    depends_on:
+      wiki-db:
+        condition: service_healthy
+    environment:
+      DB_TYPE: postgres
+      DB_HOST: wiki-db
+      DB_PORT: 5432
+      DB_USER: ${WIKI_DB_USER:-wikijs}
+      DB_PASS: ${WIKI_DB_PASSWORD:-wikijsrocks}
+      DB_NAME: wiki
+    restart: unless-stopped
+    ports:
+      - "8090:3000"
+    volumes:
+      - ./wiki-data:/wiki/data
+      - ./wiki-uploads:/wiki/uploads
+    networks:
+      - csl-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 networks:
   csl-network:
     driver: bridge
+
+volumes:
+  wiki-db-data:
+    driver: local

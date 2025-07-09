@@ -268,6 +268,14 @@ class User extends Authenticatable
     }
 
     /**
+     * Get the subscriptions for this user.
+     */
+    public function subscriptions(): HasMany
+    {
+        return $this->hasMany(Subscription::class, 'user_id');
+    }
+
+    /**
      * Get the disk that profile photos are stored on.
      *
      * @return string

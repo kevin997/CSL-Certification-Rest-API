@@ -187,6 +187,9 @@ Route::get('/public/plans', [PlanController::class, 'index']);
 Route::get('/public/plans/{id}', [PlanController::class, 'show']);
 Route::get('/public/plans/type/{type}', [PlanController::class, 'getByType']);
 Route::post('/public/plans/compare', [PlanController::class, 'compare']);
+
+// Public Tax Rate route (for onboarding)
+Route::post('/public/tax-rate', [OnboardingController::class, 'getTaxRate']);
 // Environment management routes
 Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('environments', EnvironmentController::class);

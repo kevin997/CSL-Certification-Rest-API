@@ -3,16 +3,23 @@
 namespace App\Http\Controllers\Api\Onboarding;
 
 use App\Http\Controllers\Controller;
+use App\Mail\EnvironmentSetupMail;
 use App\Models\Environment;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Notifications\EnvironmentCreatedNotification;
 use App\Services\Tax\TaxZoneService;
+use App\Services\TelegramService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
+
 use Illuminate\Support\Str;
 
 class DemoOnboardingController extends Controller
@@ -148,8 +155,34 @@ class DemoOnboardingController extends Controller
                     'referral_code' => $request->referral_code,
                 ]);
                 
-                // Send welcome email (this would be implemented in a real application)
-                // Mail::to($user->email)->send(new DemoWelcomeEmail($user, $environment, $expiresAt));
+                // Generate admin credentials for the environment
+                $adminEmail = $user->email;
+                $adminPassword = $request->password;
+                
+                // Send environment setup mail
+                Mail::to($user->email)->send(new EnvironmentSetupMail(
+                    $environment,
+                    $user,
+                    $adminEmail,
+                    $adminPassword
+                ));
+                
+                // Send Telegram notification
+                try {
+                    $telegramService = app(TelegramService::class);
+                    $notification =
+                        new EnvironmentCreatedNotification(
+                            $environment,
+                            $user,
+                            $adminEmail,
+                            $adminPassword,
+                            $telegramService
+                        );
+                    $notification->toTelegram($notification);
+                } catch (\Exception $e) {
+                    // Log the error but don't fail the entire process
+                    Log::error('Failed to send Telegram notification for demo environment creation: ' . $e->getMessage());
+                }
                 
                 return response()->json([
                     'status' => 'success',
@@ -182,12 +215,19 @@ class DemoOnboardingController extends Controller
     private function formatDomain($domainType, $domain)
     {
         if ($domainType === 'subdomain') {
-            // Sanitize subdomain (remove special characters, convert to lowercase)
-            $sanitizedDomain = Str::slug($domain);
-            return $sanitizedDomain . '.csl-cert.com';
-        } else {
-            // For custom domains, return as is
+            // Remove http:// or https:// if present
+            $domain = preg_replace('#^https?://#', '', $domain);
+            
+            // Convert to lowercase
+            $domain = strtolower($domain);
+            
+            // Remove any special characters not allowed in domains
+            $domain = preg_replace('/[^a-z0-9.-]/', '-', $domain);
+            
             return $domain;
+        } else {
+            // For custom domains, return as is after removing protocol
+            return preg_replace('#^https?://#', '', $domain);
         }
     }
 }

@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Api\Onboarding;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Environment;
+use App\Services\Tax\TaxZoneService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 
 /**
  * @OA\Tag(
@@ -17,6 +19,18 @@ use Illuminate\Support\Facades\Validator;
  */
 class OnboardingController extends Controller
 {
+    /**
+     * Tax zone service instance
+     */
+    protected TaxZoneService $taxZoneService;
+
+    /**
+     * Create a new controller instance.
+     */
+    public function __construct(TaxZoneService $taxZoneService)
+    {
+        $this->taxZoneService = $taxZoneService;
+    }
     /**
      * Check if email already exists in the user table
      * 
@@ -302,5 +316,136 @@ class OnboardingController extends Controller
                 'suggestions' => $domainSuggestions
             ]
         ], 200);
+    }
+
+    /**
+     * Get tax rate for a specific location (open endpoint for onboarding)
+     * 
+     * @OA\Post(
+     *     path="/api/public/tax-rate",
+     *     operationId="getTaxRate",
+     *     tags={"Onboarding"},
+     *     summary="Get tax rate for a specific location",
+     *     description="Returns tax rate information for a given country and optional state/province. This is a public endpoint that doesn't require authentication.",
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"country_code"},
+     *             @OA\Property(property="country_code", type="string", example="US", description="2-letter ISO country code"),
+     *             @OA\Property(property="state_code", type="string", example="CA", description="State/province code (optional)")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Tax rate information",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="tax_rate", type="number", format="float", example=8.25, description="Tax rate percentage"),
+     *                 @OA\Property(property="commission_rate", type="number", format="float", example=0, description="Commission rate (deprecated, always 0)"),
+     *                 @OA\Property(property="tax_zone", type="object",
+     *                     @OA\Property(property="id", type="integer", example=1),
+     *                     @OA\Property(property="name", type="string", example="California"),
+     *                     @OA\Property(property="country_code", type="string", example="US"),
+     *                     @OA\Property(property="state_code", type="string", example="CA"),
+     *                     @OA\Property(property="rate", type="number", format="float", example=8.25)
+     *                 )
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Tax zone not found",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean", example=false),
+     *             @OA\Property(property="message", type="string", example="No tax zone found for the specified location"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="tax_rate", type="number", format="float", example=0),
+     *                 @OA\Property(property="commission_rate", type="number", format="float", example=0),
+     *                 @OA\Property(property="tax_zone", type="null")
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=422,
+     *         description="Validation error",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean", example=false),
+     *             @OA\Property(property="message", type="string", example="Invalid country code format"),
+     *             @OA\Property(property="errors", type="object")
+     *         )
+     *     )
+     * )
+     */
+    public function getTaxRate(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'country_code' => 'required|string|size:2|alpha',
+            'state_code' => 'nullable|string|max:10'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid location parameters',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $countryCode = strtoupper($request->input('country_code'));
+        $stateCode = $request->input('state_code') ? strtoupper($request->input('state_code')) : null;
+
+        try {
+            // Use the TaxZoneService to find the tax zone
+            $taxZone = $this->taxZoneService->findTaxZone($countryCode, $stateCode);
+
+            if ($taxZone) {
+                // Tax zone found - return the tax rate information
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'tax_rate' => (float) $taxZone->tax_rate,
+                        'commission_rate' => 0.0, // Commission is now included in product price
+                        'tax_zone' => [
+                            'id' => $taxZone->id,
+                            'name' => $taxZone->zone_name,
+                            'country_code' => $taxZone->country_code,
+                            'state_code' => $taxZone->state_code,
+                            'rate' => (float) $taxZone->tax_rate
+                        ]
+                    ]
+                ], 200);
+            } else {
+                // No tax zone found - return 0% tax rate
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No tax zone found for the specified location',
+                    'data' => [
+                        'tax_rate' => 0.0,
+                        'commission_rate' => 0.0,
+                        'tax_zone' => null
+                    ]
+                ], 404);
+            }
+        } catch (\Exception $e) {
+            // Log the error for debugging
+            Log::error('Tax rate lookup failed', [
+                'country_code' => $countryCode,
+                'state_code' => $stateCode,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            // Return error response
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve tax rate information',
+                'data' => [
+                    'tax_rate' => 0.0,
+                    'commission_rate' => 0.0,
+                    'tax_zone' => null
+                ]
+            ], 500);
+        }
     }
 }

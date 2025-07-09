@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Subscription extends Model
 {
@@ -16,6 +17,7 @@ class Subscription extends Model
      * @var array<int, string>
      */
     protected $fillable = [
+        'user_id',
         'environment_id',
         'plan_id',
         'billing_cycle', // 'monthly', 'annual'
@@ -52,6 +54,14 @@ class Subscription extends Model
         'next_payment_at' => 'datetime',
         'setup_fee_paid' => 'boolean',
     ];
+
+    /**
+     * Get the user that owns the subscription.
+     */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
 
     /**
      * Get the environment that owns the subscription.
@@ -103,5 +113,13 @@ class Subscription extends Model
     {
         return $this->ends_at !== null && 
                $this->ends_at->isPast();
+    }
+
+    /**
+     * Get the payments for the subscription.
+     */
+    public function payments()
+    {
+        return $this->hasMany(Payment::class);
     }
 }
