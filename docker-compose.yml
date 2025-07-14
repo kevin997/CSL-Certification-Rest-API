@@ -106,6 +106,7 @@ services:
         condition: service_started
     volumes:
       - ./storage:/var/www/html/storage
+      - ./backups:/var/www/html/storage/app/backups
     environment:
       - CONTAINER_ROLE=scheduler
       # AWS RDS connection settings
@@ -116,10 +117,23 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - APP_ENV=${APP_ENV}
       - APP_DEBUG=${APP_DEBUG:-false}
+      # Email configuration for backups
+      - MAIL_MAILER=${MAIL_MAILER:-smtp}
+      - MAIL_HOST=${MAIL_HOST:-smtp.gmail.com}
+      - MAIL_PORT=${MAIL_PORT:-587}
+      - MAIL_USERNAME=${MAIL_USERNAME:-system@example.com}
+      - MAIL_PASSWORD=${MAIL_PASSWORD}
+      - MAIL_ENCRYPTION=${MAIL_ENCRYPTION:-tls}
+      - MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS:-noreply@example.com}
+      - MAIL_FROM_NAME="CSL Certification System"
+      # AWS credentials for RDS backup
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
     networks:
       - csl-network
     healthcheck:
-      test: ["CMD-SHELL", "ps aux | grep -v grep | grep 'cron' || exit 1"]
+      test: ["CMD-SHELL", "ps aux | grep -v grep | grep 'supervisord' || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

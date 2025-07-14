@@ -7,6 +7,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Schedule;
 use App\Console\Commands\GenerateMonthlyInvoices;
 use App\Console\Commands\RegularizeCompletedOrders;
+use App\Console\Commands\BackupRdsDatabase;
 
 
 
@@ -24,3 +25,14 @@ Schedule::command(RegularizeCompletedOrders::class)
     ->everyFiveMinutes()
     ->withoutOverlapping()
     ->runInBackground();
+    
+// Run RDS database backup daily at 2:00 AM and email to data analyst
+Schedule::command('rds:backup --email=data.analyst@cfpcsl.com')
+    ->dailyAt('02:00')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->emailOutputTo('kevinliboire@gmail.com')
+    ->onFailure(function () {
+        // Log failure or send notification
+        \Illuminate\Support\Facades\Log::error('RDS backup failed');
+    });

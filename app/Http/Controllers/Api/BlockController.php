@@ -829,17 +829,47 @@ class BlockController extends Controller
                 'message' => 'You do not have permission to add blocks to this template',
             ], 403);
         }
-        $data = $request->all();
-        if (!is_array($data)) {
+        
+        // Get the request data and ensure it's properly formatted
+        $data = $request->json()->all();
+        
+        // Check if there's an environment_id in the root level (not part of blocks data)
+        $environmentId = null;
+        if (isset($data['environment_id'])) {
+            $environmentId = $data['environment_id'];
+            unset($data['environment_id']); // Remove it from the data array
+        }
+        
+        // Check if the data is in the expected format (array of blocks)
+        if (!is_array($data) || empty($data)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Invalid input format. Expected an array of blocks.'
             ], 422);
         }
+        
+        // If the data is not numerically indexed (e.g., it's an object with numeric keys),
+        // extract just the block data (ignoring any non-block properties)
+        $blocksData = [];
+        foreach ($data as $key => $value) {
+            // Only include array items that have a 'title' field (likely blocks)
+            if (is_array($value) && isset($value['title'])) {
+                $blocksData[] = $value;
+            }
+        }
+        
+        // If no valid blocks were found, return an error
+        if (empty($blocksData)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No valid block data found in the request.'
+            ], 422);
+        }
+        
         $created = [];
         \Illuminate\Support\Facades\DB::beginTransaction();
         try {
-            foreach ($data as $blockData) {
+            foreach ($blocksData as $blockData) {
                 $blockValidator = \Illuminate\Support\Facades\Validator::make($blockData, [
                     'title' => 'required|string|max:255',
                     'description' => 'nullable|string',

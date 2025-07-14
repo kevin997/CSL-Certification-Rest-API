@@ -16,4 +16,5 @@ enum ActivityType: string
     case CERTIFICATE = 'certificate';
     case FEEDBACK = 'feedback';
     case WEBINAR = 'webinar';
+    case QUESTIONNAIRE = 'questionnaire';
 }
