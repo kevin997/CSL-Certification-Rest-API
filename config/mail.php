@@ -14,7 +14,7 @@ return [
     |
     */
 
-    'default' => 'postmark',
+    'default' => 'phpmailer',
 
     /*
     |--------------------------------------------------------------------------
@@ -49,6 +49,19 @@ return [
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url(env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
         
+        'phpmailer' => [
+            'transport' => 'phpmailer',
+            'host' => env('PHPMAILER_HOST', 'node127-eu.n0c.com'),
+            'port' => env('PHPMAILER_PORT', 465),
+            'username' => env('PHPMAILER_USERNAME', 'no.reply@cfpcsl.com'),
+            'password' => env('PHPMAILER_PASSWORD', 'm?6Vx,mHrH'),
+            'encryption' => env('PHPMAILER_ENCRYPTION', 'ssl'), // ssl, tls, or null
+            'auth' => env('PHPMAILER_AUTH', true),
+            'charset' => env('PHPMAILER_CHARSET', 'UTF-8'),
+            'timeout' => env('PHPMAILER_TIMEOUT', 60),
+            'debug' => env('PHPMAILER_DEBUG', 0), // 0 = off, 1 = client, 2 = client and server
+        ],
+
         'mailjet' => [
             'transport' => 'mailjet',
             'key' => env('MAILJET_APIKEY'),
