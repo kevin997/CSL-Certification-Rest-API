@@ -9335,6 +9335,163 @@
                 }
             }
         },
+        "/api/public/tax-rate": {
+            "post": {
+                "tags": [
+                    "Onboarding"
+                ],
+                "summary": "Get tax rate for a specific location",
+                "description": "Returns tax rate information for a given country and optional state/province. This is a public endpoint that doesn't require authentication.",
+                "operationId": "getTaxRate",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "country_code"
+                                ],
+                                "properties": {
+                                    "country_code": {
+                                        "description": "2-letter ISO country code",
+                                        "type": "string",
+                                        "example": "US"
+                                    },
+                                    "state_code": {
+                                        "description": "State/province code (optional)",
+                                        "type": "string",
+                                        "example": "CA"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Tax rate information",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "tax_rate": {
+                                                    "description": "Tax rate percentage",
+                                                    "type": "number",
+                                                    "format": "float",
+                                                    "example": 8.25
+                                                },
+                                                "commission_rate": {
+                                                    "description": "Commission rate (deprecated, always 0)",
+                                                    "type": "number",
+                                                    "format": "float",
+                                                    "example": 0
+                                                },
+                                                "tax_zone": {
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "integer",
+                                                            "example": 1
+                                                        },
+                                                        "name": {
+                                                            "type": "string",
+                                                            "example": "California"
+                                                        },
+                                                        "country_code": {
+                                                            "type": "string",
+                                                            "example": "US"
+                                                        },
+                                                        "state_code": {
+                                                            "type": "string",
+                                                            "example": "CA"
+                                                        },
+                                                        "rate": {
+                                                            "type": "number",
+                                                            "format": "float",
+                                                            "example": 8.25
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Tax zone not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "No tax zone found for the specified location"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "tax_rate": {
+                                                    "type": "number",
+                                                    "format": "float",
+                                                    "example": 0
+                                                },
+                                                "commission_rate": {
+                                                    "type": "number",
+                                                    "format": "float",
+                                                    "example": 0
+                                                },
+                                                "tax_zone": {
+                                                    "type": "null"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Invalid country code format"
+                                        },
+                                        "errors": {
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/onboarding/standalone": {
             "post": {
                 "tags": [
@@ -9518,7 +9675,9 @@
                                         "type": "string",
                                         "enum": [
                                             "stripe",
-                                            "lygos"
+                                            "lygos",
+                                            "paypal",
+                                            "monetbill"
                                         ],
                                         "example": "stripe"
                                     },
@@ -9567,7 +9726,7 @@
                                                 },
                                                 "domain": {
                                                     "type": "string",
-                                                    "example": "johns-academy.csl-cert.com"
+                                                    "example": "johns-academy.csl-brands.com"
                                                 }
                                             },
                                             "type": "object"
