@@ -66,13 +66,23 @@ class BackupRdsDatabase extends Command
             
             $backupFilePath = "{$localBackupPath}/{$backupFileName}";
             
-            // Build the mysqldump command
+            // Build the mysqldump command with SSL support
+            $sslCertPath = env('RDS_SSL_CERT_PATH', storage_path('ssl/rds-combined-ca-bundle.pem'));
+            $sslMode = env('RDS_SSL_MODE', 'REQUIRED');
+            
+            // Check if SSL certificate file exists
+            if (!file_exists($sslCertPath)) {
+                throw new \Exception("SSL certificate file not found: {$sslCertPath}");
+            }
+            
             $command = sprintf(
-                'mysqldump --host=%s --port=%s --user=%s --password=%s %s > %s',
+                'mysqldump --host=%s --port=%s --user=%s --password=%s --ssl-ca=%s --ssl-mode=%s %s > %s',
                 escapeshellarg($config['host']),
                 escapeshellarg($config['port'] ?? 3306),
                 escapeshellarg($config['username']),
                 escapeshellarg($config['password']),
+                escapeshellarg($sslCertPath),
+                escapeshellarg($sslMode),
                 escapeshellarg($databaseName),
                 escapeshellarg($backupFilePath)
             );
