@@ -41,7 +41,8 @@ class WeeklyAnalyticsReportCommand extends Command
         'kevinliboire@gmail.com',
         'data.analyst@cfpcsl.com',
         'romeo.ngangnang@cfpcsl.com',
-        'direction@cfpcsl.com'
+        'direction@cfpcsl.com',
+        'comptabilite@cfpcsl.com'
     ];
 
     /**
