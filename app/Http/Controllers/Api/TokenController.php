@@ -58,8 +58,9 @@ class TokenController extends Controller
 
         // Attempt to authenticate the user as an environment owner or admin
         if (!Auth::attempt($request->only('email', 'password'))) {
+            // Generic error message to prevent username enumeration
             throw ValidationException::withMessages([
-                'email' => ['The provided credentials are incorrect.'],
+                'credentials' => ['Invalid credentials provided.'],
             ]);
         }
 
@@ -72,7 +73,7 @@ class TokenController extends Controller
             
             if (!$environment) {
                 throw ValidationException::withMessages([
-                    'environment_id' => ['The specified environment does not exist.'],
+                    'credentials' => ['Invalid credentials provided.'],
                 ]);
             }
             
@@ -87,7 +88,7 @@ class TokenController extends Controller
                 
                 if (!$environmentUser) {
                     throw ValidationException::withMessages([
-                        'environment_id' => ['You do not have access to this environment.'],
+                        'credentials' => ['Invalid credentials provided.'],
                     ]);
                 }
             }
@@ -185,7 +186,7 @@ class TokenController extends Controller
         
         if (!$user) {
             throw ValidationException::withMessages([
-                'email' => ['User account not found.'],
+                'credentials' => ['Invalid credentials provided.'],
             ]);
         }
         

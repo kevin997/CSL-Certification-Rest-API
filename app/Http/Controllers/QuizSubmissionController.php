@@ -69,23 +69,262 @@ class QuizSubmissionController extends Controller
             'created_by' => Auth::id(),
         ]);
 
-        // Store each question response
+        // Store each question response with server-side validation
+        $totalServerScore = 0;
+        $totalMaxScore = 0;
+        $validationWarnings = [];
+        
         foreach ($request->responses as $responseData) {
+            // Validate answer server-side
+            $question = QuizQuestion::with(['options'])->find($responseData['quiz_question_id']);
+            $validationResult = $this->validateAnswer($question, $responseData['user_response'], $responseData['is_correct'], $responseData['points_earned']);
+            
+            if (!$validationResult['valid']) {
+                $validationWarnings[] = [
+                    'question_id' => $responseData['quiz_question_id'],
+                    'message' => $validationResult['message'],
+                    'client_correct' => $responseData['is_correct'],
+                    'server_correct' => $validationResult['server_is_correct'],
+                    'client_points' => $responseData['points_earned'],
+                    'server_points' => $validationResult['server_points_earned']
+                ];
+            }
+            
+            // Use server-calculated values if validation failed, otherwise trust client
+            $finalIsCorrect = $validationResult['valid'] ? $responseData['is_correct'] : $validationResult['server_is_correct'];
+            $finalPointsEarned = $validationResult['valid'] ? $responseData['points_earned'] : $validationResult['server_points_earned'];
+            
+            $totalServerScore += $finalPointsEarned;
+            $totalMaxScore += $responseData['max_points'];
+            
             QuizQuestionResponse::create([
                 'quiz_submission_id' => $submission->id,
                 'quiz_question_id' => $responseData['quiz_question_id'],
                 'user_response' => $responseData['user_response'],
-                'is_correct' => $responseData['is_correct'],
-                'points_earned' => $responseData['points_earned'],
+                'is_correct' => $finalIsCorrect,
+                'points_earned' => $finalPointsEarned,
                 'max_points' => $responseData['max_points'],
             ]);
         }
+        
+        // Update submission with server-calculated score if there were discrepancies
+        if (count($validationWarnings) > 0 && $totalMaxScore > 0) {
+            $serverPercentageScore = round(($totalServerScore / $totalMaxScore) * 100);
+            $submission->update([
+                'score' => $serverPercentageScore,
+                'percentage_score' => $serverPercentageScore,
+                'is_passed' => $serverPercentageScore >= ($quizContent->passing_score ?? 70)
+            ]);
+        }
 
-        // Return the submission with responses
-        return response()->json([
+        // Return the submission with responses and validation info
+        $response = [
             'message' => 'Quiz submission created successfully',
             'submission' => $submission->load('responses'),
-        ], 201);
+        ];
+        
+        if (count($validationWarnings) > 0) {
+            $response['validation_warnings'] = $validationWarnings;
+            $response['message'] = 'Quiz submission created with validation adjustments';
+        }
+        
+        return response()->json($response, 201);
+    }
+
+    /**
+     * Validate user answer against correct answer stored in database
+     */
+    private function validateAnswer($question, $userResponse, $clientIsCorrect, $clientPointsEarned)
+    {
+        if (!$question) {
+            return [
+                'valid' => false,
+                'message' => 'Question not found',
+                'server_is_correct' => false,
+                'server_points_earned' => 0
+            ];
+        }
+
+        // Handle null/empty responses
+        if ($userResponse === null || $userResponse === '' || (is_array($userResponse) && empty($userResponse))) {
+            return [
+                'valid' => $clientIsCorrect === false && $clientPointsEarned === 0,
+                'message' => $clientIsCorrect ? 'Client marked empty response as correct' : 'Empty response correctly handled',
+                'server_is_correct' => false,
+                'server_points_earned' => 0
+            ];
+        }
+
+        $serverResult = $this->calculateCorrectness($question, $userResponse);
+        
+        // Compare server calculation with client submission
+        $scoresMatch = abs($serverResult['points_earned'] - $clientPointsEarned) < 0.01; // Allow small floating point differences
+        $correctnessMatches = $serverResult['is_correct'] === $clientIsCorrect;
+        
+        return [
+            'valid' => $scoresMatch && $correctnessMatches,
+            'message' => $scoresMatch && $correctnessMatches ? 'Validation passed' : 'Score/correctness mismatch',
+            'server_is_correct' => $serverResult['is_correct'],
+            'server_points_earned' => $serverResult['points_earned']
+        ];
+    }
+
+    /**
+     * Calculate correctness and points for a question response
+     */
+    private function calculateCorrectness($question, $userResponse)
+    {
+        switch ($question->question_type) {
+            case 'multiple_choice':
+                return $this->validateMultipleChoice($question, $userResponse);
+            case 'multiple_response':
+                return $this->validateMultipleResponse($question, $userResponse);
+            case 'true_false':
+                return $this->validateTrueFalse($question, $userResponse);
+            case 'questionnaire':
+                return $this->validateQuestionnaire($question, $userResponse);
+            case 'short_answer':
+                return $this->validateShortAnswer($question, $userResponse);
+            default:
+                // For question types we don't validate server-side, trust client
+                return ['is_correct' => true, 'points_earned' => $question->points ?? 1];
+        }
+    }
+
+    private function validateMultipleChoice($question, $userResponse)
+    {
+        $selectedIndex = is_array($userResponse) && isset($userResponse['index']) 
+            ? $userResponse['index'] 
+            : (is_numeric($userResponse) ? intval($userResponse) : null);
+            
+        if ($selectedIndex === null) {
+            return ['is_correct' => false, 'points_earned' => 0];
+        }
+        
+        $options = $question->options ?? [];
+        $correctOption = collect($options)->firstWhere('is_correct', true);
+        $selectedOption = $options[$selectedIndex] ?? null;
+        
+        $isCorrect = $selectedOption && $selectedOption['is_correct'] === true;
+        
+        return [
+            'is_correct' => $isCorrect,
+            'points_earned' => $isCorrect ? ($question->points ?? 1) : 0
+        ];
+    }
+
+    private function validateMultipleResponse($question, $userResponse)
+    {
+        if (!is_array($userResponse)) {
+            return ['is_correct' => false, 'points_earned' => 0];
+        }
+        
+        $options = $question->options ?? [];
+        $correctIndices = [];
+        foreach ($options as $index => $option) {
+            if ($option['is_correct'] === true) {
+                $correctIndices[] = $index;
+            }
+        }
+        
+        $selectedIndices = array_map('intval', $userResponse);
+        sort($selectedIndices);
+        sort($correctIndices);
+        
+        $isFullyCorrect = $selectedIndices === $correctIndices;
+        
+        // Calculate partial score
+        $correctSelections = count(array_intersect($selectedIndices, $correctIndices));
+        $incorrectSelections = count(array_diff($selectedIndices, $correctIndices));
+        $totalCorrect = count($correctIndices);
+        
+        $partialScore = $totalCorrect > 0 ? max(0, ($correctSelections - $incorrectSelections) / $totalCorrect) : 0;
+        
+        return [
+            'is_correct' => $isFullyCorrect,
+            'points_earned' => $partialScore * ($question->points ?? 1)
+        ];
+    }
+
+    private function validateTrueFalse($question, $userResponse)
+    {
+        $userBool = $userResponse === true || $userResponse === 'true' || $userResponse === 1;
+        $options = $question->options ?? [];
+        $correctOption = collect($options)->firstWhere('is_correct', true);
+        $correctAnswer = $correctOption && $correctOption['text'] === 'True';
+        
+        $isCorrect = $userBool === $correctAnswer;
+        
+        return [
+            'is_correct' => $isCorrect,
+            'points_earned' => $isCorrect ? ($question->points ?? 1) : 0
+        ];
+    }
+
+    private function validateQuestionnaire($question, $userResponse)
+    {
+        if (!$userResponse || !is_array($userResponse)) {
+            return ['is_correct' => false, 'points_earned' => 0];
+        }
+        
+        $totalPointsEarned = 0;
+        
+        // Use the accessor method to get subquestions
+        $subquestions = $question->subquestions;
+        
+        if (!$subquestions || $subquestions->isEmpty()) {
+            // Fallback: try to get questionnaire data directly from options
+            $options = $question->options()->whereNotNull('subquestion_text')->get();
+            if ($options->isEmpty()) {
+                return ['is_correct' => false, 'points_earned' => 0];
+            }
+            
+            // Calculate points from options directly
+            foreach ($userResponse as $subIndex => $userSubAnswers) {
+                if (!is_array($userSubAnswers)) continue;
+                
+                foreach ($userSubAnswers as $answerOptionId) {
+                    $option = $options->where('answer_option_id', $answerOptionId)->first();
+                    if ($option) {
+                        $totalPointsEarned += $option->points ?? 0;
+                    }
+                }
+            }
+        } else {
+            // Use the structured subquestions data
+            foreach ($subquestions as $subIndex => $subquestion) {
+                $userSubAnswers = $userResponse[$subIndex] ?? [];
+                if (!is_array($userSubAnswers)) continue;
+                
+                $assignments = $subquestion->assignments ?? collect();
+                foreach ($userSubAnswers as $answerOptionId) {
+                    $assignment = $assignments->firstWhere('answer_option_id', $answerOptionId);
+                    if ($assignment) {
+                        $totalPointsEarned += $assignment->points ?? 0;
+                    }
+                }
+            }
+        }
+        
+        return [
+            'is_correct' => $totalPointsEarned > 0,
+            'points_earned' => min($totalPointsEarned, $question->points ?? 0)
+        ];
+    }
+
+    private function validateShortAnswer($question, $userResponse)
+    {
+        $userText = trim(strtolower($userResponse));
+        $options = $question->options ?? [];
+        
+        foreach ($options as $option) {
+            $acceptableAnswer = trim(strtolower($option['option_text'] ?? $option['text'] ?? ''));
+            if ($userText === $acceptableAnswer) {
+                return ['is_correct' => true, 'points_earned' => $question->points ?? 1];
+            }
+        }
+        
+        return ['is_correct' => false, 'points_earned' => 0];
     }
 
     /**

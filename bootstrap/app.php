@@ -18,6 +18,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->append(DetectEnvironment::class);
         $middleware->append(BrandingMiddleware::class);
+        
+        // Rate limiters are configured in FortifyServiceProvider
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

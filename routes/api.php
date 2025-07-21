@@ -167,11 +167,18 @@ Route::get('/user', function (Request $request) {
 
 // API Authentication Routes
 Route::post('/register', [RegisterController::class, 'register']);
-Route::post('/forgot-password', [ForgotPasswordController::class, 'sendResetLinkEmail']);
-Route::post('/reset-password', [ResetPasswordController::class, 'reset']);
+// Password reset routes with rate limiting
+Route::middleware(['throttle:reset'])->group(function () {
+    Route::post('/forgot-password', [ForgotPasswordController::class, 'sendResetLinkEmail']);
+    Route::post('/reset-password', [ResetPasswordController::class, 'reset']);
+});
 
 // Token management routes
-Route::post('/tokens', [TokenController::class, 'createToken']);
+// Authentication endpoints with rate limiting
+Route::middleware(['throttle:login'])->group(function () {
+    Route::post('/tokens', [TokenController::class, 'createToken']);
+});
+
 Route::delete('/tokens', [TokenController::class, 'revokeTokens'])->middleware('auth:sanctum');
 
 // Sales Platform Authentication Routes
