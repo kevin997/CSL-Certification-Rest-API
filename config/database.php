@@ -64,7 +64,7 @@ return [
                 'dump_binary_path' => env('DB_DUMP_BINARY_PATH', '/usr/bin'),
                 'use_single_transaction' => false,
                 'timeout' => 60 * 60, // 60 minutes
-                'add_extra_option' => '--routines --triggers --no-tablespaces --lock-tables=false --quick --set-gtid-purged=OFF',
+                'add_extra_option' => '--routines --triggers --no-tablespaces --lock-tables=false --quick',
             ],
         ],
 
@@ -90,7 +90,7 @@ return [
                 'dump_binary_path' => env('DB_DUMP_BINARY_PATH', '/usr/bin'),
                 'use_single_transaction' => false,
                 'timeout' => 60 * 60, // 60 minutes
-                'add_extra_option' => '--routines --triggers --no-tablespaces --lock-tables=false --quick --set-gtid-purged=OFF',
+                'add_extra_option' => '--routines --triggers --no-tablespaces --lock-tables=false --quick',
             ],
         ],
 
