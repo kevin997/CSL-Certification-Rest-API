@@ -23,6 +23,7 @@
         "mailjet/laravel-mailjet": "^3.1",
         "paypal/paypal-server-sdk": "^1.1",
         "phpmailer/phpmailer": "^6.10",
+        "spatie/laravel-backup": "^9.3",
         "stripe/stripe-php": "^17.2.1",
         "symfony/http-client": "^7.3",
         "symfony/mailgun-mailer": "^7.3",

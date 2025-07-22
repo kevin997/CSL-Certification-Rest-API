@@ -5,6 +5,9 @@ namespace App\Providers;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Event;
+use Spatie\Backup\Events\BackupZipWasCreated;
+use App\Listeners\MailBackupWithAttachment;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -27,5 +30,11 @@ class AppServiceProvider extends ServiceProvider
         Mail::extend('phpmailer', function (array $config = []) {
             return new \App\Mail\PHPMailerTransport($config);
         });
+        
+        // Register backup email with attachment listener
+        Event::listen(
+            BackupZipWasCreated::class,
+            MailBackupWithAttachment::class
+        );
     }
 }

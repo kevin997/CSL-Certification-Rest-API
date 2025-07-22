@@ -187,6 +187,44 @@ class StorefrontController extends Controller
             ['code' => 'SN', 'name' => 'Senegal'],
             ['code' => 'SL', 'name' => 'Sierra Leone'],
             ['code' => 'TG', 'name' => 'Togo'],
+
+            // EAC Countries (East African Community)
+            ['code' => 'KE', 'name' => 'Kenya'],
+            ['code' => 'TZ', 'name' => 'Tanzania'],
+            ['code' => 'UG', 'name' => 'Uganda'],
+            ['code' => 'RW', 'name' => 'Rwanda'],
+            ['code' => 'BI', 'name' => 'Burundi'],
+            ['code' => 'SS', 'name' => 'South Sudan'],
+
+            // SADC Countries (Southern African Development Community)
+            ['code' => 'BW', 'name' => 'Botswana'],
+            ['code' => 'LS', 'name' => 'Lesotho'],
+            ['code' => 'SZ', 'name' => 'Eswatini (Swaziland)'],
+            ['code' => 'NA', 'name' => 'Namibia'],
+            ['code' => 'ZW', 'name' => 'Zimbabwe'],
+            ['code' => 'ZM', 'name' => 'Zambia'],
+            ['code' => 'MW', 'name' => 'Malawi'],
+            ['code' => 'MZ', 'name' => 'Mozambique'],
+            ['code' => 'AO', 'name' => 'Angola'],
+            ['code' => 'CD', 'name' => 'Democratic Republic of Congo'],
+            ['code' => 'MG', 'name' => 'Madagascar'],
+            ['code' => 'MU', 'name' => 'Mauritius'],
+            ['code' => 'SC', 'name' => 'Seychelles'],
+
+            // North African Countries
+            ['code' => 'DZ', 'name' => 'Algeria'],
+            ['code' => 'LY', 'name' => 'Libya'],
+            ['code' => 'MA', 'name' => 'Morocco'],
+            ['code' => 'SD', 'name' => 'Sudan'],
+            ['code' => 'TN', 'name' => 'Tunisia'],
+
+            // Other African Countries
+            ['code' => 'ET', 'name' => 'Ethiopia'],
+            ['code' => 'DJ', 'name' => 'Djibouti'],
+            ['code' => 'ER', 'name' => 'Eritrea'],
+            ['code' => 'SO', 'name' => 'Somalia'],
+            ['code' => 'KM', 'name' => 'Comoros'],
+            ['code' => 'ST', 'name' => 'São Tomé and Príncipe'],
         ];
 
         return response()->json([

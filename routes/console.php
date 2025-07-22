@@ -7,8 +7,6 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Schedule;
 use App\Console\Commands\GenerateMonthlyInvoices;
 use App\Console\Commands\RegularizeCompletedOrders;
-use App\Console\Commands\BackupRdsDatabase;
-use App\Console\Commands\WeeklyAnalyticsReportCommand;
 
 
 
@@ -27,25 +25,46 @@ Schedule::command(RegularizeCompletedOrders::class)
     ->withoutOverlapping()
     ->runInBackground();
     
-// Run RDS database backup daily at 2:00 AM with compression and email to data analyst
-Schedule::command('db:backup-rds --email --compress=gzip')
+// Clean old backups daily at 1:00 AM
+Schedule::command('backup:clean')
+    ->dailyAt('01:00')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('Backup cleanup failed');
+    });
+
+// Run database backup daily at 2:00 AM with compression and email notifications
+Schedule::command('backup:run --only-db')
     ->dailyAt('02:00')
     ->withoutOverlapping()
     ->runInBackground()
-    ->emailOutputTo('kevinliboire@gmail.com')
     ->onFailure(function () {
-        // Log failure or send notification
-        \Illuminate\Support\Facades\Log::error('RDS backup failed');
+        \Illuminate\Support\Facades\Log::error('Daily database backup failed');
+    })
+    ->onSuccess(function () {
+        \Illuminate\Support\Facades\Log::info('Daily database backup completed successfully');
     });
 
-// Emergency backup command for large databases (runs weekly with extended timeout)
-Schedule::command('db:backup-rds --email --compress=gzip --timeout=7200')
-    ->weeklyOn(1, '01:00') // Every Monday at 1:00 AM
+// Full application backup (database + files) weekly on Monday at 1:30 AM
+Schedule::command('backup:run')
+    ->weeklyOn(1, '01:30') // Every Monday at 1:30 AM
     ->withoutOverlapping()
     ->runInBackground()
-    ->emailOutputTo('kevinliboire@gmail.com')
     ->onFailure(function () {
-        \Illuminate\Support\Facades\Log::error('Weekly extended RDS backup failed');
+        \Illuminate\Support\Facades\Log::error('Weekly full backup failed');
+    })
+    ->onSuccess(function () {
+        \Illuminate\Support\Facades\Log::info('Weekly full backup completed successfully');
+    });
+
+// Monitor backups health daily at 3:00 AM
+Schedule::command('backup:monitor')
+    ->dailyAt('03:00')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('Backup monitoring failed');
     });
 
 // Weekly analytics report - runs every Monday at 9:00 AM

@@ -58,8 +58,14 @@ return [
             'strict' => true,
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
-                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA') ? base_path(env('MYSQL_ATTR_SSL_CA')) : null,
             ]) : [],
+            'dump' => [
+                'dump_binary_path' => env('DB_DUMP_BINARY_PATH', '/usr/bin'),
+                'use_single_transaction' => false,
+                'timeout' => 60 * 60, // 60 minutes
+                'add_extra_option' => '--routines --triggers --no-tablespaces --lock-tables=false --quick --set-gtid-purged=OFF',
+            ],
         ],
 
         'mariadb' => [
@@ -78,8 +84,14 @@ return [
             'strict' => true,
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
-                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA') ? base_path(env('MYSQL_ATTR_SSL_CA')) : null,
             ]) : [],
+            'dump' => [
+                'dump_binary_path' => env('DB_DUMP_BINARY_PATH', '/usr/bin'),
+                'use_single_transaction' => false,
+                'timeout' => 60 * 60, // 60 minutes
+                'add_extra_option' => '--routines --triggers --no-tablespaces --lock-tables=false --quick --set-gtid-purged=OFF',
+            ],
         ],
 
         'pgsql' => [
