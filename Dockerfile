@@ -19,7 +19,9 @@ RUN apk add --no-cache \
     netcat-openbsd \
     nginx \
     supervisor \
-    mysql-client
+    mysql-client \
+    postgresql17-client \
+    gzip
 
 # Install PHP extensions
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \

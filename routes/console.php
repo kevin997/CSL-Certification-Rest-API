@@ -76,3 +76,15 @@ Schedule::command('analytics:weekly-report --email')
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('Weekly analytics report failed');
     });
+
+// Sales Database backup - runs daily at 4:00 AM with email notifications
+Schedule::command('backup:sales-database --email')
+    ->dailyAt('04:00')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('Sales database backup failed');
+    })
+    ->onSuccess(function () {
+        \Illuminate\Support\Facades\Log::info('Sales database backup completed successfully');
+    });
