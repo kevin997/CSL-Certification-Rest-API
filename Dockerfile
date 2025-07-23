@@ -42,26 +42,37 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Configure and install PHP extensions
-RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-configure pgsql -with-pgsql=/usr/local/pgsql \
-    && docker-php-ext-install -j$(nproc) \
+# Install PHP extensions step by step to avoid build failures
+RUN docker-php-ext-install -j$(nproc) \
         pdo_mysql \
-        pdo_pgsql \
         mbstring \
         exif \
         pcntl \
         bcmath \
-        gd \
         zip \
-        intl \
-        xml \
-        soap \
         opcache
 
-# Install additional PHP extensions via PECL
-RUN pecl install redis imagick \
-    && docker-php-ext-enable redis imagick
+# Configure and install GD with dependencies
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j$(nproc) gd
+
+# Install intl extension
+RUN docker-php-ext-configure intl && docker-php-ext-install intl
+
+# Install XML and SOAP extensions
+RUN docker-php-ext-install xml soap
+
+# Install PostgreSQL extension if pgsql libraries are available
+RUN apt-get update && apt-get install -y libpq-dev \
+    && docker-php-ext-configure pgsql -with-pgsql=/usr/local/pgsql \
+    && docker-php-ext-install pdo_pgsql \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Redis extension via PECL
+RUN pecl install redis && docker-php-ext-enable redis
+
+# Skip ImageMagick for now as it has compatibility issues with PHP 8.3
+# RUN pecl install imagick && docker-php-ext-enable imagick
 
 # Install Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
