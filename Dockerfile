@@ -138,7 +138,7 @@ RUN chown -R www-data:www-data /var/www/html \
 
 # Build frontend assets if package.json exists
 RUN if [ -f "package.json" ]; then \
-    npm ci --only=production --silent \
+    npm ci --silent \
     && npm run build \
     && rm -rf node_modules \
     && npm cache clean --force; \
