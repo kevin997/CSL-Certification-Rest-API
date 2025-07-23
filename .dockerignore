@@ -17,3 +17,9 @@ yarn-error.log
 /.github
 /tests
 README.md
+/backups
+/storage/logs/*.log
+.DS_Store
+*.swp
+*.swo
+*~

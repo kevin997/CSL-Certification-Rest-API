@@ -1,10 +1,12 @@
-# Multi-stage Laravel 12.x Docker build for Ubuntu with RDS backup support
-# Stage 1: Base image with all dependencies
-FROM ubuntu:22.04 AS base
+# Laravel 12.x Docker build for Ubuntu with RDS backup support
+FROM ubuntu:22.04
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
+
+# Set working directory
+WORKDIR /var/www/html
 
 # Install software-properties-common first for add-apt-repository
 RUN apt-get update && apt-get install -y \
@@ -65,38 +67,14 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Stage 2: Node.js and build tools (for frontend assets)
-FROM base AS node-builder
-
-# Install Node.js 20.x
+# Install Node.js 20.x for frontend assets
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Stage 3: Composer dependencies
-FROM base AS composer-deps
-
 # Install Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-
-# Set working directory
-WORKDIR /var/www/html
-
-# Copy composer files first for better caching
-COPY composer.json composer.lock ./
-
-# Install dependencies without dev packages for production
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
-
-# Stage 4: Final production image
-FROM node-builder AS production
-
-# Copy Composer from previous stage
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-
-# Set working directory
-WORKDIR /var/www/html
 
 # Configure PHP-FPM for better performance
 RUN mkdir -p /run/php \
@@ -130,14 +108,8 @@ RUN cp /etc/php/8.2/fpm/conf.d/99-laravel.ini /etc/php/8.2/cli/conf.d/99-laravel
 # Copy application files
 COPY . /var/www/html
 
-# Copy vendor from composer stage for better caching
-COPY --from=composer-deps /var/www/html/vendor /var/www/html/vendor
-
 # Copy environment file
 COPY .env.staging /var/www/html/.env
-
-# Set proper ownership
-RUN chown -R www-data:www-data /var/www/html
 
 # Create Laravel storage directories with proper permissions
 RUN mkdir -p /var/www/html/storage/framework/sessions \
@@ -151,14 +123,15 @@ RUN mkdir -p /var/www/html/storage/framework/sessions \
     /var/www/html/storage/logs/scheduler.log \
     /var/www/html/storage/logs/rds-backup.log \
     /var/www/html/storage/logs/nightwatch.log \
-    /var/www/html/storage/logs/order-regularizer.log \
-    && chown -R www-data:www-data /var/www/html/storage \
-    && chown -R www-data:www-data /var/www/html/bootstrap/cache \
+    /var/www/html/storage/logs/order-regularizer.log
+
+# Install Composer dependencies
+RUN composer install --no-dev --optimize-autoloader --no-interaction
+
+# Set proper ownership after copying files
+RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 775 /var/www/html/storage \
     && chmod -R 775 /var/www/html/bootstrap/cache
-
-# Complete Composer installation with autoloader optimization
-RUN composer install --no-dev --optimize-autoloader --no-interaction
 
 # Build frontend assets if package.json exists
 RUN if [ -f "package.json" ]; then \
