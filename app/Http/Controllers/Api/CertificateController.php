@@ -552,7 +552,7 @@ class CertificateController extends Controller
             'email' => $user->email,
             'issued_date' => $issueDate->toDateTimeString(),
             'expiry_date' => $expiryDate ? $expiryDate->toDateTimeString() : null,
-            'expiryDate' => $expiryDate ? $expiryDate->toDateTimeString() : null,
+            'expiryDate' => $expiryDate ? $expiryDate->format('F j, Y') : null,
         ];
 
         // Add certificate content metadata

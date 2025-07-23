@@ -152,12 +152,38 @@
         group: ubuntu
         mode: '0644'
 
-    # Docker build and push - streamlined
+    # Ensure BuildKit (buildx) is available
+    - name: Install docker buildx plugin (Debian/Ubuntu)
+      ansible.builtin.apt:
+        name: docker-buildx-plugin
+        state: present
+        update_cache: yes
+      when: ansible_facts['os_family'] == 'Debian'
+      ignore_errors: yes
+
+    # Fallback: manually install buildx if package unavailable
+    - name: Check if docker buildx is already available
+      command: docker buildx version
+      register: buildx_check
+      ignore_errors: yes
+
+    - name: Manually install docker buildx CLI plugin
+      shell: |
+        set -e
+        BUILDX_VERSION=v0.14.1
+        mkdir -p /usr/local/lib/docker/cli-plugins
+        curl -sSL "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-amd64" -o /usr/local/lib/docker/cli-plugins/docker-buildx
+        chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
+      when: buildx_check.rc != 0
+      args:
+        executable: /bin/bash
+
+    # Docker build and push - optimized with BuildKit
     - name: Build Docker image
       shell: |
         cd {{ app_dir }}
-        # Build with full output for debugging
-        DOCKER_BUILDKIT=0 docker build -t {{ app_name }}:latest .
+        # Build with BuildKit for better caching and performance
+        DOCKER_BUILDKIT=1 docker build -t {{ app_name }}:latest .
       register: docker_build_result
       ignore_errors: no
 

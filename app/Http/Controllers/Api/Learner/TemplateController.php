@@ -96,7 +96,7 @@ class TemplateController extends Controller
         if ($enrollment) {
             // Attach completion status to activities
             $completedActivityIds = $enrollment->activityCompletions
-                ->where('completed', true)
+                ->where('status', 'completed')
                 ->pluck('activity_id')
                 ->toArray();
                 

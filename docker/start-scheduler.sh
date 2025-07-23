@@ -6,13 +6,13 @@ mkdir -p /var/www/html/storage/app/backups/database
 # Install mysqldump if not already installed
 if ! command -v mysqldump &> /dev/null; then
     echo "Installing mysqldump..."
-    apk add --no-cache mysql-client
+    apt-get update && apt-get install -y mysql-client
 fi
 
 # Install AWS CLI if not already installed (for potential S3 backup storage)
 if ! command -v aws &> /dev/null; then
     echo "Installing AWS CLI..."
-    apk add --no-cache aws-cli
+    apt-get update && apt-get install -y awscli
 fi
 
 # Copy supervisor configuration files

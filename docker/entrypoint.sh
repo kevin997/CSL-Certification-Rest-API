@@ -100,10 +100,8 @@ if [ "$CONTAINER_ROLE" = "queue" ]; then
   exec supervisord -c /etc/supervisor/conf.d/supervisord.conf
 elif [ "$CONTAINER_ROLE" = "scheduler" ]; then
   echo "Starting scheduler service..."
-  # Install cron if not present (using Alpine's apk)
-  apk add --no-cache dcron
-  # Start cron daemon directly
-  crond -b -l 8
+  # Start cron daemon (Ubuntu style)
+  service cron start
   echo "Cron daemon started"
   # Copy scheduler supervisor config
   cp /var/www/html/docker/supervisor/scheduler.conf /etc/supervisor/conf.d/
