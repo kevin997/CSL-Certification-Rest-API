@@ -14,7 +14,7 @@ return [
     |
     */
 
-    'default' => 'phpmailer',
+    'default' => 'smtp',
 
     /*
     |--------------------------------------------------------------------------
@@ -41,11 +41,12 @@ return [
             'transport' => 'smtp',
             'scheme' => env('MAIL_SCHEME'),
             'url' => env('MAIL_URL'),
-            'host' => env('MAIL_HOST', '127.0.0.1'),
-            'port' => env('MAIL_PORT', 2525),
-            'username' => env('MAIL_USERNAME'),
-            'password' => env('MAIL_PASSWORD'),
-            'timeout' => null,
+            'host' => env('PHPMAILER_HOST', 'node127-eu.n0c.com'),
+            'port' => env('PHPMAILER_PORT', 465),
+            'username' => env('PHPMAILER_USERNAME', 'no.reply@cfpcsl.com'),
+            'password' => env('PHPMAILER_PASSWORD'),
+            'timeout' => env('PHPMAILER_TIMEOUT', 60),
+            'encryption' => env('PHPMAILER_ENCRYPTION', 'ssl'),
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url(env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
         
@@ -129,7 +130,7 @@ return [
     */
 
     'from' => [
-        'address' => env('MAIL_FROM_ADDRESS', 'no.reply@cfpcsl.com'),
+        'address' => env('PHPMAILER_USERNAME', 'no.reply@cfpcsl.com'),
         'name' => env('MAIL_FROM_NAME', 'CSL'),
     ],
 
