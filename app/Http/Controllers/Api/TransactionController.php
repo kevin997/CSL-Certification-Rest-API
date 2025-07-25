@@ -135,7 +135,7 @@ class TransactionController extends Controller
         $transactionId = $request->get('payment_ref') ?? $request->get("order_id") ?? null;
 
         Log::info('Looking for transaction', [
-            'transaction_id' => $transactionId,
+            'gateway_transaction_id' => $transactionId,
             'environment_id' => $environment_id
         ]);
 
@@ -147,21 +147,22 @@ class TransactionController extends Controller
             return response()->json(['error' => 'Transaction ID is required'], 400);
         }
 
-        //Get The Transaction with relationship to PaymentGate (first try pending)
-        $transaction = Transaction::where("transaction_id", $transactionId)
-            ->where("environment_id", $environment_id)
-            ->where("status", Transaction::STATUS_PENDING)
-            ->whereHas("paymentGatewaySetting")
-            ->first();
-
-        // If no pending transaction found, check for completed transaction
+        // Use smart transaction lookup that handles cross-environment supported plan transactions
+        $transaction = $this->findTransactionForCallback($transactionId, $environment_id);
+        
+        // Handle completed transaction case (kept for backward compatibility)
         $completedTransaction = null;
         if (!$transaction) {
+            // This shouldn't happen with the new lookup, but kept as fallback
             $completedTransaction = Transaction::where("transaction_id", $transactionId)
-                ->where("environment_id", $environment_id)
                 ->where("status", Transaction::STATUS_COMPLETED)
                 ->whereHas("paymentGatewaySetting")
                 ->first();
+            
+            if ($completedTransaction && ($completedTransaction->environment_id == $environment_id || $this->isSupportedPlanPayment($completedTransaction))) {
+                $transaction = $completedTransaction;
+                $completedTransaction = $transaction; // For consistency with existing logic
+            }
         }
 
         //Get The Environment with relationship to Branding
@@ -301,7 +302,11 @@ class TransactionController extends Controller
                     'notes' => 'Failed to process payment success callback'
                 ]);
 
-                return view('payment.error', [
+                // Check if this is a supported plan payment (environment setup)
+                $isSupportedPlan = $this->isSupportedPlanPayment($transaction);
+                $viewPath = $isSupportedPlan ? 'payment.environment-setup.error' : 'payment.error';
+
+                return view($viewPath, [
                     'transaction' => $transaction,
                     'environment' => $environment,
                     "branding" => $branding,
@@ -311,7 +316,12 @@ class TransactionController extends Controller
 
             $transaction->refresh();
 
-            return view('payment.callback-success', [
+            // Check if this is a supported plan payment (environment setup)
+            $isSupportedPlan = $this->isSupportedPlanPayment($transaction);
+            
+            $viewPath = $isSupportedPlan ? 'payment.environment-setup.callback-success' : 'payment.callback-success';
+            
+            return view($viewPath, [
                 'transaction' => $transaction,
                 'environment' => $environment,
                 "branding" => $branding,
@@ -355,7 +365,7 @@ class TransactionController extends Controller
         $protocol = app()->environment('production') ? 'https' : 'http';
 
         Log::info('Looking for transaction', [
-            'transaction_id' => $transactionId,
+            'gateway_transaction_id' => $transactionId,
             'environment_id' => $environment_id
         ]);
 
@@ -367,12 +377,8 @@ class TransactionController extends Controller
             return response()->json(['error' => 'Transaction ID is required'], 400);
         }
 
-        //Get The Transaction with relationship to PaymentGate
-        $transaction = Transaction::where("transaction_id", $transactionId)
-            ->where("environment_id", $environment_id)
-            ->where("status", Transaction::STATUS_PENDING)
-            ->whereHas("paymentGatewaySetting")
-            ->first();
+        // Use smart transaction lookup that handles cross-environment supported plan transactions
+        $transaction = $this->findTransactionForCallback($transactionId, $environment_id);
         $environment = Environment::find($environment_id);
         $branding = Branding::where("environment_id", $environment_id)
             ->first();
@@ -442,7 +448,12 @@ class TransactionController extends Controller
 
             if (in_array($status, $cancelledStatuses, true)) {
                 $result = $paymentService->processCancelledCallback($gateway, $transactionId, $environment_id, $request->all());
-                return view('payment.callback-cancelled', [
+                
+                // Check if this is a supported plan payment (environment setup)
+                $isSupportedPlan = $this->isSupportedPlanPayment($transaction);
+                $viewPath = $isSupportedPlan ? 'payment.environment-setup.callback-cancelled' : 'payment.callback-cancelled';
+                
+                return view($viewPath, [
                     'transaction' => $transaction,
                     'environment' => $environment,
                     "branding" => $branding,
@@ -463,7 +474,11 @@ class TransactionController extends Controller
                     'notes' => 'Failed to process payment success callback'
                 ]);
 
-                return view('payment.error', [
+                // Check if this is a supported plan payment (environment setup)
+                $isSupportedPlan = $this->isSupportedPlanPayment($transaction);
+                $viewPath = $isSupportedPlan ? 'payment.environment-setup.error' : 'payment.error';
+
+                return view($viewPath, [
                     'transaction' => $transaction,
                     'environment' => $environment,
                     "branding" => $branding,
@@ -473,7 +488,11 @@ class TransactionController extends Controller
 
             $transaction->refresh();
 
-            return view('payment.callback-failed', [
+            // Check if this is a supported plan payment (environment setup)
+            $isSupportedPlan = $this->isSupportedPlanPayment($transaction);
+            $viewPath = $isSupportedPlan ? 'payment.environment-setup.callback-failed' : 'payment.callback-failed';
+
+            return view($viewPath, [
                 'transaction' => $transaction,
                 'environment' => $environment,
                 "branding" => $branding,
@@ -799,11 +818,22 @@ class TransactionController extends Controller
             $transaction = Transaction::where('id', $transactionId)
                 ->where('environment_id', $gatewaySettings->environment_id)
                 ->first();
+            
+            // If not found and this might be a supported plan, try global lookup
+            if (!$transaction) {
+                $globalTransaction = Transaction::where('id', $transactionId)->first();
+                if ($globalTransaction && $this->isSupportedPlanPayment($globalTransaction)) {
+                    $transaction = $globalTransaction;
+                    Log::info('Stripe webhook: Supported plan transaction found with global lookup by ID', [
+                        'transaction_id' => $transactionId,
+                        'gateway_environment_id' => $gatewaySettings->environment_id,
+                        'transaction_environment_id' => $transaction->environment_id
+                    ]);
+                }
+            }
         } else {
-            // Fallback to the old method
-            $transaction = Transaction::where('gateway_transaction_id', $paymentIntentId)
-                ->where('environment_id', $gatewaySettings->environment_id)
-                ->first();
+            // Fallback to the old method with smart lookup
+            $transaction = $this->findTransactionForWebhook($paymentIntentId, $gatewaySettings);
         }
 
         if (!$transaction) {
@@ -902,11 +932,22 @@ class TransactionController extends Controller
             $transaction = Transaction::where('id', $transactionId)
                 ->where('environment_id', $gatewaySettings->environment_id)
                 ->first();
+            
+            // If not found and this might be a supported plan, try global lookup
+            if (!$transaction) {
+                $globalTransaction = Transaction::where('id', $transactionId)->first();
+                if ($globalTransaction && $this->isSupportedPlanPayment($globalTransaction)) {
+                    $transaction = $globalTransaction;
+                    Log::info('Stripe webhook: Supported plan transaction found with global lookup by ID (failure)', [
+                        'transaction_id' => $transactionId,
+                        'gateway_environment_id' => $gatewaySettings->environment_id,
+                        'transaction_environment_id' => $transaction->environment_id
+                    ]);
+                }
+            }
         } else {
-            // Fallback to the old method
-            $transaction = Transaction::where('gateway_transaction_id', $paymentIntentId)
-                ->where('environment_id', $gatewaySettings->environment_id)
-                ->first();
+            // Fallback to the old method with smart lookup
+            $transaction = $this->findTransactionForWebhook($paymentIntentId, $gatewaySettings);
         }
 
         if (!$transaction) {
@@ -1656,11 +1697,8 @@ class TransactionController extends Controller
         }
 
 
-        // Find the transaction by gateway_transaction_id
-        $transaction = Transaction::where('gateway_transaction_id', $reference)
-            ->where('environment_id', $gatewaySettings->environment_id)
-            ->orWhere('gateway_transaction_id', $reference)
-            ->first();
+        // Find the transaction using smart lookup that handles cross-environment supported plan transactions
+        $transaction = $this->findTransactionForWebhook($reference, $gatewaySettings);
 
         if (!$transaction) {
             Log::error('Transaction not found for Monetbill webhook', [
@@ -2346,5 +2384,253 @@ class TransactionController extends Controller
         return true;
 
         // return $result;
+    }
+
+    /**
+     * Find transaction for callback with smart lookup logic
+     * Handles cross-environment transactions for supported plans
+     * 
+     * @param string $transactionId
+     * @param int $environment_id
+     * @return Transaction|null
+     */
+    private function findTransactionForCallback($transactionId, $environment_id)
+    {
+        // Add debugging: Check if transaction exists at all
+        // IMPORTANT: Use withoutGlobalScopes to bypass EnvironmentScope
+        $anyTransaction = Transaction::withoutGlobalScopes()->where("transaction_id", $transactionId)->first();
+        
+        Log::info('Transaction existence check (without global scopes)', [
+            'transaction_id' => $transactionId,
+            'exists' => $anyTransaction ? 'yes' : 'no',
+            'status' => $anyTransaction ? $anyTransaction->status : 'none',
+            'environment_id' => $anyTransaction ? $anyTransaction->environment_id : 'none',
+            'has_payment_gateway_setting' => $anyTransaction && $anyTransaction->paymentGatewaySetting ? 'yes' : 'no',
+            'current_session_env' => session('current_environment_id')
+        ]);
+
+        // First, try environment-specific lookup (existing behavior)
+        // Use transaction_id for callback lookups (payment_ref parameter)
+        $transaction = Transaction::where("transaction_id", $transactionId)
+            ->where("environment_id", $environment_id)
+            ->where("status", Transaction::STATUS_PENDING)
+            ->whereHas("paymentGatewaySetting")
+            ->first();
+
+        if ($transaction) {
+            Log::info('Transaction found with environment-specific lookup', [
+                'transaction_id' => $transactionId,
+                'environment_id' => $environment_id,
+                'found_environment_id' => $transaction->environment_id
+            ]);
+            return $transaction;
+        }
+
+        // If not found, try global lookup for supported plan transactions
+        // IMPORTANT: Use withoutGlobalScopes to bypass EnvironmentScope for cross-environment lookup
+        $globalTransaction = Transaction::withoutGlobalScopes()
+            ->where("transaction_id", $transactionId)
+            ->where("status", Transaction::STATUS_PENDING)
+            ->whereHas("paymentGatewaySetting")
+            ->first();
+
+        Log::info('Global transaction lookup result', [
+            'transaction_id' => $transactionId,
+            'found' => $globalTransaction ? 'yes' : 'no',
+            'status' => $globalTransaction ? $globalTransaction->status : 'none',
+            'environment_id' => $globalTransaction ? $globalTransaction->environment_id : 'none'
+        ]);
+
+        if ($globalTransaction) {
+            // Check if this is a supported plan transaction using basic detection
+            $isLikelySupportedPlan = $this->isLikelySupportedPlanTransaction($globalTransaction);
+            
+            Log::info('Supported plan detection result', [
+                'transaction_id' => $transactionId,
+                'is_likely_supported_plan' => $isLikelySupportedPlan,
+                'description' => $globalTransaction->description,
+                'amount' => $globalTransaction->total_amount
+            ]);
+            
+            if ($isLikelySupportedPlan) {
+                Log::info('Supported plan transaction found with global lookup', [
+                    'transaction_id' => $transactionId,
+                    'callback_environment_id' => $environment_id,
+                    'transaction_environment_id' => $globalTransaction->environment_id
+                ]);
+                return $globalTransaction;
+            } else {
+                Log::warning('Non-supported plan transaction found in different environment', [
+                    'transaction_id' => $transactionId,
+                    'callback_environment_id' => $environment_id,
+                    'transaction_environment_id' => $globalTransaction->environment_id
+                ]);
+            }
+        }
+
+        // Check for completed transactions as fallback
+        $completedTransaction = Transaction::withoutGlobalScopes()
+            ->where("transaction_id", $transactionId)
+            ->where("status", Transaction::STATUS_COMPLETED)
+            ->whereHas("paymentGatewaySetting")
+            ->first();
+
+        if ($completedTransaction) {
+            if ($completedTransaction->environment_id == $environment_id || $this->isLikelySupportedPlanTransaction($completedTransaction)) {
+                Log::info('Completed transaction found', [
+                    'transaction_id' => $transactionId,
+                    'environment_id' => $environment_id,
+                    'found_environment_id' => $completedTransaction->environment_id,
+                    'is_supported_plan' => $this->isLikelySupportedPlanTransaction($completedTransaction)
+                ]);
+                return $completedTransaction;
+            }
+        }
+
+        Log::error('Transaction not found with any lookup method', [
+            'transaction_id' => $transactionId,
+            'environment_id' => $environment_id
+        ]);
+
+        return null;
+    }
+
+    /**
+     * Find transaction for webhook with smart lookup logic
+     * Handles cross-environment transactions for supported plans
+     * 
+     * @param string $reference
+     * @param \App\Models\PaymentGatewaySetting $gatewaySettings
+     * @return Transaction|null
+     */
+    private function findTransactionForWebhook($reference, $gatewaySettings)
+    {
+        // First, try environment-specific lookup (existing behavior)
+        $transaction = Transaction::where('gateway_transaction_id', $reference)
+            ->where('environment_id', $gatewaySettings->environment_id)
+            ->first();
+
+        if ($transaction) {
+            Log::info('Transaction found with environment-specific webhook lookup', [
+                'reference' => $reference,
+                'gateway_environment_id' => $gatewaySettings->environment_id,
+                'found_environment_id' => $transaction->environment_id
+            ]);
+            return $transaction;
+        }
+
+        // If not found, try global lookup
+        // IMPORTANT: Use withoutGlobalScopes to bypass EnvironmentScope for cross-environment lookup
+        $globalTransaction = Transaction::withoutGlobalScopes()
+            ->where('gateway_transaction_id', $reference)
+            ->first();
+
+        if ($globalTransaction) {
+            // Check if this is a supported plan transaction using basic detection
+            if ($this->isLikelySupportedPlanTransaction($globalTransaction)) {
+                Log::info('Supported plan transaction found with global webhook lookup', [
+                    'reference' => $reference,
+                    'gateway_environment_id' => $gatewaySettings->environment_id,
+                    'transaction_environment_id' => $globalTransaction->environment_id
+                ]);
+                return $globalTransaction;
+            } else {
+                Log::warning('Non-supported plan transaction found in different environment via webhook', [
+                    'reference' => $reference,
+                    'gateway_environment_id' => $gatewaySettings->environment_id,
+                    'transaction_environment_id' => $globalTransaction->environment_id
+                ]);
+            }
+        }
+
+        Log::error('Transaction not found with any webhook lookup method', [
+            'reference' => $reference,
+            'gateway_environment_id' => $gatewaySettings->environment_id
+        ]);
+
+        return null;
+    }
+
+    /**
+     * Basic check to identify likely supported plan transactions
+     * Used by helper methods to avoid circular dependency with isSupportedPlanPayment
+     * 
+     * @param Transaction $transaction
+     * @return bool
+     */
+    private function isLikelySupportedPlanTransaction($transaction): bool
+    {
+        if (!$transaction) {
+            return false;
+        }
+
+        // Check transaction description for supported plan keywords
+        if ($transaction->description && stripos($transaction->description, 'supported plan') !== false) {
+            return true;
+        }
+
+        // Check if transaction amount matches supported plan pricing ($177.00)
+        if ($transaction->total_amount == 177.00) {
+            return true;
+        }
+
+        // Check transaction notes for supported plan indicators
+        if ($transaction->notes && stripos($transaction->notes, 'supported') !== false) {
+            return true;
+        }
+
+        // Check product name if it contains supported plan keywords
+        if ($transaction->product_name && stripos($transaction->product_name, 'supported') !== false) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if the transaction is for a supported plan payment (environment setup)
+     * 
+     * @param Transaction $transaction
+     * @return bool
+     */
+    private function isSupportedPlanPayment($transaction): bool
+    {
+        if (!$transaction) {
+            return false;
+        }
+
+        // Check if transaction has a subscription associated with it
+        $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
+        
+        if ($payment && $payment->subscription_id) {
+            $subscription = Subscription::where('id', $payment->subscription_id)->first();
+            
+            if ($subscription && $subscription->plan_id) {
+                $plan = Plan::where('id', $subscription->plan_id)->first();
+                
+                // Check if the plan is a supported plan (you can adjust this logic based on your plan naming/type)
+                // For now, we'll check if the plan name contains "supported" or has a specific type
+                if ($plan && (
+                    stripos($plan->name, 'supported') !== false || 
+                    $plan->type === 'supported_plan' ||
+                    $plan->type === 'business_teacher'  // Assuming business teacher plan is the supported plan
+                )) {
+                    return true;
+                }
+            }
+        }
+
+        // Alternative check: look for specific transaction description patterns
+        if ($transaction->description && stripos($transaction->description, 'supported plan') !== false) {
+            return true;
+        }
+
+        // Check if transaction amount matches supported plan pricing (fallback)
+        // Assuming supported plan costs $177.00 as mentioned in SupportedCompletion.tsx
+        if ($transaction->total_amount == 177.00) {
+            return true;
+        }
+
+        return false;
     }
 }

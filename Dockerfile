@@ -136,6 +136,7 @@ RUN mkdir -p /var/www/html/storage/framework/sessions \
     /var/www/html/storage/framework/cache \
     /var/www/html/storage/logs \
     /var/www/html/storage/app/backups/database \
+    /var/www/html/storage/app/backup-temp \
     /var/www/html/bootstrap/cache \
     && touch /var/www/html/storage/logs/laravel.log \
     /var/www/html/storage/logs/queue.log \

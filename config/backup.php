@@ -9,6 +9,12 @@ return [
          */
         'name' => env('APP_NAME', 'CSL-Certification-API'),
 
+        /*
+         * EMERGENCY FIX: Use writable directory for temporary files
+         * Prevents mkdir() permission denied errors in Docker
+         */
+        'temporary_directory' => storage_path('app/backup-temp'),
+
         'source' => [
             'files' => [
                 /*

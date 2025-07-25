@@ -1188,10 +1188,8 @@ class PaymentService
     public function processSuccessCallback(string $gateway, string $transactionId, int $environmentId, array $callbackData): bool
     {
         try {
-            // Find the transaction
-            $transaction = Transaction::where('transaction_id', $transactionId)
-                ->where('environment_id', $environmentId)
-                ->first();
+            // Find the transaction using smart lookup that handles cross-environment supported plan transactions
+            $transaction = $this->findTransactionForCallback($transactionId, $environmentId);
             
             if (!$transaction) {
                 Log::error('Transaction not found for success callback', [
@@ -1235,10 +1233,8 @@ class PaymentService
     public function processFailureCallback(string $gateway, string $transactionId, int $environmentId, array $callbackData): bool
     {
         try {
-            // Find the transaction
-            $transaction = Transaction::where('transaction_id', $transactionId)
-                ->where('environment_id', $environmentId)
-                ->first();
+            // Find the transaction using smart lookup that handles cross-environment supported plan transactions
+            $transaction = $this->findTransactionForCallback($transactionId, $environmentId);
             
             if (!$transaction) {
                 Log::error('Transaction not found for failure callback', [
@@ -1278,10 +1274,8 @@ class PaymentService
     public function processCancelledCallback(string $gateway, string $transactionId, int $environmentId, array $callbackData): bool
     {
         try {
-            // Find the transaction
-            $transaction = Transaction::where('transaction_id', $transactionId)
-                ->where('environment_id', $environmentId)
-                ->first();
+            // Find the transaction using smart lookup that handles cross-environment supported plan transactions
+            $transaction = $this->findTransactionForCallback($transactionId, $environmentId);
             
             if (!$transaction) {
                 Log::error('Transaction not found for cancelled callback', [
@@ -1327,5 +1321,82 @@ class PaymentService
         
         // Process subscriptions or other related records
         // Additional logic can be added here as needed
-    } 
+    }
+
+    /**
+     * Find transaction for callback with smart lookup logic
+     * Handles cross-environment transactions for supported plans
+     * 
+     * @param string $transactionId
+     * @param int $environment_id
+     * @return Transaction|null
+     */
+    private function findTransactionForCallback($transactionId, $environment_id)
+    {
+        // First, try environment-specific lookup (existing behavior)
+        $transaction = Transaction::where("transaction_id", $transactionId)
+            ->where("environment_id", $environment_id)
+            ->where("status", Transaction::STATUS_PENDING)
+            ->whereHas("paymentGatewaySetting")
+            ->first();
+
+        if ($transaction) {
+            return $transaction;
+        }
+
+        // If not found, try global lookup for supported plan transactions
+        // IMPORTANT: Use withoutGlobalScopes to bypass EnvironmentScope for cross-environment lookup
+        $globalTransaction = Transaction::withoutGlobalScopes()
+            ->where("transaction_id", $transactionId)
+            ->where("status", Transaction::STATUS_PENDING)
+            ->whereHas("paymentGatewaySetting")
+            ->first();
+
+        if ($globalTransaction) {
+            // Check if this is a supported plan transaction using basic detection
+            $isLikelySupportedPlan = $this->isLikelySupportedPlanTransaction($globalTransaction);
+            
+            if ($isLikelySupportedPlan) {
+                Log::info('PaymentService: Supported plan transaction found with global lookup', [
+                    'transaction_id' => $transactionId,
+                    'callback_environment_id' => $environment_id,
+                    'transaction_environment_id' => $globalTransaction->environment_id
+                ]);
+                return $globalTransaction;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Basic check to identify likely supported plan transactions
+     * Used by PaymentService to avoid circular dependency
+     * 
+     * @param Transaction $transaction
+     * @return bool
+     */
+    private function isLikelySupportedPlanTransaction($transaction): bool
+    {
+        if (!$transaction) {
+            return false;
+        }
+
+        // Check transaction description for supported plan keywords
+        if ($transaction->description && stripos($transaction->description, 'supported plan') !== false) {
+            return true;
+        }
+
+        // Check if transaction amount matches supported plan pricing ($177.00)
+        if ($transaction->total_amount == 177.00) {
+            return true;
+        }
+
+        // Check transaction notes for supported plan indicators
+        if ($transaction->notes && stripos($transaction->notes, 'supported') !== false) {
+            return true;
+        }
+
+        return false;
+    }
 }
