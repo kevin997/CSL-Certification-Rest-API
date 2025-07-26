@@ -13,6 +13,11 @@ mkdir -p /var/www/html/storage/framework/{sessions,views,cache}
 mkdir -p /var/www/html/storage/logs
 mkdir -p /var/www/html/bootstrap/cache
 
+# Create backup directories for Laravel backup package
+mkdir -p /var/www/html/storage/app/private
+mkdir -p /var/www/html/storage/app/private/CSL-Certification-Rest-API
+mkdir -p /var/www/html/storage/app/backup-temp
+
 # Create log files and ensure they're writable
 touch /var/www/html/storage/logs/laravel.log
 
@@ -22,6 +27,12 @@ chown -R www-data:www-data /var/www/html/storage
 chmod -R 777 /var/www/html/storage
 chown -R www-data:www-data /var/www/html/bootstrap/cache
 chmod -R 777 /var/www/html/bootstrap/cache
+
+# Ensure backup directories have proper permissions
+chown -R www-data:www-data /var/www/html/storage/app/private
+chmod -R 777 /var/www/html/storage/app/private
+chown -R www-data:www-data /var/www/html/storage/app/backup-temp
+chmod -R 777 /var/www/html/storage/app/backup-temp
 
 # Double-check specific critical files
 touch /var/www/html/storage/logs/laravel.log

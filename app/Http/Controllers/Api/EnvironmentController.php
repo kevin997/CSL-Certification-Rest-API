@@ -567,6 +567,95 @@ class EnvironmentController extends Controller
         
         return response()->json(['message' => 'User removed from environment successfully']);
     }
+
+    /**
+     * Get environment status (demo plan detection)
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function status(Request $request)
+    {
+        try {
+            // Get current environment based on domain or user context
+            $environment = null;
+
+            // Try to get environment from domain first
+            // Try to get domain from headers in priority order
+            $domain = null;
+
+            // First check for the explicit X-Frontend-Domain header
+            $frontendDomainHeader = $request->header('X-Frontend-Domain');
+
+            // Then try Origin or Referer as fallbacks
+            $origin = $request->header('Origin');
+            $referer = $request->header('Referer');
+
+            if ($frontendDomainHeader) {
+                // Use the explicit frontend domain header if provided
+                $domain = $frontendDomainHeader;
+            } elseif ($origin) {
+                // Extract domain from Origin
+                $parsedOrigin = parse_url($origin);
+                $domain = $parsedOrigin['host'] ?? null;
+            } elseif ($referer) {
+                // Extract domain from Referer as fallback
+                $parsedReferer = parse_url($referer);
+                $domain = $parsedReferer['host'] ?? null;
+            }
+
+            $environment = Environment::where('primary_domain', $domain)
+                ->orWhere('additional_domains', 'like', "%{$domain}%")
+                ->first();
+            
+            // If no environment found by domain, get user's first environment
+            if (!$environment && $request->user()) {
+                $environment = $request->user()->ownedEnvironments()->first() 
+                    ?? $request->user()->environments()->first();
+            }
+            
+            if (!$environment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No environment found'
+                ], 404);
+            }
+            
+            // Define domains that should be exempted from subscription provider enforcement
+            // These are master/default environments used for testing
+            $exemptedDomains = [
+                'learning.csl-brands.com',
+                'localhost:3000',
+                'localhost'
+            ];
+            
+            // Check if current domain is exempted
+            $isDemoOverride = $environment->is_demo;
+            if (in_array($domain, $exemptedDomains)) {
+                // Force is_demo to false for exempted domains to bypass subscription enforcement
+                $isDemoOverride = false;
+            }
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'id' => $environment->id,
+                    'name' => $environment->name,
+                    'is_demo' => (bool) $isDemoOverride,
+                    'is_active' => (bool) $environment->is_active,
+                    'primary_domain' => $environment->primary_domain,
+                    'theme_color' => $environment->theme_color,
+                    'logo_url' => $environment->logo_url
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get environment status'
+            ], 500);
+        }
+    }
 }
 
 /**

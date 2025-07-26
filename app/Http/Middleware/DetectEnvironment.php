@@ -176,6 +176,7 @@ class DetectEnvironment
             if (!isset($data['environment'])) {
                 $environmentData = $environment ? [
                     'id' => $environment->id,
+                    'is_demo' => $environment->is_demo,
                     'name' => $environment->name,
                     'primary_domain' => $environment->primary_domain,
                     'detected_domain' => $domain,

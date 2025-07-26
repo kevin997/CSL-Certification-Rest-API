@@ -137,6 +137,8 @@ RUN mkdir -p /var/www/html/storage/framework/sessions \
     /var/www/html/storage/logs \
     /var/www/html/storage/app/backups/database \
     /var/www/html/storage/app/backup-temp \
+    /var/www/html/storage/app/private \
+    /var/www/html/storage/app/private/CSL-Certification-Rest-API \
     /var/www/html/bootstrap/cache \
     && touch /var/www/html/storage/logs/laravel.log \
     /var/www/html/storage/logs/queue.log \
@@ -177,7 +179,9 @@ RUN if [ -f "package.json" ]; then \
 # Set proper ownership and permissions (final step)
 RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 775 /var/www/html/storage \
-    && chmod -R 775 /var/www/html/bootstrap/cache
+    && chmod -R 775 /var/www/html/bootstrap/cache \
+    && chown -R www-data:www-data /var/www/html/storage/app/private \
+    && chmod -R 775 /var/www/html/storage/app/private
 
 # Laravel optimizations (run after code copy)
 RUN php artisan key:generate --no-interaction \
@@ -196,7 +200,9 @@ RUN php artisan storage:link || true
 RUN find /var/www/html -type f -exec chmod 644 {} \; \
     && find /var/www/html -type d -exec chmod 755 {} \; \
     && chmod -R 775 /var/www/html/storage \
-    && chmod -R 775 /var/www/html/bootstrap/cache
+    && chmod -R 775 /var/www/html/bootstrap/cache \
+    && chmod -R 775 /var/www/html/storage/app/private \
+    && chown -R www-data:www-data /var/www/html/storage/app/private
 
 # Health check endpoints permissions
 RUN chown -R www-data:www-data /var/www/html/public/health

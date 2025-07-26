@@ -34,6 +34,7 @@ use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\QuestionController;
 use App\Http\Controllers\Api\QuizContentController;
 use App\Http\Controllers\Api\ReferralController;
+use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\TemplateController;
 use App\Http\Controllers\Api\TemplateActivityQuestionController;
 use App\Http\Controllers\Api\TextContentController;
@@ -203,6 +204,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('environments/{id}/users', [EnvironmentController::class, 'getUsers']);
     Route::post('environments/{id}/users', [EnvironmentController::class, 'addUser']);
     Route::delete('environments/{id}/users/{userId}', [EnvironmentController::class, 'removeUser']);
+    Route::get('environment/status', [EnvironmentController::class, 'status']);
 
     // Environment credentials routes
     Route::get('environment-credentials/{environmentId}', [EnvironmentCredentialsController::class, 'show']);
@@ -512,6 +514,23 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/finance/orders', [FinanceController::class, 'orders']);
     Route::get('/finance/transactions', [FinanceController::class, 'transactions']);
     Route::get('/finance/revenue-by-product-type', [FinanceController::class, 'revenueByProductType']);
+
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::get('/subscription/current', [SubscriptionController::class, 'current']);
+        Route::get('/subscription/{id}', [SubscriptionController::class, 'show']);
+        Route::get('/subscription/{id}/payments', [SubscriptionController::class, 'payments']);
+        Route::post('/subscription/{id}/retry-payment', [SubscriptionController::class, 'retryPayment']);
+        Route::post('/subscription/{id}/cancel', [SubscriptionController::class, 'cancel']);
+        Route::put('/subscription/{id}', [SubscriptionController::class, 'update']);
+        Route::post('/subscription/upgrade', [SubscriptionController::class, 'upgrade']);
+        
+        // Advanced subscription management endpoints
+        Route::post('/subscription/{id}/calculate-proration', [SubscriptionController::class, 'calculateProration']);
+        Route::post('/subscription/{id}/change-plan', [SubscriptionController::class, 'changePlan']);
+        Route::get('/subscription/{id}/failed-payment', [SubscriptionController::class, 'getFailedPayment']);
+        Route::post('/subscription/{id}/renew', [SubscriptionController::class, 'renew']);
+        Route::post('/subscription/{id}/cancel-subscription', [SubscriptionController::class, 'cancelSubscription']);
+    });
 
     // Analytics routes
     Route::get('/analytics/overview', [AnalyticsController::class, 'overview']);
