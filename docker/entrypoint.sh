@@ -2,6 +2,11 @@
 # Don't exit immediately on error to allow proper error logging
 set +e
 
+# Export temporary directory environment variables to ensure spatie packages use Laravel storage
+export TMPDIR=/var/www/html/storage/app/backup-temp
+export TEMP=/var/www/html/storage/app/backup-temp
+export TMP=/var/www/html/storage/app/backup-temp
+
 # Create log directories
 mkdir -p /var/log/nginx
 mkdir -p /var/log/supervisor
@@ -33,6 +38,10 @@ chown -R www-data:www-data /var/www/html/storage/app/private
 chmod -R 777 /var/www/html/storage/app/private
 chown -R www-data:www-data /var/www/html/storage/app/backup-temp
 chmod -R 777 /var/www/html/storage/app/backup-temp
+
+# Ensure system temp directory is writable by www-data (fallback)
+chmod 777 /tmp
+chown www-data:www-data /tmp || true
 
 # Double-check specific critical files
 touch /var/www/html/storage/logs/laravel.log

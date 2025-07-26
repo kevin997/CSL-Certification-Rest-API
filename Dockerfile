@@ -5,6 +5,11 @@ FROM php:8.3-fpm
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
+# Force temporary directories to use Laravel storage (fixes spatie backup permission issues)
+ENV TMPDIR=/var/www/html/storage/app/backup-temp
+ENV TEMP=/var/www/html/storage/app/backup-temp
+ENV TMP=/var/www/html/storage/app/backup-temp
+
 # Set working directory
 WORKDIR /var/www/html
 
@@ -148,7 +153,10 @@ RUN mkdir -p /var/www/html/storage/framework/sessions \
     /var/www/html/storage/logs/order-regularizer.log
 
 # Setup cron job (rarely change)
-RUN echo "* * * * * www-data cd /var/www/html && php artisan schedule:run >> /dev/null 2>&1" > /etc/cron.d/laravel-scheduler \
+RUN echo "TMPDIR=/var/www/html/storage/app/backup-temp" > /etc/cron.d/laravel-scheduler \
+    && echo "TEMP=/var/www/html/storage/app/backup-temp" >> /etc/cron.d/laravel-scheduler \
+    && echo "TMP=/var/www/html/storage/app/backup-temp" >> /etc/cron.d/laravel-scheduler \
+    && echo "* * * * * www-data cd /var/www/html && php artisan schedule:run >> /dev/null 2>&1" >> /etc/cron.d/laravel-scheduler \
     && chmod 0644 /etc/cron.d/laravel-scheduler \
     && crontab -u www-data /etc/cron.d/laravel-scheduler
 
