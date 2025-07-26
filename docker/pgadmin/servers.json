@@ -1,0 +1,16 @@
+{
+  "Servers": {
+    "1": {
+      "Group": "CSL Production Databases",
+      "Name": "CSL Sales Database (PostgreSQL RDS)",
+      "Host": "database-2.ccr2s68cu8xf.us-east-1.rds.amazonaws.com",
+      "Port": 5432,
+      "MaintenanceDB": "csl_sales_db",
+      "Username": "postgres",
+      "Password": "1217w5w7j735J2===",
+      "SSLMode": "require",
+      "Favorite": true,
+      "Comment": "CSL Sales Database - PostgreSQL RDS Instance"
+    }
+  }
+}

@@ -219,6 +219,61 @@ services:
       retries: 3
       start_period: 30s
 
+  # phpMyAdmin for MySQL RDS Management
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: csl-phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "8091:80"
+    environment:
+      # Connect to external MySQL RDS instance
+      - PMA_HOST=csl-brands-certification-rest-api-1.clyyomwg2s8k.us-east-2.rds.amazonaws.com
+      - PMA_PORT=3306
+      - PMA_USER=certi_user
+      - PMA_PASSWORD=#&H3k-ID0V
+      - MYSQL_ROOT_PASSWORD=#&H3k-ID0V
+      - PMA_ABSOLUTE_URI=http://localhost:8091/
+      # Security and configuration
+      - UPLOAD_LIMIT=1G
+      - MEMORY_LIMIT=1G
+      - MAX_EXECUTION_TIME=600
+    networks:
+      - csl-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # pgAdmin for PostgreSQL RDS Management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: csl-pgadmin
+    restart: unless-stopped
+    ports:
+      - "8092:80"
+    environment:
+      # pgAdmin configuration
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL:-admin@csl.com}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD:-admin123}
+      - PGADMIN_CONFIG_SERVER_MODE=False
+      - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
+      # Pre-configure PostgreSQL RDS connection
+      - PGADMIN_CONFIG_SERVERS_JSON_FILE=/pgadmin4/servers.json
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
+    networks:
+      - csl-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/misc/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 networks:
   csl-network:
     driver: bridge
@@ -233,4 +288,7 @@ volumes:
     driver: local
   # Wiki.js volumes
   wiki-db-data:
+    driver: local
+  # Database management tools volumes
+  pgadmin-data:
     driver: local
