@@ -209,45 +209,17 @@
       async: 900   # 15 minutes timeout
       poll: 15     # Check every 15 seconds
 
-    # AWS RDS database backup
-    - name: Create backup directory
-      file:
-        path: "{{ app_dir }}/backups"
-        state: directory
-        owner: ubuntu
-        group: ubuntu
-        mode: '0777'
-      
-    - name: Display backup result
-      debug:
-        var: backup_result
-      when: backup_result is defined
-
-    - name: Keep only last 5 backups
-      shell: find {{ app_dir }}/backups -name "db_backup_*.sql" -type f -printf '%T@ %p\n' | sort -nr | tail -n +6 | cut -d' ' -f2- | xargs -r rm
-      ignore_errors: yes
+    # Note: Backups are now stored in Docker named volumes, not host directories
+    # The backup cleanup is handled by the Laravel backup package within containers
 
     # Application deployment
+    # Storage is now handled by Docker named volumes - no host directory setup needed
+    # The container's entrypoint script will create all necessary directories
+    
     - name: Stop any running containers
       shell: |
         cd {{ app_dir }}
         docker compose down || true
-      ignore_errors: yes
-      
-    - name: Ensure Laravel storage and bootstrap directories exist on host
-      shell: |
-        cd {{ app_dir }}
-        mkdir -p storage/framework/sessions storage/framework/views storage/framework/cache storage/logs
-        mkdir -p bootstrap/cache
-        touch storage/logs/laravel.log
-      ignore_errors: yes
-      
-    - name: Set proper permissions for Laravel directories on host
-      shell: |
-        cd {{ app_dir }}
-        # Use 777 permissions to ensure Docker container can write to these directories
-        chmod -R 777 storage
-        chmod -R 777 bootstrap/cache
       ignore_errors: yes
 
     - name: Start application with Docker Compose

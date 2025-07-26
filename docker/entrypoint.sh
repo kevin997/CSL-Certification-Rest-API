@@ -23,8 +23,20 @@ mkdir -p /var/www/html/storage/app/private
 mkdir -p /var/www/html/storage/app/private/CSL-Certification-Rest-API
 mkdir -p /var/www/html/storage/app/backup-temp
 
-# Create log files and ensure they're writable
+# Create all essential log files and ensure they're writable
 touch /var/www/html/storage/logs/laravel.log
+touch /var/www/html/storage/logs/queue.log
+touch /var/www/html/storage/logs/scheduler.log
+touch /var/www/html/storage/logs/rds-backup.log
+touch /var/www/html/storage/logs/nightwatch.log
+touch /var/www/html/storage/logs/order-regularizer.log
+
+# Debug: Verify directory structure exists
+echo "=== ENTRYPOINT DEBUG: Verifying storage structure ==="
+ls -la /var/www/html/storage/ || echo "ERROR: /var/www/html/storage/ does not exist!"
+ls -la /var/www/html/storage/logs/ || echo "ERROR: /var/www/html/storage/logs/ does not exist!"
+ls -la /var/www/html/storage/framework/ || echo "ERROR: /var/www/html/storage/framework/ does not exist!"
+echo "=== END ENTRYPOINT DEBUG ==="
 
 # Set proper permissions for all storage and bootstrap directories
 # Use chmod 777 for mounted volumes to ensure write access regardless of user

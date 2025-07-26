@@ -10,8 +10,9 @@ services:
     ports:
       - "8080:80"
     volumes:
-      - ./storage:/var/www/html/storage:delegated
-      - ./bootstrap/cache:/var/www/html/bootstrap/cache:delegated
+      # Only mount specific directories that need persistence
+      - app-storage:/var/www/html/storage
+      - app-bootstrap-cache:/var/www/html/bootstrap/cache
     environment:
       - APP_ENV=${APP_ENV:-staging}
       - APP_DEBUG=${APP_DEBUG:-false}
@@ -40,7 +41,7 @@ services:
       app:
         condition: service_started
     volumes:
-      - ./storage:/var/www/html/storage
+      - app-storage:/var/www/html/storage
     environment:
       - CONTAINER_ROLE=queue
       # AWS RDS connection settings
@@ -71,7 +72,7 @@ services:
     ports:
       - "8085:8080"
     volumes:
-      - ./storage:/var/www/html/storage
+      - app-storage:/var/www/html/storage
     environment:
       - CONTAINER_ROLE=reverb
       # AWS RDS connection settings
@@ -105,8 +106,8 @@ services:
       app:
         condition: service_started
     volumes:
-      - ./storage:/var/www/html/storage
-      - ./backups:/var/www/html/storage/app/backups
+      - app-storage:/var/www/html/storage
+      - app-backups:/var/www/html/storage/app/backups
     environment:
       - CONTAINER_ROLE=scheduler
       # AWS RDS connection settings
@@ -149,7 +150,7 @@ services:
     ports:
       - "2407:2407"
     volumes:
-      - ./storage:/var/www/html/storage
+      - app-storage:/var/www/html/storage
     environment:
       - CONTAINER_ROLE=nightwatch
       # AWS RDS connection settings
@@ -223,5 +224,13 @@ networks:
     driver: bridge
 
 volumes:
+  # Laravel application volumes
+  app-storage:
+    driver: local
+  app-bootstrap-cache:
+    driver: local
+  app-backups:
+    driver: local
+  # Wiki.js volumes
   wiki-db-data:
     driver: local
