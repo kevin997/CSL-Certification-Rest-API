@@ -102,6 +102,14 @@ class PaymentGatewayController extends Controller
 
         // Build query with filters
         $query = PaymentGatewaySetting::query();
+        $environmentId = $request->environment_id;
+        $isDemoEnvironment = false;
+
+        // Check if this is a demo environment
+        if ($environmentId) {
+            $environment = \App\Models\Environment::find($environmentId);
+            $isDemoEnvironment = $environment && $environment->is_demo;
+        }
 
         if ($request->has('environment_id')) {
             $query->where('environment_id', $request->environment_id);
@@ -121,20 +129,20 @@ class PaymentGatewayController extends Controller
         // Prepare response data
         $responseData = $paymentGateways->map(function ($gateway) {
             $data = $gateway->toArray();
-            
+
             // Mask sensitive information
             if (isset($data['settings'])) {
                 $settings = json_decode($data['settings'], true) ?: [];
-                
+
                 foreach ($settings as $key => $value) {
                     if (in_array($key, ['api_key', 'client_secret', 'secret_key', 'webhook_secret'])) {
                         $settings[$key] = '••••••••' . substr($value, -4);
                     }
                 }
-                
+
                 $data['settings'] = $settings;
             }
-            
+
             return $data;
         });
 
@@ -220,17 +228,17 @@ class PaymentGatewayController extends Controller
         // We'll handle the default flag separately after creation
 
         $environmentId = $request->input('environment_id', null);
-        
+
         // Generate callback URLs using route helpers
         $webhookUrl = route('api.transactions.webhook', [
             'gateway' => $request->input('code'),
             'environment_id' => $environmentId
         ]);
-        
+
         $successUrl = route('api.transactions.callback.success', [
             'environment_id' => $environmentId
         ]);
-        
+
         $failureUrl = route('api.transactions.callback.failure', [
             'environment_id' => $environmentId
         ]);
@@ -251,7 +259,7 @@ class PaymentGatewayController extends Controller
             'failure_url' => $failureUrl,
             'settings' => json_encode($request->input('settings')),
         ]);
-        
+
         // Handle default flag separately if needed
         if ($request->input('is_default', false)) {
             DB::statement('SET @disable_triggers = 1');
@@ -261,7 +269,7 @@ class PaymentGatewayController extends Controller
                     ->where('environment_id', $request->input('environment_id'))
                     ->where('id', '!=', $paymentGateway->id)
                     ->update(['is_default' => false]);
-                
+
                 // Set this gateway as default
                 DB::table('payment_gateway_settings')
                     ->where('id', $paymentGateway->id)
@@ -273,17 +281,17 @@ class PaymentGatewayController extends Controller
 
         // Prepare response data
         $responseData = $paymentGateway->toArray();
-        
+
         // Mask sensitive information
         if (isset($responseData['settings'])) {
             $settings = json_decode($responseData['settings'], true) ?: [];
-            
+
             foreach ($settings as $key => $value) {
                 if (in_array($key, ['api_key', 'client_secret', 'secret_key', 'webhook_secret'])) {
                     $settings[$key] = '••••••••' . substr($value, -4);
                 }
             }
-            
+
             $responseData['settings'] = $settings;
         }
 
@@ -338,17 +346,17 @@ class PaymentGatewayController extends Controller
 
         // Prepare response data
         $responseData = $paymentGateway->toArray();
-        
+
         // Mask sensitive information
         if (isset($responseData['settings'])) {
             $settings = json_decode($responseData['settings'], true) ?: [];
-            
+
             foreach ($settings as $key => $value) {
                 if (in_array($key, ['api_key', 'client_secret', 'secret_key', 'webhook_secret'])) {
                     $settings[$key] = '••••••••' . substr($value, -4);
                 }
             }
-            
+
             $responseData['settings'] = $settings;
         }
 
@@ -454,17 +462,17 @@ class PaymentGatewayController extends Controller
             'mode',
             'is_default',
         ]);
-        
+
         // Generate callback URLs using route helpers
         $updateData['webhook_url'] = route('api.transactions.webhook', [
             'gateway' => $request->input('code') ?: $paymentGateway->code,
             'environment_id' => $paymentGateway->environment_id
         ]);
-        
+
         $updateData['success_url'] = route('api.transactions.callback.success', [
             'environment_id' => $paymentGateway->environment_id
         ]);
-        
+
         $updateData['failure_url'] = route('api.transactions.callback.failure', [
             'environment_id' => $paymentGateway->environment_id
         ]);
@@ -473,20 +481,20 @@ class PaymentGatewayController extends Controller
         if ($request->has('settings')) {
             // Get current settings
             $currentSettings = json_decode((string)$paymentGateway->settings, true) ?: [];
-            
+
             // Merge with new settings
             $newSettings = array_merge($currentSettings, $request->input('settings'));
-            
+
             $updateData['settings'] = json_encode($newSettings);
         }
 
         // Handle is_default flag separately to avoid trigger issues
         $isDefault = $request->has('is_default') ? (bool)$request->input('is_default') : false;
         unset($updateData['is_default']);
-        
+
         // First update all other fields except is_default
         $paymentGateway->update($updateData);
-        
+
         // Only update is_default if it's changing (not already the default)
         if ($isDefault && !$paymentGateway->is_default) {
             // First set all other gateways to non-default using a direct query
@@ -494,27 +502,27 @@ class PaymentGatewayController extends Controller
                 ->where('environment_id', $paymentGateway->environment_id)
                 ->where('id', '!=', $id)
                 ->update(['is_default' => false]);
-                
+
             // Then set this one as default without triggering the update trigger
             DB::statement("UPDATE payment_gateway_settings SET is_default = 1 WHERE id = {$id}");
-            
+
             // Refresh the model
             $paymentGateway = $paymentGateway->fresh();
         }
 
         // Prepare response data
         $responseData = $paymentGateway->fresh()->toArray();
-        
+
         // Mask sensitive information
         if (isset($responseData['settings'])) {
             $settings = json_decode($responseData['settings'], true) ?: [];
-            
+
             foreach ($settings as $key => $value) {
                 if (in_array($key, ['api_key', 'client_secret', 'secret_key', 'webhook_secret'])) {
                     $settings[$key] = '••••••••' . substr($value, -4);
                 }
             }
-            
+
             $responseData['settings'] = $settings;
         }
 

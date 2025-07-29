@@ -38,6 +38,7 @@ class Subscription extends Model
     const STATUS_CANCELED = 'canceled';
     const STATUS_EXPIRED = 'expired';
     const STATUS_TRIAL = 'trial';
+    const PENDING = 'pending';
 
     /**
      * The attributes that should be cast.

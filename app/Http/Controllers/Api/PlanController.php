@@ -24,9 +24,9 @@ class PlanController extends Controller
         $query->where('is_active', $isActive);
 
         // Filter by plan type if provided
-        if ($request->has('type')) {
-            $query->where('type', $request->query('type'));
-        }
+       // if ($request->has('type')) {
+            $query->whereIn('type', ['standalone', 'supported', 'demo']);
+       // }
 
         // Sort by sort_order or created_at
         $query->orderBy('sort_order', 'asc');

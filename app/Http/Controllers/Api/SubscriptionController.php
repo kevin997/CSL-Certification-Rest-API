@@ -578,7 +578,7 @@ class SubscriptionController extends Controller
     }
 
     /**
-     * Get failed payment for subscription
+     * Get failed or pending payment for subscription
      *
      * @param int $id
      * @return \Illuminate\Http\JsonResponse
@@ -597,7 +597,7 @@ class SubscriptionController extends Controller
             }
 
             $failedPayment = Payment::where('subscription_id', $id)
-                ->where('status', 'failed')
+                ->whereIn('status', ['failed', 'pending'])
                 ->orderBy('created_at', 'desc')
                 ->first();
 

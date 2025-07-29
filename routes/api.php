@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\LessonContentController;
 use App\Http\Controllers\Api\LessonQuestionResponseController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PaymentGatewayController;
+use App\Http\Controllers\Api\BillingPaymentGatewayController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\ProductCategoryController;
 use App\Http\Controllers\Api\ProductController;
@@ -484,6 +485,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/payment-gateways/{id}', [PaymentGatewayController::class, 'update']);
     Route::delete('/payment-gateways/{id}', [PaymentGatewayController::class, 'destroy']);
     Route::get('/payment-gateway-types', [PaymentGatewayController::class, 'getTypes']);
+
+    // Billing Payment Gateway routes (always uses default environment ID 1)
+    Route::get('/billing/payment-gateways', [BillingPaymentGatewayController::class, 'index']);
+    Route::get('/billing/payment-gateways/{id}', [BillingPaymentGatewayController::class, 'show']);
+    Route::get('/billing/payment-gateway-types', [BillingPaymentGatewayController::class, 'getAvailableTypes']);
+    Route::get('/billing/payment-gateway-default', [BillingPaymentGatewayController::class, 'getDefault']);
 
     // Transaction routes
     Route::get('/transactions', [TransactionController::class, 'index']);

@@ -182,7 +182,7 @@ class SupportedOnboardingController extends Controller
                     'billing_cycle' => 'monthly',
                     'start_date' => now(),
                     'end_date' => now()->addMonth(),
-                    'status' => Subscription::STATUS_ACTIVE,
+                    'status' => Subscription::PENDING,
                     'is_trial' => false,
                 ];
                 
@@ -433,7 +433,7 @@ class SupportedOnboardingController extends Controller
             
             // Update subscription status to active if payment succeeded
             $subscription->update([
-                'status' => Subscription::STATUS_ACTIVE,
+                'status' => Subscription::PENDING,
                 'updated_at' => now()
             ]);
             
