@@ -27,7 +27,7 @@ class BackupSalesDatabase extends Command
      * Sales Website database connection details
      */
     private $salesDbConfig = [
-        'host' => 'database-2.ccr2s68cu8xf.us-east-1.rds.amazonaws.com',
+        'host' => 'csl-brands-sales-db-influncer.clyyomwg2s8k.us-east-2.rds.amazonaws.com',
         'port' => '5432',
         'database' => 'csl_sales_db',
         'username' => 'postgres',
