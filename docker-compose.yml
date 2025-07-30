@@ -208,12 +208,12 @@ services:
     ports:
       - "8090:3000"
     volumes:
-      - ./wiki-data:/wiki/data
-      - ./wiki-uploads:/wiki/uploads
+      - wiki-data:/wiki/data
+      - wiki-uploads:/wiki/uploads
     networks:
       - csl-network
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/healthz"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -288,6 +288,10 @@ volumes:
     driver: local
   # Wiki.js volumes
   wiki-db-data:
+    driver: local
+  wiki-data:
+    driver: local
+  wiki-uploads:
     driver: local
   # Database management tools volumes
   pgadmin-data:
