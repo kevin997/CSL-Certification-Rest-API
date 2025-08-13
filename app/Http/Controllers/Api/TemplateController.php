@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Validator;
  *     required={"title", "description", "created_by"},
  *     @OA\Property(property="id", type="integer", format="int64", example=1),
  *     @OA\Property(property="title", type="string", example="CSL Certification Course Template"),
+ *     @OA\Property(property="template_code", type="string", example="CSL-CERT-001", nullable=true),
  *     @OA\Property(property="description", type="string", example="A template for creating certification courses"),
  *     @OA\Property(property="is_public", type="boolean", example=true),
  *     @OA\Property(property="thumbnail_path", type="string", example="path/to/thumbnail", nullable=true),
@@ -146,6 +147,7 @@ class TemplateController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
+            'template_code' => 'nullable|string|max:50',
             'description' => 'nullable|string',
             'is_public' => 'boolean',
             'status' => 'required|string|in:draft,published,archived',

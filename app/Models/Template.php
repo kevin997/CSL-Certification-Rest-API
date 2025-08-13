@@ -21,6 +21,7 @@ class Template extends Model
      */
     protected $fillable = [
         'title',
+        'template_code',
         'description',
         'status',
         'created_by',

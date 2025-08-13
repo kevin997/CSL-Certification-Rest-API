@@ -18,6 +18,7 @@ use Illuminate\Support\Str;
  *     required={"title", "template_id", "status"},
  *     @OA\Property(property="id", type="integer", format="int64", example=1),
  *     @OA\Property(property="title", type="string", example="Introduction to CSL Certification"),
+ *     @OA\Property(property="course_code", type="string", example="CSL-INTRO-101", nullable=true),
  *     @OA\Property(property="slug", type="string", example="introduction-to-csl-certification"),
  *     @OA\Property(property="description", type="string", example="A comprehensive introduction to CSL certification standards", nullable=true),
  *     @OA\Property(property="template_id", type="integer", format="int64", example=1),
@@ -504,6 +505,7 @@ class CourseController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
+            'course_code' => 'nullable|string|max:50',
             'description' => 'required|string',
             'template_id' => 'required|integer|exists:templates,id',
             'environment_id' => 'nullable|integer|exists:environments,id',
@@ -634,6 +636,7 @@ class CourseController extends Controller
         
         $validator = Validator::make($request->all(), [
             'title' => 'string|max:255',
+            'course_code' => 'nullable|string|max:50',
             'description' => 'string',
             'template_id' => 'integer|exists:templates,id',
             'environment_id' => 'nullable|integer|exists:environments,id',
