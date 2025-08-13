@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\UserNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use App\Events\EnvironmentNotification;
+use Illuminate\Support\Facades\Validator;
 
 class UserNotificationController extends Controller
 {
@@ -104,6 +106,44 @@ class UserNotificationController extends Controller
         return response()->json([
             'status' => 'success',
             'message' => 'All notifications marked as read'
+        ]);
+    }
+
+    /**
+     * Test endpoint to broadcast an environment-scoped notification.
+     * Requires auth. Accepts environment_id, optional user_id, type, title, message, and data.
+     */
+    public function testBroadcast(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'environment_id' => ['required', 'integer'],
+            'user_id' => ['nullable', 'integer'],
+            'type' => ['nullable', 'string'],
+            'title' => ['nullable', 'string'],
+            'message' => ['nullable', 'string'],
+            'data' => ['nullable', 'array'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $envId = (int) $request->input('environment_id');
+        $userId = $request->input('user_id');
+        $type = $request->input('type', 'info');
+        $title = $request->input('title', 'Test Notification');
+        $message = $request->input('message', 'This is a test environment-scoped notification');
+        $data = $request->input('data', []);
+
+        event(new EnvironmentNotification($envId, $type, $title, $message, $data, $userId));
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Notification broadcast queued',
+            'payload' => compact('envId', 'userId', 'type', 'title', 'message', 'data'),
         ]);
     }
 }

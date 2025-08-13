@@ -555,6 +555,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/environments/{environmentId}/notifications/unread-count', [UserNotificationController::class, 'unreadCount']);
     Route::put('/environments/{environmentId}/notifications/{notificationId}/read', [UserNotificationController::class, 'markAsRead']);
     Route::put('/environments/{environmentId}/notifications/read-all', [UserNotificationController::class, 'markAllAsRead']);
+    // Test broadcast route (auth required): expects environment_id, optional user_id, type, title, message, data
+    Route::post('/notifications/test-broadcast', [UserNotificationController::class, 'testBroadcast']);
     Route::get('/files/{id}', [FileController::class, 'show']);
     Route::put('/files/{id}', [FileController::class, 'update']);
     Route::delete('/files/{id}', [FileController::class, 'destroy']);
