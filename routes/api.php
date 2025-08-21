@@ -628,6 +628,9 @@ Route::group(['prefix' => 'storefront'], function () {
     
     // Calculate product price with commission (for product creation)
     Route::post('/{environmentId}/calculate-product-price', [StorefrontController::class, 'calculateProductPriceWithCommission']);
+    
+    // Free course enrollment (requires authentication)
+    Route::post('/{environmentId}/enroll-free', [StorefrontController::class, 'enrollFree'])->middleware('auth:sanctum');
 });
 
 // Continue payment for a pending order

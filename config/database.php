@@ -65,6 +65,7 @@ return [
                 'use_single_transaction' => false,
                 'timeout' => 60 * 60, // 60 minutes
                 'add_extra_option' => env('DB_DUMP_EXTRA_OPTIONS', '--routines --triggers --no-tablespaces --lock-tables=false --quick --set-gtid-purged=OFF'),
+                'skip_ssl' => true,
             ],
         ],
 

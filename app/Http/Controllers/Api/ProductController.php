@@ -247,7 +247,7 @@ class ProductController extends Controller
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'description' => 'required|string',
-            'price' => 'required|numeric|min:0',
+            'price' => 'required_unless:is_free,true|numeric|min:0',
             'discount_price' => 'nullable|numeric|min:0',
             'currency' => 'required|string|size:3',
             'is_subscription' => 'required|boolean',
@@ -259,6 +259,7 @@ class ProductController extends Controller
             'courses' => 'nullable|array',
             'courses.*' => 'exists:courses,id',
             'is_featured' => 'nullable|boolean',
+            'is_free' => 'nullable|boolean',
             'category_id' => 'required|exists:product_categories,id',
             'sku' => 'required|string|max:255',
             'meta_title' => 'nullable|string|max:255',
@@ -439,7 +440,7 @@ class ProductController extends Controller
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
             'description' => 'sometimes|required|string',
-            'price' => 'sometimes|required|numeric|min:0',
+            'price' => 'sometimes|required_unless:is_free,true|numeric|min:0',
             'discount_price' => 'nullable|numeric|min:0',
             'currency' => 'sometimes|required|string|size:3',
             'is_subscription' => 'sometimes|required|boolean',
@@ -449,6 +450,7 @@ class ProductController extends Controller
             'status' => 'sometimes|required|string|in:draft,active,inactive',
             'thumbnail_path' => 'nullable|string',
             'is_featured' => 'nullable|boolean',
+            'is_free' => 'nullable|boolean',
             'category_id' => 'required|exists:product_categories,id',
             'courses' => 'nullable|array',
             'courses.*' => 'exists:courses,id',

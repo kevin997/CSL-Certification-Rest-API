@@ -2400,4 +2400,118 @@ class StorefrontController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Enroll user in free course
+     *
+     * @param Request $request
+     * @param string $environmentId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function enrollFree(Request $request, string $environmentId)
+    {
+        // Validate environment
+        $environment = $this->getEnvironmentById($environmentId);
+        if (!$environment) {
+            return response()->json(['message' => 'Environment not found'], 404);
+        }
+        
+        // Validate request
+        $validator = Validator::make($request->all(), [
+            'product_id' => 'required|exists:products,id',
+        ]);
+        
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        
+        // Get authenticated user
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Authentication required'
+            ], 401);
+        }
+        
+        // Get and validate product
+        $product = Product::where('id', $request->product_id)
+            ->where('environment_id', $environmentId)
+            ->first();
+            
+        if (!$product) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Product not found'
+            ], 404);
+        }
+        
+        if (!$product->is_free) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This course requires payment',
+                'error_code' => 'COURSE_NOT_FREE'
+            ], 400);
+        }
+        
+        // Get product courses and create enrollments
+        $enrollments = [];
+        $productCourses = DB::table('product_courses')
+            ->where('product_id', $product->id)
+            ->get();
+            
+        foreach ($productCourses as $productCourse) {
+            // Check for existing enrollment
+            $existingEnrollment = \App\Models\Enrollment::where('user_id', $user->id)
+                ->where('course_id', $productCourse->course_id)
+                ->where('environment_id', $environmentId)
+                ->first();
+                
+            if ($existingEnrollment) {
+                continue; // Skip if already enrolled
+            }
+            
+            // Create new enrollment
+            $enrollment = \App\Models\Enrollment::create([
+                'user_id' => $user->id,
+                'course_id' => $productCourse->course_id,
+                'environment_id' => $environmentId,
+                'status' => \App\Models\Enrollment::STATUS_ENROLLED,
+                'progress_percentage' => 0,
+                'last_activity_at' => now(),
+                'enrolled_at' => now(),
+            ]);
+            
+            $enrollments[] = $enrollment;
+        }
+        
+        if (empty($enrollments)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You are already enrolled in this course',
+                'error_code' => 'ALREADY_ENROLLED'
+            ], 400);
+        }
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Successfully enrolled in course',
+            'data' => [
+                'enrollments' => collect($enrollments)->map(function($enrollment) {
+                    return [
+                        'enrollment_id' => $enrollment->id,
+                        'course_id' => $enrollment->course_id,
+                        'status' => $enrollment->status,
+                        'enrolled_at' => $enrollment->enrolled_at,
+                    ];
+                }),
+                'product_id' => $product->id,
+                'product_name' => $product->name,
+            ]
+        ]);
+    }
 }

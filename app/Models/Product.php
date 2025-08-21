@@ -40,6 +40,7 @@ class Product extends Model
         'sku',
         'stock_quantity',
         'is_featured',
+        'is_free',
         'meta_title',
         'meta_description',
         'meta_keywords',
@@ -60,6 +61,7 @@ class Product extends Model
             'trial_days' => 'integer',
             'stock_quantity' => 'integer',
             'is_featured' => 'boolean',
+            'is_free' => 'boolean',
         ];
     }
 
