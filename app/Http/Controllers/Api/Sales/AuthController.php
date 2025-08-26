@@ -47,10 +47,10 @@ class AuthController extends Controller
 
         // Create abilities array for the token
         $abilities = [];
-        
+
         // Add user's role
-        $abilities[] = 'role:' . $user->role;
-        
+        $abilities[] = 'role:' . $user->role->value;
+
         // Create token with abilities
         $token = $user->createToken($request->device_name, $abilities)->plainTextToken;
 
@@ -61,7 +61,7 @@ class AuthController extends Controller
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
-                'role' => $user->role,
+                'role' => $user->role->value,
                 'created_at' => $user->created_at,
                 'updated_at' => $user->updated_at,
             ]
@@ -99,7 +99,7 @@ class AuthController extends Controller
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
-                'role' => $user->role,
+                'role' => $user->role->value,
                 'created_at' => $user->created_at,
                 'updated_at' => $user->updated_at,
             ]

@@ -314,7 +314,7 @@ class SubscriptionController extends Controller
             // Validate and update allowed fields
             $allowedFields = ['billing_cycle', 'status'];
             $updateData = $request->only($allowedFields);
-            
+
             if (!empty($updateData)) {
                 $subscription->update($updateData);
             }
@@ -360,7 +360,7 @@ class SubscriptionController extends Controller
 
             // Get the selected plan
             $plan = \App\Models\Plan::findOrFail($request->plan_id);
-            
+
             // Check if user already has an active subscription
             $existingSubscription = Subscription::where('user_id', $user->id)
                 ->whereIn('status', ['active', 'trial', 'pending'])
@@ -476,23 +476,23 @@ class SubscriptionController extends Controller
             $currentPeriodStart = new \DateTime($subscription->current_period_start);
             $currentPeriodEnd = new \DateTime($subscription->current_period_end);
             $now = new \DateTime();
-            
+
             $totalDays = $currentPeriodEnd->diff($currentPeriodStart)->days;
             $remainingDays = $currentPeriodEnd->diff($now)->days;
-            
+
             if ($totalDays <= 0) {
                 $proratedAmount = 0;
             } else {
                 $remainingRatio = $remainingDays / $totalDays;
-                
+
                 // Calculate current plan refund
                 $currentAmount = $request->billing_cycle === 'annual' ? $currentPlan->price_annual : $currentPlan->price_monthly;
                 $refundAmount = $currentAmount * $remainingRatio;
-                
+
                 // Calculate new plan charge
                 $newAmount = $request->billing_cycle === 'annual' ? $newPlan->price_annual : $newPlan->price_monthly;
                 $newCharge = $newAmount * $remainingRatio;
-                
+
                 $proratedAmount = $newCharge - $refundAmount;
             }
 
@@ -542,7 +542,7 @@ class SubscriptionController extends Controller
             }
 
             $newPlan = \App\Models\Plan::findOrFail($request->new_plan_id);
-            
+
             // Update subscription plan
             $subscription->plan_id = $newPlan->id;
             $subscription->updated_at = now();
@@ -634,7 +634,7 @@ class SubscriptionController extends Controller
             // Reactivate subscription
             $subscription->status = 'active';
             $subscription->cancel_at_period_end = false;
-            
+
             // Extend billing period if expired
             if ($subscription->current_period_end < now()) {
                 $billingCycle = $subscription->billing_cycle ?? 'monthly';
@@ -648,7 +648,7 @@ class SubscriptionController extends Controller
                     $subscription->next_billing_date = now()->addMonth();
                 }
             }
-            
+
             $subscription->updated_at = now();
             $subscription->save();
 
@@ -704,7 +704,7 @@ class SubscriptionController extends Controller
                 $subscription->cancel_at_period_end = false;
                 $subscription->current_period_end = now();
             }
-            
+
             $subscription->updated_at = now();
             $subscription->save();
 
@@ -719,6 +719,273 @@ class SubscriptionController extends Controller
         } catch (\Exception $e) {
             Log::error('Error cancelling subscription: ' . $e->getMessage());
             return response()->json(['status' => 'error', 'message' => 'Failed to cancel subscription'], 500);
+        }
+    }
+
+    /**
+     * Get all subscriptions (admin endpoint)
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function index(Request $request)
+    {
+        try {
+            $query = Subscription::with(['user', 'plan']);
+
+            // Apply filters
+            if ($request->has('status') && $request->status !== '') {
+                $query->where('status', $request->status);
+            }
+
+            if ($request->has('search') && $request->search !== '') {
+                $search = $request->search;
+                $query->whereHas('user', function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
+                });
+            }
+
+            // Pagination
+            $perPage = $request->get('per_page', 15);
+            $subscriptions = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $subscriptions
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error fetching subscriptions: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch subscriptions'
+            ], 500);
+        }
+    }
+
+    /**
+     * Create new subscription (admin endpoint)
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function store(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'customer_id' => 'required|integer|exists:users,id',
+                'plan_id' => 'required|integer|exists:plans,id',
+                'billing_cycle' => 'required|in:monthly,annual',
+                'status' => 'required|in:active,trial,pending,suspended,canceled',
+                'trial_days' => 'nullable|integer|min:0',
+                'start_date' => 'nullable|date',
+                'notes' => 'nullable|string|max:1000'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => 'error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $plan = \App\Models\Plan::findOrFail($request->plan_id);
+            $startDate = $request->start_date ? new \DateTime($request->start_date) : now();
+
+            // Calculate billing dates
+            $nextBillingDate = clone $startDate;
+            if ($request->billing_cycle === 'annual') {
+                $nextBillingDate->addYear();
+            } else {
+                $nextBillingDate->addMonth();
+            }
+
+            // Add trial period if specified
+            if ($request->trial_days && $request->trial_days > 0) {
+                $nextBillingDate->addDays($request->trial_days);
+            }
+
+            $subscription = Subscription::create([
+                'user_id' => $request->customer_id,
+                'plan_id' => $request->plan_id,
+                'status' => $request->status,
+                'billing_cycle' => $request->billing_cycle,
+                'start_date' => $startDate,
+                'next_billing_date' => $nextBillingDate,
+                'trial_days' => $request->trial_days,
+                'notes' => $request->notes,
+                'current_period_start' => $startDate,
+                'current_period_end' => $nextBillingDate,
+            ]);
+
+            $subscription->load(['user', 'plan']);
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $subscription,
+                'message' => 'Subscription created successfully'
+            ], 201);
+        } catch (\Exception $e) {
+            Log::error('Error creating subscription: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to create subscription'
+            ], 500);
+        }
+    }
+
+    /**
+     * Show subscription details (admin endpoint)
+     *
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function adminShow($id)
+    {
+        try {
+            $subscription = Subscription::with(['user', 'plan', 'payments'])
+                ->findOrFail($id);
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $subscription
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error fetching subscription: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Subscription not found'
+            ], 404);
+        }
+    }
+
+    /**
+     * Update subscription (admin endpoint)
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function adminUpdate(Request $request, $id)
+    {
+        try {
+            $subscription = Subscription::findOrFail($id);
+
+            $validator = Validator::make($request->all(), [
+                'plan_id' => 'sometimes|integer|exists:plans,id',
+                'billing_cycle' => 'sometimes|in:monthly,annual',
+                'status' => 'sometimes|in:active,trial,pending,suspended,canceled',
+                'trial_days' => 'nullable|integer|min:0',
+                'notes' => 'nullable|string|max:1000'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => 'error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $subscription->update($request->only([
+                'plan_id',
+                'billing_cycle',
+                'status',
+                'trial_days',
+                'notes'
+            ]));
+
+            $subscription->load(['user', 'plan']);
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $subscription,
+                'message' => 'Subscription updated successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error updating subscription: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to update subscription'
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete subscription (admin endpoint)
+     *
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function destroy($id)
+    {
+        try {
+            $subscription = Subscription::findOrFail($id);
+            $subscription->delete();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Subscription deleted successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error deleting subscription: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to delete subscription'
+            ], 500);
+        }
+    }
+
+    /**
+     * Suspend subscription (admin endpoint)
+     *
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function suspend($id)
+    {
+        try {
+            $subscription = Subscription::findOrFail($id);
+            $subscription->update(['status' => 'suspended']);
+            $subscription->load(['user', 'plan']);
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $subscription,
+                'message' => 'Subscription suspended successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error suspending subscription: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to suspend subscription'
+            ], 500);
+        }
+    }
+
+    /**
+     * Reactivate subscription (admin endpoint)
+     *
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function reactivate($id)
+    {
+        try {
+            $subscription = Subscription::findOrFail($id);
+            $subscription->update(['status' => 'active']);
+            $subscription->load(['user', 'plan']);
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $subscription,
+                'message' => 'Subscription reactivated successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error reactivating subscription: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to reactivate subscription'
+            ], 500);
         }
     }
 }

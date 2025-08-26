@@ -58,6 +58,7 @@ use App\Http\Controllers\Api\Onboarding\DemoOnboardingController;
 use App\Http\Controllers\Api\LessonDiscussionController;
 use Illuminate\Support\Facades\Broadcast;
 use App\Http\Controllers\Api\UserNotificationController;
+use App\Http\Controllers\Api\CustomerController;
 
 Route::middleware('auth:sanctum')->post('/broadcasting/auth', function (Request $request) {
     return Broadcast::auth($request);
@@ -530,13 +531,38 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/subscription/{id}/cancel', [SubscriptionController::class, 'cancel']);
         Route::put('/subscription/{id}', [SubscriptionController::class, 'update']);
         Route::post('/subscription/upgrade', [SubscriptionController::class, 'upgrade']);
-        
+
         // Advanced subscription management endpoints
+        Route::get('/subscriptions', [SubscriptionController::class, 'index']);
+        Route::post('/subscriptions', [SubscriptionController::class, 'store']);
+        Route::get('/subscriptions/{id}', [SubscriptionController::class, 'adminShow']);
+        Route::put('/subscriptions/{id}', [SubscriptionController::class, 'adminUpdate']);
+        Route::delete('/subscriptions/{id}', [SubscriptionController::class, 'destroy']);
+        Route::post('/subscriptions/{id}/suspend', [SubscriptionController::class, 'suspend']);
+        Route::post('/subscriptions/{id}/reactivate', [SubscriptionController::class, 'reactivate']);
+
+        // Customer management endpoints for admin
+        Route::get('/customers', [CustomerController::class, 'index']);
+        Route::post('/customers', [CustomerController::class, 'store']);
+        Route::get('/customers/{id}', [CustomerController::class, 'show']);
+        Route::put('/customers/{id}', [CustomerController::class, 'update']);
+        Route::delete('/customers/{id}', [CustomerController::class, 'destroy']);
+
+        // Admin subscription management endpoints
         Route::post('/subscription/{id}/calculate-proration', [SubscriptionController::class, 'calculateProration']);
         Route::post('/subscription/{id}/change-plan', [SubscriptionController::class, 'changePlan']);
         Route::get('/subscription/{id}/failed-payment', [SubscriptionController::class, 'getFailedPayment']);
         Route::post('/subscription/{id}/renew', [SubscriptionController::class, 'renew']);
         Route::post('/subscription/{id}/cancel-subscription', [SubscriptionController::class, 'cancelSubscription']);
+
+        // Admin subscription management endpoints
+        Route::get('/subscriptions', [SubscriptionController::class, 'index']);
+        Route::post('/subscriptions', [SubscriptionController::class, 'store']);
+        Route::get('/subscriptions/{id}', [SubscriptionController::class, 'adminShow']);
+        Route::put('/subscriptions/{id}', [SubscriptionController::class, 'adminUpdate']);
+        Route::delete('/subscriptions/{id}', [SubscriptionController::class, 'destroy']);
+        Route::post('/subscriptions/{id}/suspend', [SubscriptionController::class, 'suspend']);
+        Route::post('/subscriptions/{id}/reactivate', [SubscriptionController::class, 'reactivate']);
     });
 
     // Analytics routes
@@ -625,10 +651,10 @@ Route::group(['prefix' => 'storefront'], function () {
 
     // Get tax rate for location
     Route::post('/{environmentId}/tax-rate', [StorefrontController::class, 'getTaxRateForLocation']);
-    
+
     // Calculate product price with commission (for product creation)
     Route::post('/{environmentId}/calculate-product-price', [StorefrontController::class, 'calculateProductPriceWithCommission']);
-    
+
     // Free course enrollment (requires authentication)
     Route::post('/{environmentId}/enroll-free', [StorefrontController::class, 'enrollFree'])->middleware('auth:sanctum');
 });

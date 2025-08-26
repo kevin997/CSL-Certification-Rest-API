@@ -36,6 +36,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'whatsapp_number',
         'role',
         'is_admin',
         'company_name',
@@ -76,7 +77,7 @@ class User extends Authenticatable
             'is_admin' => 'boolean',
         ];
     }
-    
+
     /**
      * Get the URL to the user's profile photo.
      * This overrides the method from HasProfilePhoto trait to handle Cloudinary URLs.
@@ -89,7 +90,7 @@ class User extends Authenticatable
         if ($this->profile_photo_path && strpos($this->profile_photo_path, 'cloudinary.com') !== false) {
             return $this->profile_photo_path;
         }
-        
+
         // Otherwise, fall back to the default behavior from the trait
         return $this->profile_photo_path
             ? Storage::disk($this->profilePhotoDisk())->url($this->profile_photo_path)
@@ -117,7 +118,7 @@ class User extends Authenticatable
      */
     public function isAdmin(): bool
     {
-        return $this->role === UserRole::ADMIN;
+        return $this->role === UserRole::ADMIN || $this->role === UserRole::SUPER_ADMIN;
     }
 
     /**
@@ -125,7 +126,7 @@ class User extends Authenticatable
      */
     public function isSalesAgent(): bool
     {
-        return $this->role === 'sales_agent';
+        return $this->role === UserRole::SALES_AGENT;
     }
 
     /**

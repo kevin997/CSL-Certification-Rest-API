@@ -81,6 +81,7 @@ class StandaloneOnboardingController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8',
+            'whatsapp_number' => 'required|string|max:20',
             'environment_name' => 'required|string|max:255',
             'domain_type' => 'required|in:subdomain,custom',
             'domain' => 'required|string|max:255',
@@ -118,6 +119,7 @@ class StandaloneOnboardingController extends Controller
                     'name' => $request->name,
                     'email' => $request->email,
                     'password' => Hash::make($request->password),
+                    'whatsapp_number' => $request->whatsapp_number,
                     'role' => 'company_teacher',
                     'email_verified_at' => now(),
                 ]);
