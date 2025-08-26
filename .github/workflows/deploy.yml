@@ -62,7 +62,7 @@ jobs:
       - name: Run Ansible playbook
         id: deploy
         run: |
-          ansible-playbook -i inventory.ini deploy-rest-api.yml -e "@vars.yml"
+          ansible-playbook -i inventory.ini deploy-rest-api.yml -e "@vars.yml" --become
         continue-on-error: true
         
       - name: Set deployment status
