@@ -656,6 +656,58 @@ class EnvironmentController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Update environment demo status
+     *
+     * @param int $id
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function updateDemoStatus($id, Request $request)
+    {
+        try {
+            $environment = Environment::findOrFail($id);
+            
+            // Check if user has admin permissions
+            if (!$request->user()->isAdmin()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unauthorized. Admin access required.'
+                ], 403);
+            }
+            
+            // Validate request
+            $request->validate([
+                'is_demo' => 'required|boolean'
+            ]);
+            
+            // Update demo status
+            $environment->is_demo = $request->is_demo;
+            $environment->save();
+            
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Environment demo status updated successfully',
+                'data' => [
+                    'id' => $environment->id,
+                    'name' => $environment->name,
+                    'is_demo' => $environment->is_demo
+                ]
+            ], 200);
+            
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Environment not found'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to update environment demo status'
+            ], 500);
+        }
+    }
 }
 
 /**

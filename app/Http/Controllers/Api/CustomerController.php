@@ -156,4 +156,117 @@ class CustomerController extends Controller
             ], 404);
         }
     }
+
+    /**
+     * Update customer information
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function update(Request $request, $id)
+    {
+        try {
+            $customer = User::findOrFail($id);
+
+            // Validate request data
+            $request->validate([
+                'name' => 'sometimes|string|max:255',
+                'email' => 'sometimes|email|unique:users,email,' . $id,
+                'role' => 'sometimes|in:learner,individual_teacher,company_teacher',
+                'company_name' => 'sometimes|nullable|string|max:255',
+            ]);
+
+            // Update customer data
+            $customer->update($request->only(['name', 'email', 'role', 'company_name']));
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $customer->fresh()
+            ], 200);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            Log::error('Customer not found: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Customer not found'
+            ], 404);
+        } catch (\Exception $e) {
+            Log::error('Error updating customer: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to update customer'
+            ], 500);
+        }
+    }
+
+    /**
+     * Create a new customer
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function store(Request $request)
+    {
+        try {
+            // Validate request data
+            $request->validate([
+                'name' => 'required|string|max:255',
+                'email' => 'required|email|unique:users,email',
+                'password' => 'required|string|min:8',
+                'role' => 'required|in:learner,individual_teacher,company_teacher',
+                'company_name' => 'nullable|string|max:255',
+            ]);
+
+            // Create customer
+            $customer = User::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'password' => bcrypt($request->password),
+                'role' => $request->role,
+                'company_name' => $request->company_name,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $customer
+            ], 201);
+        } catch (\Exception $e) {
+            Log::error('Error creating customer: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to create customer'
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete a customer
+     *
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function destroy($id)
+    {
+        try {
+            $customer = User::findOrFail($id);
+            $customer->delete();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Customer deleted successfully'
+            ], 200);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            Log::error('Customer not found: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Customer not found'
+            ], 404);
+        } catch (\Exception $e) {
+            Log::error('Error deleting customer: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to delete customer'
+            ], 500);
+        }
+    }
 }
