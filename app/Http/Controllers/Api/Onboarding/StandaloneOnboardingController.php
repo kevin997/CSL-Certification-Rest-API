@@ -130,6 +130,7 @@ class StandaloneOnboardingController extends Controller
                     'primary_domain' => $primaryDomain,
                     'description' => $request->description,
                     'owner_id' => $user->id,
+                    'is_demo' => false, // Mark this as not demo environment
                     'theme_color' => '#1C692F', // CSL Brands green
                     'is_active' => true,
                     'country_code' => $request->country_code ?? 'CM', // Default to Cameroon if not provided

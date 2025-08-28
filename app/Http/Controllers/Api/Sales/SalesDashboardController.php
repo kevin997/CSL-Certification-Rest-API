@@ -31,9 +31,9 @@ class SalesDashboardController extends Controller
         // Get total sales agents
         $totalAgents = User::where('role', UserRole::SALES_AGENT)->count();
 
-        // Get active sales agents
+        // Get active sales agents (using email_verified_at as active indicator)
         $activeAgents = User::where('role', UserRole::SALES_AGENT)
-            ->where('is_active', true)
+            ->whereNotNull('email_verified_at')
             ->count();
 
         // Get total referrals
@@ -211,7 +211,7 @@ class SalesDashboardController extends Controller
                     'id' => $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
-                    'status' => $user->is_active ? 'Active' : 'Inactive',
+                    'status' => $user->email_verified_at ? 'Active' : 'Inactive',
                 ],
                 'stats' => [
                     'total_referrals' => $totalReferrals,
