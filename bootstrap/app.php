@@ -18,7 +18,13 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->append(DetectEnvironment::class);
         $middleware->append(BrandingMiddleware::class);
-        
+
+        // Chat rate limiting middleware aliases
+        $middleware->alias([
+            'chat.rate.messages' => \App\Http\Middleware\ChatRateLimitMiddleware::class . ':messages',
+            'chat.rate.typing' => \App\Http\Middleware\ChatRateLimitMiddleware::class . ':typing',
+        ]);
+
         // Rate limiters are configured in FortifyServiceProvider
     })
     ->withExceptions(function (Exceptions $exceptions) {

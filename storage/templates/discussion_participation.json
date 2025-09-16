@@ -1,0 +1,269 @@
+{
+  "template_id": "discussion_participation",
+  "template_name": "Discussion Participation Certificate",
+  "template_version": "1.0",
+  "description": "Certificate awarded to students who demonstrate active participation in course discussions",
+  "dimensions": {
+    "width": 800,
+    "height": 600
+  },
+  "background": {
+    "type": "color",
+    "value": "#ffffff",
+    "border": {
+      "width": 3,
+      "color": "#2563eb",
+      "style": "solid"
+    }
+  },
+  "fields": {
+    "title": {
+      "type": "text",
+      "value": "Certificate of Discussion Participation",
+      "position": {
+        "x": 400,
+        "y": 80
+      },
+      "alignment": "center",
+      "font_size": 28,
+      "font_weight": "bold",
+      "font_family": "Arial, sans-serif",
+      "color": "#1e40af"
+    },
+    "subtitle": {
+      "type": "text",
+      "value": "This is to certify that",
+      "position": {
+        "x": 400,
+        "y": 140
+      },
+      "alignment": "center",
+      "font_size": 16,
+      "font_weight": "normal",
+      "font_family": "Arial, sans-serif",
+      "color": "#374151"
+    },
+    "recipient_name": {
+      "type": "text",
+      "position": {
+        "x": 400,
+        "y": 190
+      },
+      "alignment": "center",
+      "font_size": 32,
+      "font_weight": "bold",
+      "font_family": "Georgia, serif",
+      "color": "#111827",
+      "underline": true
+    },
+    "achievement_text": {
+      "type": "text",
+      "value": "has demonstrated outstanding participation in discussions for",
+      "position": {
+        "x": 400,
+        "y": 240
+      },
+      "alignment": "center",
+      "font_size": 16,
+      "font_weight": "normal",
+      "font_family": "Arial, sans-serif",
+      "color": "#374151"
+    },
+    "course_name": {
+      "type": "text",
+      "position": {
+        "x": 400,
+        "y": 280
+      },
+      "alignment": "center",
+      "font_size": 20,
+      "font_weight": "bold",
+      "font_family": "Arial, sans-serif",
+      "color": "#1e40af"
+    },
+    "participation_metrics": {
+      "type": "composite",
+      "position": {
+        "x": 400,
+        "y": 340
+      },
+      "alignment": "center",
+      "components": [
+        {
+          "type": "text",
+          "template": "Total Messages: {total_messages}",
+          "font_size": 14,
+          "font_weight": "normal",
+          "color": "#6b7280",
+          "offset": {
+            "x": -120,
+            "y": 0
+          }
+        },
+        {
+          "type": "text",
+          "template": "Active Days: {discussion_days}",
+          "font_size": 14,
+          "font_weight": "normal",
+          "color": "#6b7280",
+          "offset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "type": "text",
+          "template": "Engagement Score: {engagement_score}/100",
+          "font_size": 14,
+          "font_weight": "normal",
+          "color": "#6b7280",
+          "offset": {
+            "x": 120,
+            "y": 0
+          }
+        }
+      ]
+    },
+    "participation_level": {
+      "type": "text",
+      "position": {
+        "x": 400,
+        "y": 380
+      },
+      "alignment": "center",
+      "font_size": 18,
+      "font_weight": "bold",
+      "font_family": "Arial, sans-serif",
+      "color": "#059669",
+      "prefix": "Achievement Level: "
+    },
+    "completion_date": {
+      "type": "text",
+      "position": {
+        "x": 200,
+        "y": 480
+      },
+      "alignment": "center",
+      "font_size": 12,
+      "font_weight": "normal",
+      "font_family": "Arial, sans-serif",
+      "color": "#6b7280",
+      "prefix": "Awarded on: "
+    },
+    "certificate_id": {
+      "type": "text",
+      "position": {
+        "x": 600,
+        "y": 480
+      },
+      "alignment": "center",
+      "font_size": 12,
+      "font_weight": "normal",
+      "font_family": "Arial, sans-serif",
+      "color": "#6b7280",
+      "prefix": "Certificate ID: "
+    },
+    "signature_line": {
+      "type": "line",
+      "position": {
+        "x": 400,
+        "y": 520
+      },
+      "width": 200,
+      "color": "#374151",
+      "thickness": 1
+    },
+    "signature_text": {
+      "type": "text",
+      "value": "Course Instructor",
+      "position": {
+        "x": 400,
+        "y": 540
+      },
+      "alignment": "center",
+      "font_size": 12,
+      "font_weight": "normal",
+      "font_family": "Arial, sans-serif",
+      "color": "#6b7280"
+    }
+  },
+  "validation_rules": {
+    "required_fields": [
+      "recipient_name",
+      "course_name",
+      "total_messages",
+      "discussion_days",
+      "engagement_score",
+      "participation_level",
+      "completion_date",
+      "certificate_id"
+    ],
+    "minimum_values": {
+      "total_messages": 1,
+      "discussion_days": 1,
+      "engagement_score": 0
+    }
+  },
+  "styling": {
+    "watermark": {
+      "enabled": false,
+      "text": "CSL Certification",
+      "opacity": 0.1,
+      "position": "center"
+    },
+    "decorative_elements": [
+      {
+        "type": "rectangle",
+        "position": {
+          "x": 50,
+          "y": 50
+        },
+        "width": 700,
+        "height": 500,
+        "border": {
+          "width": 2,
+          "color": "#e5e7eb",
+          "style": "dashed"
+        },
+        "fill": "transparent"
+      },
+      {
+        "type": "circle",
+        "position": {
+          "x": 100,
+          "y": 100
+        },
+        "radius": 30,
+        "fill": "#dbeafe",
+        "border": {
+          "width": 2,
+          "color": "#2563eb"
+        }
+      },
+      {
+        "type": "circle",
+        "position": {
+          "x": 700,
+          "y": 100
+        },
+        "radius": 30,
+        "fill": "#dbeafe",
+        "border": {
+          "width": 2,
+          "color": "#2563eb"
+        }
+      }
+    ]
+  },
+  "output_formats": [
+    "pdf",
+    "png",
+    "jpg"
+  ],
+  "metadata": {
+    "created_at": "2024-09-16",
+    "created_by": "CSL Analytics System",
+    "category": "participation",
+    "tags": ["discussion", "engagement", "participation", "analytics"]
+  }
+}

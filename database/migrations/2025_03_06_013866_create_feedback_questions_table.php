@@ -20,6 +20,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('feedback_content_id')->constrained()->onDelete('cascade');
             $table->text('question_text');
+            $table->string('question_type');
             $table->json('options')->nullable(); // JSON array of options for radio, checkbox, select
             $table->boolean('is_required')->default(true);
             $table->integer('order')->default(0);

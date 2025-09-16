@@ -48,6 +48,8 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use App\Http\Controllers\Api\StorefrontController;
+use App\Http\Controllers\Api\ChatArchivalController;
+use App\Http\Controllers\Api\ChatSearchController;
 use App\Http\Controllers\Api\Onboarding\OnboardingController;
 use App\Http\Controllers\Api\ReferralEnvironmentController;
 use App\Http\Controllers\Api\FinanceController;
@@ -59,6 +61,7 @@ use App\Http\Controllers\Api\LessonDiscussionController;
 use Illuminate\Support\Facades\Broadcast;
 use App\Http\Controllers\Api\UserNotificationController;
 use App\Http\Controllers\Api\CustomerController;
+use App\Http\Controllers\Api\ChatAnalyticsController;
 
 Route::middleware('auth:sanctum')->post('/broadcasting/auth', function (Request $request) {
     return Broadcast::auth($request);
@@ -728,3 +731,88 @@ Route::prefix('lessons/{lessonId}/discussions')
         Route::post('{discussionId}/reply', 'reply');
         Route::delete('{discussionId}', 'destroy');
     })->middleware("auth:sanctum");
+
+// Chat System Routes
+Route::middleware('auth:sanctum')->prefix('chat')->group(function () {
+    // Discussion routes
+    Route::post('discussions', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'store']);
+    Route::get('discussions/{discussion}', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'show']);
+    Route::post('discussions/{discussion}/join', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'join'])
+        ->middleware('throttle:10,1'); // 10 join/leave actions per minute
+    Route::post('discussions/{discussion}/leave', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'leave'])
+        ->middleware('throttle:10,1'); // 10 join/leave actions per minute
+    Route::get('discussions/{discussion}/participants', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'participants']);
+
+    // Course-specific discussion routes
+    Route::get('courses/{courseId}/discussions', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'courseDiscussions']);
+    Route::post('courses/{courseId}/discussions/get-or-create', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'getOrCreate']);
+
+    // Message routes with rate limiting
+    Route::post('messages', [\App\Http\Controllers\Api\Chat\MessageController::class, 'store'])
+        ->middleware('chat.rate.messages'); // 60 messages per minute
+    Route::post('discussions/{discussion}/mark-read', [\App\Http\Controllers\Api\Chat\MessageController::class, 'markAsRead']);
+});
+
+// Chat Analytics Routes
+Route::middleware('auth:sanctum')->prefix('chat/analytics')->group(function () {
+    // Course engagement reports
+    Route::get('course/{courseId}/engagement', [\App\Http\Controllers\Api\ChatAnalyticsController::class, 'getCourseEngagementReport']);
+
+    // Participation metrics
+    Route::get('course/{courseId}/participation', [\App\Http\Controllers\Api\ChatAnalyticsController::class, 'getParticipationMetrics']);
+
+    // Certificate eligibility
+    Route::get('course/{courseId}/certificate-eligibility', [\App\Http\Controllers\Api\ChatAnalyticsController::class, 'getCertificateEligibility']);
+
+    // Generate participation certificate
+    Route::post('course/{courseId}/users/{userId}/certificate', [\App\Http\Controllers\Api\ChatAnalyticsController::class, 'generateParticipationCertificate']);
+
+    // Process participation data (webhook endpoint)
+    Route::post('participation/process', [\App\Http\Controllers\Api\ChatAnalyticsController::class, 'processParticipationData']);
+
+    // Dashboard summary
+    Route::get('course/{courseId}/dashboard', [\App\Http\Controllers\Api\ChatAnalyticsController::class, 'getDashboardSummary']);
+});
+
+// Chat Archival Routes
+Route::middleware('auth:sanctum')->prefix('chat/archival')->group(function () {
+    // Get archival status for a course
+    Route::get('courses/{courseId}/status', [ChatArchivalController::class, 'getArchivalStatus']);
+
+    // Trigger manual archival for a course
+    Route::post('courses/{courseId}/archive', [ChatArchivalController::class, 'triggerArchival']);
+
+    // Restore archived messages for a date range
+    Route::post('courses/{courseId}/restore', [ChatArchivalController::class, 'restoreMessages']);
+
+    // Get archival statistics
+    Route::get('statistics', [ChatArchivalController::class, 'getArchivalStatistics']);
+
+    // Cancel a running archival job
+    Route::delete('jobs/{jobId}/cancel', [ChatArchivalController::class, 'cancelArchivalJob']);
+});
+
+// Chat Search Routes
+Route::middleware('auth:sanctum')->prefix('chat/search')->group(function () {
+    // Search chat messages
+    Route::get('messages', [ChatSearchController::class, 'searchMessages'])
+        ->middleware('throttle:120,1'); // 120 searches per minute per user
+
+    // Get search suggestions
+    Route::get('suggestions', [ChatSearchController::class, 'getSearchSuggestions'])
+        ->middleware('throttle:60,1'); // 60 suggestion requests per minute
+
+    // Build search index for a course (admin only)
+    Route::post('courses/{courseId}/build-index', [ChatSearchController::class, 'buildSearchIndex'])
+        ->middleware('can:admin-access,course');
+
+    // Rebuild search index for a course (admin only)
+    Route::post('courses/{courseId}/rebuild-index', [ChatSearchController::class, 'rebuildSearchIndex'])
+        ->middleware('can:admin-access,course');
+
+    // Get search analytics
+    Route::get('analytics', [ChatSearchController::class, 'getSearchAnalytics']);
+
+    // Get search index status
+    Route::get('index/status', [ChatSearchController::class, 'getIndexStatus']);
+});
