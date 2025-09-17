@@ -249,24 +249,25 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/sales/admin/referrals/{id}', [App\Http\Controllers\Api\ReferralController::class, 'show']);
     Route::put('/sales/admin/referrals/{id}', [App\Http\Controllers\Api\ReferralController::class, 'update']);
     Route::delete('/sales/admin/referrals/{id}', [App\Http\Controllers\Api\ReferralController::class, 'destroy']);
+
+    // Customer management routes
+    Route::get('/sales/admin/customers', [App\Http\Controllers\Api\Sales\CustomerController::class, 'index']);
+    Route::get('/sales/admin/customers/stats', [App\Http\Controllers\Api\Sales\CustomerController::class, 'getStats']);
+    Route::get('/sales/admin/customers/{id}', [App\Http\Controllers\Api\Sales\CustomerController::class, 'show']);
+    Route::put('/sales/admin/customers/{id}', [App\Http\Controllers\Api\Sales\CustomerController::class, 'update']);
+    Route::delete('/sales/admin/customers/{id}', [App\Http\Controllers\Api\Sales\CustomerController::class, 'destroy']);
 });
 
 // Sales Agent Management Routes
 Route::middleware('auth:sanctum')->group(function () {
     // Sales agent listing and creation
-    Route::get('/sales-agents', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'index']);
-    Route::post('/sales-agents', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'store']);
-
-    // Individual sales agent operations
-    Route::get('/sales-agents/{id}', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'show']);
-    Route::put('/sales-agents/{id}', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'update']);
-    Route::delete('/sales-agents/{id}', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'destroy']);
-
-    // Sales agent performance
-    Route::get('/sales-agents/{id}/performance', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'getPerformance']);
-
-    // Sales agent referrals
-    Route::get('/sales-agents/{id}/referrals', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'getReferrals']);
+    Route::get('/sales/admin/agents', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'index']);
+    Route::post('/sales/admin/agents', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'store']);
+    Route::get('/sales/admin/agents/{id}', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'show']);
+    Route::put('/sales/admin/agents/{id}', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'update']);
+    Route::delete('/sales/admin/agents/{id}', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'destroy']);
+    Route::get('/sales/admin/agents/{id}/performance', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'getPerformance']);
+    Route::get('/sales/admin/agents/{id}/referrals', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'getReferrals']);
 });
 
 // Template Management Routes
@@ -775,7 +776,7 @@ Route::middleware('auth:sanctum')->prefix('chat/analytics')->group(function () {
 });
 
 // Chat Archival Routes
-Route::middleware('auth:sanctum')->prefix('chat/archival')->group(function () {
+Route::prefix('chat/archival')->group(function () {
     // Get archival status for a course
     Route::get('courses/{courseId}/status', [ChatArchivalController::class, 'getArchivalStatus']);
 
@@ -793,14 +794,12 @@ Route::middleware('auth:sanctum')->prefix('chat/archival')->group(function () {
 });
 
 // Chat Search Routes
-Route::middleware('auth:sanctum')->prefix('chat/search')->group(function () {
+Route::prefix('chat/search')->group(function () {
     // Search chat messages
-    Route::get('messages', [ChatSearchController::class, 'searchMessages'])
-        ->middleware('throttle:120,1'); // 120 searches per minute per user
+    Route::get('messages', [ChatSearchController::class, 'searchMessages']);
 
     // Get search suggestions
-    Route::get('suggestions', [ChatSearchController::class, 'getSearchSuggestions'])
-        ->middleware('throttle:60,1'); // 60 suggestion requests per minute
+    Route::get('suggestions', [ChatSearchController::class, 'getSearchSuggestions']);
 
     // Build search index for a course (admin only)
     Route::post('courses/{courseId}/build-index', [ChatSearchController::class, 'buildSearchIndex'])
@@ -815,4 +814,16 @@ Route::middleware('auth:sanctum')->prefix('chat/search')->group(function () {
 
     // Get search index status
     Route::get('index/status', [ChatSearchController::class, 'getIndexStatus']);
+});
+
+// Chat Instructor Routes
+Route::prefix('chat/instructor')->group(function () {
+    // Get all discussions for instructor (across all their courses)
+    Route::get('discussions', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'instructorDiscussions']);
+
+    // Get discussions for a specific course
+    Route::get('courses/{courseId}/discussions', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'courseDiscussions']);
+
+    // Get discussion analytics for instructor
+    Route::get('discussions/analytics', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'instructorAnalytics']);
 });

@@ -8,12 +8,24 @@ use App\Http\Resources\Chat\MessageResource;
 use App\Http\Requests\Chat\SendMessageRequest;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 
-class MessageController extends Controller
+class MessageController extends Controller implements HasMiddleware
 {
-    public function __construct(private ChatService $chatService)
+    public function __construct(
+        private ChatService $chatService
+    ) {}
+
+    /**
+     * Get the middleware that should be assigned to the controller.
+     */
+    public static function middleware(): array
     {
-        $this->middleware('auth:sanctum');
+        return [
+            'auth:sanctum',
+            new Middleware('chat.rate.messages', only: ['store']),
+        ];
     }
 
     /**
@@ -67,4 +79,5 @@ class MessageController extends Controller
             ], 400);
         }
     }
+
 }

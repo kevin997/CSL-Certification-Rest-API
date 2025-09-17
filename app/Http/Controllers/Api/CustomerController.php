@@ -27,12 +27,13 @@ class CustomerController extends Controller
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
                         ->orWhere('email', 'like', "%{$search}%")
-                        ->orWhere('company_name', 'like', "%{$search}%");
+                        ->orWhere('company_name', 'like', "%{$search}%")
+                        ->orWhere('whatsapp_number', 'like', "%{$search}%");
                 });
             }
 
             // Get customers with their subscription count and environment count
-            $customers = $query->select('id', 'name', 'email', 'role', 'company_name', 'created_at')
+            $customers = $query->select('id', 'name', 'email', 'role', 'company_name', 'whatsapp_number', 'created_at')
                 ->withCount(['subscriptions', 'ownedEnvironments', 'environments'])
                 ->orderBy('created_at', 'desc')
                 ->get();
@@ -175,10 +176,11 @@ class CustomerController extends Controller
                 'email' => 'sometimes|email|unique:users,email,' . $id,
                 'role' => 'sometimes|in:learner,individual_teacher,company_teacher',
                 'company_name' => 'sometimes|nullable|string|max:255',
+                'whatsapp_number' => 'sometimes|nullable|string|max:20',
             ]);
 
             // Update customer data
-            $customer->update($request->only(['name', 'email', 'role', 'company_name']));
+            $customer->update($request->only(['name', 'email', 'role', 'company_name', 'whatsapp_number']));
 
             return response()->json([
                 'status' => 'success',
@@ -215,6 +217,7 @@ class CustomerController extends Controller
                 'password' => 'required|string|min:8',
                 'role' => 'required|in:learner,individual_teacher,company_teacher',
                 'company_name' => 'nullable|string|max:255',
+                'whatsapp_number' => 'nullable|string|max:20',
             ]);
 
             // Create customer
@@ -224,6 +227,7 @@ class CustomerController extends Controller
                 'password' => bcrypt($request->password),
                 'role' => $request->role,
                 'company_name' => $request->company_name,
+                'whatsapp_number' => $request->whatsapp_number,
             ]);
 
             return response()->json([

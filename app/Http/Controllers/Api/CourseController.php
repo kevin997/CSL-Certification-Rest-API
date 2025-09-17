@@ -607,7 +607,7 @@ class CourseController extends Controller
             : Course::where('slug', $identifier)->firstOrFail();
 
         // Load relationships
-        $course->load(['template', 'category', 'creator', 'sections.activities']);
+        $course->load(['template', 'creator', 'sections.activities']);
 
         return response()->json([
             'status' => 'success',

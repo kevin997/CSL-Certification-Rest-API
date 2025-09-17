@@ -10,13 +10,25 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 
-class ChatSearchController extends Controller
+class ChatSearchController extends Controller implements HasMiddleware
 {
     public function __construct(
         private ChatSearchService $searchService
-    ) {
-        $this->middleware('auth:sanctum');
+    ) {}
+
+    /**
+     * Get the middleware that should be assigned to the controller.
+     */
+    public static function middleware(): array
+    {
+        return [
+            'auth:sanctum',
+            new Middleware('throttle:120,1', only: ['searchMessages']),
+            new Middleware('throttle:60,1', only: ['getSearchSuggestions']),
+        ];
     }
 
     /**

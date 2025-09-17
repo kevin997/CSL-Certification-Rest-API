@@ -11,13 +11,23 @@ use Illuminate\Http\JsonResponse;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 
-class ChatArchivalController extends Controller
+class ChatArchivalController extends Controller implements HasMiddleware
 {
     public function __construct(
         private MessageArchivalService $archivalService
-    ) {
-        $this->middleware('auth:sanctum');
+    ) {}
+
+    /**
+     * Get the middleware that should be assigned to the controller.
+     */
+    public static function middleware(): array
+    {
+        return [
+            'auth:sanctum',
+        ];
     }
 
     /**

@@ -5,7 +5,6 @@ namespace App\Http\Middleware;
 use App\Models\Environment;
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 class DetectEnvironment
@@ -44,14 +43,14 @@ class DetectEnvironment
             $domain = $apiDomain;
         }
         
-        Log::info('DetectEnvironment: Processing request', [
-            'api_domain' => $apiDomain,
-            'frontend_domain_header' => $frontendDomainHeader,
-            'detected_domain' => $domain,
-            'origin' => $origin,
-            'referer' => $referer,
-            'url' => $request->fullUrl()
-        ]);
+        // Log::info('DetectEnvironment: Processing request', [
+        //     'api_domain' => $apiDomain,
+        //     'frontend_domain_header' => $frontendDomainHeader,
+        //     'detected_domain' => $domain,
+        //     'origin' => $origin,
+        //     'referer' => $referer,
+        //     'url' => $request->fullUrl()
+        // ]);
         
         // Find the environment that matches the domain
         $environment = Environment::where('primary_domain', $domain)
@@ -79,10 +78,10 @@ class DetectEnvironment
                         ->first();
                     
                     if ($environment) {
-                        Log::info('DetectEnvironment: Found environment by partial domain match', [
-                            'detected_domain' => $domain,
-                            'matched_domain' => $frontendDomain
-                        ]);
+                        // Log::info('DetectEnvironment: Found environment by partial domain match', [
+                        //     'detected_domain' => $domain,
+                        //     'matched_domain' => $frontendDomain
+                        // ]);
                         break;
                     }
                 }
@@ -96,33 +95,33 @@ class DetectEnvironment
                 ->where('is_active', true)
                 ->toSql();
             
-            Log::info('DetectEnvironment: Query used', [
-                'sql' => $query,
-                'domain' => $domain
-            ]);
+            // Log::info('DetectEnvironment: Query used', [
+            //     'sql' => $query,
+            //     'domain' => $domain
+            // ]);
             
             // Check all environments to see if there's any partial match
             $allEnvironments = Environment::where('is_active', true)->get(['id', 'name', 'primary_domain', 'additional_domains']);
             
-            Log::info('DetectEnvironment: Available environments', [
-                'count' => $allEnvironments->count(),
-                'environments' => $allEnvironments->toArray()
-            ]);
+            // Log::info('DetectEnvironment: Available environments', [
+            //     'count' => $allEnvironments->count(),
+            //     'environments' => $allEnvironments->toArray()
+            // ]);
             
             // Fallback to first active environment
             $environment = $allEnvironments->first();
             if ($environment) {
-                Log::info('DetectEnvironment: Using fallback environment', [
-                    'environment_id' => $environment->id,
-                    'environment_name' => $environment->name
-                ]);
+                // Log::info('DetectEnvironment: Using fallback environment', [
+                //     'environment_id' => $environment->id,
+                //     'environment_name' => $environment->name
+                // ]);
             }
         } else {
-            Log::info('DetectEnvironment: Environment found', [
-                'environment_id' => $environment->id,
-                'environment_name' => $environment->name,
-                'matched_domain' => $domain
-            ]);
+            // Log::info('DetectEnvironment: Environment found', [
+            //     'environment_id' => $environment->id,
+            //     'environment_name' => $environment->name,
+               // 'matched_domain' => $domain
+           /// ]);
         }
         
         if ($environment) {
@@ -147,10 +146,10 @@ class DetectEnvironment
                     $request->user()->environments()->attach($environment->id, [
                         'joined_at' => now(),
                     ]);
-                    Log::info('DetectEnvironment: Associated user with environment', [
-                        'user_id' => $request->user()->id,
-                        'environment_id' => $environment->id
-                    ]);
+                    // Log::info('DetectEnvironment: Associated user with environment', [
+                    //     'user_id' => $request->user()->id,
+                    //     'environment_id' => $environment->id
+                    // ]);
                 }
                 
                 // Store the environment credentials context for the auth provider

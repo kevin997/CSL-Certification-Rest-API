@@ -9,12 +9,23 @@ use App\Http\Resources\Chat\MessageResource;
 use App\Http\Requests\Chat\CreateDiscussionRequest;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Support\Facades\Log;
 
-class DiscussionController extends Controller
+class DiscussionController extends Controller implements HasMiddleware
 {
-    public function __construct(private ChatService $chatService)
+    public function __construct(
+        private ChatService $chatService
+    ) {}
+
+    /**
+     * Get the middleware that should be assigned to the controller.
+     */
+    public static function middleware(): array
     {
-        $this->middleware('auth:sanctum');
+        return [
+            'auth:sanctum',
+        ];
     }
 
     /**
@@ -192,6 +203,73 @@ class DiscussionController extends Controller
             return response()->json([
                 'success' => true,
                 'data' => new DiscussionResource($discussion)
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
+     * Get all discussions for instructor across all their courses.
+     */
+    public function instructorDiscussions(Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+
+            // Simple fallback to return empty data if there are issues
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
+            // Get discussion summaries formatted for frontend
+            $discussionSummaries = $this->chatService->getInstructorDiscussionSummaries($user->id);
+
+            return response()->json([
+                'success' => true,
+                'data' => $discussionSummaries,
+                'meta' => [
+                    'total_discussions' => count($discussionSummaries),
+                    'total_courses' => count(array_unique(array_column($discussionSummaries, 'courseId')))
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error in instructorDiscussions', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'user_id' => $request->user()->id ?? null
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'An error occurred while fetching instructor discussions. Please try again.',
+                'debug' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * Get discussion analytics for instructor.
+     */
+    public function instructorAnalytics(Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+
+            // Get analytics data for instructor's courses
+            $analytics = $this->chatService->getInstructorDiscussionAnalytics($user->id);
+
+            return response()->json([
+                'success' => true,
+                'data' => $analytics
             ]);
 
         } catch (\Exception $e) {
