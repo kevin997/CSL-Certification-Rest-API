@@ -316,8 +316,10 @@ class ActivityCompletionController extends Controller
      */
     public function index($enrollmentId)
     {
-        $enrollment = Enrollment::findOrFail($enrollmentId);
-        
+        // Optimized enrollment lookup with selective fields
+        $enrollment = Enrollment::select(['id', 'user_id'])
+            ->findOrFail($enrollmentId);
+
         // Check if user has permission to view this enrollment's activity completions
         if ($enrollment->user_id !== Auth::id() && !Auth::user()->is_admin) {
             return response()->json([
@@ -326,8 +328,15 @@ class ActivityCompletionController extends Controller
             ], Response::HTTP_FORBIDDEN);
         }
 
-        $activityCompletions = ActivityCompletion::where('enrollment_id', $enrollmentId)
-            ->with('activity')
+        // Optimized query with selective field loading
+        $activityCompletions = ActivityCompletion::select([
+                'id', 'enrollment_id', 'activity_id', 'status', 'score',
+                'time_spent', 'attempts', 'completed_at', 'updated_at'
+            ])
+            ->where('enrollment_id', $enrollmentId)
+            ->with(['activity' => function ($query) {
+                $query->select(['id', 'title', 'type']);
+            }])
             ->orderBy('updated_at', 'desc')
             ->get();
 

@@ -20,20 +20,25 @@ class CourseController extends Controller
     {
         $user = Auth::user();
         $environmentId = session('current_environment_id');
-        
-        $courses = Course::whereHas('enrollments', function ($query) use ($user) {
+
+        // Optimized query with proper indexing and selective loading
+        $courses = Course::select(['id', 'title', 'description', 'created_at', 'environment_id', 'template_id'])
+            ->whereHas('enrollments', function ($query) use ($user) {
                 $query->where('user_id', $user->id);
             })
             ->where('environment_id', $environmentId)
             ->with([
                 'enrollments' => function ($query) use ($user) {
-                    $query->where('user_id', $user->id);
+                    $query->select(['id', 'course_id', 'user_id', 'enrolled_at', 'progress_percentage'])
+                        ->where('user_id', $user->id);
                 },
-                'template:id,title,description',
+                'template' => function ($query) {
+                    $query->select(['id', 'title', 'description']);
+                },
             ])
             ->orderBy('created_at', 'desc')
             ->paginate($request->input('per_page', 10));
-        
+
         return response()->json([
             'status' => 'success',
             'data' => $courses,
@@ -51,49 +56,54 @@ class CourseController extends Controller
     {
         $user = Auth::user();
         $environmentId = session('current_environment_id');
-        
-        $course = Course::where('id', $id)
+
+        // Optimized single query with caching considerations
+        $course = Course::select(['id', 'title', 'description', 'environment_id', 'template_id'])
+            ->where('id', $id)
             ->where('environment_id', $environmentId)
             ->whereHas('enrollments', function ($query) use ($user) {
                 $query->where('user_id', $user->id);
             })
             ->with([
                 'enrollments' => function ($query) use ($user) {
-                    $query->where('user_id', $user->id);
+                    $query->select(['id', 'course_id', 'user_id', 'enrolled_at', 'progress_percentage'])
+                        ->where('user_id', $user->id)
+                        ->with([
+                            'activityCompletions' => function ($q) {
+                                $q->select(['id', 'enrollment_id', 'activity_id', 'completed_at']);
+                            }
+                        ]);
                 },
                 'template' => function($query) {
-                    $query->with(['blocks' => function($q) {
-                        $q->orderBy('order')->with(['activities' => function($a) {
-                            $a->orderBy('order');
+                    $query->select(['id', 'title', 'description'])
+                        ->with(['blocks' => function($q) {
+                            $q->select(['id', 'template_id', 'title', 'order'])
+                                ->orderBy('order')
+                                ->with(['activities' => function($a) {
+                                    $a->select(['id', 'block_id', 'title', 'type', 'order'])
+                                        ->orderBy('order');
+                                }]);
                         }]);
-                    }]);
                 }
             ])
             ->firstOrFail();
-        
-        // Get activity completions for progress tracking
-        $enrollment = Enrollment::where('course_id', $id)
-            ->where('user_id', $user->id)
-            ->with('activityCompletions')
-            ->first();
-            
-        // Calculate progress
+
+        // Optimized progress calculation using collection methods
+        $enrollment = $course->enrollments->first();
         $activityCount = 0;
         $completedCount = 0;
-        
+
         if ($course->template && $course->template->blocks) {
-            foreach ($course->template->blocks as $block) {
-                if ($block->activities) {
-                    $activityCount += count($block->activities);
-                }
-            }
+            $activityCount = $course->template->blocks->sum(function ($block) {
+                return $block->activities ? $block->activities->count() : 0;
+            });
         }
-        
+
         if ($enrollment && $enrollment->activityCompletions) {
             $completedCount = $enrollment->activityCompletions->count();
         }
-        
-        $progressPercentage = $activityCount > 0 ? ($completedCount / $activityCount) * 100 : 0;
+
+        $progressPercentage = $activityCount > 0 ? round(($completedCount / $activityCount) * 100, 2) : 0;
         
         // Update enrollment progress
         if ($enrollment) {
