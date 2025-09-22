@@ -257,24 +257,43 @@ class EnvironmentController extends Controller
         }
         
         // Validate the request with limited fields
-        $validator = Validator::make($request->all(), [
+        $validationRules = [
             'name' => 'sometimes|required|string|max:255',
             'additional_domains' => 'nullable|array',
             'additional_domains.*' => 'string|max:255',
             'description' => 'nullable|string',
-        ]);
+        ];
+
+        // Allow admins to update primary_domain
+        if ($request->user()->isAdmin()) {
+            $validationRules['primary_domain'] = [
+                'sometimes',
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('environments', 'primary_domain')->ignore($environment->id)
+            ];
+        }
+
+        $validator = Validator::make($request->all(), $validationRules);
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
         // Update environment with limited fields
-        // Removed primary_domain, theme_color, logo_url, favicon_url, is_active from updates
-        $environment->fill($request->only([
+        // Allow admins to update primary_domain
+        $fillableFields = [
             'name',
             'additional_domains',
             'description',
-        ]));
+        ];
+
+        if ($request->user()->isAdmin() && $request->has('primary_domain')) {
+            $fillableFields[] = 'primary_domain';
+        }
+
+        $environment->fill($request->only($fillableFields));
         $environment->save();
         
         return $environment;
