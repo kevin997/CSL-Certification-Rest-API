@@ -51,50 +51,20 @@
         owner: ubuntu
         group: ubuntu
 
-    # Clean up old app directory
-    - name: Clean up old app directory
-      shell: |
-        if [ -d "{{ app_dir }}/old" ]; then
-          rm -rf "{{ app_dir }}/old"
-        fi
-        if [ -d "{{ app_dir }}/.git" ]; then
-          mkdir -p "{{ app_dir }}/old"
-          find "{{ app_dir }}" -mindepth 1 -maxdepth 1 -not -name "old" -not -name "backups" -not -name ".env" -exec mv {} "{{ app_dir }}/old/" \;
-        fi
-      args:
-        executable: /bin/bash
-      ignore_errors: yes
-
-    # Handle repository setup
-    - name: Check if app directory exists
-      ansible.builtin.stat:
-        path: "{{ app_dir }}"
-      register: app_dir_stat
-
-    - name: Check if git directory exists
-      ansible.builtin.stat:
-        path: "{{ app_dir }}/.git"
-      register: git_dir_stat
-      when: app_dir_stat.stat.exists
-
-    - name: Clean up non-git directory if needed
+    - name: Clean up existing application directory
       ansible.builtin.file:
         path: "{{ app_dir }}"
         state: absent
-      become: yes
-      when: app_dir_stat.stat.exists and (git_dir_stat is skipped or not git_dir_stat.stat.exists)
 
-    - name: Create app directory if it doesn't exist
+    - name: Create application directory
       ansible.builtin.file:
         path: "{{ app_dir }}"
         state: directory
+        mode: "0755"
         owner: ubuntu
         group: ubuntu
-        mode: '0755'
-      become: yes
-      when: not app_dir_stat.stat.exists or (app_dir_stat.stat.exists and (git_dir_stat is skipped or not git_dir_stat.stat.exists))
 
-    - name: Clone application repository from GitHub using SSH if needed
+    - name: Clone application repository from GitHub using SSH
       ansible.builtin.git:
         repo: git@github.com:kevin997/CSL-Certification-Rest-API.git
         dest: "{{ app_dir }}"
@@ -103,16 +73,6 @@
         accept_hostkey: yes
       become: yes
       become_user: ubuntu
-      when: not app_dir_stat.stat.exists or (app_dir_stat.stat.exists and (git_dir_stat is skipped or not git_dir_stat.stat.exists))
-      
-    - name: Update existing repository if it's a git repo
-      ansible.builtin.shell: |
-        cd {{ app_dir }}
-        git fetch
-        git reset --hard origin/main
-      become: yes
-      become_user: ubuntu
-      when: app_dir_stat.stat.exists and git_dir_stat is defined and git_dir_stat.stat.exists
 
     # Docker cleanup and preparation
     - name: Clean up Docker system
