@@ -25,6 +25,7 @@ services:
       - CONTAINER_ROLE=app
     networks:
       - csl-network
+      - csl-shared-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health/index.php"]
       interval: 10s
@@ -55,6 +56,7 @@ services:
       - QUEUE_CONNECTION=database
     networks:
       - csl-network
+      - csl-shared-network
     healthcheck:
       test: ["CMD-SHELL", "ps aux | grep -v grep | grep 'supervisord' || exit 1"]
       interval: 10s
@@ -91,6 +93,7 @@ services:
       - REVERB_PORT=8080
     networks:
       - csl-network
+      - csl-shared-network
     healthcheck:
       test: ["CMD-SHELL", "ps aux | grep -v grep | grep 'reverb:start' || exit 1"]
       interval: 10s
@@ -124,18 +127,19 @@ services:
       - MAIL_PORT=${MAIL_PORT:-587}
       - MAIL_USERNAME=${MAIL_USERNAME:-system@example.com}
       - MAIL_PASSWORD=${MAIL_PASSWORD}
-      - MAIL_ENCRYPTION=${MAIL_ENCRYPTION:-tls}
       - MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS:-noreply@example.com}
       - MAIL_FROM_NAME="CSL Certification System"
       # AWS credentials for RDS backup
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-2}
+      - AWS_BUCKET=${AWS_BUCKET}
     networks:
       - csl-network
+      - csl-shared-network
     healthcheck:
       test: ["CMD-SHELL", "ps aux | grep -v grep | grep 'supervisord' || exit 1"]
-      interval: 30s
+      interval: 10s
       timeout: 5s
       retries: 3
       
@@ -166,117 +170,20 @@ services:
       - NIGHTWATCH_REQUEST_SAMPLE_RATE=${NIGHTWATCH_REQUEST_SAMPLE_RATE:-0.1}
     networks:
       - csl-network
+      - csl-shared-network
     healthcheck:
       test: ["CMD-SHELL", "ps aux | grep -v grep | grep 'nightwatch:agent' || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
 
-  # Wiki.js Documentation Service
-  wiki-db:
-    image: postgres:15-alpine
-    container_name: csl-wiki-db
-    environment:
-      POSTGRES_DB: wiki
-      POSTGRES_PASSWORD: ${WIKI_DB_PASSWORD:-wikijsrocks}
-      POSTGRES_USER: ${WIKI_DB_USER:-wikijs}
-    restart: unless-stopped
-    volumes:
-      - wiki-db-data:/var/lib/postgresql/data
-    networks:
-      - csl-network
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "wikijs"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  wiki:
-    image: ghcr.io/requarks/wiki:2
-    container_name: csl-wiki
-    depends_on:
-      wiki-db:
-        condition: service_healthy
-    environment:
-      DB_TYPE: postgres
-      DB_HOST: wiki-db
-      DB_PORT: 5432
-      DB_USER: ${WIKI_DB_USER:-wikijs}
-      DB_PASS: ${WIKI_DB_PASSWORD:-wikijsrocks}
-      DB_NAME: wiki
-    restart: unless-stopped
-    ports:
-      - "8090:3000"
-    volumes:
-      - wiki-data:/wiki/data
-      - wiki-uploads:/wiki/uploads
-    networks:
-      - csl-network
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-  # phpMyAdmin for MySQL RDS Management
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin:latest
-    container_name: csl-phpmyadmin
-    restart: unless-stopped
-    ports:
-      - "8091:80"
-    environment:
-      # Connect to external MySQL RDS instance
-      - PMA_HOST=csl-brands-certification-rest-api-1.clyyomwg2s8k.us-east-2.rds.amazonaws.com
-      - PMA_PORT=3306
-      - PMA_USER=certi_user
-      - PMA_PASSWORD=#&H3k-ID0V
-      - MYSQL_ROOT_PASSWORD=#&H3k-ID0V
-      - PMA_ABSOLUTE_URI=http://localhost:8091/
-      # Security and configuration
-      - UPLOAD_LIMIT=1G
-      - MEMORY_LIMIT=1G
-      - MAX_EXECUTION_TIME=600
-    networks:
-      - csl-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-  # pgAdmin for PostgreSQL RDS Management
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: csl-pgadmin
-    restart: unless-stopped
-    ports:
-      - "8092:80"
-    environment:
-      # pgAdmin configuration
-      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL:-admin@csl.com}
-      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD:-admin123}
-      - PGADMIN_CONFIG_SERVER_MODE=False
-      - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
-      # Pre-configure PostgreSQL RDS connection
-      - PGADMIN_CONFIG_SERVERS_JSON_FILE=/pgadmin4/servers.json
-    volumes:
-      - pgadmin-data:/var/lib/pgadmin
-      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
-    networks:
-      - csl-network
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80/misc/ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
 networks:
   csl-network:
     driver: bridge
+  csl-shared-network:
+    external: true
+    name: csl-shared-network
 
 volumes:
   # Laravel application volumes
@@ -285,14 +192,4 @@ volumes:
   app-bootstrap-cache:
     driver: local
   app-backups:
-    driver: local
-  # Wiki.js volumes
-  wiki-db-data:
-    driver: local
-  wiki-data:
-    driver: local
-  wiki-uploads:
-    driver: local
-  # Database management tools volumes
-  pgadmin-data:
     driver: local

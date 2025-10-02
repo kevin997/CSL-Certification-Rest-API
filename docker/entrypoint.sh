@@ -27,7 +27,7 @@ mkdir -p /var/www/html/storage/app/backup-temp
 touch /var/www/html/storage/logs/laravel.log
 touch /var/www/html/storage/logs/queue.log
 touch /var/www/html/storage/logs/scheduler.log
-touch /var/www/html/storage/logs/rds-backup.log
+touch /var/www/html/storage/logs/sales-backup.log
 touch /var/www/html/storage/logs/nightwatch.log
 touch /var/www/html/storage/logs/order-regularizer.log
 
@@ -59,9 +59,9 @@ chown www-data:www-data /tmp || true
 touch /var/www/html/storage/logs/laravel.log
 chmod 777 /var/www/html/storage/logs/laravel.log
 
-# Check AWS RDS connection
+# Check MySQL database connection (CSL-DevOps Infrastructure)
 if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ] || [ "$CONTAINER_ROLE" = "scheduler" ] || [ "$CONTAINER_ROLE" = "nightwatch" ]; then
-    echo "Checking AWS RDS connection..."
+    echo "Checking MySQL database connection (CSL-DevOps)..."
     RETRY_COUNT=0
     MAX_RETRIES=15
     
@@ -71,21 +71,21 @@ if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ] || [ "$CONTA
     
     set +e
     until nc -z -v -w10 $DB_HOST 3306 || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
-        echo "Waiting for AWS RDS connection... attempt $((RETRY_COUNT+1))/$MAX_RETRIES"
+        echo "Waiting for MySQL connection... attempt $((RETRY_COUNT+1))/$MAX_RETRIES"
         sleep 3
         RETRY_COUNT=$((RETRY_COUNT+1))
     done
     
     if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-        echo "Error: Failed to connect to AWS RDS after $MAX_RETRIES attempts!"
-        echo "Please verify AWS RDS endpoint, security groups, and credentials."
+        echo "Error: Failed to connect to MySQL after $MAX_RETRIES attempts!"
+        echo "Please verify database host ($DB_HOST) is accessible from this container."
     else
-        echo "AWS RDS connection established!"
+        echo "MySQL connection established!"
         
         # Test MySQL connection with app user
-        echo "Testing MySQL connection as certi_user..."
-        mysql -h $DB_HOST -u $DB_USERNAME -p$DB_PASSWORD --connect-timeout=10 -e "SELECT 'Connected to AWS RDS successfully!';" || \
-        echo "Connection to AWS RDS failed. Check credentials and network access."
+        echo "Testing MySQL connection as $DB_USERNAME..."
+        mysql -h $DB_HOST -u $DB_USERNAME -p$DB_PASSWORD --connect-timeout=10 -e "SELECT 'Connected to MySQL successfully!';" || \
+        echo "Connection to MySQL failed. Check credentials and network access."
     fi
 fi
 
