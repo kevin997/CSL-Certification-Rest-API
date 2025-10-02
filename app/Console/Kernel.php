@@ -24,6 +24,8 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
+        // Note: Sales database backup is scheduled in routes/console.php at 4:00 AM
+        
         // Archive chat messages daily at 2:00 AM
         $schedule->command('chat:archive')
                  ->dailyAt('02:00')
@@ -51,12 +53,13 @@ class Kernel extends ConsoleKernel
           ->description('Cleanup old search index entries');
 
         // Update search performance metrics daily at 4:30 AM
-        $schedule->call(function () {
-            \App\Services\ChatSearch\ChatSearchService::updatePerformanceMetrics();
-        })->dailyAt('04:30')
-          ->name('update-search-metrics')
-          ->withoutOverlapping()
-          ->description('Update search performance metrics');
+        // TODO: Implement updatePerformanceMetrics() method in ChatSearchService
+        // $schedule->call(function () {
+        //     \App\Services\ChatSearch\ChatSearchService::updatePerformanceMetrics();
+        // })->dailyAt('04:30')
+        //   ->name('update-search-metrics')
+        //   ->withoutOverlapping()
+        //   ->description('Update search performance metrics');
 
         // Send archival summary report weekly on Monday at 9:00 AM
         $schedule->call(function () {
