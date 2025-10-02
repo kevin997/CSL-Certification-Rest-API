@@ -73,6 +73,8 @@
         accept_hostkey: yes
       become: yes
       become_user: ubuntu
+      environment:
+        GIT_SSH_COMMAND: "ssh -i /home/ubuntu/.ssh/github_deploy_key -o StrictHostKeyChecking=no"
 
     # Docker cleanup and preparation
     - name: Clean up Docker system
