@@ -1443,7 +1443,16 @@ class StorefrontController extends Controller
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
-        $paymentMethods = PaymentGatewaySetting::where('environment_id', $environment->id)
+        // Check if environment uses centralized payment gateways
+        $targetEnvironmentId = $environment->id;
+        $paymentConfig = \App\Models\EnvironmentPaymentConfig::where('environment_id', $environment->id)->first();
+        
+        if ($paymentConfig && $paymentConfig->use_centralized_gateways) {
+            // Use centralized gateways from environment 1 (platform gateways)
+            $targetEnvironmentId = 1;
+        }
+
+        $paymentMethods = PaymentGatewaySetting::where('environment_id', $targetEnvironmentId)
             ->where('is_active', true)
             ->with('paymentGateway')
             ->get()
@@ -1475,11 +1484,20 @@ class StorefrontController extends Controller
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
+        // Check if environment uses centralized payment gateways
+        $targetEnvironmentId = $environment->id;
+        $paymentConfig = \App\Models\EnvironmentPaymentConfig::where('environment_id', $environment->id)->first();
+        
+        if ($paymentConfig && $paymentConfig->use_centralized_gateways) {
+            // Use centralized gateways from environment 1 (platform gateways)
+            $targetEnvironmentId = 1;
+        }
+
         //create an array of gateways we don't fetch
         $excludeGateways = ['lygos'];
 
         // Get active payment gateways for this environment
-        $gateways = PaymentGatewaySetting::where('environment_id', $environment->id)
+        $gateways = PaymentGatewaySetting::where('environment_id', $targetEnvironmentId)
             ->where('status', true)
             ->whereNotIn('code', $excludeGateways)
             ->orderBy('sort_order')
@@ -1695,9 +1713,10 @@ class StorefrontController extends Controller
                     $gatewayFactory = app()->make(\App\Services\PaymentGateways\PaymentGatewayFactory::class);
                     $commissionService = app()->make(\App\Services\Commission\CommissionService::class);
                     $taxZoneService = app()->make(\App\Services\Tax\TaxZoneService::class);
+                    $environmentPaymentConfigService = app()->make(\App\Services\EnvironmentPaymentConfigService::class);
 
                     // Initialize payment service with proper dependencies
-                    $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService, $taxZoneService);
+                    $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService, $taxZoneService, $environmentPaymentConfigService);
                     $paymentResult = $paymentService->createPayment(
                         $order->id,
                         $gatewayCode,
@@ -1730,9 +1749,20 @@ class StorefrontController extends Controller
                                 break;
 
                             case 'payment_url':
-                                // For Lygos redirect-based payments
-                                $responseData['payment_type'] = 'lygos';
+                                // For redirect-based payments (Lygos, MonetBill)
+                                // Use the actual gateway code instead of hardcoding 'lygos'
+                                $responseData['payment_type'] = $gatewayCode;
                                 $responseData['redirect_url'] = $paymentResult['value'];
+                                break;
+
+                            case 'payment_links':
+                                // For TaraMoney - multiple payment options (WhatsApp, Telegram, Dikalo, SMS)
+                                $responseData['payment_type'] = 'taramoney';
+                                $responseData['payment_links'] = $paymentResult['payment_links'] ?? [];
+                                $responseData['whatsapp_link'] = $paymentResult['whatsapp_link'] ?? null;
+                                $responseData['telegram_link'] = $paymentResult['telegram_link'] ?? null;
+                                $responseData['dikalo_link'] = $paymentResult['dikalo_link'] ?? null;
+                                $responseData['sms_link'] = $paymentResult['sms_link'] ?? null;
                                 break;
 
                             default:
@@ -2184,9 +2214,10 @@ class StorefrontController extends Controller
             $commissionService = app()->make(\App\Services\Commission\CommissionService::class);
 
             $taxZoneService = app()->make(\App\Services\Tax\TaxZoneService::class);
+            $environmentPaymentConfigService = app()->make(\App\Services\EnvironmentPaymentConfigService::class);
 
             // Initialize payment service with proper dependencies
-            $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService, $taxZoneService);
+            $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService, $taxZoneService, $environmentPaymentConfigService);
 
             // Process the payment - pass order ID as expected by the method
             $result = $paymentService->processPayment($order->id, [

@@ -26,6 +26,8 @@ class DatabaseSeeder extends Seeder
             EnvironmentUsersSeeder::class,
             ThirdPartyServiceSeeder::class,
             TaxZoneSeeder::class,
+            EnvironmentPaymentConfigSeeder::class,
+            TaraMoneyGatewaySeeder::class,
         ]);
 
         // Development test user

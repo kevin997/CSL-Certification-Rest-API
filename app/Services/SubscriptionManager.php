@@ -143,6 +143,11 @@ class SubscriptionManager
                 return $this->processStripePayment($payment, $paymentData);
             }
             
+            // Handle TaraMoney payments with payment links
+            if ($paymentMethod === 'taramoney') {
+                return $this->processTaraMoneyPayment($payment, $paymentData);
+            }
+            
             // Handle other payment methods
             return $this->processGenericPayment($payment, $paymentData);
             
@@ -383,6 +388,74 @@ class SubscriptionManager
             return [
                 'success' => false,
                 'message' => 'Stripe payment processing failed: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Process TaraMoney payment with payment links
+     *
+     * @param Payment $payment
+     * @param array $paymentData
+     * @return array
+     */
+    protected function processTaraMoneyPayment(Payment $payment, array $paymentData): array
+    {
+        try {
+            // Get environment for transaction creation
+            $environment = Environment::find($payment->subscription->environment_id);
+            if (!$environment) {
+                return [
+                    'success' => false,
+                    'message' => 'Environment not found'
+                ];
+            }
+            
+            // Create transaction from payment
+            $transaction = $this->createTransactionFromPayment($payment, $environment);
+            
+            // Create payment with TaraMoney gateway
+            $response = $this->currentGateway->createPayment($transaction, $paymentData);
+            
+            if ($response['success']) {
+                $payment->update([
+                    'gateway_transaction_id' => $response['transaction_id'] ?? null,
+                    'gateway_status' => $response['status'] ?? 'pending',
+                    'gateway_response' => $response
+                ]);
+                
+                Log::info('[SubscriptionManager] TaraMoney payment links created', [
+                    'payment_id' => $payment->id,
+                    'transaction_id' => $transaction->transaction_id,
+                    'has_whatsapp' => isset($response['whatsapp_link']),
+                    'has_telegram' => isset($response['telegram_link'])
+                ]);
+                
+                return [
+                    'success' => true,
+                    'message' => 'Payment links created successfully',
+                    'payment_data' => [
+                        'payment_links' => $response['payment_links'] ?? [],
+                        'whatsapp_link' => $response['whatsapp_link'] ?? null,
+                        'telegram_link' => $response['telegram_link'] ?? null,
+                        'dikalo_link' => $response['dikalo_link'] ?? null,
+                        'sms_link' => $response['sms_link'] ?? null,
+                        'transaction_id' => $payment->transaction_id,
+                        'amount' => $payment->total_amount,
+                        'currency' => $payment->currency,
+                        'payment_method' => 'taramoney',
+                        'payment_type' => 'taramoney'
+                    ]
+                ];
+            }
+            
+            return $response;
+            
+        } catch (\Exception $e) {
+            Log::error('TaraMoney payment processing failed: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'TaraMoney payment processing failed: ' . $e->getMessage()
             ];
         }
     }

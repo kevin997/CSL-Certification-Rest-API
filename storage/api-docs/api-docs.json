@@ -15154,6 +15154,11 @@
                         "type": "string",
                         "example": "Introduction to CSL Certification"
                     },
+                    "course_code": {
+                        "type": "string",
+                        "example": "CSL-INTRO-101",
+                        "nullable": true
+                    },
                     "slug": {
                         "type": "string",
                         "example": "introduction-to-csl-certification"
@@ -16374,6 +16379,11 @@
                     "title": {
                         "type": "string",
                         "example": "CSL Certification Course Template"
+                    },
+                    "template_code": {
+                        "type": "string",
+                        "example": "CSL-CERT-001",
+                        "nullable": true
                     },
                     "description": {
                         "type": "string",

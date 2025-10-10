@@ -108,4 +108,12 @@ class Order extends Model
     {
         return $this->hasMany(Transaction::class);
     }
+
+    /**
+     * Get the instructor commission associated with this order.
+     */
+    public function instructorCommission(): HasOne
+    {
+        return $this->hasOne(InstructorCommission::class);
+    }
 }

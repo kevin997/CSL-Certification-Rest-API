@@ -117,7 +117,7 @@ class SupportedOnboardingController extends Controller
             'description' => 'nullable|string',
             'country_code' => 'nullable|string|size:2',
             'state_code' => 'nullable|string',
-            'payment_method' => 'required|in:stripe,lygos,paypal,monetbill',
+            'payment_method' => 'required|in:stripe,lygos,paypal,monetbill,taramoney',
             'payment_token' => 'required|string',
         ]);
 
@@ -269,6 +269,13 @@ class SupportedOnboardingController extends Controller
                         $responseData['redirect_url'] = $paymentResponseData['checkout_url'] ?? null;
                         $responseData['converted_amount'] = $paymentResponseData['converted_amount'] ?? null;
                         $responseData['converted_currency'] = $paymentResponseData['converted_currency'] ?? null;
+                    } elseif ($request->payment_method === 'taramoney') {
+                        $responseData['payment_type'] = 'taramoney';
+                        $responseData['payment_links'] = $paymentResponseData['payment_links'] ?? [];
+                        $responseData['whatsapp_link'] = $paymentResponseData['whatsapp_link'] ?? null;
+                        $responseData['telegram_link'] = $paymentResponseData['telegram_link'] ?? null;
+                        $responseData['dikalo_link'] = $paymentResponseData['dikalo_link'] ?? null;
+                        $responseData['sms_link'] = $paymentResponseData['sms_link'] ?? null;
                     } else {
                         $responseData['payment_type'] = 'standard';
                         $responseData['redirect_url'] = $paymentResponseData['checkout_url'] ?? null;

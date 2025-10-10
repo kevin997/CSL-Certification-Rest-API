@@ -681,6 +681,10 @@ class TransactionController extends Controller
                     $response = $this->handleMonetbillWebhook($payload, $headers, $gatewaySettings);
                     break;
 
+                case 'taramoney':
+                    $response = $this->handleTaraMoneyWebhook($payload, $headers, $gatewaySettings);
+                    break;
+
                 default:
                     Log::error('Unsupported gateway for webhook', ['gateway' => $gateway]);
 
@@ -1716,6 +1720,28 @@ class TransactionController extends Controller
             $transaction->save();
             $transaction->refresh();
 
+            // NEW: Create commission record for centralized payments
+            try {
+                $environmentPaymentConfigService = app(\App\Services\EnvironmentPaymentConfigService::class);
+                $instructorCommissionService = app(\App\Services\InstructorCommissionService::class);
+
+                $config = $environmentPaymentConfigService->getConfig($transaction->environment_id);
+
+                if ($config && $config->use_centralized_gateways) {
+                    $instructorCommissionService->createCommissionRecord($transaction);
+                    Log::info('Commission record created for centralized payment', [
+                        'transaction_id' => $transaction->id,
+                        'environment_id' => $transaction->environment_id,
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to create commission record', [
+                    'transaction_id' => $transaction->id,
+                    'error' => $e->getMessage(),
+                ]);
+                // Don't fail the transaction if commission creation fails
+            }
+
             // Check if this is a subscription payment (For environement owners)
             $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
 
@@ -1784,6 +1810,141 @@ class TransactionController extends Controller
         }
 
         return response()->json(['status' => 'success', 'message' => 'Monetbill webhook processed']);
+    }
+
+    /**
+     * Handle TaraMoney webhook notifications
+     *
+     * @param string $payload Raw webhook payload
+     * @param array $headers Request headers
+     * @param PaymentGatewaySetting $gatewaySettings Payment gateway settings
+     * @return \Illuminate\Http\JsonResponse
+     */
+    private function handleTaraMoneyWebhook($payload, $headers, $gatewaySettings)
+    {
+        Log::info('Processing TaraMoney webhook', [
+            'environment_id' => $gatewaySettings->environment_id,
+            "headers" => $headers,
+            "payload" => $payload
+        ]);
+
+        // TaraMoney sends data as JSON payload
+        $event = json_decode($payload, true) ?: [];
+
+        // If event is empty, check for POST parameters
+        if (empty($event) && !empty($_POST)) {
+            Log::info('TaraMoney webhook using POST parameters', ['params' => $_POST]);
+            $event = $_POST;
+        }
+
+        // Get the transaction reference (paymentId from webhook)
+        $paymentId = $event['paymentId'] ?? null;
+        $status = $event['status'] ?? null;
+
+        if (!$paymentId) {
+            Log::error('Missing payment ID in TaraMoney webhook');
+            return response()->json(['error' => 'Missing payment ID'], 400);
+        }
+
+        // Find the transaction using smart lookup that handles cross-environment transactions
+        // TaraMoney sends paymentId in webhook, which maps to our gateway_transaction_id or transaction_id
+        $transaction = $this->findTransactionForWebhook($paymentId, $gatewaySettings);
+
+        if (!$transaction) {
+            Log::error('Transaction not found for TaraMoney webhook', [
+                'payment_id' => $paymentId,
+                'environment_id' => $gatewaySettings->environment_id
+            ]);
+            return response()->json(['status' => 'error', 'message' => 'Transaction not found']);
+        }
+
+        // Process based on status
+        if ($status === 'SUCCESS' || $status === 'success') {
+            $transaction->status = Transaction::STATUS_COMPLETED;
+            $transaction->gateway_status = 'success';
+            $transaction->gateway_response = json_encode($event);
+            $transaction->paid_at = now();
+            $transaction->save();
+            $transaction->refresh();
+
+            // Create commission record for centralized payments
+            try {
+                $environmentPaymentConfigService = app(\App\Services\EnvironmentPaymentConfigService::class);
+                $instructorCommissionService = app(\App\Services\InstructorCommissionService::class);
+
+                $config = $environmentPaymentConfigService->getConfig($transaction->environment_id);
+
+                if ($config && $config->use_centralized_gateways) {
+                    $instructorCommissionService->createCommissionRecord($transaction);
+                    Log::info('Commission record created for centralized payment', [
+                        'transaction_id' => $transaction->id,
+                        'environment_id' => $transaction->environment_id,
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to create commission record', [
+                    'transaction_id' => $transaction->id,
+                    'error' => $e->getMessage(),
+                ]);
+                // Don't fail the transaction if commission creation fails
+            }
+
+            // Check if this is a subscription payment
+            $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
+
+            if ($payment) {
+                $payment->status = Payment::STATUS_COMPLETED;
+                $payment->save();
+
+                $subscription = Subscription::where('id', $payment->subscription_id)->first();
+                if ($subscription) {
+                    $subscription->status = Subscription::STATUS_ACTIVE;
+                    $subscription->last_payment_at = now();
+
+                    if ($subscription->billing_cycle == 'monthly') {
+                        $subscription->next_payment_at = now()->addMonth();
+                    } else {
+                        $subscription->next_payment_at = now()->addYear();
+                    }
+
+                    if ($subscription->billing_cycle == 'monthly') {
+                        $subscription->ends_at = now()->addMonth();
+                    } else {
+                        $subscription->ends_at = now()->addYear();
+                    }
+
+                    $subscription->save();
+                }
+                Log::info('Payment activated', ['payment_id' => $payment->id]);
+            }
+
+            // Check if this is an order payment
+            $order = Order::where('id', $transaction->order_id)->first();
+            if ($order) event(new \App\Events\OrderCompleted($order));
+
+            Log::info('TaraMoney payment success processed', [
+                'transaction_id' => $transaction->id,
+                'gateway_transaction_id' => $paymentId
+            ]);
+        } elseif ($status === 'FAILURE' || $status === 'failed' || $status === 'failure') {
+            $transaction->status = Transaction::STATUS_FAILED;
+            $transaction->gateway_status = 'failed';
+            $transaction->gateway_response = json_encode($event);
+            $transaction->notes = 'Payment failed';
+            $transaction->save();
+
+            Log::info('TaraMoney payment failure processed', [
+                'transaction_id' => $transaction->id,
+                'gateway_transaction_id' => $paymentId
+            ]);
+        } else {
+            Log::info('Unhandled TaraMoney status', [
+                'status' => $status,
+                'transaction_id' => $transaction->id
+            ]);
+        }
+
+        return response()->json(['status' => 'success', 'message' => 'TaraMoney webhook processed']);
     }
 
     /**

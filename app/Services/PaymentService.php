@@ -35,12 +35,17 @@ class PaymentService
      * @var TaxZoneService
      */
     protected $taxZoneService;
-    
+
+    /**
+     * @var EnvironmentPaymentConfigService
+     */
+    protected $environmentPaymentConfigService;
+
     /**
      * @var PaymentGatewayInterface
      */
     protected $currentGateway;
-    
+
     /**
      * @var array
      */
@@ -48,22 +53,25 @@ class PaymentService
 
     /**
      * Constructor for PaymentService
-     * 
+     *
      * @param OrderService $orderService
      * @param PaymentGatewayFactory $gatewayFactory
      * @param CommissionService $commissionService
      * @param TaxZoneService $taxZoneService
+     * @param EnvironmentPaymentConfigService $environmentPaymentConfigService
      */
     public function __construct(
-        OrderService $orderService, 
-        PaymentGatewayFactory $gatewayFactory, 
+        OrderService $orderService,
+        PaymentGatewayFactory $gatewayFactory,
         CommissionService $commissionService,
-        TaxZoneService $taxZoneService
+        TaxZoneService $taxZoneService,
+        EnvironmentPaymentConfigService $environmentPaymentConfigService
     ) {
         $this->orderService = $orderService;
         $this->commissionService = $commissionService;
         $this->gatewayFactory = $gatewayFactory;
         $this->taxZoneService = $taxZoneService;
+        $this->environmentPaymentConfigService = $environmentPaymentConfigService;
     }
 
 
@@ -264,25 +272,56 @@ class PaymentService
         try {
             // Get environment ID based on environment name
             $environmentId = session('current_environment_id');
-            Log::info('Enviroment id in payment service '.$environmentId);
-            
-            // Get gateway settings for the specified environment
-            $gatewaySettings = $this->getGatewaySettings($gatewayCode, $environmentId);
-            
+            Log::info('Environment id in payment service: ' . $environmentId);
+
+            // NEW: Check if environment uses centralized gateways
+            $isCentralized = $this->environmentPaymentConfigService->isCentralized($environmentId);
+
+            if ($isCentralized && $environmentId != 1) {
+                Log::info('Using centralized gateway for environment', [
+                    'environment_id' => $environmentId,
+                    'requested_gateway' => $gatewayCode,
+                ]);
+
+                // Fetch Environment 1's gateway settings
+                $gatewaySettings = $this->getGatewaySettings($gatewayCode, 1);
+
+                if ($gatewaySettings) {
+                    Log::info('Centralized gateway initialized successfully', [
+                        'environment_id' => $environmentId,
+                        'gateway_code' => $gatewayCode,
+                        'using_environment_1_settings' => true,
+                    ]);
+                } else {
+                    // Fallback to environment's own gateway
+                    Log::warning('Environment 1 gateway not found, falling back to environment gateway', [
+                        'environment_id' => $environmentId,
+                        'gateway_code' => $gatewayCode,
+                    ]);
+
+                    $gatewaySettings = $this->getGatewaySettings($gatewayCode, $environmentId);
+                }
+            } else {
+                // EXISTING: Use environment's own gateway (backward compatible)
+                $gatewaySettings = $this->getGatewaySettings($gatewayCode, $environmentId);
+            }
+
             if (!$gatewaySettings) {
                 Log::warning("Payment Gateway settings retrieval failed", [
                     'success' => false,
-                    'message' => "Payment gateway '$gatewayCode' not configured for the specified environment"
+                    'message' => "Payment gateway '$gatewayCode' not configured for the specified environment",
+                    'environment_id' => $environmentId,
+                    'centralized' => $isCentralized,
                 ]);
                 return [
                     'success' => false,
                     'message' => "Payment gateway '$gatewayCode' not configured for the specified environment"
                 ];
             }
-            
+
             // Create and initialize the gateway
             $gateway = $this->gatewayFactory->create($gatewayCode, $gatewaySettings);
-            
+
             if (!$gateway) {
                 Log::warning("Payment Gateway creation failed", [
                     'success' => false,
@@ -293,15 +332,20 @@ class PaymentService
                     'message' => "Payment gateway '$gatewayCode' not supported"
                 ];
             }
-            
+
             return [
                 'success' => true,
                 'gateway' => $gateway,
                 'settings' => $gatewaySettings
             ];
-            
+
         } catch (\Exception $e) {
-            Log::error('Gateway initialization failed: ' . $e->getMessage());
+            Log::error('Gateway initialization failed: ' . $e->getMessage(), [
+                'environment_id' => $environmentId ?? null,
+                'gateway_code' => $gatewayCode,
+                'trace' => $e->getTraceAsString(),
+            ]);
+
             return [
                 'success' => false,
                 'message' => 'Gateway initialization failed: ' . $e->getMessage()
@@ -586,9 +630,15 @@ class PaymentService
                     'payment_date' => $transaction->paid_at ? $transaction->paid_at->format('Y-m-d H:i:s') : now()->format('Y-m-d H:i:s'),
                     'payment_type' => $gatewayCode,
                     'client_secret' => $paymentResponse['client_secret'] ?? null,
-                    'publishable_key' => $paymentResponse['publishable_key'] ?? null
+                    'publishable_key' => $paymentResponse['publishable_key'] ?? null,
+                    // TaraMoney payment links (if present)
+                    'payment_links' => $paymentResponse['payment_links'] ?? null,
+                    'whatsapp_link' => $paymentResponse['whatsapp_link'] ?? null,
+                    'telegram_link' => $paymentResponse['telegram_link'] ?? null,
+                    'dikalo_link' => $paymentResponse['dikalo_link'] ?? null,
+                    'sms_link' => $paymentResponse['sms_link'] ?? null,
                 ];
-                
+
                 $response['transaction'] = $transaction;
                 return $response;
             } else {
@@ -832,11 +882,11 @@ class PaymentService
      * Process refund
      *
      * @param int $orderId
-     * @param float $amount
+     * @param float|null $amount
      * @param string $reason
      * @return array
      */
-    public function processRefund(int $orderId, float $amount = null, string $reason = ''): array
+    public function processRefund(int $orderId, ?float $amount = null, string $reason = ''): array
     {
         $order = $this->orderService->getOrderById($orderId);
         

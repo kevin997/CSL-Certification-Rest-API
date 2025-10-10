@@ -62,6 +62,7 @@ use Illuminate\Support\Facades\Broadcast;
 use App\Http\Controllers\Api\UserNotificationController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\ChatAnalyticsController;
+use App\Http\Controllers\Api\ThirdPartyServiceController;
 
 Route::middleware('auth:sanctum')->post('/broadcasting/auth', function (Request $request) {
     return Broadcast::auth($request);
@@ -826,4 +827,88 @@ Route::prefix('chat/instructor')->group(function () {
 
     // Get discussion analytics for instructor
     Route::get('discussions/analytics', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'instructorAnalytics']);
+});
+
+// Third Party Service Management Routes
+Route::middleware('auth:sanctum')->prefix('third-party-services')->group(function () {
+    // CRUD operations
+    Route::get('/', [ThirdPartyServiceController::class, 'index']);
+    Route::post('/', [ThirdPartyServiceController::class, 'store']);
+    Route::get('/{id}', [ThirdPartyServiceController::class, 'show']);
+    Route::put('/{id}', [ThirdPartyServiceController::class, 'update']);
+    Route::delete('/{id}', [ThirdPartyServiceController::class, 'destroy']);
+    
+    // Service-specific actions
+    Route::post('/{id}/refresh-token', [ThirdPartyServiceController::class, 'refreshToken']);
+    Route::post('/{id}/test-connection', [ThirdPartyServiceController::class, 'testConnection']);
+    
+    // Utility endpoints
+    Route::get('/types/available', [ThirdPartyServiceController::class, 'getServiceTypes']);
+});
+
+// Admin API Endpoints for Payment Gateway Centralization
+Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
+    // Commission Management
+    Route::prefix('commissions')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Admin\CommissionController::class, 'index']);
+        Route::get('/stats', [\App\Http\Controllers\Api\Admin\CommissionController::class, 'stats']);
+        Route::get('/environment/{environmentId}', [\App\Http\Controllers\Api\Admin\CommissionController::class, 'byEnvironment']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\Admin\CommissionController::class, 'show']);
+        Route::post('/{id}/approve', [\App\Http\Controllers\Api\Admin\CommissionController::class, 'approve']);
+        Route::post('/bulk-approve', [\App\Http\Controllers\Api\Admin\CommissionController::class, 'bulkApprove']);
+    });
+
+    // Withdrawal Request Management
+    Route::prefix('withdrawal-requests')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Admin\WithdrawalRequestController::class, 'index']);
+        Route::get('/stats', [\App\Http\Controllers\Api\Admin\WithdrawalRequestController::class, 'stats']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\Admin\WithdrawalRequestController::class, 'show']);
+        Route::post('/{id}/approve', [\App\Http\Controllers\Api\Admin\WithdrawalRequestController::class, 'approve']);
+        Route::post('/{id}/reject', [\App\Http\Controllers\Api\Admin\WithdrawalRequestController::class, 'reject']);
+        Route::post('/{id}/process', [\App\Http\Controllers\Api\Admin\WithdrawalRequestController::class, 'process']);
+    });
+
+    // Centralized Transaction Management
+    Route::prefix('centralized-transactions')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'index']);
+        Route::get('/stats', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'stats']);
+        Route::get('/export', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'export']);
+        Route::get('/environment/{environmentId}', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'byEnvironment']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'show']);
+    });
+
+    // Environment Payment Configuration
+    Route::prefix('environment-payment-configs')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController::class, 'index']);
+        Route::get('/{environmentId}', [\App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController::class, 'show']);
+        Route::put('/{environmentId}', [\App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController::class, 'update']);
+        Route::post('/{environmentId}/toggle', [\App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController::class, 'toggle']);
+    });
+});
+
+// Instructor API Endpoints for Earnings and Withdrawals
+Route::middleware(['auth:sanctum'])->prefix('instructor')->group(function () {
+    // Earnings Management
+    Route::prefix('earnings')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Instructor\EarningsController::class, 'index']);
+        Route::get('/stats', [\App\Http\Controllers\Api\Instructor\EarningsController::class, 'stats']);
+        Route::get('/balance', [\App\Http\Controllers\Api\Instructor\EarningsController::class, 'balance']);
+    });
+
+    // Withdrawal Management
+    Route::prefix('withdrawals')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Instructor\WithdrawalController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\Instructor\WithdrawalController::class, 'store']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\Instructor\WithdrawalController::class, 'show']);
+    });
+
+    // Payment Configuration
+    Route::prefix('payment-config')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Instructor\PaymentConfigController::class, 'show']);
+        Route::put('/', [\App\Http\Controllers\Api\Instructor\PaymentConfigController::class, 'update']);
+
+        // Centralized payment gateway opt-in
+        Route::get('/centralized', [\App\Http\Controllers\Api\Instructor\PaymentConfigController::class, 'getCentralizedConfig']);
+        Route::post('/centralized/toggle', [\App\Http\Controllers\Api\Instructor\PaymentConfigController::class, 'toggleCentralized']);
+    });
 });

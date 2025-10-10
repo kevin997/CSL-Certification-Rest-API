@@ -50,7 +50,8 @@ class Environment extends Model
         'owner_id',
         'description',
         'country_code', //default CM
-        'state_code'// default null 
+        'state_code', // default null
+        'payment_settings'
     ];
 
     /**
@@ -62,6 +63,7 @@ class Environment extends Model
         'additional_domains' => 'array',
         'is_active' => 'boolean',
         'is_demo' => 'boolean',
+        'payment_settings' => 'array',
     ];
 
     /**
@@ -204,11 +206,35 @@ class Environment extends Model
     
     /**
      * Check if the environment is a demo environment.
-     * 
+     *
      * @return bool
      */
     public function isDemoEnvironment(): bool
     {
         return $this->is_demo === true;
+    }
+
+    /**
+     * Get the payment configuration for this environment.
+     */
+    public function paymentConfig(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(EnvironmentPaymentConfig::class);
+    }
+
+    /**
+     * Get the instructor commissions for this environment.
+     */
+    public function instructorCommissions(): HasMany
+    {
+        return $this->hasMany(InstructorCommission::class);
+    }
+
+    /**
+     * Get the withdrawal requests for this environment.
+     */
+    public function withdrawalRequests(): HasMany
+    {
+        return $this->hasMany(WithdrawalRequest::class);
     }
 }

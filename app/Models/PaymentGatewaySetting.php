@@ -14,6 +14,63 @@ class PaymentGatewaySetting extends Model
     use HasFactory, SoftDeletes, BelongsToEnvironment;
 
     /**
+     * Boot the model and register event listeners.
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        // Validate before creating
+        static::creating(function ($gateway) {
+            $gateway->validateUniqueConstraints();
+        });
+
+        // Validate before updating
+        static::updating(function ($gateway) {
+            $gateway->validateUniqueConstraints();
+        });
+
+        // Handle is_default changes
+        static::saving(function ($gateway) {
+            if ($gateway->is_default && $gateway->isDirty('is_default')) {
+                // Unset any existing default gateway for this environment
+                self::query()
+                    ->where('environment_id', $gateway->environment_id)
+                    ->where('is_default', true)
+                    ->where('id', '!=', $gateway->id)
+                    ->update(['is_default' => false]);
+            }
+        });
+    }
+
+    /**
+     * Validate unique constraints for gateway code.
+     *
+     * @throws \Illuminate\Validation\ValidationException
+     */
+    protected function validateUniqueConstraints()
+    {
+        // Check if another gateway with the same code already exists
+        $existingGateway = self::query()
+            ->where('code', $this->code)
+            ->when($this->exists, function ($query) {
+                // Exclude current record when updating
+                $query->where('id', '!=', $this->id);
+            })
+            ->first();
+
+        if ($existingGateway) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'code' => [
+                    "A payment gateway with code '{$this->code}' already exists " .
+                    "(Environment: {$existingGateway->environment_id}, Gateway: {$existingGateway->gateway_name}). " .
+                    "Each gateway code must be unique across all environments."
+                ]
+            ]);
+        }
+    }
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var array<int, string>

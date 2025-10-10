@@ -462,4 +462,12 @@ class Transaction extends Model
     {
         return $this->belongsTo(User::class, 'customer_id');
     }
+
+    /**
+     * Get the instructor commission associated with this transaction.
+     */
+    public function instructorCommission(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(InstructorCommission::class);
+    }
 }

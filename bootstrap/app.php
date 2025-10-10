@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\BrandingMiddleware;
 use App\Http\Middleware\DetectEnvironment;
+use App\Http\Middleware\EnforceHttps;
 use App\Providers\EnvironmentAuthServiceProvider;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -16,6 +17,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // HTTPS enforcement middleware (runs first for security)
+        $middleware->append(EnforceHttps::class);
+        
         $middleware->append(DetectEnvironment::class);
         $middleware->append(BrandingMiddleware::class);
 
