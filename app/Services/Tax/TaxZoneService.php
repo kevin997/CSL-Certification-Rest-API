@@ -5,10 +5,28 @@ namespace App\Services\Tax;
 use App\Models\TaxZone;
 use App\Models\Environment;
 use App\Models\Order;
+use App\Services\EnvironmentPaymentConfigService;
 use Illuminate\Support\Facades\Log;
 
 class TaxZoneService
 {
+    /**
+     * The environment payment config service instance.
+     *
+     * @var EnvironmentPaymentConfigService
+     */
+    protected $environmentPaymentConfigService;
+    
+    /**
+     * Create a new tax zone service instance.
+     *
+     * @param EnvironmentPaymentConfigService $environmentPaymentConfigService
+     * @return void
+     */
+    public function __construct(EnvironmentPaymentConfigService $environmentPaymentConfigService)
+    {
+        $this->environmentPaymentConfigService = $environmentPaymentConfigService;
+    }
     /**
      * Find a tax zone by country code and optionally state code.
      *
@@ -35,6 +53,7 @@ class TaxZoneService
     
     /**
      * Find a tax zone by environment ID.
+     * Uses platform environment (Environment 1) if centralized gateways enabled.
      * This method assumes that environments have a country_code attribute.
      *
      * @param int|null $environmentId
@@ -51,13 +70,23 @@ class TaxZoneService
             return null;
         }
         
+        // Get effective environment ID (routes to Environment 1 if centralized)
+        $effectiveEnvironmentId = $this->environmentPaymentConfigService->getEffectiveEnvironmentId($environmentId);
+        
+        if ($effectiveEnvironmentId !== $environmentId) {
+            Log::info('Using platform tax zone due to centralized gateways', [
+                'original_environment_id' => $environmentId,
+                'effective_environment_id' => $effectiveEnvironmentId
+            ]);
+        }
+        
         // Try to load the environment and get its country code
         try {
-            $environment = Environment::find($environmentId);
+            $environment = Environment::find($effectiveEnvironmentId);
             
             if (!$environment) {
                 Log::warning('Environment not found for tax zone lookup', [
-                    'environment_id' => $environmentId,
+                    'environment_id' => $effectiveEnvironmentId,
                     'request_time' => now()->toDateTimeString(),
                     'source' => 'TaxZoneService::findTaxZoneByEnvironment'
                 ]);
@@ -66,7 +95,7 @@ class TaxZoneService
             
             if (!$environment->country_code) {
                 Log::warning('Environment missing country code for tax zone lookup', [
-                    'environment_id' => $environmentId,
+                    'environment_id' => $effectiveEnvironmentId,
                     'environment_name' => $environment->name,
                     'request_time' => now()->toDateTimeString(),
                     'source' => 'TaxZoneService::findTaxZoneByEnvironment'
@@ -80,7 +109,7 @@ class TaxZoneService
             );
         } catch (\Exception $e) {
             Log::error('Error finding tax zone by environment', [
-                'environment_id' => $environmentId,
+                'environment_id' => $effectiveEnvironmentId,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
                 'request_time' => now()->toDateTimeString(),

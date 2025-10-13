@@ -6,6 +6,7 @@ use App\Models\Commission;
 use App\Models\Order;
 use App\Models\Transaction;
 use App\Services\Tax\TaxZoneService;
+use App\Services\EnvironmentPaymentConfigService;
 use Illuminate\Support\Facades\Log;
 
 class CommissionService
@@ -18,24 +19,50 @@ class CommissionService
     protected $taxZoneService;
     
     /**
+     * The environment payment config service instance.
+     *
+     * @var EnvironmentPaymentConfigService
+     */
+    protected $environmentPaymentConfigService;
+    
+    /**
      * Create a new commission service instance.
      *
      * @param TaxZoneService $taxZoneService
+     * @param EnvironmentPaymentConfigService $environmentPaymentConfigService
      * @return void
      */
-    public function __construct(TaxZoneService $taxZoneService)
-    {
+    public function __construct(
+        TaxZoneService $taxZoneService,
+        EnvironmentPaymentConfigService $environmentPaymentConfigService
+    ) {
         $this->taxZoneService = $taxZoneService;
+        $this->environmentPaymentConfigService = $environmentPaymentConfigService;
     }
     
     /**
      * Get the active commission for an environment
+     * Uses platform commission (Environment 1) if centralized gateways enabled
      *
      * @param int|null $environmentId
      * @return Commission|null
      */
     public function getActiveCommission(?int $environmentId = null): ?Commission
     {
+        if ($environmentId) {
+            // Get effective environment ID (routes to Environment 1 if centralized)
+            $effectiveEnvironmentId = $this->environmentPaymentConfigService->getEffectiveEnvironmentId($environmentId);
+            
+            if ($effectiveEnvironmentId !== $environmentId) {
+                Log::info('Using platform commission due to centralized gateways', [
+                    'original_environment_id' => $environmentId,
+                    'effective_environment_id' => $effectiveEnvironmentId
+                ]);
+            }
+            
+            return Commission::getActiveCommission($effectiveEnvironmentId);
+        }
+        
         return Commission::getActiveCommission($environmentId);
     }
     

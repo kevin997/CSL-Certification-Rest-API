@@ -91,6 +91,30 @@ class Product extends Model
     }
 
     /**
+     * Get the digital assets for this product.
+     */
+    public function productAssets(): HasMany
+    {
+        return $this->hasMany(ProductAsset::class);
+    }
+
+    /**
+     * Scope for digital products
+     */
+    public function scopeDigital($query)
+    {
+        return $query->where('product_type', 'digital');
+    }
+
+    /**
+     * Check if product requires digital fulfillment
+     */
+    public function requiresFulfillment(): bool
+    {
+        return $this->requires_fulfillment;
+    }
+
+    /**
      * Get the orders for this product.
      */
     public function orders(): HasMany

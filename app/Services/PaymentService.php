@@ -100,8 +100,21 @@ class PaymentService
 
         
         $environmentId = session('current_environment_id');
+        
+        // Get effective environment ID (routes to Environment 1 if centralized gateways enabled)
+        $effectiveEnvironmentId = $this->environmentPaymentConfigService->getEffectiveEnvironmentId($environmentId);
+        
+        if ($effectiveEnvironmentId !== $environmentId) {
+            Log::info('Using platform payment gateway due to centralized gateways in createPayment', [
+                'original_environment_id' => $environmentId,
+                'effective_environment_id' => $effectiveEnvironmentId,
+                'order_id' => $orderId
+            ]);
+        }
+        
         Log::info('Found environement Id on createPayment', [
-            "env" => $environmentId
+            "env" => $environmentId,
+            "effective_env" => $effectiveEnvironmentId
         ]);
         
         try {
@@ -129,7 +142,7 @@ class PaymentService
                 $existingTransaction->update([
                     'transaction_id' => 'TXN_' . Str::uuid(),
                     'payment_method'=> $paymentMethod,
-                    'environment_id'=> $environmentId
+                    'environment_id'=> $effectiveEnvironmentId
                 ]);
 
                 // Initialize the payment gateway with environment-specific settings
@@ -272,46 +285,32 @@ class PaymentService
         try {
             // Get environment ID based on environment name
             $environmentId = session('current_environment_id');
-            Log::info('Environment id in payment service: ' . $environmentId);
-
-            // NEW: Check if environment uses centralized gateways
-            $isCentralized = $this->environmentPaymentConfigService->isCentralized($environmentId);
-
-            if ($isCentralized && $environmentId != 1) {
-                Log::info('Using centralized gateway for environment', [
-                    'environment_id' => $environmentId,
-                    'requested_gateway' => $gatewayCode,
+            
+            // Get effective environment ID (routes to Environment 1 if centralized gateways enabled)
+            $effectiveEnvironmentId = $this->environmentPaymentConfigService->getEffectiveEnvironmentId($environmentId);
+            
+            if ($effectiveEnvironmentId !== $environmentId) {
+                Log::info('Using platform payment gateway due to centralized gateways in initializeGateway', [
+                    'original_environment_id' => $environmentId,
+                    'effective_environment_id' => $effectiveEnvironmentId,
+                    'gateway_code' => $gatewayCode
                 ]);
-
-                // Fetch Environment 1's gateway settings
-                $gatewaySettings = $this->getGatewaySettings($gatewayCode, 1);
-
-                if ($gatewaySettings) {
-                    Log::info('Centralized gateway initialized successfully', [
-                        'environment_id' => $environmentId,
-                        'gateway_code' => $gatewayCode,
-                        'using_environment_1_settings' => true,
-                    ]);
-                } else {
-                    // Fallback to environment's own gateway
-                    Log::warning('Environment 1 gateway not found, falling back to environment gateway', [
-                        'environment_id' => $environmentId,
-                        'gateway_code' => $gatewayCode,
-                    ]);
-
-                    $gatewaySettings = $this->getGatewaySettings($gatewayCode, $environmentId);
-                }
-            } else {
-                // EXISTING: Use environment's own gateway (backward compatible)
-                $gatewaySettings = $this->getGatewaySettings($gatewayCode, $environmentId);
             }
+            
+            Log::info('Environment id in payment service', [
+                'environment_id' => $environmentId,
+                'effective_environment_id' => $effectiveEnvironmentId
+            ]);
+
+            // Get gateway settings using effective environment ID
+            $gatewaySettings = $this->getGatewaySettings($gatewayCode, $effectiveEnvironmentId);
 
             if (!$gatewaySettings) {
                 Log::warning("Payment Gateway settings retrieval failed", [
                     'success' => false,
                     'message' => "Payment gateway '$gatewayCode' not configured for the specified environment",
                     'environment_id' => $environmentId,
-                    'centralized' => $isCentralized,
+                    'effective_environment_id' => $effectiveEnvironmentId,
                 ]);
                 return [
                     'success' => false,
@@ -368,9 +367,12 @@ class PaymentService
             $environmentId = session('current_environment_id');
         }
         
+        // Get effective environment ID (routes to Environment 1 if centralized gateways enabled)
+        $effectiveEnvironmentId = $this->environmentPaymentConfigService->getEffectiveEnvironmentId($environmentId);
+        
         return PaymentGatewaySetting::where('code', $gatewayCode)
-            ->where(function ($query) use ($environmentId) {
-                $query->where('environment_id', $environmentId)
+            ->where(function ($query) use ($effectiveEnvironmentId) {
+                $query->where('environment_id', $effectiveEnvironmentId)
                     ->orWhereNull('environment_id');
             })
             ->first();
@@ -453,12 +455,23 @@ class PaymentService
     {
 
         $environmentId = session('current_environment_id');
+        
+        // Get effective environment ID (routes to Environment 1 if centralized gateways enabled)
+        $effectiveEnvironmentId = $this->environmentPaymentConfigService->getEffectiveEnvironmentId($environmentId);
+        
+        if ($effectiveEnvironmentId !== $environmentId) {
+            Log::info('Using platform payment gateway due to centralized gateways', [
+                'original_environment_id' => $environmentId,
+                'effective_environment_id' => $effectiveEnvironmentId,
+                'order_id' => $order->id
+            ]);
+        }
 
         Log::info('Processing payment for order ' . $order->id . ' using ' . $gatewayCode);
         try {
-            // Get the payment gateway settings
+            // Get the payment gateway settings using effective environment ID
             $gatewaySettings = PaymentGatewaySetting::where('code', $gatewayCode)
-                ->where('environment_id', $paymentData['environment_id'] ?? null)
+                ->where('environment_id', $effectiveEnvironmentId)
                 ->where('status', true)
                 ->first();
             

@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PaymentGatewayController;
 use App\Http\Controllers\Api\BillingPaymentGatewayController;
 use App\Http\Controllers\Api\PlanController;
+use App\Http\Controllers\Api\ProductAssetController;
 use App\Http\Controllers\Api\ProductCategoryController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProfileController;
@@ -62,6 +63,7 @@ use Illuminate\Support\Facades\Broadcast;
 use App\Http\Controllers\Api\UserNotificationController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\ChatAnalyticsController;
+use App\Http\Controllers\Api\DigitalProductController;
 use App\Http\Controllers\Api\ThirdPartyServiceController;
 
 Route::middleware('auth:sanctum')->post('/broadcasting/auth', function (Request $request) {
@@ -467,12 +469,22 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/products/{id}/feature', [ProductController::class, 'feature']);
     Route::post('/products/{id}/unfeature', [ProductController::class, 'unfeature']);
 
+    // Product Asset routes (for instructors to add external links to products)
+    Route::get('/products/{product}/assets', [ProductAssetController::class, 'index']);
+    Route::post('/products/{product}/assets', [ProductAssetController::class, 'store']);
+    Route::put('/products/{product}/assets/{asset}', [ProductAssetController::class, 'update']);
+    Route::delete('/products/{product}/assets/{asset}', [ProductAssetController::class, 'destroy']);
+
     // Order routes
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders/{id}', [OrderController::class, 'show']);
     Route::put('/orders/{id}/status', [OrderController::class, 'updateStatus']);
     Route::get('/my-orders', [OrderController::class, 'myOrders']);
+
+    // Digital Product routes (for customers to access purchased digital products)
+    Route::get('/digital-products', [DigitalProductController::class, 'index']);
+    Route::get('/digital-products/access/{token}', [DigitalProductController::class, 'access']);
 
     // Plan routes
     Route::get('/plans', [PlanController::class, 'index']);

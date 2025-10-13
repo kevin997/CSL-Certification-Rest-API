@@ -154,6 +154,18 @@ class EnvironmentPaymentConfigService
     }
 
     /**
+     * Get the effective environment ID for payment/commission operations
+     * Returns Environment 1 (platform) if centralized gateways enabled, otherwise returns original ID
+     *
+     * @param int $environmentId
+     * @return int
+     */
+    public function getEffectiveEnvironmentId(int $environmentId): int
+    {
+        return $this->isCentralized($environmentId) ? 1 : $environmentId;
+    }
+
+    /**
      * Get default config values
      *
      * @return array
