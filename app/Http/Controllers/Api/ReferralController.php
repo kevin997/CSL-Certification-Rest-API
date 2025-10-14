@@ -142,7 +142,7 @@ class ReferralController extends Controller
     public function index(Request $request)
     {
         // Check if user is admin or viewing their own referrals
-        if (!Auth::user()->isAdmin()) {
+        if (!Auth::user()->isTeacher()) {
             return $this->myReferrals($request);
         }
 
@@ -362,7 +362,7 @@ class ReferralController extends Controller
         $referral = Referral::with(['referrer', 'orders'])->findOrFail($id);
 
         // Check if user has permission to view this referral
-        if ($referral->referrer_id !== Auth::id() && !Auth::user()->isAdmin()) {
+        if ($referral->referrer_id !== Auth::id() && !Auth::user()->isTeacher()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to view this referral',
@@ -440,7 +440,7 @@ class ReferralController extends Controller
         $referral = Referral::findOrFail($id);
 
         // Check if user has permission to update this referral
-        if ($referral->referrer_id !== Auth::id() && !Auth::user()->isAdmin()) {
+        if ($referral->referrer_id !== Auth::id() && !Auth::user()->isTeacher()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to update this referral',
@@ -549,7 +549,7 @@ class ReferralController extends Controller
         $referral = Referral::findOrFail($id);
 
         // Check if user has permission to delete this referral
-        if ($referral->referrer_id !== Auth::id() && !Auth::user()->isAdmin()) {
+        if ($referral->referrer_id !== Auth::id() && !Auth::user()->isTeacher()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to delete this referral',
@@ -742,7 +742,7 @@ class ReferralController extends Controller
         // Base query - filter by user if not admin
         $query = Referral::query();
         
-        if (!$user->isAdmin() && $user->isSalesAgent()) {
+        if (!$user->isTeacher() && $user->isSalesAgent()) {
             $query->where('referrer_id', $user->id);
         }
         

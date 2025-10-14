@@ -595,7 +595,7 @@ class OrderController extends Controller
         // Check if user has permission to view this order
         $user = Auth::user();
         $hasPermission = false;
-        if ($user->isAdmin()) {
+        if ($user->isTeacher()) {
             $hasPermission = true;
         } elseif ($order->environment_id) {
             $environment = \App\Models\Environment::find($order->environment_id);
@@ -692,7 +692,7 @@ class OrderController extends Controller
         // Check if user has permission to view this order
         $user = Auth::user();
         $hasPermission = false;
-        if ($user->isAdmin()) {
+        if ($user->isTeacher()) {
             $hasPermission = true;
         } elseif ($order->environment_id) {
             $environment = \App\Models\Environment::find($order->environment_id);
