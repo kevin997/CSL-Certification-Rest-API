@@ -321,7 +321,7 @@ class ActivityCompletionController extends Controller
             ->findOrFail($enrollmentId);
 
         // Check if user has permission to view this enrollment's activity completions
-        if ($enrollment->user_id !== Auth::id() && !Auth::user()->is_admin) {
+        if ($enrollment->user_id !== Auth::id() && !Auth::user()->isTeacher()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to view activity completions for this enrollment',
@@ -359,7 +359,7 @@ class ActivityCompletionController extends Controller
         $enrollment = Enrollment::findOrFail($enrollmentId);
         
         // Check if user has permission to update this enrollment's activity completion
-        if ($enrollment->user_id !== Auth::id() && !Auth::user()->is_admin) {
+        if ($enrollment->user_id !== Auth::id() && !Auth::user()->isTeacher()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to update activity completions for this enrollment',
@@ -434,7 +434,7 @@ class ActivityCompletionController extends Controller
         $enrollment = Enrollment::findOrFail($enrollmentId);
         
         // Check if user has permission to view this enrollment's progress
-        if ($enrollment->user_id !== Auth::id() && !Auth::user()->is_admin) {
+        if ($enrollment->user_id !== Auth::id() && !Auth::user()->isTeacher()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to view progress for this enrollment',
@@ -503,7 +503,7 @@ class ActivityCompletionController extends Controller
         $enrollment = Enrollment::findOrFail($enrollmentId);
         
         // Check if user has permission to reset this enrollment's activity completion
-        if (!Auth::user()->is_admin) {
+        if (!Auth::user()->isTeacher()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to reset activity completions',
@@ -545,7 +545,7 @@ class ActivityCompletionController extends Controller
         $enrollment = Enrollment::findOrFail($enrollmentId);
         
         // Check if user has permission to reset all activity completions
-        if (!Auth::user()->is_admin) {
+        if (!Auth::user()->isTeacher()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to reset all activity completions',

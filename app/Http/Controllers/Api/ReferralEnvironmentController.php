@@ -417,7 +417,7 @@ class ReferralEnvironmentController extends Controller
         
         // Filter by referrer if not admin
         $user = $request->user();
-        if (!$user->isAdmin()) {
+        if (!$user->isTeacher()) {
             $query->where('referrer_id', $user->id);
         }
         

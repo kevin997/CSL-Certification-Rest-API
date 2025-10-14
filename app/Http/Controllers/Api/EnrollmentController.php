@@ -88,7 +88,7 @@ class EnrollmentController extends Controller
         // Apply user filter
         if ($request->has('user_id')) {
             // Only allow admins or the user themselves to filter by user_id
-            if (Auth::id() != $request->input('user_id') && !Auth::user()->is_admin) {
+            if (Auth::id() != $request->input('user_id') && !Auth::user()->isAdmin()) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'You do not have permission to view enrollments for other users',
@@ -143,7 +143,7 @@ class EnrollmentController extends Controller
         $userId = $request->input('user_id', Auth::id());
 
         // Check if user has permission to create enrollment for another user
-        if ($userId != Auth::id() && !Auth::user()->is_admin) {
+        if ($userId != Auth::id() && !Auth::user()->isAdmin()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to enroll other users',
@@ -152,7 +152,7 @@ class EnrollmentController extends Controller
 
         // Check if course exists and is published
         $course = Course::findOrFail($request->course_id);
-        if ($course->status !== 'published' && !Auth::user()->is_admin) {
+        if ($course->status !== 'published' && !Auth::user()->isAdmin()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Cannot enroll in an unpublished course',
@@ -214,7 +214,7 @@ class EnrollmentController extends Controller
         $enrollment = Enrollment::with(['course', 'user', 'activityCompletions'])->findOrFail($id);
 
         // Check if user has permission to view this enrollment
-        if ($enrollment->user_id !== Auth::id() && !Auth::user()->is_admin) {
+        if ($enrollment->user_id !== Auth::id() && !Auth::user()->isAdmin()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to view this enrollment',
@@ -239,7 +239,7 @@ class EnrollmentController extends Controller
         $enrollment = Enrollment::findOrFail($id);
 
         // Check if user has permission to update this enrollment
-        if (!Auth::user()->is_admin) {
+        if (!Auth::user()->isAdmin()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to update this enrollment',
@@ -283,7 +283,7 @@ class EnrollmentController extends Controller
         $enrollment = Enrollment::findOrFail($id);
 
         // Check if user has permission to delete this enrollment
-        if (!Auth::user()->is_admin) {
+        if (!Auth::user()->isAdmin()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to delete this enrollment',
@@ -355,7 +355,7 @@ class EnrollmentController extends Controller
         $course = Course::findOrFail($courseId);
 
         // Check if user has permission to view enrollments for this course
-        if ($course->created_by !== Auth::id() && !Auth::user()->is_admin) {
+        if ($course->created_by !== Auth::id() && !Auth::user()->isAdmin()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to view enrollments for this course',

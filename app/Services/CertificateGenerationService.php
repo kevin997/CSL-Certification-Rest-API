@@ -406,6 +406,87 @@ class CertificateGenerationService
     }
 
     /**
+     * Regenerate a certificate with a specific access code
+     * This is used when the certificate URLs are no longer valid but the certificate record exists
+     *
+     * @param CertificateContent $certificateContent The certificate content
+     * @param array $userData The user data for the certificate
+     * @param string $accessCode The existing access code to reuse
+     * @param string|null $templateName The name of the template to use
+     * @param Enrollment|null $enrollment The enrollment record for the user
+     * @return array|null The regenerated certificate data or null if failed
+     */
+    public function regenerateCertificate(
+        CertificateContent $certificateContent,
+        array $userData,
+        string $accessCode,
+        ?string $templateName = null,
+        ?Enrollment $enrollment = null
+    ): ?array {
+        if (!$this->service) {
+            Log::error('Certificate generation service not configured');
+            return null;
+        }
+
+        try {
+            // Determine which template to use
+            $templateToUse = $templateName ?: $certificateContent->template->file_path ?? 'default';
+
+            Log::info('Regenerating certificate with access code: ' . $accessCode);
+
+            // Prepare certificate data (same as generateCertificate but with existing access code)
+            $certificateData = [
+                'template_name' => $templateToUse,
+                'data' => [
+                    'fullName' => $userData['fullName'] ?? 'Student Name',
+                    'courseTitle' => $enrollment && $enrollment->course ? $enrollment->course->title : ($this->getTemplateTitleFromCertificateContent($certificateContent) ?: 'Certificate'),
+                    'certificateDate' => $userData['certificateDate'] ?? now()->format('F j, Y'),
+                    'expiryDate' => $userData['expiryDate'] ?? null,
+                    'accessCode' => $accessCode, // Reuse the existing access code
+                ]
+            ];
+
+            Log::info('Certificate data for regenerateCertificate: ' . json_encode($certificateData));
+
+            // Make the authenticated request to generate the certificate
+            $response = $this->makeAuthenticatedRequest(
+                'post',
+                'certificates/generate',
+                $certificateData
+            );
+
+            if ($response && $response->successful()) {
+                $result = $response->json();
+
+                // Check if the response contains the certificate URLs
+                if (isset($result['data']['certificate_url'])) {
+                    // Add the access code to the result
+                    $result['accessCode'] = $accessCode;
+
+                    Log::info('Certificate regenerated successfully with URLs: ' . json_encode($result['data']));
+
+                    return $result;
+                }
+
+                Log::error('Certificate URL not found in regeneration response', ['response' => $result]);
+                return null;
+            }
+
+            Log::error('Failed to regenerate certificate', [
+                'status' => $response ? $response->status() : 'No response',
+                'body' => $response ? $response->body() : 'No response'
+            ]);
+            return null;
+        } catch (\Exception $e) {
+            Log::error('Exception when regenerating certificate', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return null;
+        }
+    }
+
+    /**
      * Get the download URL for a certificate
      *
      * @param CertificateContent $certificateContent The certificate content

@@ -66,7 +66,7 @@ class EnvironmentController extends Controller
     public function index(Request $request)
     {
         // If user is admin, return all environments
-        if ($request->user()->isAdmin()) {
+        if ($request->user()->isTeacher()) {
             return Environment::all();
         }
         
@@ -186,7 +186,7 @@ class EnvironmentController extends Controller
         $environment = Environment::findOrFail($id);
         
         // Check if user has permission to view this environment
-        if (!$request->user()->isAdmin() && $environment->owner_id !== $request->user()->id) {
+        if (!$request->user()->isTeacher() && $environment->owner_id !== $request->user()->id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -252,7 +252,7 @@ class EnvironmentController extends Controller
         $environment = Environment::findOrFail($id);
         
         // Check if user has permission to update this environment
-        if (!$request->user()->isAdmin() && $environment->owner_id !== $request->user()->id) {
+        if (!$request->user()->isTeacher() && $environment->owner_id !== $request->user()->id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -265,7 +265,7 @@ class EnvironmentController extends Controller
         ];
 
         // Allow admins to update primary_domain
-        if ($request->user()->isAdmin()) {
+        if ($request->user()->isTeacher()) {
             $validationRules['primary_domain'] = [
                 'sometimes',
                 'required',
@@ -289,7 +289,7 @@ class EnvironmentController extends Controller
             'description',
         ];
 
-        if ($request->user()->isAdmin() && $request->has('primary_domain')) {
+        if ($request->user()->isTeacher() && $request->has('primary_domain')) {
             $fillableFields[] = 'primary_domain';
         }
 
@@ -326,7 +326,7 @@ class EnvironmentController extends Controller
         $environment = Environment::findOrFail($id);
         
         // Check if user has permission to delete this environment
-        if (!$request->user()->isAdmin() && $environment->owner_id !== $request->user()->id) {
+        if (!$request->user()->isTeacher() && $environment->owner_id !== $request->user()->id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -409,7 +409,7 @@ class EnvironmentController extends Controller
         $environment = Environment::findOrFail($id);
         
         // Check if user has permission to view this environment's users
-        if (!$request->user()->isAdmin() && $environment->owner_id !== $request->user()->id) {
+        if (!$request->user()->isTeacher() && $environment->owner_id !== $request->user()->id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -462,7 +462,7 @@ class EnvironmentController extends Controller
         $environment = Environment::findOrFail($id);
         
         // Check if user has permission to add users to this environment
-        if (!$request->user()->isAdmin() && $environment->owner_id !== $request->user()->id) {
+        if (!$request->user()->isTeacher() && $environment->owner_id !== $request->user()->id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -572,7 +572,7 @@ class EnvironmentController extends Controller
         $environment = Environment::findOrFail($id);
         
         // Check if user has permission to remove users from this environment
-        if (!$request->user()->isAdmin() && $environment->owner_id !== $request->user()->id) {
+        if (!$request->user()->isTeacher() && $environment->owner_id !== $request->user()->id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -689,7 +689,7 @@ class EnvironmentController extends Controller
             $environment = Environment::findOrFail($id);
             
             // Check if user has admin permissions
-            if (!$request->user()->isAdmin()) {
+            if (!$request->user()->isTeacher()) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Unauthorized. Admin access required.'

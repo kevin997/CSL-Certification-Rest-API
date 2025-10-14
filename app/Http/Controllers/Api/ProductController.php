@@ -608,7 +608,9 @@ class ProductController extends Controller
         $product = Product::findOrFail($id);
 
         // Check if user has permission to delete this product
-        if (!Auth::user()->is_admin) {
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+        if (!$user->isTeacher()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to delete products',
@@ -680,7 +682,9 @@ class ProductController extends Controller
         $product = Product::findOrFail($id);
 
         // Check if user has permission to activate this product
-        if (!Auth::user()->is_admin) {
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+        if (!$user->isTeacher()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to activate products',
@@ -742,7 +746,9 @@ class ProductController extends Controller
         $product = Product::findOrFail($id);
 
         // Check if user has permission to deactivate this product
-        if (!Auth::user()->is_admin) {
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+        if (!$user->isTeacher()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to deactivate products',

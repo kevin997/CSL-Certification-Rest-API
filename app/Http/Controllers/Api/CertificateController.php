@@ -303,20 +303,183 @@ class CertificateController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Verify certificate
-        $result = $this->certificateGenerationService->verifyCertificate($request->accessCode);
+        // First, check if the certificate exists in our LMS system
+        $issuedCertificate = IssuedCertificate::where('certificate_number', $request->accessCode)
+            ->with(['certificateContent.template', 'user', 'course'])
+            ->first();
+
+        if ($issuedCertificate) {
+            // Certificate found in LMS system
+            $certificateUrl = $issuedCertificate->file_path;
+            $previewUrl = $issuedCertificate->custom_fields['preview_url'] ?? null;
+
+            // Verify if the URLs are still valid by checking if they're accessible
+            $urlsValid = $this->verifyCertificateUrls($certificateUrl, $previewUrl);
+
+            // If URLs are invalid, regenerate the certificate
+            if (!$urlsValid) {
+                Log::info('Certificate URLs are invalid, regenerating certificate for: ' . $request->accessCode);
+
+                $regenerated = $this->regenerateCertificate($issuedCertificate);
+
+                if ($regenerated) {
+                    // Refresh the certificate to get updated URLs
+                    $issuedCertificate->refresh();
+                    $certificateUrl = $issuedCertificate->file_path;
+                    $previewUrl = $issuedCertificate->custom_fields['preview_url'] ?? null;
+
+                    Log::info('Certificate regenerated successfully with new URLs');
+                } else {
+                    Log::error('Failed to regenerate certificate for: ' . $request->accessCode);
+                }
+            }
+
+            // Check certificate status and expiry
+            $isValid = $issuedCertificate->status === 'issued' &&
+                      (!$issuedCertificate->expiry_date || $issuedCertificate->expiry_date > now());
+
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'isValid' => $isValid,
+                    'certificate' => [
+                        'certificate_number' => $issuedCertificate->certificate_number,
+                        'recipient_name' => $issuedCertificate->custom_fields['recipient_name'] ?? $issuedCertificate->user->name ?? 'N/A',
+                        'course_title' => $issuedCertificate->custom_fields['course_title'] ?? $issuedCertificate->course->title ?? 'N/A',
+                        'issued_date' => $issuedCertificate->issued_date->format('F j, Y'),
+                        'expiry_date' => $issuedCertificate->expiry_date ? $issuedCertificate->expiry_date->format('F j, Y') : null,
+                        'certificate_date' => $issuedCertificate->custom_fields['certificate_date'] ?? $issuedCertificate->issued_date->format('F j, Y'),
+                        'status' => $issuedCertificate->status,
+                        'certificate_url' => $certificateUrl,
+                        'preview_url' => $previewUrl,
+                    ],
+                    'source' => 'lms'
+                ],
+            ]);
+        }
+
+        // If not found in LMS, try the certificate generation service
+        $result = false; // $this->certificateGenerationService->verifyCertificate($request->accessCode);
 
         if (!$result) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to verify certificate',
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+                'message' => 'Certificate not found or verification failed',
+            ], Response::HTTP_NOT_FOUND);
         }
+
+        // Add source indicator for external service
+        $result['source'] = 'external';
 
         return response()->json([
             'status' => 'success',
             'data' => $result,
         ]);
+    }
+
+    /**
+     * Verify if certificate URLs are still valid/accessible
+     *
+     * @param string|null $certificateUrl
+     * @param string|null $previewUrl
+     * @return bool
+     */
+    private function verifyCertificateUrls(?string $certificateUrl, ?string $previewUrl): bool
+    {
+        if (!$certificateUrl) {
+            return false;
+        }
+
+        try {
+            // Check if the certificate URL is accessible
+            $response = \Illuminate\Support\Facades\Http::timeout(5)->head($certificateUrl);
+
+            // If the URL returns 404 or any error status, it's invalid
+            if (!$response->successful()) {
+                return false;
+            }
+
+            return true;
+        } catch (\Exception $e) {
+            Log::warning('Failed to verify certificate URL: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Regenerate a certificate that has invalid URLs
+     *
+     * @param IssuedCertificate $issuedCertificate
+     * @return bool
+     */
+    private function regenerateCertificate(IssuedCertificate $issuedCertificate): bool
+    {
+        try {
+            $certificateContent = $issuedCertificate->certificateContent;
+            if (!$certificateContent) {
+                Log::error('Certificate content not found for issued certificate: ' . $issuedCertificate->id);
+                return false;
+            }
+
+            // Prepare user data from the issued certificate
+            $userData = [
+                'fullName' => $issuedCertificate->custom_fields['recipient_name'] ?? $issuedCertificate->user->name ?? 'Student Name',
+                'certificateDate' => $issuedCertificate->custom_fields['certificate_date'] ?? $issuedCertificate->issued_date->format('F j, Y'),
+                'user_id' => $issuedCertificate->user_id,
+                'course_id' => $issuedCertificate->course_id,
+                'email' => $issuedCertificate->user->email ?? null,
+                'issued_date' => $issuedCertificate->issued_date->toDateTimeString(),
+                'expiry_date' => $issuedCertificate->expiry_date ? $issuedCertificate->expiry_date->toDateTimeString() : null,
+                'expiryDate' => $issuedCertificate->expiry_date ? $issuedCertificate->expiry_date->format('F j, Y') : null,
+            ];
+
+            // Get the template name
+            $templateName = $certificateContent->template ? $certificateContent->template->file_path : null;
+            if ($templateName) {
+                $templateName = str_replace('templates/', '', $templateName);
+            }
+
+            // Find the enrollment
+            $enrollment = \App\Models\Enrollment::where('user_id', $issuedCertificate->user_id)
+                ->where('course_id', $issuedCertificate->course_id)
+                ->first();
+
+            // Use the same access code
+            $accessCode = $issuedCertificate->certificate_number;
+
+            // Regenerate the certificate through the certificate generation service
+            $result = $this->certificateGenerationService->regenerateCertificate(
+                $certificateContent,
+                $userData,
+                $accessCode,
+                $templateName,
+                $enrollment
+            );
+
+            if (!$result || !isset($result['data']['certificate_url'])) {
+                Log::error('Failed to regenerate certificate, no certificate URL in response');
+                return false;
+            }
+
+            // Update the IssuedCertificate with new URLs
+            $issuedCertificate->file_path = $result['data']['certificate_url'];
+
+            $customFields = $issuedCertificate->custom_fields ?? [];
+            $customFields['certificate_url'] = $result['data']['certificate_url'];
+            $customFields['preview_url'] = $result['data']['preview_url'] ?? null;
+            $customFields['regenerated_at'] = now()->toIso8601String();
+
+            $issuedCertificate->custom_fields = $customFields;
+            $issuedCertificate->save();
+
+            return true;
+        } catch (\Exception $e) {
+            Log::error('Exception when regenerating certificate', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return false;
+        }
     }
 
     /**
