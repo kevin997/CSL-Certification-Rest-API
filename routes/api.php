@@ -309,6 +309,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/blocks/{blockId}/activities/batch', [ActivityController::class, 'batchDestroy']);
     Route::post('/blocks/activities/{id}/duplicate', [ActivityController::class, 'duplicate']);
     Route::post('/blocks/{blockId}/activities/reorder', [ActivityController::class, 'reorder']);
+    Route::get('/blocks/activities/{id}/has-content', [ActivityController::class, 'hasContent']);
+    Route::patch('/blocks/activities/{id}/change-type', [ActivityController::class, 'changeType']);
 
     // Content Type routes
     // Text Content routes

@@ -957,4 +957,136 @@ class ActivityController extends Controller
         
         return $contentRelationships[$type];
     }
+
+    /**
+     * Check if an activity has content created.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function hasContent($id)
+    {
+        try {
+            $activity = Activity::findOrFail($id);
+
+            // Check if user has permission to view this activity
+            $block = Block::findOrFail($activity->block_id);
+            $template = Template::findOrFail($block->template_id);
+
+            if ($template->created_by !== Auth::id()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You do not have permission to access this activity',
+                ], Response::HTTP_FORBIDDEN);
+            }
+
+            // Get the content relationship based on activity type
+            $contentRelationship = $this->getContentRelationship($activity->type);
+
+            // Check if content exists
+            $hasContent = false;
+            if ($contentRelationship && method_exists($activity, $contentRelationship)) {
+                $content = $activity->$contentRelationship;
+                $hasContent = $content !== null;
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'has_content' => $hasContent,
+                    'activity_type' => $activity->type,
+                ],
+            ], Response::HTTP_OK);
+
+        } catch (\Exception $e) {
+            Log::error('Error checking activity content', [
+                'activity_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to check activity content',
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Change the type of an activity (only if no content exists).
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function changeType(Request $request, $id)
+    {
+        // Validate the request
+        $validator = Validator::make($request->all(), [
+            'type' => 'required|string|in:text,video,quiz,lesson,assignment,documentation,event,certificate,feedback',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
+        try {
+            $activity = Activity::findOrFail($id);
+
+            // Check if user has permission to modify this activity
+            $block = Block::findOrFail($activity->block_id);
+            $template = Template::findOrFail($block->template_id);
+
+            if ($template->created_by !== Auth::id()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You do not have permission to modify this activity',
+                ], Response::HTTP_FORBIDDEN);
+            }
+
+            // Check if the activity already has content
+            $contentRelationship = $this->getContentRelationship($activity->type);
+            if ($contentRelationship && method_exists($activity, $contentRelationship)) {
+                $content = $activity->$contentRelationship;
+                if ($content !== null) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Cannot change activity type. Content has already been created for this activity.',
+                    ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                }
+            }
+
+            // Update the activity type
+            $oldType = $activity->type;
+            $activity->type = $request->type;
+            $activity->save();
+
+            Log::info('Activity type changed', [
+                'activity_id' => $id,
+                'old_type' => $oldType,
+                'new_type' => $request->type,
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Activity type changed successfully',
+                'data' => $activity,
+            ], Response::HTTP_OK);
+
+        } catch (\Exception $e) {
+            Log::error('Error changing activity type', [
+                'activity_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to change activity type. Please try again.',
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
 }
