@@ -26,6 +26,8 @@ class QuizQuestionOption extends Model
         'points',
         'subquestion_text',
         'answer_option_id',
+        'position', // JSON object for hotspot questions (x, y coordinates)
+        'match_text', // Match text for matching question types
     ];
 
     /**
@@ -37,6 +39,7 @@ class QuizQuestionOption extends Model
     {
         return [
             'is_correct' => 'boolean',
+            'position' => 'array', // Cast JSON to array for hotspot coordinates
         ];
     }
 

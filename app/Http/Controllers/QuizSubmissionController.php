@@ -185,6 +185,8 @@ class QuizSubmissionController extends Controller
                 return $this->validateQuestionnaire($question, $userResponse);
             case 'short_answer':
                 return $this->validateShortAnswer($question, $userResponse);
+            case 'hotspot':
+                return $this->validateHotspot($question, $userResponse);
             default:
                 // For question types we don't validate server-side, trust client
                 return ['is_correct' => true, 'points_earned' => $question->points ?? 1];
@@ -316,15 +318,122 @@ class QuizSubmissionController extends Controller
     {
         $userText = trim(strtolower($userResponse));
         $options = $question->options ?? [];
-        
+
         foreach ($options as $option) {
             $acceptableAnswer = trim(strtolower($option['option_text'] ?? $option['text'] ?? ''));
             if ($userText === $acceptableAnswer) {
                 return ['is_correct' => true, 'points_earned' => $question->points ?? 1];
             }
         }
-        
+
         return ['is_correct' => false, 'points_earned' => 0];
+    }
+
+    /**
+     * Validate hotspot question response
+     * User submits click coordinates, we check if they're in correct hotspot zones
+     */
+    private function validateHotspot($question, $userResponse)
+    {
+        if (!is_array($userResponse)) {
+            return ['is_correct' => false, 'points_earned' => 0];
+        }
+
+        $options = $question->options ?? [];
+
+        // Helper function to check if a point is within a circular hotspot zone
+        // Adds a 20% tolerance buffer to make it easier to hit hotspots
+        $isPointInCircle = function($clickX, $clickY, $centerX, $centerY, $radius) {
+            $distance = sqrt(pow($clickX - $centerX, 2) + pow($clickY - $centerY, 2));
+            // Add 20% tolerance to radius for more lenient validation
+            $tolerantRadius = $radius * 1.2;
+            return $distance <= $tolerantRadius;
+        };
+
+        // Parse position data from various formats
+        $parsePosition = function($position) {
+            if (!$position) return null;
+
+            // Handle string format (JSON)
+            if (is_string($position)) {
+                $decoded = json_decode($position, true);
+                if ($decoded && isset($decoded['x']) && isset($decoded['y'])) {
+                    return [
+                        'x' => $decoded['x'],
+                        'y' => $decoded['y'],
+                        'radius' => $decoded['radius'] ?? 8
+                    ];
+                }
+                return null;
+            }
+
+            // Handle array format
+            if (is_array($position) && isset($position['x']) && isset($position['y'])) {
+                return [
+                    'x' => $position['x'],
+                    'y' => $position['y'],
+                    'radius' => $position['radius'] ?? 8
+                ];
+            }
+
+            return null;
+        };
+
+        // Get correct hotspot zones with positions
+        $correctHotspots = [];
+        foreach ($options as $option) {
+            if (isset($option['is_correct']) && $option['is_correct'] === true) {
+                $position = $parsePosition($option['position'] ?? null);
+                if ($position) {
+                    $correctHotspots[] = $position;
+                }
+            }
+        }
+
+        if (empty($correctHotspots)) {
+            return ['is_correct' => false, 'points_earned' => 0];
+        }
+
+        // Count correct and incorrect clicks
+        $correctClicks = 0;
+        $incorrectClicks = 0;
+
+        foreach ($userResponse as $click) {
+            if (is_array($click) && isset($click['x']) && isset($click['y'])) {
+                // Check if this click is within any correct hotspot zone
+                $isInCorrectZone = false;
+                foreach ($correctHotspots as $hotspot) {
+                    if ($isPointInCircle($click['x'], $click['y'], $hotspot['x'], $hotspot['y'], $hotspot['radius'])) {
+                        $isInCorrectZone = true;
+                        break;
+                    }
+                }
+
+                if ($isInCorrectZone) {
+                    $correctClicks++;
+                } else {
+                    $incorrectClicks++;
+                }
+            }
+        }
+
+        // Calculate partial score
+        $totalCorrectHotspots = count($correctHotspots);
+        $partialScore = 0;
+
+        if ($totalCorrectHotspots > 0) {
+            $positiveScore = min($correctClicks, $totalCorrectHotspots) / $totalCorrectHotspots;
+            $penaltyScore = count($options) > 0 ? $incorrectClicks / count($options) : 0;
+            $partialScore = max(0, $positiveScore - $penaltyScore);
+        }
+
+        // Fully correct if all correct hotspots hit and no incorrect clicks
+        $isFullyCorrect = $correctClicks >= $totalCorrectHotspots && $incorrectClicks === 0;
+
+        return [
+            'is_correct' => $isFullyCorrect,
+            'points_earned' => $partialScore * ($question->points ?? 1)
+        ];
     }
 
     /**

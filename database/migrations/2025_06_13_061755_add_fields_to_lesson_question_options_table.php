@@ -18,7 +18,7 @@ return new class extends Migration
                 $table->text('match_text')->nullable()->comment('Text to match in matching questions');
                 
                 // Add position field for hotspot questions
-                $table->json('position')->nullable()->comment('JSON object with x,y coordinates for hotspot questions');
+                $table->json('position')->nullable()->comment('JSON object with x,y coordinates and radius for hotspot questions');
             } else {
                 echo "Columns already exists.";
             }
