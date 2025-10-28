@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class QuizContent extends Model
@@ -57,10 +58,52 @@ class QuizContent extends Model
     }
 
     /**
-     * Get the questions for this quiz.
+     * Get the questions for this quiz (legacy direct relationship).
+     *
+     * DEPRECATED: This method is maintained for backward compatibility.
+     * Use questionsViaP ivot() for the new many-to-many relationship.
      */
     public function questions(): HasMany
     {
         return $this->hasMany(QuizQuestion::class);
+    }
+
+    /**
+     * Get the questions for this quiz through the pivot table (many-to-many).
+     *
+     * This is the preferred method for accessing questions as it supports
+     * sharing questions across multiple quizzes without duplication.
+     */
+    public function questionsViaPivot(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            QuizQuestion::class,
+            'activity_quiz_questions',
+            'quiz_content_id',
+            'quiz_question_id'
+        )
+        ->withPivot('order')
+        ->withTimestamps()
+        ->orderBy('activity_quiz_questions.order');
+    }
+
+    /**
+     * Get all questions for this quiz (combines both legacy and pivot).
+     *
+     * This method provides a unified way to access questions regardless
+     * of whether they use the old direct relationship or new pivot table.
+     * It prioritizes pivot table questions and falls back to legacy.
+     */
+    public function allQuestions()
+    {
+        // Check if there are any pivot records
+        $pivotQuestions = $this->questionsViaPivot()->get();
+
+        if ($pivotQuestions->isNotEmpty()) {
+            return $pivotQuestions;
+        }
+
+        // Fallback to legacy direct relationship
+        return $this->questions()->orderBy('order')->get();
     }
 }

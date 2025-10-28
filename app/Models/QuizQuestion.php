@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class QuizQuestion extends Model
@@ -138,5 +139,43 @@ class QuizQuestion extends Model
                 'text' => $option->option_text ?? "Option {$id}",
             ];
         });
+    }
+
+    /**
+     * Get the quiz contents (activities) that use this question (many-to-many).
+     *
+     * This enables a question to be shared across multiple quiz activities
+     * without duplication.
+     */
+    public function quizContents(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            QuizContent::class,
+            'activity_quiz_questions',
+            'quiz_question_id',
+            'quiz_content_id'
+        )
+        ->withPivot('order')
+        ->withTimestamps();
+    }
+
+    /**
+     * Check if this question is shared across multiple quizzes.
+     *
+     * @return bool
+     */
+    public function isShared(): bool
+    {
+        return $this->quizContents()->count() > 1;
+    }
+
+    /**
+     * Get the number of quizzes using this question.
+     *
+     * @return int
+     */
+    public function usageCount(): int
+    {
+        return $this->quizContents()->count();
     }
 }
