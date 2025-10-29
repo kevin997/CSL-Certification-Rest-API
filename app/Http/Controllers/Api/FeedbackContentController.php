@@ -7,6 +7,7 @@ use App\Models\Activity;
 use App\Models\Block;
 use App\Models\FeedbackContent;
 use App\Models\FeedbackQuestion;
+use App\Models\FeedbackQuestionOption;
 use App\Models\Template;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -165,7 +166,7 @@ class FeedbackContentController extends Controller
             // Title is optional and will default to question_text if not provided
             'questions.*.title' => 'sometimes|nullable|string|max:255',
             'questions.*.question_text' => 'required|string',
-            'questions.*.question_type' => 'required|string|in:text,rating,multiple_choice,checkbox,dropdown',
+            'questions.*.question_type' => 'required|string|in:text,rating,multiple_choice,checkbox,dropdown,questionnaire',
             'questions.*.required' => 'boolean',
             'questions.*.order' => 'integer',
             'questions.*.options' => 'required_if:questions.*.question_type,multiple_choice,checkbox,dropdown|array',
@@ -233,12 +234,39 @@ class FeedbackContentController extends Controller
                     $newQuestionData['title'] = $questionData['title'];
                 }
                 
-                // Set options directly - Laravel's attribute casting will handle JSON conversion
-                if (isset($questionData['options']) && is_array($questionData['options'])) {
-                    $newQuestionData['options'] = $questionData['options'];
+                // Handle questionnaire type
+                if ($questionData['question_type'] === 'questionnaire') {
+                    // Set answer_options JSON field
+                    if (isset($questionData['answer_options']) && is_array($questionData['answer_options'])) {
+                        $newQuestionData['answer_options'] = $questionData['answer_options'];
+                    }
+
+                    // Create the question
+                    $newQuestion = FeedbackQuestion::create($newQuestionData);
+
+                    // Create feedback_question_options records for subquestions/assignments
+                    if (isset($questionData['options']) && is_array($questionData['options'])) {
+                        foreach ($questionData['options'] as $optionIndex => $optionData) {
+                            FeedbackQuestionOption::create([
+                                'feedback_question_id' => $newQuestion->id,
+                                'option_text' => $optionData['option_text'] ?? '',
+                                'subquestion_text' => $optionData['subquestion_text'] ?? null,
+                                'answer_option_id' => $optionData['answer_option_id'] ?? null,
+                                'points' => $optionData['points'] ?? 0,
+                                'order' => $optionData['order'] ?? $optionIndex,
+                                'created_by' => Auth::id()
+                            ]);
+                        }
+                    }
+                } else {
+                    // Handle legacy question types (text, rating, multiple_choice, checkbox, dropdown)
+                    // Set options directly - Laravel's attribute casting will handle JSON conversion
+                    if (isset($questionData['options']) && is_array($questionData['options'])) {
+                        $newQuestionData['options'] = $questionData['options'];
+                    }
+
+                    FeedbackQuestion::create($newQuestionData);
                 }
-                
-                FeedbackQuestion::create($newQuestionData);
             }
         }
         
@@ -437,7 +465,7 @@ class FeedbackContentController extends Controller
             // Title is optional and will default to question_text if not provided
             'questions.*.title' => 'sometimes|nullable|string|max:255',
             'questions.*.question_text' => 'required_with:questions|string',
-            'questions.*.question_type' => 'required_with:questions|string|in:text,rating,multiple_choice,checkbox,dropdown',
+            'questions.*.question_type' => 'required_with:questions|string|in:text,rating,multiple_choice,checkbox,dropdown,questionnaire',
             'questions.*.required' => 'boolean',
             'questions.*.order' => 'integer',
             'questions.*.options' => 'required_if:questions.*.question_type,multiple_choice,checkbox,dropdown|array',
@@ -487,14 +515,51 @@ class FeedbackContentController extends Controller
                     if ($question && $question->feedback_content_id == $feedbackContent->id) {
                         // Update existing question
                         $questionData['order'] = $index;
-                        
-                        // Set options directly - Laravel's attribute casting will handle JSON conversion
-                        if (isset($questionData['options']) && is_array($questionData['options'])) {
-                            $questionData['options'] = $questionData['options'];
+
+                        // Handle questionnaire type
+                        if ($questionData['question_type'] === 'questionnaire') {
+                            // Set answer_options JSON field
+                            if (isset($questionData['answer_options']) && is_array($questionData['answer_options'])) {
+                                $questionData['answer_options'] = $questionData['answer_options'];
+                            }
+
+                            // Clear options JSON field for questionnaire type
+                            $questionData['options'] = null;
+
+                            $question->update($questionData);
+
+                            // Delete existing options for this question
+                            FeedbackQuestionOption::where('feedback_question_id', $question->id)->delete();
+
+                            // Create new options from the options array
+                            if (isset($questionData['options']) && is_array($questionData['options'])) {
+                                foreach ($questionData['options'] as $optionIndex => $optionData) {
+                                    FeedbackQuestionOption::create([
+                                        'feedback_question_id' => $question->id,
+                                        'option_text' => $optionData['option_text'] ?? '',
+                                        'subquestion_text' => $optionData['subquestion_text'] ?? null,
+                                        'answer_option_id' => $optionData['answer_option_id'] ?? null,
+                                        'points' => $optionData['points'] ?? 0,
+                                        'order' => $optionData['order'] ?? $optionIndex,
+                                        'created_by' => Auth::id()
+                                    ]);
+                                }
+                            }
+
+                            $updatedQuestionIds[] = $question->id;
+                        } else {
+                            // Handle legacy question types
+                            // Set options directly - Laravel's attribute casting will handle JSON conversion
+                            if (isset($questionData['options']) && is_array($questionData['options'])) {
+                                $questionData['options'] = $questionData['options'];
+                            }
+
+                            // Clear answer_options for non-questionnaire types
+                            $questionData['answer_options'] = null;
+
+                            $question->update($questionData);
+                            $updatedQuestionIds[] = $question->id;
                         }
-                        
-                        $question->update($questionData);
-                        $updatedQuestionIds[] = $question->id;
                     }
                 } else {
                     // Create new question
@@ -510,13 +575,41 @@ class FeedbackContentController extends Controller
                         'created_by' => Auth::id()
                     ];
                     
-                    // Set options directly - Laravel's attribute casting will handle JSON conversion
-                    if (isset($questionData['options']) && is_array($questionData['options'])) {
-                        $newQuestionData['options'] = $questionData['options'];
+                    // Handle questionnaire type
+                    if ($questionData['question_type'] === 'questionnaire') {
+                        // Set answer_options JSON field
+                        if (isset($questionData['answer_options']) && is_array($questionData['answer_options'])) {
+                            $newQuestionData['answer_options'] = $questionData['answer_options'];
+                        }
+
+                        $newQuestion = FeedbackQuestion::create($newQuestionData);
+
+                        // Create feedback_question_options records
+                        if (isset($questionData['options']) && is_array($questionData['options'])) {
+                            foreach ($questionData['options'] as $optionIndex => $optionData) {
+                                FeedbackQuestionOption::create([
+                                    'feedback_question_id' => $newQuestion->id,
+                                    'option_text' => $optionData['option_text'] ?? '',
+                                    'subquestion_text' => $optionData['subquestion_text'] ?? null,
+                                    'answer_option_id' => $optionData['answer_option_id'] ?? null,
+                                    'points' => $optionData['points'] ?? 0,
+                                    'order' => $optionData['order'] ?? $optionIndex,
+                                    'created_by' => Auth::id()
+                                ]);
+                            }
+                        }
+
+                        $updatedQuestionIds[] = $newQuestion->id;
+                    } else {
+                        // Handle legacy question types
+                        // Set options directly - Laravel's attribute casting will handle JSON conversion
+                        if (isset($questionData['options']) && is_array($questionData['options'])) {
+                            $newQuestionData['options'] = $questionData['options'];
+                        }
+
+                        $newQuestion = FeedbackQuestion::create($newQuestionData);
+                        $updatedQuestionIds[] = $newQuestion->id;
                     }
-                    
-                    $newQuestion = FeedbackQuestion::create($newQuestionData);
-                    $updatedQuestionIds[] = $newQuestion->id;
                 }
             }
             
