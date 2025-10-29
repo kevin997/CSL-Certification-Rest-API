@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Traits\BelongsToEnvironment;
 use App\Traits\HasCreatedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +10,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class FeedbackQuestionOption extends Model
 {
-    use HasFactory, SoftDeletes, HasCreatedBy, BelongsToEnvironment;
+    use HasFactory, SoftDeletes, HasCreatedBy;
 
     /**
      * The attributes that are mass assignable.
@@ -26,7 +25,6 @@ class FeedbackQuestionOption extends Model
         'points',
         'order',
         'created_by',
-        'environment_id',
     ];
 
     /**
