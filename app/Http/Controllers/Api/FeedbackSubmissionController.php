@@ -119,7 +119,7 @@ class FeedbackSubmissionController extends Controller
 
         if ($existingSubmission) {
             // Update existing draft
-            return $this->updateSubmission($request, $existingSubmission->id);
+                return $this->update($request, $existingSubmission->id);
         }
 
         // Create new submission
