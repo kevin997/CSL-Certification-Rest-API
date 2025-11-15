@@ -279,15 +279,35 @@ class FeedbackContentController extends Controller
         
         // Get the created feedback content
         $createdFeedbackContent = FeedbackContent::findOrFail($feedbackContent->id);
-        
-        // Load questions relationship explicitly - this is what the update method does
+
+        // Load questions with their options (subquestions for questionnaire type)
         $questions = $createdFeedbackContent->questions()
+            ->with('questionOptions') // Load the subquestions/matrix options
             ->orderBy('order')
             ->get();
-            
+
+        // For questionnaire type questions, format the questionOptions as 'options' for frontend compatibility
+        $questions->each(function ($question) {
+            if ($question->question_type === 'questionnaire' && $question->questionOptions) {
+                // Convert the questionOptions collection to the format expected by frontend
+                $question->options = $question->questionOptions->map(function ($opt) {
+                    return [
+                        'id' => $opt->id,
+                        'option_text' => $opt->option_text,
+                        'subquestion_text' => $opt->subquestion_text,
+                        'answer_option_id' => $opt->answer_option_id,
+                        'points' => $opt->points,
+                        'order' => $opt->order,
+                    ];
+                })->toArray();
+            }
+            // Remove the questionOptions from the response to avoid confusion
+            unset($question->questionOptions);
+        });
+
         // Add questions to the response
         $createdFeedbackContent->questions = $questions;
-        
+
         // No need to decode JSON fields - Laravel's attribute casting already handles this
 
         return response()->json([
@@ -351,15 +371,35 @@ class FeedbackContentController extends Controller
         }
 
         $feedbackContent = FeedbackContent::where('activity_id', $activityId)->firstOrFail();
-        
-        // Load questions relationship - Laravel's attribute casting will handle JSON conversion
+
+        // Load questions with their options (subquestions for questionnaire type)
         $questions = $feedbackContent->questions()
+            ->with('questionOptions') // Load the subquestions/matrix options
             ->orderBy('order')
             ->get();
-            
+
+        // For questionnaire type questions, format the questionOptions as 'options' for frontend compatibility
+        $questions->each(function ($question) {
+            if ($question->question_type === 'questionnaire' && $question->questionOptions) {
+                // Convert the questionOptions collection to the format expected by frontend
+                $question->options = $question->questionOptions->map(function ($opt) {
+                    return [
+                        'id' => $opt->id,
+                        'option_text' => $opt->option_text,
+                        'subquestion_text' => $opt->subquestion_text,
+                        'answer_option_id' => $opt->answer_option_id,
+                        'points' => $opt->points,
+                        'order' => $opt->order,
+                    ];
+                })->toArray();
+            }
+            // Remove the questionOptions from the response to avoid confusion
+            unset($question->questionOptions);
+        });
+
         // Add questions to the response
         $feedbackContent->questions = $questions;
-        
+
         // No need to decode JSON fields - Laravel's attribute casting already handles this
 
         return response()->json([
