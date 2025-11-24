@@ -200,33 +200,33 @@ class FeedbackContentController extends Controller
 
         // Prepare data for storage
         $data = $request->except(['questions', 'target_activities', 'resource_files']);
-        
+
         // Set arrays directly - Laravel's attribute casting will handle JSON conversion
         if ($request->has('resource_files')) {
             $data['resource_files'] = $request->resource_files;
         }
-        
+
         if ($request->has('target_activities')) {
             $data['target_activities'] = $request->target_activities;
         }
-        
+
         // Add activity_id to data
         $data['activity_id'] = $activityId;
         $data['created_by'] = Auth::id();
 
         // Create the feedback content
         $feedbackContent = FeedbackContent::create($data);
-        
+
         // Create questions separately
         if ($request->has('questions') && is_array($request->questions)) {
             foreach ($request->questions as $index => $questionData) {
                 // Don't skip questions with ID = -1 (frontend placeholder) as they need to be created
                 // We just need to remove the ID field since it's not valid for creation
-                
+
                 // Create new question with explicit field mapping
                 // If title is not provided, use question_text as the title
                 $questionText = $questionData['question_text'];
-                
+
                 $newQuestionData = [
                     'feedback_content_id' => $feedbackContent->id,
                     'question_text' => $questionText,
@@ -235,12 +235,12 @@ class FeedbackContentController extends Controller
                     'order' => $index,
                     'created_by' => Auth::id()
                 ];
-                
+
                 // Set title if available
                 if (isset($questionData['title']) && !empty($questionData['title'])) {
                     $newQuestionData['title'] = $questionData['title'];
                 }
-                
+
                 // Handle questionnaire type
                 if ($questionData['question_type'] === 'questionnaire') {
                     // Set answer_options JSON field
@@ -276,7 +276,7 @@ class FeedbackContentController extends Controller
                 }
             }
         }
-        
+
         // Get the created feedback content
         $createdFeedbackContent = FeedbackContent::findOrFail($feedbackContent->id);
 
@@ -539,45 +539,48 @@ class FeedbackContentController extends Controller
 
         // Prepare data for update
         $updateData = $request->except(['questions', 'target_activities', 'resource_files']);
-        
+
         // Set arrays directly - Laravel's attribute casting will handle JSON conversion
         if ($request->has('resource_files')) {
             $updateData['resource_files'] = $request->resource_files;
         }
-        
+
         if ($request->has('target_activities')) {
             $updateData['target_activities'] = $request->target_activities;
         }
 
         // Update the feedback content
         $feedbackContent->update($updateData);
-        
+
         // Update questions if provided
         if ($request->has('questions') && is_array($request->questions)) {
             // Get existing question IDs
             $existingQuestionIds = FeedbackQuestion::where('feedback_content_id', $feedbackContent->id)
                 ->pluck('id')
                 ->toArray();
-            
+
             $updatedQuestionIds = [];
-            
+
             foreach ($request->questions as $index => $questionData) {
                 // If question has an ID and it's not -1 (frontend placeholder), update it
                 if (isset($questionData['id']) && $questionData['id'] > 0) {
                     $question = FeedbackQuestion::find($questionData['id']);
-                    
+
                     if ($question && $question->feedback_content_id == $feedbackContent->id) {
                         // Update existing question
                         $questionData['order'] = $index;
 
                         // Handle questionnaire type
                         if ($questionData['question_type'] === 'questionnaire') {
+                            // Preserve the options array before clearing it
+                            $optionsToCreate = $questionData['options'] ?? [];
+
                             // Set answer_options JSON field
                             if (isset($questionData['answer_options']) && is_array($questionData['answer_options'])) {
                                 $questionData['answer_options'] = $questionData['answer_options'];
                             }
 
-                            // Clear options JSON field for questionnaire type
+                            // Clear options JSON field for questionnaire type (we store in separate table)
                             $questionData['options'] = null;
 
                             $question->update($questionData);
@@ -585,9 +588,9 @@ class FeedbackContentController extends Controller
                             // Delete existing options for this question
                             FeedbackQuestionOption::where('feedback_question_id', $question->id)->delete();
 
-                            // Create new options from the options array
-                            if (isset($questionData['options']) && is_array($questionData['options'])) {
-                                foreach ($questionData['options'] as $optionIndex => $optionData) {
+                            // Create new options from the preserved options array
+                            if (is_array($optionsToCreate) && !empty($optionsToCreate)) {
+                                foreach ($optionsToCreate as $optionIndex => $optionData) {
                                     FeedbackQuestionOption::create([
                                         'feedback_question_id' => $question->id,
                                         'option_text' => $optionData['option_text'] ?? '',
@@ -619,7 +622,7 @@ class FeedbackContentController extends Controller
                     // Create new question
                     // If title is not provided, use question_text as the title
                     $questionText = $questionData['question_text'];
-                    
+
                     $newQuestionData = [
                         'feedback_content_id' => $feedbackContent->id,
                         'question_text' => $questionText,
@@ -628,7 +631,7 @@ class FeedbackContentController extends Controller
                         'order' => $index,
                         'created_by' => Auth::id()
                     ];
-                    
+
                     // Handle questionnaire type
                     if ($questionData['question_type'] === 'questionnaire') {
                         // Set answer_options JSON field
@@ -666,17 +669,17 @@ class FeedbackContentController extends Controller
                     }
                 }
             }
-            
+
             // Delete questions that weren't included in the update
             $questionsToDelete = array_diff($existingQuestionIds, $updatedQuestionIds);
             if (!empty($questionsToDelete)) {
                 FeedbackQuestion::whereIn('id', $questionsToDelete)->delete();
             }
         }
-        
+
         // Get updated feedback content
         $updatedFeedbackContent = FeedbackContent::findOrFail($feedbackContent->id);
-        
+
         // Load questions with their options (subquestions for questionnaire type)
         $questions = $updatedFeedbackContent->questions()
             ->with('questionOptions') // Load the subquestions/matrix options
@@ -701,10 +704,10 @@ class FeedbackContentController extends Controller
             // Remove the questionOptions from the response to avoid confusion
             unset($question->questionOptions);
         });
-            
+
         // Add questions to the response
         $updatedFeedbackContent->questions = $questions;
-        
+
         // No need to decode JSON fields - Laravel's attribute casting already handles this
 
         return response()->json([
