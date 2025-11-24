@@ -45,30 +45,33 @@ return new class extends Migration
         DB::statement('CREATE INDEX idx_env_default ON payment_gateway_settings(environment_id, is_default)');
         
         // Create a trigger to ensure only one default gateway per environment
-        DB::unprepared('CREATE TRIGGER trig_payment_gateway_single_default
-            BEFORE INSERT ON payment_gateway_settings
-            FOR EACH ROW
-            BEGIN
-                IF NEW.is_default = 1 THEN
-                    UPDATE payment_gateway_settings 
-                    SET is_default = 0 
-                    WHERE environment_id = NEW.environment_id 
-                    AND is_default = 1;
-                END IF;
-            END');
-            
-        DB::unprepared('CREATE TRIGGER trig_payment_gateway_single_default_update
-            BEFORE UPDATE ON payment_gateway_settings
-            FOR EACH ROW
-            BEGIN
-                IF NEW.is_default = 1 AND (OLD.is_default = 0 OR OLD.environment_id != NEW.environment_id) THEN
-                    UPDATE payment_gateway_settings 
-                    SET is_default = 0 
-                    WHERE environment_id = NEW.environment_id 
-                    AND id != NEW.id 
-                    AND is_default = 1;
-                END IF;
-            END');
+        // Skip for SQLite as it has limited trigger support and syntax differences
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::unprepared('CREATE TRIGGER trig_payment_gateway_single_default
+                BEFORE INSERT ON payment_gateway_settings
+                FOR EACH ROW
+                BEGIN
+                    IF NEW.is_default = 1 THEN
+                        UPDATE payment_gateway_settings 
+                        SET is_default = 0 
+                        WHERE environment_id = NEW.environment_id 
+                        AND is_default = 1;
+                    END IF;
+                END');
+                
+            DB::unprepared('CREATE TRIGGER trig_payment_gateway_single_default_update
+                BEFORE UPDATE ON payment_gateway_settings
+                FOR EACH ROW
+                BEGIN
+                    IF NEW.is_default = 1 AND (OLD.is_default = 0 OR OLD.environment_id != NEW.environment_id) THEN
+                        UPDATE payment_gateway_settings 
+                        SET is_default = 0 
+                        WHERE environment_id = NEW.environment_id 
+                        AND id != NEW.id 
+                        AND is_default = 1;
+                    END IF;
+                END');
+        }
     }
 
     /**

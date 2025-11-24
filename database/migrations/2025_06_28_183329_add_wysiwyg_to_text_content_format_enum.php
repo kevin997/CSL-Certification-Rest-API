@@ -9,6 +9,11 @@ return new class extends Migration
 {
     public function up(): void
     {
+        echo "Driver: " . DB::getDriverName() . "\n";
+        if (DB::getDriverName() === 'sqlite') {
+            return;
+        }
+
         // Get all existing enum values
         $current = DB::selectOne("SHOW COLUMNS FROM `text_contents` LIKE 'format'");
         preg_match("/^enum\(\'(.+)'\)$/", $current->Type, $matches);
@@ -25,6 +30,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::getDriverName() === 'sqlite') {
+            return;
+        }
+
         // Remove 'wysiwyg' by rebuilding enum without it
         $current = DB::selectOne("SHOW COLUMNS FROM `text_contents` LIKE 'format'");
         preg_match("/^enum\(\'(.+)'\)$/", $current->Type, $matches);

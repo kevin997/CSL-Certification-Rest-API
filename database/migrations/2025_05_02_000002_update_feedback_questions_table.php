@@ -18,6 +18,7 @@ return new class extends Migration
 
             // Update question_type enum values to match frontend
             // This requires dropping and recreating the column
+            $table->dropIndex('feedback_questions_question_type_index');
             $table->dropColumn('question_type');
             // Check if column already exists
 

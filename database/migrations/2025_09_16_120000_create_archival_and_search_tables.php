@@ -74,7 +74,9 @@ return new class extends Migration
             $table->timestamps();
 
             // Full-text search index on content
-            $table->fullText(['content'], 'chat_search_fulltext');
+            if (DB::getDriverName() !== 'sqlite') {
+                $table->fullText(['content'], 'chat_search_fulltext');
+            }
 
             // Regular indexes for filtering
             $table->index(['course_id', 'message_date'], 'search_course_date');

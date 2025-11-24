@@ -677,10 +677,30 @@ class FeedbackContentController extends Controller
         // Get updated feedback content
         $updatedFeedbackContent = FeedbackContent::findOrFail($feedbackContent->id);
         
-        // Load questions relationship - Laravel's attribute casting will handle JSON conversion
+        // Load questions with their options (subquestions for questionnaire type)
         $questions = $updatedFeedbackContent->questions()
+            ->with('questionOptions') // Load the subquestions/matrix options
             ->orderBy('order')
             ->get();
+
+        // For questionnaire type questions, format the questionOptions as 'options' for frontend compatibility
+        $questions->each(function ($question) {
+            if ($question->question_type === 'questionnaire' && $question->questionOptions) {
+                // Convert the questionOptions collection to the format expected by frontend
+                $question->options = $question->questionOptions->map(function ($opt) {
+                    return [
+                        'id' => $opt->id,
+                        'option_text' => $opt->option_text,
+                        'subquestion_text' => $opt->subquestion_text,
+                        'answer_option_id' => $opt->answer_option_id,
+                        'points' => $opt->points,
+                        'order' => $opt->order,
+                    ];
+                })->toArray();
+            }
+            // Remove the questionOptions from the response to avoid confusion
+            unset($question->questionOptions);
+        });
             
         // Add questions to the response
         $updatedFeedbackContent->questions = $questions;

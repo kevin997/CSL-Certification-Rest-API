@@ -532,9 +532,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Branding routes
     Route::get('/branding', [BrandingController::class, 'index']);
-    Route::post('/branding', [BrandingController::class, 'store']);
-    Route::post('/branding/reset', [BrandingController::class, 'reset']);
+    Route::get('/branding/{id}', [BrandingController::class, 'show']);
+    Route::put('/branding/{id}', [BrandingController::class, 'update']);
     Route::post('/branding/preview', [BrandingController::class, 'preview']);
+    
+    // Landing Page Routes
+    Route::get('/branding/{id}/landing-page', [BrandingController::class, 'getLandingPageConfig']);
+    Route::put('/branding/{id}/landing-page', [BrandingController::class, 'updateLandingPageConfig']);
+    Route::post('/branding/{id}/landing-page/toggle', [BrandingController::class, 'toggleLandingPage']);
 
     // Finance routes
     Route::get('/finance/overview', [FinanceController::class, 'overview']);
