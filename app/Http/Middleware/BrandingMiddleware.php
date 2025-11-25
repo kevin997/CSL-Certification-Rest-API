@@ -29,25 +29,6 @@ class BrandingMiddleware
         // Get the current environment from the request
         $environmentId = null;
         
-        // Check for environment in the token abilities
-        if (Auth::check()) {
-            $user = Auth::user();
-            $token = $request->bearerToken();
-            
-            if ($token) {
-                $tokenId = explode('|', $token)[0];
-                $tokenModel = $user->tokens()->find($tokenId);
-                
-                if ($tokenModel) {
-                    foreach ($tokenModel->abilities as $ability) {
-                        if (strpos($ability, 'environment_id:') === 0) {
-                            $environmentId = (int) substr($ability, strlen('environment_id:'));
-                            break;
-                        }
-                    }
-                }
-            }
-        }
         
         // If no environment found in token, try to get it from the domain
         if (!$environmentId) {
