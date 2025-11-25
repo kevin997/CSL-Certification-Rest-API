@@ -531,14 +531,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Branding routes
     Route::get('/branding', [BrandingController::class, 'index']);
-    Route::get('/branding/{id}', [BrandingController::class, 'show']);
-    Route::put('/branding/{id}', [BrandingController::class, 'update']);
+    Route::get('/branding/{id}', [BrandingController::class, 'show'])->where('id', '[0-9]+');
+    Route::put('/branding/{id}', [BrandingController::class, 'update'])->where('id', '[0-9]+');
     Route::post('/branding/preview', [BrandingController::class, 'preview']);
 
     // Landing Page Routes
-    Route::get('/branding/{id}/landing-page', [BrandingController::class, 'getLandingPageConfig']);
-    Route::put('/branding/{id}/landing-page', [BrandingController::class, 'updateLandingPageConfig']);
-    Route::post('/branding/{id}/landing-page/toggle', [BrandingController::class, 'toggleLandingPage']);
+    Route::get('/branding/{id}/landing-page', [BrandingController::class, 'getLandingPageConfig'])->where('id', '[0-9]+');
+    Route::put('/branding/{id}/landing-page', [BrandingController::class, 'updateLandingPageConfig'])->where('id', '[0-9]+');
+    Route::post('/branding/{id}/landing-page/toggle', [BrandingController::class, 'toggleLandingPage'])->where('id', '[0-9]+');
 
     // Finance routes
     Route::get('/finance/overview', [FinanceController::class, 'overview']);
@@ -611,12 +611,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/files/{id}', [FileController::class, 'destroy']);
 });
 
-// Public routes (explicitly exclude auth middleware)
-Route::withoutMiddleware(['auth:sanctum'])->group(function () {
-    Route::get('/branding/public', [BrandingController::class, 'getPublicBranding']);
-    Route::get('/environment/status', [EnvironmentController::class, 'status']);
-    Route::get('/subscription/current', [SubscriptionController::class, 'current']);
-});
+// Note: Public routes (/branding/public, /environment/status, /subscription/current)
+// are defined in routes/api-public.php to bypass Sanctum's EnsureFrontendRequestsAreStateful middleware
 
 // Validation routes
 Route::post('/subdomains/validate', [ValidationController::class, 'validateSubdomain']);

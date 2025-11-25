@@ -3,11 +3,6 @@
 namespace Database\Seeders;
 
 use App\Models\User;
-use Database\Seeders\AdminSeeder;
-use Database\Seeders\PlanSeeder;
-use Database\Seeders\DemoPlanSeeder;
-use Database\Seeders\EnvironmentUsersSeeder;
-use Database\Seeders\ThirdPartyServiceSeeder;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -18,24 +13,11 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Call the admin seeder
-        $this->call([
-            AdminSeeder::class,
-            PlanSeeder::class,
-            DemoPlanSeeder::class,
-            EnvironmentUsersSeeder::class,
-            ThirdPartyServiceSeeder::class,
-            TaxZoneSeeder::class,
-            EnvironmentPaymentConfigSeeder::class,
-            TaraMoneyGatewaySeeder::class,
-        ]);
+        // User::factory(10)->withPersonalTeam()->create();
 
-        // Development test user
-        if (app()->environment('local', 'development')) {
-            User::firstOrCreate(
-                ['email' => 'test@example.com'],
-                ['name' => 'Test User', 'password' => 'password']
-            );
-        }
+        User::factory()->withPersonalTeam()->create([
+            'name' => 'Test User',
+            'email' => 'test@example.com',
+        ]);
     }
 }

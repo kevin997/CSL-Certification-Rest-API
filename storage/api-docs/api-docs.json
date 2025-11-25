@@ -6311,6 +6311,177 @@
                 ]
             }
         },
+        "/digital-products": {
+            "get": {
+                "tags": [
+                    "Digital Products"
+                ],
+                "summary": "Get user's purchased digital products",
+                "description": "Returns list of digital product deliveries for the authenticated user",
+                "operationId": "getDigitalProducts",
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter by delivery status",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "active",
+                                "expired",
+                                "revoked"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/AssetDeliveryWithRelations"
+                                            }
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/digital-products/access/{token}": {
+            "get": {
+                "tags": [
+                    "Digital Products"
+                ],
+                "summary": "Access digital product by token",
+                "description": "Access a digital product asset using download token. Records access and returns redirect URL for external links.",
+                "operationId": "accessDigitalProduct",
+                "parameters": [
+                    {
+                        "name": "token",
+                        "in": "path",
+                        "description": "Download token (UUID)",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Asset accessed successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Access granted"
+                                        },
+                                        "redirect_url": {
+                                            "type": "string",
+                                            "example": "https://drive.google.com/file/d/abc123/view"
+                                        },
+                                        "asset_type": {
+                                            "type": "string",
+                                            "example": "external_link"
+                                        },
+                                        "title": {
+                                            "type": "string",
+                                            "example": "Course Materials PDF"
+                                        },
+                                        "access_count": {
+                                            "type": "integer",
+                                            "example": 4
+                                        },
+                                        "max_access_count": {
+                                            "type": "integer",
+                                            "example": 10
+                                        },
+                                        "expires_at": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied - expired, limit reached, or revoked",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "error"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "This download link has expired or reached its access limit"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Token not found or unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "error"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Asset not found or you do not have access"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
         "/activities/{activityId}/documentation-content": {
             "get": {
                 "tags": [
@@ -10777,6 +10948,338 @@
                 "security": [
                     {
                         "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/products/{product}/assets": {
+            "get": {
+                "tags": [
+                    "Product Assets"
+                ],
+                "summary": "Get list of product assets",
+                "description": "Returns list of assets (external links) for a specific product. Only accessible by product owner.",
+                "operationId": "getProductAssets",
+                "parameters": [
+                    {
+                        "name": "product",
+                        "in": "path",
+                        "description": "Product ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/ProductAsset"
+                                            }
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - User does not own this product"
+                    },
+                    "404": {
+                        "description": "Product not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Product Assets"
+                ],
+                "summary": "Add external link asset to product",
+                "description": "Creates a new external link asset for a product. Only accessible by product owner.",
+                "operationId": "storeProductAsset",
+                "parameters": [
+                    {
+                        "name": "product",
+                        "in": "path",
+                        "description": "Product ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Asset data",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "asset_type",
+                                    "title",
+                                    "external_url"
+                                ],
+                                "properties": {
+                                    "asset_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "external_link"
+                                        ],
+                                        "example": "external_link"
+                                    },
+                                    "external_url": {
+                                        "type": "string",
+                                        "format": "url",
+                                        "example": "https://drive.google.com/file/d/abc123/view"
+                                    },
+                                    "title": {
+                                        "type": "string",
+                                        "maxLength": 255,
+                                        "example": "Course Materials PDF"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "example": "Comprehensive course materials",
+                                        "nullable": true
+                                    },
+                                    "display_order": {
+                                        "type": "integer",
+                                        "default": 0,
+                                        "example": 1,
+                                        "nullable": true
+                                    },
+                                    "is_active": {
+                                        "type": "boolean",
+                                        "default": true,
+                                        "example": true,
+                                        "nullable": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Asset created successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Asset added successfully"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/ProductAsset"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - User does not own this product"
+                    },
+                    "404": {
+                        "description": "Product not found"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/products/{product}/assets/{asset}": {
+            "put": {
+                "tags": [
+                    "Product Assets"
+                ],
+                "summary": "Update product asset",
+                "description": "Updates an existing product asset. Only accessible by product owner.",
+                "operationId": "updateProductAsset",
+                "parameters": [
+                    {
+                        "name": "product",
+                        "in": "path",
+                        "description": "Product ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "asset",
+                        "in": "path",
+                        "description": "Asset ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Asset data to update",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "external_url": {
+                                        "type": "string",
+                                        "format": "url",
+                                        "example": "https://drive.google.com/file/d/abc123/view"
+                                    },
+                                    "title": {
+                                        "type": "string",
+                                        "maxLength": 255,
+                                        "example": "Updated Title"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "example": "Updated description",
+                                        "nullable": true
+                                    },
+                                    "display_order": {
+                                        "type": "integer",
+                                        "example": 2
+                                    },
+                                    "is_active": {
+                                        "type": "boolean",
+                                        "example": false
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Asset updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Asset updated successfully"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/ProductAsset"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - User does not own this product"
+                    },
+                    "404": {
+                        "description": "Product or asset not found"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Product Assets"
+                ],
+                "summary": "Delete product asset",
+                "description": "Deletes a product asset. Only accessible by product owner.",
+                "operationId": "deleteProductAsset",
+                "parameters": [
+                    {
+                        "name": "product",
+                        "in": "path",
+                        "description": "Product ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "asset",
+                        "in": "path",
+                        "description": "Asset ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Asset deleted successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Asset deleted successfully"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - User does not own this product"
+                    },
+                    "404": {
+                        "description": "Product or asset not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
                     }
                 ]
             }
@@ -15272,6 +15775,88 @@
                 },
                 "type": "object"
             },
+            "AssetDeliveryWithRelations": {
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "download_token": {
+                        "type": "string",
+                        "format": "uuid",
+                        "example": "550e8400-e29b-41d4-a716-446655440000"
+                    },
+                    "access_granted_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "expires_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "access_count": {
+                        "type": "integer",
+                        "example": 3
+                    },
+                    "max_access_count": {
+                        "type": "integer",
+                        "example": 10
+                    },
+                    "last_accessed_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "active",
+                            "expired",
+                            "revoked"
+                        ],
+                        "example": "active"
+                    },
+                    "product_asset": {
+                        "properties": {
+                            "id": {
+                                "type": "integer",
+                                "example": 1
+                            },
+                            "title": {
+                                "type": "string",
+                                "example": "Course Materials PDF"
+                            },
+                            "description": {
+                                "type": "string",
+                                "example": "Comprehensive course materials"
+                            },
+                            "asset_type": {
+                                "type": "string",
+                                "example": "external_link"
+                            },
+                            "external_url": {
+                                "type": "string",
+                                "example": "https://drive.google.com/file/d/abc123/view"
+                            }
+                        },
+                        "type": "object"
+                    },
+                    "order": {
+                        "properties": {
+                            "id": {
+                                "type": "integer",
+                                "example": 1
+                            },
+                            "order_number": {
+                                "type": "string",
+                                "example": "ORD-2025-001"
+                            }
+                        },
+                        "type": "object"
+                    }
+                },
+                "type": "object"
+            },
             "DocumentationContent": {
                 "required": [
                     "activity_id",
@@ -16022,6 +16607,64 @@
                             "api_key": "sk_test_123",
                             "publishable_key": "pk_test_123"
                         }
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
+            "ProductAsset": {
+                "required": [
+                    "product_id",
+                    "asset_type",
+                    "title"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64",
+                        "example": 1
+                    },
+                    "product_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "asset_type": {
+                        "type": "string",
+                        "enum": [
+                            "file",
+                            "external_link",
+                            "email_content"
+                        ],
+                        "example": "external_link"
+                    },
+                    "external_url": {
+                        "type": "string",
+                        "example": "https://drive.google.com/file/d/abc123/view",
+                        "nullable": true
+                    },
+                    "title": {
+                        "type": "string",
+                        "example": "Course Materials PDF"
+                    },
+                    "description": {
+                        "type": "string",
+                        "example": "Comprehensive course materials including slides and exercises",
+                        "nullable": true
+                    },
+                    "display_order": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "example": true
                     },
                     "created_at": {
                         "type": "string",
@@ -17167,6 +17810,10 @@
             "description": "Dashboard"
         },
         {
+            "name": "Digital Products",
+            "description": "Digital Products"
+        },
+        {
             "name": "Environment Credentials",
             "description": "Environment Credentials"
         },
@@ -17177,6 +17824,10 @@
         {
             "name": "Payment Gateways",
             "description": "Payment Gateways"
+        },
+        {
+            "name": "Product Assets",
+            "description": "Product Assets"
         },
         {
             "name": "Product Categories",
