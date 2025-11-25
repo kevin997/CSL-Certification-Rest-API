@@ -212,7 +212,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('environments/{id}/users', [EnvironmentController::class, 'getUsers']);
     Route::post('environments/{id}/users', [EnvironmentController::class, 'addUser']);
     Route::delete('environments/{id}/users/{userId}', [EnvironmentController::class, 'removeUser']);
-    Route::get('environment/status', [EnvironmentController::class, 'status']);
     Route::put('environments/{id}/demo-status', [EnvironmentController::class, 'updateDemoStatus']);
 
     // Environment credentials routes
@@ -535,7 +534,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/branding/{id}', [BrandingController::class, 'show']);
     Route::put('/branding/{id}', [BrandingController::class, 'update']);
     Route::post('/branding/preview', [BrandingController::class, 'preview']);
-    
+
     // Landing Page Routes
     Route::get('/branding/{id}/landing-page', [BrandingController::class, 'getLandingPageConfig']);
     Route::put('/branding/{id}/landing-page', [BrandingController::class, 'updateLandingPageConfig']);
@@ -549,7 +548,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/finance/revenue-by-product-type', [FinanceController::class, 'revenueByProductType']);
 
     Route::middleware('auth:sanctum')->group(function () {
-        Route::get('/subscription/current', [SubscriptionController::class, 'current']);
         Route::get('/subscription/{id}', [SubscriptionController::class, 'show']);
         Route::get('/subscription/{id}/payments', [SubscriptionController::class, 'payments']);
         Route::post('/subscription/{id}/retry-payment', [SubscriptionController::class, 'retryPayment']);
@@ -613,8 +611,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/files/{id}', [FileController::class, 'destroy']);
 });
 
-// Public routes
-Route::get('/branding/public', [BrandingController::class, 'getPublicBranding']);
+// Public routes (explicitly exclude auth middleware)
+Route::withoutMiddleware(['auth:sanctum'])->group(function () {
+    Route::get('/branding/public', [BrandingController::class, 'getPublicBranding']);
+    Route::get('/environment/status', [EnvironmentController::class, 'status']);
+    Route::get('/subscription/current', [SubscriptionController::class, 'current']);
+});
 
 // Validation routes
 Route::post('/subdomains/validate', [ValidationController::class, 'validateSubdomain']);
@@ -856,11 +858,11 @@ Route::middleware('auth:sanctum')->prefix('third-party-services')->group(functio
     Route::get('/{id}', [ThirdPartyServiceController::class, 'show']);
     Route::put('/{id}', [ThirdPartyServiceController::class, 'update']);
     Route::delete('/{id}', [ThirdPartyServiceController::class, 'destroy']);
-    
+
     // Service-specific actions
     Route::post('/{id}/refresh-token', [ThirdPartyServiceController::class, 'refreshToken']);
     Route::post('/{id}/test-connection', [ThirdPartyServiceController::class, 'testConnection']);
-    
+
     // Utility endpoints
     Route::get('/types/available', [ThirdPartyServiceController::class, 'getServiceTypes']);
 });

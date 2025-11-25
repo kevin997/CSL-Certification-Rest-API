@@ -25,15 +25,52 @@ class SubscriptionController extends Controller
      *
      * @return \Illuminate\Http\Response
      */
-    public function current()
+    public function current(Request $request)
     {
         try {
+            // Try to get user from auth first (if authenticated)
             $user = Auth::user();
+
+            // If no authenticated user, try to find user via environment domain
+            if (!$user) {
+                // Try to get domain from headers (same logic as EnvironmentController::status)
+                $domain = null;
+                $frontendDomainHeader = $request->header('X-Frontend-Domain');
+                $origin = $request->header('Origin');
+                $referer = $request->header('Referer');
+
+                if ($frontendDomainHeader) {
+                    $domain = $frontendDomainHeader;
+                } elseif ($origin) {
+                    $parsedOrigin = parse_url($origin);
+                    $domain = $parsedOrigin['host'] ?? null;
+                } elseif ($referer) {
+                    $parsedReferer = parse_url($referer);
+                    $domain = $parsedReferer['host'] ?? null;
+                }
+
+                if ($domain) {
+                    // Find environment by domain
+                    $environment = \App\Models\Environment::where('primary_domain', $domain)
+                        ->orWhere(function ($query) use ($domain) {
+                            $query->whereNotNull('additional_domains')
+                                ->whereJsonContains('additional_domains', $domain);
+                        })
+                        ->first();
+
+                    if ($environment) {
+                        // Get the environment owner
+                        $user = $environment->user;
+                    }
+                }
+            }
+
             if (!$user) {
                 return response()->json([
-                    'status' => 'error',
-                    'message' => 'User not authenticated'
-                ], 401);
+                    'status' => 'success',
+                    'data' => null,
+                    'message' => 'No subscription found'
+                ], 200);
             }
 
             $subscription = Subscription::where('user_id', $user->id)
@@ -426,7 +463,6 @@ class SubscriptionController extends Controller
                     'currency' => 'USD'
                 ]
             ], 200);
-
         } catch (\Exception $e) {
             Log::error('Error upgrading plan: ' . $e->getMessage(), [
                 'user_id' => Auth::id(),
@@ -504,7 +540,6 @@ class SubscriptionController extends Controller
                     'total_days' => $totalDays
                 ]
             ], 200);
-
         } catch (\Exception $e) {
             Log::error('Error calculating proration: ' . $e->getMessage());
             return response()->json(['status' => 'error', 'message' => 'Failed to calculate proration'], 500);
@@ -570,7 +605,6 @@ class SubscriptionController extends Controller
                 'data' => $subscription,
                 'message' => 'Plan changed successfully'
             ], 200);
-
         } catch (\Exception $e) {
             Log::error('Error changing subscription plan: ' . $e->getMessage());
             return response()->json(['status' => 'error', 'message' => 'Failed to change plan'], 500);
@@ -605,7 +639,6 @@ class SubscriptionController extends Controller
                 'status' => 'success',
                 'data' => $failedPayment
             ], 200);
-
         } catch (\Exception $e) {
             Log::error('Error fetching failed payment: ' . $e->getMessage());
             return response()->json(['status' => 'error', 'message' => 'Failed to fetch failed payment'], 500);
@@ -659,7 +692,6 @@ class SubscriptionController extends Controller
                 'data' => $subscription,
                 'message' => 'Subscription renewed successfully'
             ], 200);
-
         } catch (\Exception $e) {
             Log::error('Error renewing subscription: ' . $e->getMessage());
             return response()->json(['status' => 'error', 'message' => 'Failed to renew subscription'], 500);
@@ -715,7 +747,6 @@ class SubscriptionController extends Controller
                 'data' => $subscription,
                 'message' => $cancelAtPeriodEnd ? 'Subscription will cancel at period end' : 'Subscription cancelled immediately'
             ], 200);
-
         } catch (\Exception $e) {
             Log::error('Error cancelling subscription: ' . $e->getMessage());
             return response()->json(['status' => 'error', 'message' => 'Failed to cancel subscription'], 500);
