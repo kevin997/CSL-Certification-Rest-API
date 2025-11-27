@@ -227,20 +227,11 @@ class EnvironmentUserController extends Controller
 
         $isOwner = ($environment->owner_id === $user->id);
 
-        // If this is the environment owner, update their main password
-        $updated = false;
-        if ($isOwner && $user->email === $request->email) {
-            $user->password = Hash::make($request->password);
-            $updated = $user->save();
-        } else {
-            // Otherwise update the environment-specific password
-            $updated = $user->setEnvironmentCredentials(
-                $request->environment_id,
-                $metadataArray['environment_email'],
-                $request->password,
-                true
-            );
-        }
+        // IDENTITY UNIFICATION: Always update the global users.password
+        // The environment_user.environment_password is deprecated.
+        // This ensures all password resets go to the single source of truth.
+        $user->password = Hash::make($request->password);
+        $updated = $user->save();
 
         if (!$updated) {
             return response()->json(['message' => 'Failed to update password'], 500);
@@ -260,6 +251,9 @@ class EnvironmentUserController extends Controller
 
     /**
      * Set up the user's account by changing password and marking account as set up.
+     * 
+     * IDENTITY UNIFICATION: This now updates the global users.password,
+     * not the environment_user.environment_password.
      *
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\JsonResponse
@@ -284,9 +278,14 @@ class EnvironmentUserController extends Controller
             return response()->json(['error' => 'Environment user record not found'], 404);
         }
 
-        // Update the password and mark account as set up
-        $environmentUser->environment_password = Hash::make($request->password);
+        // IDENTITY UNIFICATION: Update the global users.password (single source of truth)
+        $user = $request->user();
+        $user->password = Hash::make($request->password);
+        $user->save();
+
+        // Mark account as set up and disable environment credentials
         $environmentUser->is_account_setup = true;
+        $environmentUser->use_environment_credentials = false; // Now uses global password
         $environmentUser->save();
 
         return response()->json([

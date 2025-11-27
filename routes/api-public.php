@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\BrandingController;
 use App\Http\Controllers\Api\EnvironmentController;
+use App\Http\Controllers\Api\LegalPageController;
 use App\Http\Controllers\Api\SubscriptionController;
 use Illuminate\Support\Facades\Route;
 
@@ -24,3 +25,9 @@ Route::get('/environment/status', [EnvironmentController::class, 'status']);
 
 // Public subscription status - returns subscription info based on domain
 Route::get('/subscription/current', [SubscriptionController::class, 'current']);
+
+// Public legal pages - returns published legal pages (About Us, Privacy Policy, etc.)
+Route::get('/legal-pages/public/{pageType}', [LegalPageController::class, 'getPublicPage']);
+
+// Public landing page - returns landing page configuration based on domain
+Route::get('/branding/public/landing-page', [BrandingController::class, 'getPublicLandingPage']);

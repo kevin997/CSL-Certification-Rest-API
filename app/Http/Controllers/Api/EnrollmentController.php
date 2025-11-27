@@ -75,10 +75,10 @@ class EnrollmentController extends Controller
         // Apply environment filter
         $query->where('environment_id', $environmentId);
 
-        // Eager load course with its template
-        $query->with(['course' => function($query) {
+        // Eager load course with its template and user
+        $query->with(['course' => function ($query) {
             $query->with('template');
-        }]);
+        }, 'user:id,name,email,profile_photo_path']);
 
         // Apply course filter
         if ($request->has('course_id')) {
@@ -407,7 +407,7 @@ class EnrollmentController extends Controller
     private function initializeActivityCompletionRecords($enrollment)
     {
         $course = Course::with('sections.activities')->findOrFail($enrollment->course_id);
-        
+
         foreach ($course->sections as $section) {
             foreach ($section->activities as $activity) {
                 $enrollment->activityCompletions()->create([

@@ -18,10 +18,16 @@ class EnvironmentAccountCreated extends Notification implements ShouldQueue
 
     private User $user;
     private Environment $environment;
-    private string $plainPassword;
+    private ?string $plainPassword;
     private TelegramService $telegramService;
 
-    public function __construct(User $user, Environment $environment, string $plainPassword, TelegramService $telegramService)
+    /**
+     * Create a new notification instance.
+     * 
+     * IDENTITY UNIFICATION: Password is now optional.
+     * When null, indicates user uses their existing global password.
+     */
+    public function __construct(User $user, Environment $environment, ?string $plainPassword, TelegramService $telegramService)
     {
         $this->user = $user;
         $this->environment = $environment;
@@ -60,13 +66,12 @@ class EnvironmentAccountCreated extends Notification implements ShouldQueue
             Log::error('Could not determine Telegram chat ID');
             return null;
         }
-        
+
         // Escape special characters for MarkdownV2
         $environmentName = $this->telegramService->escapeMarkdownV2($this->environment->name);
         $userEmail = $this->telegramService->escapeMarkdownV2($this->user->email);
-        $plainPassword = $this->telegramService->escapeMarkdownV2($this->plainPassword);
         $createdAt = $this->telegramService->escapeMarkdownV2(now()->format('Y-m-d H:i:s'));
-        
+
         // Generate login URL with appropriate protocol
         $protocol = app()->environment('production') ? 'https' : 'http';
         $loginUrl = "{$protocol}://{$this->environment->primary_domain}/auth/login";
@@ -76,7 +81,15 @@ class EnvironmentAccountCreated extends Notification implements ShouldQueue
         $message .= "Environment: `{$environmentName}`\n";
         $message .= "URL: [Login URL]({$escapedLoginUrl})\n";
         $message .= "User: `{$userEmail}`\n";
-        $message .= "Password: `{$plainPassword}`\n";
+
+        // IDENTITY UNIFICATION: Handle optional password
+        if ($this->plainPassword) {
+            $plainPassword = $this->telegramService->escapeMarkdownV2($this->plainPassword);
+            $message .= "Password: `{$plainPassword}`\n";
+        } else {
+            $message .= "Password: _Uses existing account password_\n";
+        }
+
         $message .= "Created at: {$createdAt}\n";
 
         $buttons = [

@@ -11,6 +11,8 @@ use App\Models\Environment;
 use App\Models\EnvironmentUser;
 use App\Models\EventContent;
 use App\Models\EventRegistration;
+use App\Models\FeedbackSubmission;
+use App\Models\FeedbackContent;
 use App\Models\IssuedCertificate;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -66,6 +68,7 @@ class DashboardController extends Controller
                 'learnerStats' => $this->getLearnerStats($environmentId),
                 'courseStats' => $this->getCourseStats($environmentId),
                 'certificateStats' => $this->getCertificateStats($environmentId),
+                'feedbackStats' => $this->getFeedbackStats($environmentId),
                 'enrollmentTrends' => $this->getEnrollmentTrends($environmentId),
                 'coursePerformance' => $this->getCoursePerformance($environmentId),
                 'activityDistribution' => $this->getActivityDistribution($environmentId),
@@ -94,7 +97,7 @@ class DashboardController extends Controller
             ->where('joined_at', '<', Carbon::now()->subDays(30))
             ->count();
 
-        $percentageIncrease = $previousPeriodLearners > 0 
+        $percentageIncrease = $previousPeriodLearners > 0
             ? round((($newLearners - $previousPeriodLearners) / $previousPeriodLearners) * 100, 2)
             : 0;
 
@@ -154,6 +157,91 @@ class DashboardController extends Controller
     }
 
     /**
+     * Get feedback statistics
+     */
+    private function getFeedbackStats($environmentId)
+    {
+        // Get total feedback submissions for this environment
+        $totalFeedback = FeedbackSubmission::whereHas('feedbackContent.activity.block.template', function ($query) use ($environmentId) {
+            $query->where('environment_id', $environmentId);
+        })->where('status', 'submitted')->count();
+
+        // Get feedback in the last 30 days
+        $recentFeedback = FeedbackSubmission::whereHas('feedbackContent.activity.block.template', function ($query) use ($environmentId) {
+            $query->where('environment_id', $environmentId);
+        })->where('status', 'submitted')
+            ->where('created_at', '>=', Carbon::now()->subDays(30))
+            ->count();
+
+        // Get feedback distribution by template (course)
+        $feedbackByTemplate = FeedbackSubmission::whereHas('feedbackContent.activity.block.template', function ($query) use ($environmentId) {
+            $query->where('environment_id', $environmentId);
+        })->where('status', 'submitted')
+            ->with('feedbackContent.activity.block.template:id,title')
+            ->get()
+            ->groupBy(function ($submission) {
+                return $submission->feedbackContent?->activity?->block?->template?->title ?? 'Unknown';
+            })
+            ->map(function ($group, $templateName) {
+                return [
+                    'name' => $templateName,
+                    'count' => $group->count(),
+                ];
+            })
+            ->values()
+            ->take(5)
+            ->toArray();
+
+        // Calculate average rating from feedback answers (numeric values)
+        $avgRating = DB::table('feedback_answers')
+            ->join('feedback_submissions', 'feedback_answers.feedback_submission_id', '=', 'feedback_submissions.id')
+            ->join('feedback_contents', 'feedback_submissions.feedback_content_id', '=', 'feedback_contents.id')
+            ->join('activities', 'feedback_contents.activity_id', '=', 'activities.id')
+            ->join('blocks', 'activities.block_id', '=', 'blocks.id')
+            ->join('templates', 'blocks.template_id', '=', 'templates.id')
+            ->where('templates.environment_id', $environmentId)
+            ->where('feedback_submissions.status', 'submitted')
+            ->whereNotNull('feedback_answers.answer_value')
+            ->avg('feedback_answers.answer_value');
+
+        // Calculate performance score (percentage of positive ratings, assuming 4+ out of 5 is positive)
+        $positiveRatings = DB::table('feedback_answers')
+            ->join('feedback_submissions', 'feedback_answers.feedback_submission_id', '=', 'feedback_submissions.id')
+            ->join('feedback_contents', 'feedback_submissions.feedback_content_id', '=', 'feedback_contents.id')
+            ->join('activities', 'feedback_contents.activity_id', '=', 'activities.id')
+            ->join('blocks', 'activities.block_id', '=', 'blocks.id')
+            ->join('templates', 'blocks.template_id', '=', 'templates.id')
+            ->where('templates.environment_id', $environmentId)
+            ->where('feedback_submissions.status', 'submitted')
+            ->whereNotNull('feedback_answers.answer_value')
+            ->where('feedback_answers.answer_value', '>=', 4)
+            ->count();
+
+        $totalRatings = DB::table('feedback_answers')
+            ->join('feedback_submissions', 'feedback_answers.feedback_submission_id', '=', 'feedback_submissions.id')
+            ->join('feedback_contents', 'feedback_submissions.feedback_content_id', '=', 'feedback_contents.id')
+            ->join('activities', 'feedback_contents.activity_id', '=', 'activities.id')
+            ->join('blocks', 'activities.block_id', '=', 'blocks.id')
+            ->join('templates', 'blocks.template_id', '=', 'templates.id')
+            ->where('templates.environment_id', $environmentId)
+            ->where('feedback_submissions.status', 'submitted')
+            ->whereNotNull('feedback_answers.answer_value')
+            ->count();
+
+        $performanceScore = $totalRatings > 0
+            ? round(($positiveRatings / $totalRatings) * 100, 1)
+            : 0;
+
+        return [
+            'totalFeedback' => $totalFeedback,
+            'recentFeedback' => $recentFeedback,
+            'averageRating' => round($avgRating ?? 0, 2),
+            'performanceScore' => $performanceScore,
+            'feedbackByTemplate' => $feedbackByTemplate,
+        ];
+    }
+
+    /**
      * Get enrollment trends (monthly)
      */
     private function getEnrollmentTrends($environmentId)
@@ -172,8 +260,18 @@ class DashboardController extends Controller
             ->get();
 
         $monthNames = [
-            1 => 'Jan', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr', 5 => 'May', 6 => 'Jun',
-            7 => 'Jul', 8 => 'Aug', 9 => 'Sep', 10 => 'Oct', 11 => 'Nov', 12 => 'Dec'
+            1 => 'Jan',
+            2 => 'Feb',
+            3 => 'Mar',
+            4 => 'Apr',
+            5 => 'May',
+            6 => 'Jun',
+            7 => 'Jul',
+            8 => 'Aug',
+            9 => 'Sep',
+            10 => 'Oct',
+            11 => 'Nov',
+            12 => 'Dec'
         ];
 
         $formattedData = [];
@@ -214,14 +312,14 @@ class DashboardController extends Controller
             $totalEnrollments = Enrollment::where('course_id', $course->id)
                 ->where('environment_id', $environmentId)
                 ->count();
-            
+
             $completedEnrollments = Enrollment::where('course_id', $course->id)
                 ->where('environment_id', $environmentId)
                 ->where('status', 'completed')
                 ->count();
-            
-            $completionRate = $totalEnrollments > 0 
-                ? round(($completedEnrollments / $totalEnrollments) * 100, 2) 
+
+            $completionRate = $totalEnrollments > 0
+                ? round(($completedEnrollments / $totalEnrollments) * 100, 2)
                 : 0;
 
             $coursePerformance[] = [
@@ -390,7 +488,7 @@ class DashboardController extends Controller
                 $query->where('environment_id', $environmentId);
             })
             ->get();
-            
+
         // Get the event content for these activities
         $eventContentIds = $eventActivities->pluck('content_id');
         $events = EventContent::whereIn('id', $eventContentIds)
@@ -403,7 +501,7 @@ class DashboardController extends Controller
         foreach ($events as $event) {
             // Count registrations
             $registrationsCount = EventRegistration::where('event_content_id', $event->id)->count();
-            
+
             $upcomingEvents[] = [
                 'type' => 'event',
                 'icon' => 'Calendar',
@@ -417,9 +515,9 @@ class DashboardController extends Controller
 
         // Get upcoming assignment deadlines
         $assignmentDeadlines = DB::table('assignment_contents')
-            ->join('activities', function($join) {
+            ->join('activities', function ($join) {
                 $join->on('activities.content_id', '=', 'assignment_contents.id')
-                     ->where('activities.content_type', '=', 'App\\Models\\AssignmentContent');
+                    ->where('activities.content_type', '=', 'App\\Models\\AssignmentContent');
             })
             ->join('course_section_items', 'course_section_items.activity_id', '=', 'activities.id')
             ->join('course_sections', 'course_sections.id', '=', 'course_section_items.course_section_id')
@@ -443,7 +541,7 @@ class DashboardController extends Controller
                 ->where('course_id', $deadline->course_id)
                 ->where('status', '!=', 'dropped')
                 ->count();
-            
+
             $upcomingEvents[] = [
                 'type' => 'deadline',
                 'icon' => 'Clock',

@@ -19,11 +19,14 @@ class WelcomeToEnvironment extends Mailable implements ShouldQueue
 
     /**
      * Create a new message instance.
+     * 
+     * IDENTITY UNIFICATION: Password is now optional.
+     * When null, the email will instruct user to log in with their existing account.
      */
     public function __construct(
         public User $user,
         public Environment $environment,
-        public string $password,
+        public ?string $password = null,
     ) {}
 
     /**

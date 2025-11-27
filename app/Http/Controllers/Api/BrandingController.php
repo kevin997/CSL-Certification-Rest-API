@@ -416,14 +416,14 @@ class BrandingController extends Controller
         // Try to get domain from headers in priority order, matching DetectEnvironment middleware
         $domain = null;
         $apiDomain = $request->getHost(); // The API server domain
-        
+
         // First check for the explicit X-Frontend-Domain header
         $frontendDomainHeader = $request->header('X-Frontend-Domain');
-        
+
         // Then try Origin or Referer as fallbacks
         $origin = $request->header('Origin');
         $referer = $request->header('Referer');
-        
+
         if ($frontendDomainHeader) {
             // Use the explicit frontend domain header if provided
             $domain = $frontendDomainHeader;
@@ -436,17 +436,17 @@ class BrandingController extends Controller
             $parsedReferer = parse_url($referer);
             $domain = $parsedReferer['host'] ?? null;
         }
-        
+
         // If still no domain, fall back to the API domain or query parameter
         if (!$domain) {
             $domain = $request->query('domain') ?: $apiDomain;
         }
-        
+
         // First try to find environment by domain
         $environment = null;
         if ($domain) {
             $environment = Environment::where('primary_domain', $domain)
-                ->orWhere(function($query) use ($domain) {
+                ->orWhere(function ($query) use ($domain) {
                     $query->whereNotNull('additional_domains')
                         ->whereJsonContains('additional_domains', $domain);
                 })
@@ -459,7 +459,7 @@ class BrandingController extends Controller
             $branding = Branding::where('environment_id', $environment->id)
                 ->where('is_active', true)
                 ->first();
-                
+
             if ($branding) {
                 // Format branding data for public use
                 $publicBranding = [
@@ -523,6 +523,330 @@ class BrandingController extends Controller
         return response()->json([
             'status' => 'success',
             'data' => $publicBranding,
+        ]);
+    }
+
+    /**
+     * Get landing page configuration for a branding record.
+     *
+     * @OA\Get(
+     *     path="/branding/{id}/landing-page",
+     *     summary="Get landing page configuration",
+     *     description="Returns the landing page configuration for a specific branding record",
+     *     operationId="getLandingPageConfig",
+     *     tags={"Branding"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="id",
+     *         in="path",
+     *         required=true,
+     *         description="Branding ID",
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Successful operation",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="data", type="object")
+     *         )
+     *     ),
+     *     @OA\Response(response=404, description="Branding not found")
+     * )
+     */
+    public function getLandingPageConfig(int $id)
+    {
+        $branding = Branding::where('user_id', Auth::id())->find($id);
+
+        if (!$branding) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Branding not found',
+            ], 404);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $branding->getLandingPageConfig(),
+        ]);
+    }
+
+    /**
+     * Update landing page configuration for a branding record.
+     *
+     * @OA\Put(
+     *     path="/branding/{id}/landing-page",
+     *     summary="Update landing page configuration",
+     *     description="Updates the landing page configuration for a specific branding record",
+     *     operationId="updateLandingPageConfig",
+     *     tags={"Branding"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="id",
+     *         in="path",
+     *         required=true,
+     *         description="Branding ID",
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             @OA\Property(property="hero_title", type="string", maxLength=255),
+     *             @OA\Property(property="hero_subtitle", type="string"),
+     *             @OA\Property(property="hero_background_image", type="string", maxLength=500),
+     *             @OA\Property(property="hero_overlay_color", type="string", maxLength=7),
+     *             @OA\Property(property="hero_overlay_opacity", type="integer", minimum=0, maximum=100),
+     *             @OA\Property(property="hero_cta_text", type="string", maxLength=100),
+     *             @OA\Property(property="hero_cta_url", type="string", maxLength=500),
+     *             @OA\Property(property="landing_page_sections", type="array", @OA\Items(type="object")),
+     *             @OA\Property(property="seo_title", type="string", maxLength=255),
+     *             @OA\Property(property="seo_description", type="string")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Successful operation",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="data", type="object"),
+     *             @OA\Property(property="message", type="string")
+     *         )
+     *     ),
+     *     @OA\Response(response=404, description="Branding not found"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
+     */
+    public function updateLandingPageConfig(Request $request, int $id)
+    {
+        $branding = Branding::where('user_id', Auth::id())->find($id);
+
+        if (!$branding) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Branding not found',
+            ], 404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'hero_title' => 'nullable|string|max:255',
+            'hero_subtitle' => 'nullable|string',
+            'hero_background_image' => 'nullable|string|max:500',
+            'hero_overlay_color' => 'nullable|string|max:7|regex:/^#[0-9A-Fa-f]{6}$/',
+            'hero_overlay_opacity' => 'nullable|integer|min:0|max:100',
+            'hero_cta_text' => 'nullable|string|max:100',
+            'hero_cta_url' => 'nullable|string|max:500',
+            'landing_page_sections' => 'nullable|array',
+            'landing_page_sections.*.id' => 'nullable|string',
+            'landing_page_sections.*.type' => 'required_with:landing_page_sections|string|in:text,features,testimonials,cta,featured_products,custom',
+            'landing_page_sections.*.content' => 'nullable|string', // Content is optional for block-based sections
+            'landing_page_sections.*.order' => 'nullable|integer',
+            'landing_page_sections.*.settings' => 'nullable|array',
+            'landing_page_sections.*.settings.title' => 'nullable|string|max:255',
+            'landing_page_sections.*.settings.subtitle' => 'nullable|string|max:500',
+            'landing_page_sections.*.settings.layout' => 'nullable|string',
+            'landing_page_sections.*.settings.padding' => 'nullable|string|in:small,medium,large',
+            'landing_page_sections.*.settings.background_color' => 'nullable|string|max:7',
+            'landing_page_sections.*.settings.testimonials' => 'nullable|array',
+            'landing_page_sections.*.settings.testimonials.*.id' => 'nullable|string',
+            'landing_page_sections.*.settings.testimonials.*.name' => 'nullable|string|max:255',
+            'landing_page_sections.*.settings.testimonials.*.role' => 'nullable|string|max:255',
+            'landing_page_sections.*.settings.testimonials.*.content' => 'nullable|string',
+            'landing_page_sections.*.settings.testimonials.*.rating' => 'nullable|integer|min:1|max:5',
+            'landing_page_sections.*.settings.features' => 'nullable|array',
+            'landing_page_sections.*.settings.features.*.icon' => 'nullable|string',
+            'landing_page_sections.*.settings.features.*.title' => 'nullable|string|max:255',
+            'landing_page_sections.*.settings.features.*.description' => 'nullable|string',
+            'landing_page_sections.*.settings.maxProducts' => 'nullable|integer|min:1|max:12',
+            'landing_page_sections.*.settings.primaryButtonText' => 'nullable|string|max:100',
+            'landing_page_sections.*.settings.primaryButtonUrl' => 'nullable|string|max:500',
+            'landing_page_sections.*.settings.secondaryButtonText' => 'nullable|string|max:100',
+            'landing_page_sections.*.settings.secondaryButtonUrl' => 'nullable|string|max:500',
+            'seo_title' => 'nullable|string|max:255',
+            'seo_description' => 'nullable|string|max:500',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $branding->update($validator->validated());
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $branding->getLandingPageConfig(),
+            'message' => 'Landing page configuration updated successfully',
+        ]);
+    }
+
+    /**
+     * Toggle landing page enabled status.
+     *
+     * @OA\Post(
+     *     path="/branding/{id}/landing-page/toggle",
+     *     summary="Toggle landing page",
+     *     description="Enables or disables the landing page for a specific branding record",
+     *     operationId="toggleLandingPage",
+     *     tags={"Branding"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="id",
+     *         in="path",
+     *         required=true,
+     *         description="Branding ID",
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"enabled"},
+     *             @OA\Property(property="enabled", type="boolean")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Successful operation",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="landing_page_enabled", type="boolean")
+     *             ),
+     *             @OA\Property(property="message", type="string")
+     *         )
+     *     ),
+     *     @OA\Response(response=404, description="Branding not found"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
+     */
+    public function toggleLandingPage(Request $request, int $id)
+    {
+        $branding = Branding::where('user_id', Auth::id())->find($id);
+
+        if (!$branding) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Branding not found',
+            ], 404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'enabled' => 'required|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $branding->update([
+            'landing_page_enabled' => $request->boolean('enabled'),
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'landing_page_enabled' => $branding->landing_page_enabled,
+            ],
+            'message' => $branding->landing_page_enabled
+                ? 'Landing page enabled successfully'
+                : 'Landing page disabled successfully',
+        ]);
+    }
+
+    /**
+     * Get public landing page configuration based on domain.
+     *
+     * @OA\Get(
+     *     path="/branding/public/landing-page",
+     *     summary="Get public landing page",
+     *     description="Returns the public landing page configuration based on domain",
+     *     operationId="getPublicLandingPage",
+     *     tags={"Branding"},
+     *     @OA\Parameter(
+     *         name="domain",
+     *         in="query",
+     *         description="Domain to get landing page for",
+     *         @OA\Schema(type="string")
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Successful operation",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="data", type="object")
+     *         )
+     *     ),
+     *     @OA\Response(response=404, description="Landing page not found or not enabled")
+     * )
+     */
+    public function getPublicLandingPage(Request $request)
+    {
+        // Get domain from request header or query parameter
+        $domain = $request->header('X-Frontend-Domain')
+            ?? $request->header('X-Forwarded-Host')
+            ?? $request->query('domain')
+            ?? $request->getHost();
+
+        // Clean the domain
+        $domain = preg_replace('/:\d+$/', '', $domain);
+
+        // Find environment by domain
+        $environment = Environment::where('primary_domain', $domain)
+            ->orWhere('primary_domain', 'LIKE', '%' . $domain . '%')
+            ->first();
+
+        if (!$environment) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Environment not found for domain',
+            ], 404);
+        }
+
+        // Get branding with landing page enabled
+        $branding = Branding::where('environment_id', $environment->id)
+            ->where('landing_page_enabled', true)
+            ->where('is_active', true)
+            ->first();
+
+        if (!$branding) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Landing page not enabled for this environment',
+                'data' => [
+                    'enabled' => false,
+                ],
+            ], 404);
+        }
+
+        // Return landing page config with branding
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'enabled' => true,
+                'landing_page' => $branding->getLandingPageConfig(),
+                'branding' => [
+                    'company_name' => $branding->company_name,
+                    'logo_url' => $branding->logo_path,
+                    'primary_color' => $branding->primary_color,
+                    'secondary_color' => $branding->secondary_color,
+                    'accent_color' => $branding->accent_color,
+                    'font_family' => $branding->font_family,
+                ],
+            ],
+            'environment' => [
+                'id' => $environment->id,
+                'name' => $environment->name,
+            ],
         ]);
     }
 }

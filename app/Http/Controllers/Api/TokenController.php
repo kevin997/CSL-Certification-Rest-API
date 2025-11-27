@@ -10,12 +10,18 @@ use App\Enums\UserRole;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class TokenController extends Controller
 {
     /**
      * Create a new API token for the user.
+     * 
+     * SMART LOGIN FLOW (Identity Unification):
+     * 1. Try global password (users table) first
+     * 2. If fails, try environment-specific password (environment_user table)
+     * 3. If environment password succeeds, AUTO-HEAL by syncing to users table
      *
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\JsonResponse
@@ -30,93 +36,111 @@ class TokenController extends Controller
         ]);
 
         $environmentId = $request->environment_id;
-        
-        // First check if this is a learner authentication attempt using environment credentials
-        if ($environmentId) {
-            // Look for the environment user record with matching environment email
-            $environmentUser = EnvironmentUser::where('environment_id', $environmentId)
-                ->where('environment_email', $request->email)
-                ->where('use_environment_credentials', true)
-                ->first();
-            
-            if ($environmentUser && Hash::check($request->password, $environmentUser->environment_password)) {
-                // This is a learner authentication, handle it separately
-                return $this->authenticateLearner($request, $environmentUser);
-            }
-        }
+        $user = null;
+        $authenticatedViaEnvironment = false;
 
         // Set environment ID in session if provided
         if ($request->has('environment_id')) {
             session(['current_environment_id' => $request->environment_id]);
-            
-            // Configure auth guard to use the environment user provider
-            $guard = Auth::guard();
-            if (method_exists($guard->getProvider(), 'setEnvironmentId')) {
-                $guard->getProvider()->setEnvironmentId($request->environment_id);
+        }
+
+        // STEP 1: Try global password first (users table)
+        if (Auth::attempt($request->only('email', 'password'))) {
+            $user = Auth::user();
+            Log::info('Smart Login: User authenticated via global password', ['user_id' => $user->id]);
+        }
+
+        // STEP 2: If global auth failed, try environment-specific credentials
+        if (!$user && $environmentId) {
+            $result = $this->tryEnvironmentCredentials($request->email, $request->password, $environmentId);
+
+            if ($result) {
+                $user = $result['user'];
+                $authenticatedViaEnvironment = true;
+
+                // STEP 3: AUTO-HEAL - Sync password to users table
+                $this->autoHealPassword($user, $request->password);
             }
         }
 
-        // Attempt to authenticate the user as an environment owner or admin
-        if (!Auth::attempt($request->only('email', 'password'))) {
-            // Generic error message to prevent username enumeration
+        // STEP 2b: If still no user and no environment_id, try to find any matching environment credential
+        if (!$user) {
+            $result = $this->tryAnyEnvironmentCredentials($request->email, $request->password);
+
+            if ($result) {
+                $user = $result['user'];
+                $authenticatedViaEnvironment = true;
+
+                // AUTO-HEAL - Sync password to users table
+                $this->autoHealPassword($user, $request->password);
+            }
+        }
+
+        // If still no user, authentication failed
+        if (!$user) {
             throw ValidationException::withMessages([
                 'credentials' => ['Invalid credentials provided.'],
             ]);
         }
 
+        // If authenticated via environment credentials, manually log in the user
+        if ($authenticatedViaEnvironment) {
+            Auth::login($user);
+        }
+
         $user = Auth::user();
-        
+
         // Check if environment ID is provided and verify user access
         if ($environmentId) {
             // Check if user is the owner of the environment or exists in environment_user table
             $environment = Environment::find($environmentId);
-            
+
             if (!$environment) {
                 throw ValidationException::withMessages([
                     'credentials' => ['Invalid credentials provided.'],
                 ]);
             }
-            
+
             // Check if user is the owner or has access to this environment
             $isOwner = $environment->owner_id === $user->id;
             $environmentUser = null;
-            
+
             if (!$isOwner) {
                 $environmentUser = EnvironmentUser::where('environment_id', $environmentId)
                     ->where('user_id', $user->id)
                     ->first();
-                
+
                 if (!$environmentUser) {
                     throw ValidationException::withMessages([
                         'credentials' => ['Invalid credentials provided.'],
                     ]);
                 }
             }
-            
+
             // Determine the role for token abilities
             $userRole = $user->role;
             $environmentRole = $environmentUser ? $environmentUser->role : null;
-            
+
             // Convert enum values to strings if needed
             $userRoleValue = $userRole instanceof UserRole ? $userRole->value : $userRole;
             $environmentRoleValue = $environmentRole instanceof UserRole ? $environmentRole->value : $environmentRole;
-            
+
             // Create abilities array for the token
             $abilities = ['environment_id:' . $environmentId];
-            
+
             // Add user's system role
             if ($userRoleValue) {
                 $abilities[] = 'role:' . $userRoleValue;
             }
-            
+
             // Add environment-specific role if applicable
             if ($environmentRoleValue) {
                 $abilities[] = 'env_role:' . $environmentRoleValue;
             }
-            
+
             // Create token with abilities
             $token = $user->createToken($request->device_name, $abilities)->plainTextToken;
-            
+
             // Determine the primary role for the response
             if ($isOwner) {
                 // Convert enum to string value before comparison
@@ -132,24 +156,24 @@ class TokenController extends Controller
             // No environment specified, regular user access
             $userRole = $user->role;
             $abilities = [];
-            
+
             // Ensure we get string value from enum if needed
             $userRoleValue = $userRole instanceof UserRole ? $userRole->value : $userRole;
-            
+
             if ($userRoleValue) {
                 $abilities[] = 'role:' . $userRoleValue;
             }
-            
+
             $token = $user->createToken($request->device_name, $abilities)->plainTextToken;
             $role = $userRoleValue ?: 'user';
         }
 
         // Ensure we're returning string values for roles in the response
         $userRoleForResponse = $user->role instanceof UserRole ? $user->role->value : $user->role;
-        $environmentRoleForResponse = isset($environmentUser->role) ? 
-            ($environmentUser->role instanceof UserRole ? $environmentUser->role->value : $environmentUser->role) : 
+        $environmentRoleForResponse = isset($environmentUser->role) ?
+            ($environmentUser->role instanceof UserRole ? $environmentUser->role->value : $environmentUser->role) :
             null;
-            
+
         // Get the is_account_setup status if this is an environment login
         $isAccountSetup = null;
         if ($environmentId) {
@@ -158,7 +182,7 @@ class TokenController extends Controller
                 ->first();
             $isAccountSetup = $envUser ? $envUser->is_account_setup : null;
         }
-        
+
         return response()->json([
             'token' => $token,
             'user' => $user,
@@ -169,7 +193,7 @@ class TokenController extends Controller
             'is_account_setup' => $isAccountSetup
         ]);
     }
-    
+
     /**
      * Authenticate a learner in an environment using environment-specific credentials
      *
@@ -180,43 +204,43 @@ class TokenController extends Controller
     private function authenticateLearner(Request $request, EnvironmentUser $environmentUser)
     {
         $environmentId = $request->environment_id;
-        
+
         // Get the associated user
         $user = User::find($environmentUser->user_id);
-        
+
         if (!$user) {
             throw ValidationException::withMessages([
                 'credentials' => ['Invalid credentials provided.'],
             ]);
         }
-        
+
         // Determine the roles for token abilities
         $userRole = $user->role;  // System-level role
         $environmentRole = $environmentUser->role;  // Environment-specific role
-        
+
         // Convert enum values to strings if needed
         $userRoleValue = $userRole instanceof UserRole ? $userRole->value : $userRole;
         $environmentRoleValue = $environmentRole instanceof UserRole ? $environmentRole->value : $environmentRole;
-        
+
         // Create abilities array for the token
         $abilities = ['environment_id:' . $environmentId];
-        
+
         // Add user's system role
         if ($userRoleValue) {
             $abilities[] = 'role:' . $userRoleValue;
         }
-        
+
         // Add environment-specific role
         if ($environmentRoleValue) {
             $abilities[] = 'env_role:' . $environmentRoleValue;
         }
-        
+
         // Create token with abilities
         $token = $user->createToken($request->device_name, $abilities)->plainTextToken;
-        
+
         // Use environment role as primary role for the response, or fallback to system role
         $role = $environmentRoleValue ?: $userRoleValue;
-        
+
         return response()->json([
             'token' => $token,
             'user' => $user,
@@ -226,6 +250,104 @@ class TokenController extends Controller
             'environment_role' => $environmentRoleValue,
             'is_account_setup' => $environmentUser->is_account_setup
         ]);
+    }
+
+    /**
+     * Try to authenticate using environment-specific credentials for a specific environment.
+     *
+     * @param string $email
+     * @param string $password
+     * @param int $environmentId
+     * @return array|null Returns ['user' => User, 'environmentUser' => EnvironmentUser] or null
+     */
+    private function tryEnvironmentCredentials(string $email, string $password, int $environmentId): ?array
+    {
+        $environmentUser = EnvironmentUser::where('environment_id', $environmentId)
+            ->where('environment_email', $email)
+            ->where('use_environment_credentials', true)
+            ->first();
+
+        if (!$environmentUser) {
+            return null;
+        }
+
+        if (!Hash::check($password, $environmentUser->environment_password)) {
+            return null;
+        }
+
+        $user = User::find($environmentUser->user_id);
+        if (!$user) {
+            return null;
+        }
+
+        Log::info('Smart Login: User authenticated via environment credentials', [
+            'user_id' => $user->id,
+            'environment_id' => $environmentId,
+        ]);
+
+        return [
+            'user' => $user,
+            'environmentUser' => $environmentUser,
+        ];
+    }
+
+    /**
+     * Try to authenticate using any environment-specific credentials (when no environment_id provided).
+     *
+     * @param string $email
+     * @param string $password
+     * @return array|null Returns ['user' => User, 'environmentUser' => EnvironmentUser] or null
+     */
+    private function tryAnyEnvironmentCredentials(string $email, string $password): ?array
+    {
+        // Find all environment_user records with this email
+        $environmentUsers = EnvironmentUser::where('environment_email', $email)
+            ->where('use_environment_credentials', true)
+            ->get();
+
+        foreach ($environmentUsers as $environmentUser) {
+            if (Hash::check($password, $environmentUser->environment_password)) {
+                $user = User::find($environmentUser->user_id);
+                if ($user) {
+                    Log::info('Smart Login: User authenticated via any environment credentials', [
+                        'user_id' => $user->id,
+                        'environment_id' => $environmentUser->environment_id,
+                    ]);
+
+                    return [
+                        'user' => $user,
+                        'environmentUser' => $environmentUser,
+                    ];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Auto-heal: Sync the environment password to the users table.
+     * This ensures the user can log in with the same password next time via the global auth.
+     *
+     * @param User $user
+     * @param string $plainPassword
+     * @return void
+     */
+    private function autoHealPassword(User $user, string $plainPassword): void
+    {
+        try {
+            $user->password = Hash::make($plainPassword);
+            $user->save();
+
+            Log::info('Smart Login: Auto-healed password to users table', [
+                'user_id' => $user->id,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Smart Login: Failed to auto-heal password', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

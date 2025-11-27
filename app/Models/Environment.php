@@ -92,11 +92,11 @@ class Environment extends Model
     public function getAllDomains(): array
     {
         $domains = [$this->primary_domain];
-        
+
         if (!empty($this->additional_domains)) {
             $domains = array_merge($domains, $this->additional_domains);
         }
-        
+
         return $domains;
     }
 
@@ -118,7 +118,7 @@ class Environment extends Model
     {
         return $this->hasMany(Template::class);
     }
-    
+
     /**
      * Get the courses in this environment.
      */
@@ -126,7 +126,7 @@ class Environment extends Model
     {
         return $this->hasMany(Course::class);
     }
-    
+
     /**
      * Get the products in this environment.
      */
@@ -134,7 +134,7 @@ class Environment extends Model
     {
         return $this->hasMany(Product::class);
     }
-    
+
     /**
      * Get the teams in this environment.
      */
@@ -142,7 +142,7 @@ class Environment extends Model
     {
         return $this->hasMany(Team::class);
     }
-    
+
     /**
      * Get the orders in this environment.
      */
@@ -150,7 +150,7 @@ class Environment extends Model
     {
         return $this->hasMany(Order::class);
     }
-    
+
     /**
      * Get the issued certificates in this environment.
      */
@@ -158,7 +158,7 @@ class Environment extends Model
     {
         return $this->hasMany(IssuedCertificate::class);
     }
-    
+
     /**
      * Get the brandings in this environment.
      */
@@ -166,7 +166,15 @@ class Environment extends Model
     {
         return $this->hasMany(Branding::class, "environment_id");
     }
-    
+
+    /**
+     * Get the active branding for this environment.
+     */
+    public function branding(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(Branding::class, "environment_id")->where('is_active', true)->latest();
+    }
+
     /**
      * Get the active subscription for this environment.
      */
@@ -174,7 +182,7 @@ class Environment extends Model
     {
         return $this->hasMany(Subscription::class);
     }
-    
+
     /**
      * Check if the environment has an active subscription.
      */
@@ -186,7 +194,7 @@ class Environment extends Model
                     ->orWhere('ends_at', '>', now());
             })->exists();
     }
-    
+
     /**
      * Get the environment type based on the plan.
      */
@@ -196,14 +204,14 @@ class Environment extends Model
             ->where('status', 'active')
             ->whereHas('plan')
             ->first();
-            
+
         if (!$activeSubscription) {
             return 'free';
         }
-        
+
         return $activeSubscription->plan->type ?? 'free';
     }
-    
+
     /**
      * Check if the environment is a demo environment.
      *

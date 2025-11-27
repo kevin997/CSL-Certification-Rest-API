@@ -36,6 +36,10 @@ class ResetPasswordController extends Controller
         // Here we will attempt to reset the user's password. If it is successful we
         // will update the password on an actual user model and persist it to the
         // database. Otherwise we will parse the error and return the response.
+        // 
+        // IDENTITY UNIFICATION: Password resets now ONLY update users.password.
+        // The environment_user.environment_password is deprecated.
+        // Smart Login will handle users who still have old environment passwords.
         $status = Password::reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function ($user, $password) use ($request) {
@@ -45,19 +49,10 @@ class ResetPasswordController extends Controller
 
                 $user->save();
 
-                // If environment ID is provided, update environment-specific password
-                if ($request->has('environment_id')) {
-                    $environmentId = $request->environment_id;
-                    
-                    // Update environment-specific password if it exists
-                    DB::table('environment_user')
-                        ->where('environment_id', $environmentId)
-                        ->where('user_id', $user->id)
-                        ->where('use_environment_credentials', true)
-                        ->update([
-                            'environment_password' => Hash::make($password)
-                        ]);
-                }
+                // IDENTITY UNIFICATION: No longer update environment_user.environment_password
+                // The global users.password is now the single source of truth.
+                // If user had use_environment_credentials=true, Smart Login will auto-heal
+                // on their next login attempt with the old password.
 
                 event(new PasswordReset($user));
             }

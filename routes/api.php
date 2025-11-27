@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Auth\RegisterController;
 use App\Http\Controllers\Api\Auth\ResetPasswordController;
 use App\Http\Controllers\Api\BlockController;
 use App\Http\Controllers\Api\BrandingController;
+use App\Http\Controllers\Api\LegalPageController;
 use App\Http\Controllers\Api\CertificateContentController;
 use App\Http\Controllers\Api\CertificateController;
 use App\Http\Controllers\Api\CertificateTemplateController;
@@ -17,6 +18,7 @@ use App\Http\Controllers\Api\CourseSectionController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DocumentationContentController;
 use App\Http\Controllers\Api\EnrollmentController;
+use App\Http\Controllers\Api\LearnerController;
 use App\Http\Controllers\Api\EventContentController;
 use App\Http\Controllers\Api\EnvironmentController;
 use App\Http\Controllers\Api\EnvironmentCredentialsController;
@@ -189,6 +191,20 @@ Route::middleware(['throttle:login'])->group(function () {
 });
 
 Route::delete('/tokens', [TokenController::class, 'revokeTokens'])->middleware('auth:sanctum');
+
+// Environment Membership Routes (Identity Unification - Story 3)
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/environments/{id}/join', [\App\Http\Controllers\Api\EnvironmentMembershipController::class, 'join']);
+    Route::delete('/environments/{id}/leave', [\App\Http\Controllers\Api\EnvironmentMembershipController::class, 'leave']);
+    Route::get('/user/environments', [\App\Http\Controllers\Api\EnvironmentMembershipController::class, 'myEnvironments']);
+});
+
+// Academy Switch Routes (Cross-domain authentication for academy switching)
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/auth/academy-switch-token', [\App\Http\Controllers\Api\Auth\AcademySwitchController::class, 'generateSwitchToken']);
+});
+// Public endpoint for validating switch tokens (called by target domain)
+Route::post('/auth/validate-switch-token', [\App\Http\Controllers\Api\Auth\AcademySwitchController::class, 'validateSwitchToken']);
 
 // Sales Platform Authentication Routes
 Route::post('/admin/sales/tokens', [\App\Http\Controllers\Api\Sales\AuthController::class, 'login']);
@@ -443,6 +459,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/my-enrollments', [EnrollmentController::class, 'myEnrollments']);
     Route::get('/courses/{courseId}/enrollments', [EnrollmentController::class, 'courseEnrollments']);
 
+    // Learner routes
+    Route::get('/learners/{userId}', [LearnerController::class, 'show']);
+    Route::get('/learners/{userId}/enrollments/{enrollmentId}/submissions', [LearnerController::class, 'getEnrollmentSubmissions']);
+
     // Activity Completion routes
     Route::get('/enrollments/{enrollmentId}/activity-completions', [ActivityCompletionController::class, 'index']);
     Route::put('/enrollments/{enrollmentId}/activity-completions/{activityId}', [ActivityCompletionController::class, 'update']);
@@ -539,6 +559,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/branding/{id}/landing-page', [BrandingController::class, 'getLandingPageConfig'])->where('id', '[0-9]+');
     Route::put('/branding/{id}/landing-page', [BrandingController::class, 'updateLandingPageConfig'])->where('id', '[0-9]+');
     Route::post('/branding/{id}/landing-page/toggle', [BrandingController::class, 'toggleLandingPage'])->where('id', '[0-9]+');
+
+    // Legal Pages Routes (About Us, Privacy Policy, Legal Notice, Terms of Service)
+    Route::get('/legal-pages', [LegalPageController::class, 'index']);
+    Route::get('/legal-pages/type/{pageType}', [LegalPageController::class, 'showByType']);
+    Route::get('/legal-pages/{id}', [LegalPageController::class, 'show'])->where('id', '[0-9]+');
+    Route::post('/legal-pages', [LegalPageController::class, 'store']);
+    Route::put('/legal-pages/{id}', [LegalPageController::class, 'update'])->where('id', '[0-9]+');
+    Route::post('/legal-pages/{id}/publish', [LegalPageController::class, 'publish'])->where('id', '[0-9]+');
+    Route::post('/legal-pages/{id}/unpublish', [LegalPageController::class, 'unpublish'])->where('id', '[0-9]+');
+    Route::delete('/legal-pages/{id}', [LegalPageController::class, 'destroy'])->where('id', '[0-9]+');
 
     // Finance routes
     Route::get('/finance/overview', [FinanceController::class, 'overview']);

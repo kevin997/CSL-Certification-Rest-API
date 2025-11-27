@@ -53,6 +53,33 @@ class Branding extends Model
     {
         return [
             'is_active' => 'boolean',
+            'landing_page_enabled' => 'boolean',
+            'landing_page_sections' => 'array',
+            'hero_overlay_opacity' => 'integer',
+        ];
+    }
+
+    /**
+     * Get the landing page configuration as an array.
+     */
+    public function getLandingPageConfig(): array
+    {
+        return [
+            'enabled' => $this->landing_page_enabled,
+            'hero' => [
+                'title' => $this->hero_title,
+                'subtitle' => $this->hero_subtitle,
+                'background_image' => $this->hero_background_image,
+                'overlay_color' => $this->hero_overlay_color,
+                'overlay_opacity' => $this->hero_overlay_opacity,
+                'cta_text' => $this->hero_cta_text,
+                'cta_url' => $this->hero_cta_url,
+            ],
+            'sections' => $this->landing_page_sections ?? [],
+            'seo' => [
+                'title' => $this->seo_title,
+                'description' => $this->seo_description,
+            ],
         ];
     }
 
