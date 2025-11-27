@@ -512,6 +512,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/plans/{id}', [PlanController::class, 'show']);
     Route::get('/plans/type/{type}', [PlanController::class, 'getByType']);
     Route::post('/plans/compare', [PlanController::class, 'compare']);
+    
+    // Authenticated Plan Management
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::put('/plans/{id}', [PlanController::class, 'update']);
+    });
 
     // Profile routes
     Route::get('/profile', [ProfileController::class, 'getProfile']);

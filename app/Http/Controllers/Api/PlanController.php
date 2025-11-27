@@ -159,4 +159,52 @@ class PlanController extends Controller
             'data' => $formattedPlans,
         ]);
     }
+    /**
+     * Update the specified plan.
+     *
+     * @param Request $request
+     * @param string $id
+     * @return JsonResponse
+     */
+    public function update(Request $request, string $id): JsonResponse
+    {
+        $plan = Plan::find($id);
+
+        if (!$plan) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Plan not found',
+            ], 404);
+        }
+
+        $validatedData = $request->validate([
+            'name' => 'sometimes|string|max:255',
+            'description' => 'nullable|string',
+            'type' => 'sometimes|string|in:standalone,supported,demo',
+            'price_monthly' => 'nullable|numeric|min:0',
+            'price_annual' => 'nullable|numeric|min:0',
+            'setup_fee' => 'nullable|numeric|min:0',
+            'features' => 'nullable', // Can be JSON string or array
+            'limits' => 'nullable',   // Can be JSON string or array
+            'is_active' => 'sometimes|boolean',
+            'sort_order' => 'sometimes|integer',
+        ]);
+
+        // Handle JSON fields if they are passed as strings
+        if (isset($validatedData['features']) && is_string($validatedData['features'])) {
+            $validatedData['features'] = json_decode($validatedData['features'], true);
+        }
+
+        if (isset($validatedData['limits']) && is_string($validatedData['limits'])) {
+            $validatedData['limits'] = json_decode($validatedData['limits'], true);
+        }
+
+        $plan->update($validatedData);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Plan updated successfully',
+            'data' => $plan,
+        ]);
+    }
 }

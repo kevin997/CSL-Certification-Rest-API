@@ -68,45 +68,50 @@ class TaraMoneyGatewaySeeder extends Seeder
     {
 
         // Create TaraMoney payment gateway settings
-        $gateway = PaymentGatewaySetting::create([
-            'environment_id' => $environmentId,
-            'code' => 'taramoney',
-            'gateway_name' => 'TaraMoney',
-            'display_name' => 'TaraMoney',
-            'description' => 'Pay with TaraMoney - WhatsApp, Telegram, PayPal or Mobile Money',
-            'status' => true,
-            'is_default' => false,
-            'mode' => 'live', // 'test' or 'live'
-            'sort_order' => 40,
-            'icon' => 'taramoney-icon.svg',
-            'webhook_url' => 'https://certification.csl-brands.com/api/payments/webhook',
-            'success_url' => "https://certification.csl-brands.com/api/payments/transactions/callback/success/1",
-            'failure_url' => "https://certification.csl-brands.com/api/payments/transactions/callback/failure/1",
-            'settings' => json_encode([
-                // Production keys (you should update these with actual values)
-                'api_key' => env('TARAMONEY_API_KEY', 'lh7us1f2vfDyxmTgU0NIpcep'),
-                'business_id' => env('TARAMONEY_BUSINESS_ID', 'GqLD0LhdCh'),
-                'webhook_secret' => env('TARAMONEY_WEBHOOK_SECRET', '9Wb3EkeBpNJbzYXiE19P9YKY'),
-
-                // Sandbox keys (for testing)
-                'test_api_key' => env('TARAMONEY_TEST_API_KEY', 'q9foJGFWYiHy6xXoa47eR7ka'),
-                'test_business_id' => env('TARAMONEY_TEST_BUSINESS_ID', 'GqLD0LhdCh'),
-
-                // Display settings
+        // Create TaraMoney payment gateway settings
+        $gateway = PaymentGatewaySetting::firstOrCreate(
+            [
+                'environment_id' => $environmentId,
+                'code' => 'taramoney',
+            ],
+            [
+                'gateway_name' => 'TaraMoney',
                 'display_name' => 'TaraMoney',
-                'description' => 'Pay via WhatsApp, Telegram, or Mobile Money',
-                'logo_url' => '/images/payment-methods/taramoney.png',
-                'supported_currencies' => 'XAF,XOF',
+                'description' => 'Pay with TaraMoney - WhatsApp, Telegram, PayPal or Mobile Money',
+                'status' => true,
+                'is_default' => false,
+                'mode' => 'live', // 'test' or 'live'
+                'sort_order' => 40,
+                'icon' => 'taramoney-icon.svg',
+                'webhook_url' => 'https://certification.csl-brands.com/api/payments/webhook',
+                'success_url' => "https://certification.csl-brands.com/api/payments/transactions/callback/success/1",
+                'failure_url' => "https://certification.csl-brands.com/api/payments/transactions/callback/failure/1",
+                'settings' => json_encode([
+                    // Production keys (you should update these with actual values)
+                    'api_key' => env('TARAMONEY_API_KEY', 'lh7us1f2vfDyxmTgU0NIpcep'),
+                    'business_id' => env('TARAMONEY_BUSINESS_ID', 'GqLD0LhdCh'),
+                    'webhook_secret' => env('TARAMONEY_WEBHOOK_SECRET', '9Wb3EkeBpNJbzYXiE19P9YKY'),
 
-                // Test mode
-                'test_mode' => env('TARAMONEY_TEST_MODE', false),
+                    // Sandbox keys (for testing)
+                    'test_api_key' => env('TARAMONEY_TEST_API_KEY', 'q9foJGFWYiHy6xXoa47eR7ka'),
+                    'test_business_id' => env('TARAMONEY_TEST_BUSINESS_ID', 'GqLD0LhdCh'),
 
-                // Feature flags
-                'supports_mobile_money' => true,
-                'supports_messaging_apps' => true,
-                'supports_card_payments' => false,
-            ]),
-        ]);
+                    // Display settings
+                    'display_name' => 'TaraMoney',
+                    'description' => 'Pay via WhatsApp, Telegram, or Mobile Money',
+                    'logo_url' => '/images/payment-methods/taramoney.png',
+                    'supported_currencies' => 'XAF,XOF',
+
+                    // Test mode
+                    'test_mode' => env('TARAMONEY_TEST_MODE', false),
+
+                    // Feature flags
+                    'supports_mobile_money' => true,
+                    'supports_messaging_apps' => true,
+                    'supports_card_payments' => false,
+                ]),
+            ]
+        );
 
         $this->command->info("Created TaraMoney gateway for Environment {$environmentId} (Gateway ID: {$gateway->id})");
     }
