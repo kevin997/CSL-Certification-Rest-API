@@ -67,6 +67,7 @@ use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\ChatAnalyticsController;
 use App\Http\Controllers\Api\DigitalProductController;
 use App\Http\Controllers\Api\ThirdPartyServiceController;
+use App\Http\Controllers\Api\PersonalizationRequestController;
 
 Route::middleware('auth:sanctum')->post('/broadcasting/auth', function (Request $request) {
     return Broadcast::auth($request);
@@ -92,6 +93,9 @@ Route::prefix('onboarding')->group(function () {
 
     // Demo plan onboarding
     Route::post('/demo', [DemoOnboardingController::class, 'store']);
+
+    // Personalized plan onboarding
+    Route::post('/personalization', [PersonalizationRequestController::class, 'store']);
 
     // Get available plans
     Route::get('/plans', [PlanController::class, 'getOnboardingPlans']);
@@ -515,8 +519,14 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // Authenticated Plan Management
     Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/plans', [PlanController::class, 'store']);
         Route::put('/plans/{id}', [PlanController::class, 'update']);
+        Route::delete('/plans/{id}', [PlanController::class, 'destroy']);
+        Route::get('/admin/personalization-requests', [PersonalizationRequestController::class, 'index']);
+    Route::put('/admin/personalization-requests/{id}', [PersonalizationRequestController::class, 'update']);
     });
+
+
 
     // Profile routes
     Route::get('/profile', [ProfileController::class, 'getProfile']);
