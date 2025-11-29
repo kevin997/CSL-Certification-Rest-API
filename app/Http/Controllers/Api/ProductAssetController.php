@@ -23,7 +23,8 @@ use Illuminate\Support\Facades\Validator;
  *     @OA\Property(property="display_order", type="integer", example=1),
  *     @OA\Property(property="is_active", type="boolean", example=true),
  *     @OA\Property(property="created_at", type="string", format="date-time"),
- *     @OA\Property(property="updated_at", type="string", format="date-time")
+ *     @OA\Property(property="updated_at", type="string", format="date-time"),
+ *     @OA\Property(property="file_url", type="string", example="http://media-service/api/stream/...", nullable=true)
  * )
  */
 class ProductAssetController extends Controller
@@ -32,44 +33,7 @@ class ProductAssetController extends Controller
      * Display a listing of assets for a specific product.
      *
      * @param  int  $productId
-     * @return \Illuminate\Http\Response
-     *
-     * @OA\Get(
-     *     path="/products/{product}/assets",
-     *     summary="Get list of product assets",
-     *     description="Returns list of assets (external links) for a specific product. Only accessible by product owner.",
-     *     operationId="getProductAssets",
-     *     tags={"Product Assets"},
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="product",
-     *         in="path",
-     *         description="Product ID",
-     *         required=true,
-     *         @OA\Schema(type="integer")
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Successful operation",
-     *         @OA\JsonContent(
-     *             type="object",
-     *             @OA\Property(property="status", type="string", example="success"),
-     *             @OA\Property(
-     *                 property="data",
-     *                 type="array",
-     *                 @OA\Items(ref="#/components/schemas/ProductAsset")
-     *             )
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=403,
-     *         description="Forbidden - User does not own this product"
-     *     ),
-     *     @OA\Response(
-     *         response=404,
-     *         description="Product not found"
-     *     )
-     * )
+     * @return \Illuminate\Http\JsonResponse
      */
     public function index($productId)
     {
@@ -95,6 +59,18 @@ class ProductAssetController extends Controller
             ->orderBy('created_at', 'asc')
             ->get();
 
+        // Generate signed stream URLs for file assets
+        $assets->transform(function ($asset) {
+            if ($asset->asset_type === 'file' && $asset->file_path) {
+                $expires = now()->addMinutes(60)->timestamp;
+                $signature = hash_hmac('sha256', "stream:{$asset->file_path}:{$expires}", env('MEDIA_SERVICE_SECRET'));
+                $mediaServiceUrl = env('MEDIA_SERVICE_URL');
+                
+                $asset->file_url = "{$mediaServiceUrl}/api/stream/{$asset->file_path}?signature={$signature}&expires={$expires}";
+            }
+            return $asset;
+        });
+
         return response()->json([
             'status' => 'success',
             'data' => $assets,
@@ -106,58 +82,7 @@ class ProductAssetController extends Controller
      *
      * @param  \Illuminate\Http\Request  $request
      * @param  int  $productId
-     * @return \Illuminate\Http\Response
-     *
-     * @OA\Post(
-     *     path="/products/{product}/assets",
-     *     summary="Add external link asset to product",
-     *     description="Creates a new external link asset for a product. Only accessible by product owner.",
-     *     operationId="storeProductAsset",
-     *     tags={"Product Assets"},
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="product",
-     *         in="path",
-     *         description="Product ID",
-     *         required=true,
-     *         @OA\Schema(type="integer")
-     *     ),
-     *     @OA\RequestBody(
-     *         required=true,
-     *         description="Asset data",
-     *         @OA\JsonContent(
-     *             required={"asset_type", "title", "external_url"},
-     *             @OA\Property(property="asset_type", type="string", enum={"external_link"}, example="external_link"),
-     *             @OA\Property(property="external_url", type="string", format="url", example="https://drive.google.com/file/d/abc123/view"),
-     *             @OA\Property(property="title", type="string", maxLength=255, example="Course Materials PDF"),
-     *             @OA\Property(property="description", type="string", example="Comprehensive course materials", nullable=true),
-     *             @OA\Property(property="display_order", type="integer", example=1, nullable=true, default=0),
-     *             @OA\Property(property="is_active", type="boolean", example=true, nullable=true, default=true)
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=201,
-     *         description="Asset created successfully",
-     *         @OA\JsonContent(
-     *             type="object",
-     *             @OA\Property(property="status", type="string", example="success"),
-     *             @OA\Property(property="message", type="string", example="Asset added successfully"),
-     *             @OA\Property(property="data", ref="#/components/schemas/ProductAsset")
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=403,
-     *         description="Forbidden - User does not own this product"
-     *     ),
-     *     @OA\Response(
-     *         response=404,
-     *         description="Product not found"
-     *     ),
-     *     @OA\Response(
-     *         response=422,
-     *         description="Validation error"
-     *     )
-     * )
+     * @return \Illuminate\Http\JsonResponse
      */
     public function store(Request $request, $productId)
     {
@@ -182,6 +107,10 @@ class ProductAssetController extends Controller
             'asset_type' => 'required|string|in:external_link,email_content,file',
             'external_url' => 'required_if:asset_type,external_link|nullable|url|max:2048',
             'email_template' => 'required_if:asset_type,email_content|nullable|string',
+            'file_path' => 'required_if:asset_type,file|nullable|string',
+            'file_name' => 'required_if:asset_type,file|nullable|string',
+            'file_size' => 'nullable|integer',
+            'file_type' => 'nullable|string',
             'title' => 'required|string|max:255',
             'description' => 'nullable|string|max:1000',
             'display_order' => 'nullable|integer|min:0',
@@ -209,6 +138,11 @@ class ProductAssetController extends Controller
             $asset->external_url = $request->external_url;
         } elseif ($request->asset_type === 'email_content') {
             $asset->email_template = $request->email_template;
+        } elseif ($request->asset_type === 'file') {
+            $asset->file_path = $request->file_path;
+            $asset->file_name = $request->file_name;
+            $asset->file_size = $request->file_size;
+            $asset->file_type = $request->file_type;
         }
 
         $asset->save();
@@ -236,63 +170,7 @@ class ProductAssetController extends Controller
      * @param  \Illuminate\Http\Request  $request
      * @param  int  $productId
      * @param  int  $assetId
-     * @return \Illuminate\Http\Response
-     *
-     * @OA\Put(
-     *     path="/products/{product}/assets/{asset}",
-     *     summary="Update product asset",
-     *     description="Updates an existing product asset. Only accessible by product owner.",
-     *     operationId="updateProductAsset",
-     *     tags={"Product Assets"},
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="product",
-     *         in="path",
-     *         description="Product ID",
-     *         required=true,
-     *         @OA\Schema(type="integer")
-     *     ),
-     *     @OA\Parameter(
-     *         name="asset",
-     *         in="path",
-     *         description="Asset ID",
-     *         required=true,
-     *         @OA\Schema(type="integer")
-     *     ),
-     *     @OA\RequestBody(
-     *         required=true,
-     *         description="Asset data to update",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="external_url", type="string", format="url", example="https://drive.google.com/file/d/abc123/view"),
-     *             @OA\Property(property="title", type="string", maxLength=255, example="Updated Title"),
-     *             @OA\Property(property="description", type="string", example="Updated description", nullable=true),
-     *             @OA\Property(property="display_order", type="integer", example=2),
-     *             @OA\Property(property="is_active", type="boolean", example=false)
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Asset updated successfully",
-     *         @OA\JsonContent(
-     *             type="object",
-     *             @OA\Property(property="status", type="string", example="success"),
-     *             @OA\Property(property="message", type="string", example="Asset updated successfully"),
-     *             @OA\Property(property="data", ref="#/components/schemas/ProductAsset")
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=403,
-     *         description="Forbidden - User does not own this product"
-     *     ),
-     *     @OA\Response(
-     *         response=404,
-     *         description="Product or asset not found"
-     *     ),
-     *     @OA\Response(
-     *         response=422,
-     *         description="Validation error"
-     *     )
-     * )
+     * @return \Illuminate\Http\JsonResponse
      */
     public function update(Request $request, $productId, $assetId)
     {
@@ -326,6 +204,10 @@ class ProductAssetController extends Controller
             'asset_type' => 'nullable|string|in:external_link,email_content,file',
             'external_url' => 'nullable|url|max:2048',
             'email_template' => 'nullable|string',
+            'file_path' => 'nullable|string',
+            'file_name' => 'nullable|string',
+            'file_size' => 'nullable|integer',
+            'file_type' => 'nullable|string',
             'title' => 'nullable|string|max:255',
             'description' => 'nullable|string|max:1000',
             'display_order' => 'nullable|integer|min:0',
@@ -348,6 +230,18 @@ class ProductAssetController extends Controller
         }
         if ($request->has('email_template')) {
             $asset->email_template = $request->email_template;
+        }
+        if ($request->has('file_path')) {
+            $asset->file_path = $request->file_path;
+        }
+        if ($request->has('file_name')) {
+            $asset->file_name = $request->file_name;
+        }
+        if ($request->has('file_size')) {
+            $asset->file_size = $request->file_size;
+        }
+        if ($request->has('file_type')) {
+            $asset->file_type = $request->file_type;
         }
         if ($request->has('title')) {
             $asset->title = $request->title;
@@ -379,47 +273,7 @@ class ProductAssetController extends Controller
      *
      * @param  int  $productId
      * @param  int  $assetId
-     * @return \Illuminate\Http\Response
-     *
-     * @OA\Delete(
-     *     path="/products/{product}/assets/{asset}",
-     *     summary="Delete product asset",
-     *     description="Deletes a product asset. Only accessible by product owner.",
-     *     operationId="deleteProductAsset",
-     *     tags={"Product Assets"},
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="product",
-     *         in="path",
-     *         description="Product ID",
-     *         required=true,
-     *         @OA\Schema(type="integer")
-     *     ),
-     *     @OA\Parameter(
-     *         name="asset",
-     *         in="path",
-     *         description="Asset ID",
-     *         required=true,
-     *         @OA\Schema(type="integer")
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Asset deleted successfully",
-     *         @OA\JsonContent(
-     *             type="object",
-     *             @OA\Property(property="status", type="string", example="success"),
-     *             @OA\Property(property="message", type="string", example="Asset deleted successfully")
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=403,
-     *         description="Forbidden - User does not own this product"
-     *     ),
-     *     @OA\Response(
-     *         response=404,
-     *         description="Product or asset not found"
-     *     )
-     * )
+     * @return \Illuminate\Http\JsonResponse
      */
     public function destroy($productId, $assetId)
     {
@@ -454,6 +308,48 @@ class ProductAssetController extends Controller
         return response()->json([
             'status' => 'success',
             'message' => 'Asset deleted successfully',
+        ]);
+    }
+
+    /**
+     * Get a signed upload URL for the Media Service.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $productId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getUploadUrl(Request $request, $productId)
+    {
+        $product = Product::find($productId);
+
+        if (!$product) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Product not found',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        // Authorization: ensure user owns the product
+        if ($product->created_by !== Auth::id()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You do not have permission to add assets to this product',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        $fileType = $request->input('file_type', 'application/pdf');
+        $expires = now()->addMinutes(15)->timestamp;
+        $signature = hash_hmac('sha256', "upload:{$fileType}:{$expires}", env('MEDIA_SERVICE_SECRET'));
+        $mediaServiceUrl = env('MEDIA_SERVICE_URL');
+        
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'upload_url' => "{$mediaServiceUrl}/api/upload",
+                'signature' => $signature,
+                'expires' => $expires,
+                'file_type' => $fileType
+            ]
         ]);
     }
 }

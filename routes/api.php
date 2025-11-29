@@ -495,6 +495,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/products/{id}/unfeature', [ProductController::class, 'unfeature']);
 
     // Product Asset routes (for instructors to add external links to products)
+    Route::get('/products/{product}/assets/upload-url', [ProductAssetController::class, 'getUploadUrl']);
     Route::get('/products/{product}/assets', [ProductAssetController::class, 'index']);
     Route::post('/products/{product}/assets', [ProductAssetController::class, 'store']);
     Route::put('/products/{product}/assets/{asset}', [ProductAssetController::class, 'update']);
