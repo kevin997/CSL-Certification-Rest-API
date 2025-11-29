@@ -29,6 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->append(DetectEnvironment::class);
         $middleware->append(BrandingMiddleware::class);
+        $middleware->append(\App\Http\Middleware\PreventIndexing::class);
 
         // Chat rate limiting middleware aliases
         $middleware->alias([
