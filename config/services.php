@@ -45,4 +45,9 @@ return [
         'chat_id'   => env('TELEGRAM_CHAT_ID', default: "-1001836815830"),
     ],
 
+    'media_service' => [
+        'url' => env('MEDIA_SERVICE_URL'),
+        'secret' => env('MEDIA_SERVICE_SECRET'),
+    ],
+
 ];

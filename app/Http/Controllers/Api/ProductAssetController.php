@@ -63,8 +63,8 @@ class ProductAssetController extends Controller
         $assets->transform(function ($asset) {
             if ($asset->asset_type === 'file' && $asset->file_path) {
                 $expires = now()->addMinutes(60)->timestamp;
-                $signature = hash_hmac('sha256', "stream:{$asset->file_path}:{$expires}", env('MEDIA_SERVICE_SECRET'));
-                $mediaServiceUrl = env('MEDIA_SERVICE_URL');
+                $signature = hash_hmac('sha256', "stream:{$asset->file_path}:{$expires}", config('services.media_service.secret'));
+                $mediaServiceUrl = config('services.media_service.url');
                 
                 $asset->file_url = "{$mediaServiceUrl}/api/stream/{$asset->file_path}?signature={$signature}&expires={$expires}";
             }
@@ -339,8 +339,8 @@ class ProductAssetController extends Controller
 
         $fileType = $request->input('file_type', 'application/pdf');
         $expires = now()->addMinutes(15)->timestamp;
-        $signature = hash_hmac('sha256', "upload:{$fileType}:{$expires}", env('MEDIA_SERVICE_SECRET'));
-        $mediaServiceUrl = env('MEDIA_SERVICE_URL');
+        $signature = hash_hmac('sha256', "upload:{$fileType}:{$expires}", config('services.media_service.secret'));
+        $mediaServiceUrl = config('services.media_service.url');
         
         return response()->json([
             'status' => 'success',
