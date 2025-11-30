@@ -3,10 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Commission;
 use App\Models\Course;
-use App\Models\CourseSection;
-use App\Models\CourseSectionItem;
 use App\Models\Environment;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -14,17 +11,19 @@ use App\Models\PaymentGatewaySetting;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ProductReview;
-use App\Models\Transaction;
 use App\Models\User;
-use App\Services\OrderService;
-use App\Services\ReferralService;
-use App\Services\StripeService;
 use App\Services\Tax\TaxZoneService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use App\Models\EnvironmentUser;
+use Carbon\Carbon;
+use App\Services\TelegramService;
+use App\Notifications\EnvironmentAccountCreated;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Hash;
 
 class StorefrontController extends Controller
 {
@@ -75,7 +74,7 @@ class StorefrontController extends Controller
      *
      * @param string $environmentId
      * @param string $orderId
-     * @return Order|null
+     * @return \Illuminate\Http\JsonResponse
      */
     public function getOrder(string $environmentId, string $orderId)
     {
@@ -1541,6 +1540,17 @@ class StorefrontController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
+        // Check if authenticated user is the instructor/owner of any of the products
+        $authenticatedUser = $request->user('sanctum');
+        if ($authenticatedUser) {
+            foreach ($request->input('products') as $productData) {
+                $product = Product::find($productData['id']);
+                if ($product && $product->created_by === $authenticatedUser->id) {
+                    return response()->json(['message' => 'Instructors cannot purchase their own courses.'], 403);
+                }
+            }
+        }
+
         try {
             DB::beginTransaction();
 
@@ -2450,6 +2460,10 @@ class StorefrontController extends Controller
         // Validate request
         $validator = Validator::make($request->all(), [
             'product_id' => 'required|exists:products,id',
+            'name' => 'nullable|string|max:255',
+            'email' => 'nullable|email|max:255',
+            'password' => 'nullable|string|min:8',
+            'phone_number' => 'nullable|string|max:20',
         ]);
         
         if ($validator->fails()) {
@@ -2460,13 +2474,92 @@ class StorefrontController extends Controller
             ], 422);
         }
         
-        // Get authenticated user
-        $user = auth()->user();
+        // Get authenticated user or create new one
+        $user = auth('sanctum')->user();
+
+        // Check if authenticated user is the instructor/owner of the product
+        if ($user) {
+            $product = Product::find($request->product_id);
+            if ($product && $product->created_by === $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Instructors cannot enroll in their own courses.'
+                ], 403);
+            }
+        }
+        $token = null;
+
         if (!$user) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Authentication required'
-            ], 401);
+            // Check if registration data is provided
+            if ($request->has(['name', 'email', 'password'])) {
+                // Check if user exists
+                $existingUser = User::where('email', $request->email)->first();
+                
+                if ($existingUser) {
+                    // Check if user is part of the environment
+                    $environmentUser = EnvironmentUser::where('environment_id', $environmentId)
+                        ->where('user_id', $existingUser->id)
+                        ->first();
+
+                    if (!$environmentUser) {
+                        // Add user to environment
+                        event(new \App\Events\UserCreatedDuringCheckout(
+                            $existingUser,
+                            $environment,
+                            false // isNewUser = false
+                        ));
+                        
+                        // Use this user for enrollment
+                        $user = $existingUser;
+                        
+                        // Create token for the existing user so they are logged in
+                        $token = $user->createToken('auth_token')->plainTextToken;
+                    } else {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'User already exists. Please login to continue.',
+                            'error_code' => 'USER_EXISTS'
+                        ], 400);
+                    }
+                } else {
+                    // Create NEW user
+                    try {
+                        DB::beginTransaction();
+
+                        // Create user
+                        $user = User::create([
+                            'name' => $request->name,
+                            'email' => $request->email,
+                            'role' => 'learner', 
+                            'password' => Hash::make($request->password),
+                            'whatsapp_number' => $request->phone_number,
+                        ]);
+
+                        // Create environment membership logic (delegated to listener)
+                        event(new \App\Events\UserCreatedDuringCheckout($user, $environment, true));
+
+                        // Create token for the new user
+                        $token = $user->createToken('auth_token')->plainTextToken;
+
+                        DB::commit();
+                    } catch (\Exception $e) {
+                        DB::rollBack();
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Failed to create user account',
+                            'error' => $e->getMessage()
+                        ], 500);
+                    }
+                }
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Authentication required or provide registration details'
+                ], 401);
+            }
+        } else {
+            // Ensure existing user is added to the environment if not already a member
+            event(new \App\Events\UserCreatedDuringCheckout($user, $environment, false));
         }
         
         // Get and validate product
@@ -2521,16 +2614,21 @@ class StorefrontController extends Controller
         }
         
         if (empty($enrollments)) {
+            // If user just registered but was already enrolled (edge case?), return success with token
             return response()->json([
-                'success' => false,
+                'success' => true, // Changed to true so we can still log them in if they just registered
                 'message' => 'You are already enrolled in this course',
-                'error_code' => 'ALREADY_ENROLLED'
-            ], 400);
+                'error_code' => 'ALREADY_ENROLLED',
+                'token' => $token,
+                'user' => $user
+            ]);
         }
         
         return response()->json([
             'success' => true,
             'message' => 'Successfully enrolled in course',
+            'token' => $token, // Return token for auto-login
+            'user' => $user,
             'data' => [
                 'enrollments' => collect($enrollments)->map(function($enrollment) {
                     return [

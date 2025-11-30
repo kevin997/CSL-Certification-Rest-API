@@ -57,10 +57,10 @@ class CreateEnvironmentUserListener implements ShouldQueue
         $environmentUser->environment_id = $event->environment->id;
         $environmentUser->user_id = $event->user->id;
         $environmentUser->role = 'learner'; // Default role for checkout users
-        $environmentUser->permissions = json_encode([]);
+        $environmentUser->permissions = [];
         $environmentUser->joined_at = Carbon::now();
         $environmentUser->use_environment_credentials = false; // Uses global password
-        $environmentUser->is_account_setup = true; // Already set up via registration
+        $environmentUser->is_account_setup = false; // Not set up via registration
         $environmentUser->save();
 
         // Send welcome email (no password needed - they use their existing account)

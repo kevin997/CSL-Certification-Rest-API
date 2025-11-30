@@ -289,6 +289,7 @@ class ProductController extends Controller
         $product->thumbnail_path = $request->thumbnail_path;
         $product->created_by = Auth::id();
         $product->is_featured = $request->is_featured;
+        $product->is_free = $request->is_free;
         $product->category_id = $request->category_id;
         $product->sku = $request->sku;
         $product->meta_title = $request->meta_title;
@@ -518,6 +519,10 @@ class ProductController extends Controller
         
         if ($request->has('is_featured')) {
             $product->is_featured = $request->is_featured;
+        }
+
+        if ($request->has('is_free')) {
+            $product->is_free = $request->is_free;
         }
 
         if ($request->has('sku')) {
