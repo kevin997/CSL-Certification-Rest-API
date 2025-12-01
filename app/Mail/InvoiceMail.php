@@ -62,7 +62,7 @@ class InvoiceMail extends Mailable
     public function build()
     {
         $environmentName = $this->environment ? $this->environment->name : 'CSL';
-        return $this->from('no.reply@cfpcsl.com', $environmentName)
+        return $this->from(config('mail.from.address'), $environmentName)
             ->subject('CSL Brands, Learning Platform Fee Invoice')
             ->markdown('emails.invoice', [
                 'invoice' => $this->invoice,

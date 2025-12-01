@@ -74,13 +74,13 @@ class AssetDelivery extends Model
     {
         return $this->status === self::STATUS_ACTIVE
             && (!$this->expires_at || $this->expires_at->isFuture())
-            && ($this->max_access_count === null || $this->access_count < $this->max_access_count);
+            && ($this->max_access_count === null || $this->max_access_count === 0 || $this->access_count < $this->max_access_count);
     }
 
     /**
      * Increment access count and update timestamp
      */
-    public function recordAccess(string $ipAddress = null, string $userAgent = null): void
+    public function recordAccess(?string $ipAddress = null, ?string $userAgent = null): void
     {
         $this->increment('access_count');
         $this->update([

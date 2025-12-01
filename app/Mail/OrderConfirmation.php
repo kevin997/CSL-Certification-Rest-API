@@ -53,7 +53,7 @@ class OrderConfirmation extends Mailable
                 ->first();
         }
         
-        return $this->from('no.reply@cfpcsl.com', $environmentName)
+        return $this->from(config('mail.from.address'), $environmentName)
                     ->subject('Order Confirmation #' . $this->order->order_number)
                     ->markdown('emails.orders.confirmation', [
                         'environment' => $this->order->environment,

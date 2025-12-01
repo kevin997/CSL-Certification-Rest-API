@@ -73,7 +73,7 @@ class CertificateIssue extends Mailable
                 ->first();
         }
 
-        return $this->from('no.reply@cfpcsl.com', $environmentName)
+        return $this->from(config('mail.from.address'), $environmentName)
             ->subject(' Congratulations! Your Certificate is Ready')
             ->markdown('emails.issuing-certificate', [
                 'environment' => $this->issuedCertificate->environment,

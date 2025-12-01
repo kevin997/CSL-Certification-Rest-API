@@ -43,7 +43,7 @@ class DigitalProductController extends Controller
      * Get list of user's purchased digital products.
      *
      * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      *
      * @OA\Get(
      *     path="/digital-products",
@@ -81,16 +81,12 @@ class DigitalProductController extends Controller
     public function index(Request $request)
     {
         $query = AssetDelivery::where('user_id', Auth::id())
-            ->where('environment_id', $request->user()->environment_id)
-            ->with([
-                'productAsset' => function ($query) {
+            ->where('environment_id', \App\Traits\BelongsToEnvironment::detectEnvironmentId())
+            ->with(['order', 'productAsset' => function ($query) {
                     $query->select('id', 'product_id', 'asset_type', 'title', 'description', 'external_url', 'display_order');
                 },
                 'productAsset.product' => function ($query) {
-                    $query->select('id', 'name', 'thumbnail_path');
-                },
-                'order' => function ($query) {
-                    $query->select('id', 'order_number', 'created_at');
+                    $query->select('id', 'name', 'thumbnail_path', 'created_at');
                 }
             ])
             ->orderBy('created_at', 'desc');
@@ -119,7 +115,7 @@ class DigitalProductController extends Controller
      *
      * @param  string  $token
      * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      *
      * @OA\Get(
      *     path="/digital-products/access/{token}",
@@ -170,76 +166,69 @@ class DigitalProductController extends Controller
      *     )
      * )
      */
-    public function access($token, Request $request)
+    public function access(Request $request, $token)
     {
-        // Find delivery by token
+        $environmentId = \App\Traits\BelongsToEnvironment::detectEnvironmentId();
+
         $delivery = AssetDelivery::where('download_token', $token)
-            ->with('productAsset')
+            ->where('environment_id', $environmentId)
+            ->with(['productAsset'])
             ->first();
 
         if (!$delivery) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Asset not found or you do not have access',
+                'message' => 'Invalid or expired token',
             ], Response::HTTP_NOT_FOUND);
         }
 
-        // Verify ownership (user must own this delivery)
-        if ($delivery->user_id !== Auth::id()) {
-            Log::warning("Unauthorized access attempt to token {$token} by user " . Auth::id());
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Asset not found or you do not have access',
-            ], Response::HTTP_NOT_FOUND);
-        }
-
-        // Verify environment
-        if ($delivery->environment_id !== $request->user()->environment_id) {
-            Log::warning("Cross-environment access attempt to token {$token} by user " . Auth::id());
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Asset not found or you do not have access',
-            ], Response::HTTP_NOT_FOUND);
-        }
-
-        // Check if delivery is still valid
         if (!$delivery->isValid()) {
-            $reason = $delivery->status === AssetDelivery::STATUS_REVOKED
-                ? 'This access has been revoked'
-                : 'This download link has expired or reached its access limit';
-
             return response()->json([
                 'status' => 'error',
-                'message' => $reason,
-                'expires_at' => $delivery->expires_at,
-                'access_count' => $delivery->access_count,
-                'max_access_count' => $delivery->max_access_count,
+                'message' => 'Access limit reached or expired',
             ], Response::HTTP_FORBIDDEN);
         }
 
         // Record access
-        $delivery->recordAccess(
-            $request->ip(),
-            $request->userAgent()
-        );
+        $delivery->recordAccess($request->ip(), $request->userAgent());
 
         $asset = $delivery->productAsset;
 
-        // Handle external link
+        // Common response data
+        $responseData = [
+            'status' => 'success',
+            'asset_type' => $asset->asset_type,
+            'title' => $asset->title,
+            'access_count' => $delivery->access_count,
+            'max_access_count' => $delivery->max_access_count,
+            'expires_at' => $delivery->expires_at,
+        ];
+
         if ($asset->asset_type === 'external_link') {
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Access granted',
+            return response()->json(array_merge($responseData, [
                 'redirect_url' => $asset->external_url,
-                'asset_type' => $asset->asset_type,
-                'title' => $asset->title,
-                'access_count' => $delivery->access_count,
-                'max_access_count' => $delivery->max_access_count,
-                'expires_at' => $delivery->expires_at,
-            ]);
+            ]));
+        } elseif ($asset->asset_type === 'file') {
+            if (!$asset->file_path) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'File path not found',
+                ], Response::HTTP_NOT_FOUND);
+            }
+
+            $expires = now()->addMinutes(60)->timestamp;
+            $signature = hash_hmac('sha256', "stream:{$asset->file_path}:{$expires}", config('services.media_service.secret'));
+            $mediaServiceUrl = config('services.media_service.url');
+            
+            $secureUrl = "{$mediaServiceUrl}/api/stream/{$asset->file_path}?signature={$signature}&expires={$expires}";
+
+            return response()->json(array_merge($responseData, [
+                'secure_url' => $secureUrl,
+                'file_name' => $asset->file_name,
+                'file_type' => $asset->file_type,
+            ]));
         }
 
-        // For future: Handle file downloads and email content
         return response()->json([
             'status' => 'error',
             'message' => 'Asset type not yet supported',

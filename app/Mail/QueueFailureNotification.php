@@ -39,7 +39,7 @@ class QueueFailureNotification extends Mailable
         $appName = config('app.name', 'CSL Certification Rest API');
         $environment = config('app.env', 'production');
         
-        return $this->from('no.reply@cfpcsl.com', $appName)
+        return $this->from(config('mail.from.address'), $appName)
                     ->subject("⚠️ Queue Failure Alert - {$environment} Environment")
                     ->markdown('emails.queue.failure', [
                         'queueData' => $this->queueData,

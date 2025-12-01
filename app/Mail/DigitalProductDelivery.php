@@ -86,7 +86,7 @@ class DigitalProductDelivery extends Mailable implements ShouldQueue
             ? url("https://{$this->order->environment->domain}/dashboard")
             : url('/dashboard');
 
-        return $this->from('no.reply@cfpcsl.com', $environmentName)
+        return $this->from(config('mail.from.address'), $environmentName)
                     ->subject('Your Digital Product: ' . $this->product->name)
                     ->markdown('emails.digital-product-delivery', [
                         'order' => $this->order,

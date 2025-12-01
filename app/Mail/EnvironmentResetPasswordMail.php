@@ -61,7 +61,7 @@ class EnvironmentResetPasswordMail extends Mailable implements ShouldQueue
     {
         return new Envelope(
             subject: 'Reset Password for ' . $this->environment->name,
-            from: new Address("no.reply@cfpcsl.com", $this->environment->name),
+            from: new Address(config('mail.from.address'), $this->environment->name),
         );
     }
 

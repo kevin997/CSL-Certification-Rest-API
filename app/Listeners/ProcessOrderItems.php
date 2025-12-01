@@ -144,8 +144,7 @@ class ProcessOrderItems implements ShouldQueue
                 'environment_id' => $order->environment_id,
                 // download_token auto-generated in model boot()
                 // access_granted_at auto-set in model boot()
-                'expires_at' => now()->addDays(30),
-                'max_access_count' => 10,
+                'max_access_count' => 0,
                 'status' => AssetDelivery::STATUS_ACTIVE,
             ]);
 

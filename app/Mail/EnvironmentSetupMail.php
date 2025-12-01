@@ -32,7 +32,7 @@ class EnvironmentSetupMail extends Mailable implements ShouldQueue
     public function envelope(): Envelope
     {
         return new Envelope(
-            from: new Address(env('MAIL_FROM_ADDRESS', 'no.reply@cfpcsl.com'), 'CSL Brands Team'),
+            from: new Address(config('mail.from.address'), 'CSL Brands Team'),
             subject: "Your Environment '{$this->environment->name}' is Ready!",
         );
     }

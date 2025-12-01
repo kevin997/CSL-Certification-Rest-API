@@ -28,7 +28,7 @@ class TestMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            from: new Address(env('MAIL_FROM_ADDRESS', 'no.reply@cfpcsl.com'), env('MAIL_FROM_NAME', 'CSL')),
+            from: new Address(config('mail.from.address'), config('mail.from.name')),
             subject: 'Test Mail',
         );
     }

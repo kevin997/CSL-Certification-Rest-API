@@ -2582,65 +2582,57 @@ class StorefrontController extends Controller
             ], 400);
         }
         
-        // Get product courses and create enrollments
-        $enrollments = [];
-        $productCourses = DB::table('product_courses')
-            ->where('product_id', $product->id)
-            ->get();
-            
-        foreach ($productCourses as $productCourse) {
-            // Check for existing enrollment
-            $existingEnrollment = \App\Models\Enrollment::where('user_id', $user->id)
-                ->where('course_id', $productCourse->course_id)
-                ->where('environment_id', $environmentId)
-                ->first();
-                
-            if ($existingEnrollment) {
-                continue; // Skip if already enrolled
-            }
-            
-            // Create new enrollment
-            $enrollment = \App\Models\Enrollment::create([
+        // Create a free order
+        try {
+            DB::beginTransaction();
+
+            $order = \App\Models\Order::create([
                 'user_id' => $user->id,
-                'course_id' => $productCourse->course_id,
                 'environment_id' => $environmentId,
-                'status' => \App\Models\Enrollment::STATUS_ENROLLED,
-                'progress_percentage' => 0,
-                'last_activity_at' => now(),
-                'enrolled_at' => now(),
+                'order_number' => 'ORD-' . strtoupper(\Illuminate\Support\Str::random(10)),
+                'status' => \App\Models\Order::STATUS_COMPLETED,
+                'total_amount' => 0,
+                'currency' => $product->currency ?? 'USD',
+                'payment_method' => 'free',
+                'payment_id' => 'free_' . \Illuminate\Support\Str::random(10),
+                'billing_name' => $user->name,
+                'billing_email' => $user->email,
             ]);
-            
-            $enrollments[] = $enrollment;
-        }
-        
-        if (empty($enrollments)) {
-            // If user just registered but was already enrolled (edge case?), return success with token
-            return response()->json([
-                'success' => true, // Changed to true so we can still log them in if they just registered
-                'message' => 'You are already enrolled in this course',
-                'error_code' => 'ALREADY_ENROLLED',
-                'token' => $token,
-                'user' => $user
-            ]);
-        }
-        
-        return response()->json([
-            'success' => true,
-            'message' => 'Successfully enrolled in course',
-            'token' => $token, // Return token for auto-login
-            'user' => $user,
-            'data' => [
-                'enrollments' => collect($enrollments)->map(function($enrollment) {
-                    return [
-                        'enrollment_id' => $enrollment->id,
-                        'course_id' => $enrollment->course_id,
-                        'status' => $enrollment->status,
-                        'enrolled_at' => $enrollment->enrolled_at,
-                    ];
-                }),
+
+            // Create order item
+            \App\Models\OrderItem::create([
+                'order_id' => $order->id,
                 'product_id' => $product->id,
-                'product_name' => $product->name,
-            ]
-        ]);
+                'quantity' => 1,
+                'price' => 0,
+                'total' => 0,
+            ]);
+
+            DB::commit();
+
+            // Dispatch event to handle enrollments and digital delivery
+            event(new \App\Events\OrderCompleted($order));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Successfully enrolled in course',
+                'token' => $token, // Return token for auto-login
+                'user' => $user,
+                'data' => [
+                    'order_id' => $order->id,
+                    'product_id' => $product->id,
+                    'product_name' => $product->name,
+                    'status' => 'completed'
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to process enrollment',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }

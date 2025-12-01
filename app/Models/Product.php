@@ -44,6 +44,8 @@ class Product extends Model
         'meta_title',
         'meta_description',
         'meta_keywords',
+        'requires_fulfillment',
+        'product_type',
     ];
 
     /**
@@ -62,6 +64,7 @@ class Product extends Model
             'stock_quantity' => 'integer',
             'is_featured' => 'boolean',
             'is_free' => 'boolean',
+            'requires_fulfillment' => 'boolean',
         ];
     }
 
