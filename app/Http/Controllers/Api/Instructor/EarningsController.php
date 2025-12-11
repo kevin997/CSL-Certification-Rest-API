@@ -89,26 +89,26 @@ class EarningsController extends Controller
         $query = InstructorCommission::where('environment_id', $environment->id);
 
         $stats = [
-            'total_earned' => $query->sum('amount'),
+            'total_earned' => $query->sum('instructor_payout_amount'),
             'total_paid' => InstructorCommission::where('environment_id', $environment->id)
                 ->where('status', 'paid')
-                ->sum('amount'),
+                ->sum('instructor_payout_amount'),
             'pending_amount' => InstructorCommission::where('environment_id', $environment->id)
                 ->where('status', 'pending')
-                ->sum('amount'),
+                ->sum('instructor_payout_amount'),
             'approved_amount' => InstructorCommission::where('environment_id', $environment->id)
                 ->where('status', 'approved')
-                ->sum('amount'),
+                ->sum('instructor_payout_amount'),
             'available_balance' => InstructorCommission::where('environment_id', $environment->id)
                 ->whereIn('status', ['approved'])
                 ->whereNull('withdrawal_request_id')
-                ->sum('amount'),
+                ->sum('instructor_payout_amount'),
             'pending_withdrawal' => InstructorCommission::where('environment_id', $environment->id)
                 ->whereNotNull('withdrawal_request_id')
                 ->whereHas('withdrawalRequest', function ($q) {
                     $q->whereIn('status', ['pending', 'approved']);
                 })
-                ->sum('amount'),
+                ->sum('instructor_payout_amount'),
             'total_commissions' => $query->count(),
             'paid_count' => InstructorCommission::where('environment_id', $environment->id)
                 ->where('status', 'paid')
@@ -149,7 +149,7 @@ class EarningsController extends Controller
         $availableBalance = InstructorCommission::where('environment_id', $environment->id)
             ->where('status', 'approved')
             ->whereNull('withdrawal_request_id')
-            ->sum('amount');
+            ->sum('instructor_payout_amount');
 
         // Pending withdrawal = commissions attached to pending/approved withdrawal requests
         $pendingWithdrawal = InstructorCommission::where('environment_id', $environment->id)
@@ -157,7 +157,7 @@ class EarningsController extends Controller
             ->whereHas('withdrawalRequest', function ($q) {
                 $q->whereIn('status', ['pending', 'approved']);
             })
-            ->sum('amount');
+            ->sum('instructor_payout_amount');
 
         return response()->json([
             'success' => true,

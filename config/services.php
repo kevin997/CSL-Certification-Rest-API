@@ -50,4 +50,10 @@ return [
         'secret' => env('MEDIA_SERVICE_SECRET'),
     ],
 
+    'livekit' => [
+        'api_key' => env('LIVEKIT_API_KEY'),
+        'api_secret' => env('LIVEKIT_API_SECRET'),
+        'server_url' => env('LIVEKIT_SERVER_URL', 'ws://localhost:7880'),
+    ],
+
 ];

@@ -94,7 +94,7 @@ class WithdrawalController extends Controller
         $availableBalance = InstructorCommission::where('environment_id', $environment->id)
             ->where('status', 'approved')
             ->whereNull('withdrawal_request_id')
-            ->sum('amount');
+            ->sum('instructor_payout_amount');
 
         // Validate request
         $validator = Validator::make($request->all(), [
@@ -151,10 +151,10 @@ class WithdrawalController extends Controller
 
             $totalAttached = 0;
             foreach ($commissions as $commission) {
-                if ($totalAttached + $commission->amount <= $request->amount) {
+                if ($totalAttached + $commission->instructor_payout_amount <= $request->amount) {
                     $commission->withdrawal_request_id = $withdrawal->id;
                     $commission->save();
-                    $totalAttached += $commission->amount;
+                    $totalAttached += $commission->instructor_payout_amount;
                 }
 
                 if ($totalAttached >= $request->amount) {

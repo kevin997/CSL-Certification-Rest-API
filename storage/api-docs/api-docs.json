@@ -2158,6 +2158,141 @@
                 ]
             }
         },
+        "/api/auth/academy-switch-token": {
+            "post": {
+                "tags": [
+                    "Academy Switch"
+                ],
+                "summary": "Generate academy switch token",
+                "description": "Generate a short-lived token for switching to another academy/domain.\n\nThis token is used for cross-domain authentication when a user wants to\nswitch from one academy domain to another.",
+                "operationId": "25f307e981110ed4f987666eb11a3a0f",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "target_environment_id"
+                                ],
+                                "properties": {
+                                    "target_environment_id": {
+                                        "description": "The environment ID to switch to",
+                                        "type": "integer"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Switch token generated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "token": {
+                                            "description": "Short-lived switch token",
+                                            "type": "string"
+                                        },
+                                        "redirect_url": {
+                                            "description": "URL to redirect to",
+                                            "type": "string"
+                                        },
+                                        "expires_in": {
+                                            "description": "Token expiry in seconds",
+                                            "type": "integer"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Target environment not found"
+                    },
+                    "403": {
+                        "description": "User is not a member of target environment"
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/auth/validate-switch-token": {
+            "post": {
+                "tags": [
+                    "Academy Switch"
+                ],
+                "summary": "Validate academy switch token",
+                "description": "Validate a switch token and return authentication credentials.\n\nThis endpoint is called by the target domain to validate the switch token\nand get the user's authentication token for that domain.",
+                "operationId": "049ee7a1db94e50a08492ed07fc9daf7",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "token"
+                                ],
+                                "properties": {
+                                    "token": {
+                                        "description": "The switch token to validate",
+                                        "type": "string"
+                                    },
+                                    "device_name": {
+                                        "description": "Device name for the new token",
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Token validated, user authenticated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "token": {
+                                            "description": "New auth token for target domain",
+                                            "type": "string"
+                                        },
+                                        "user": {
+                                            "type": "object"
+                                        },
+                                        "environment_id": {
+                                            "type": "integer"
+                                        },
+                                        "role": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid or expired token"
+                    },
+                    "403": {
+                        "description": "Token not valid for this environment"
+                    }
+                }
+            }
+        },
         "/api/tokens": {
             "post": {
                 "tags": [
@@ -3922,6 +4057,286 @@
                     },
                     "404": {
                         "description": "Branding settings not found or not active"
+                    }
+                }
+            }
+        },
+        "/branding/{id}/landing-page": {
+            "get": {
+                "tags": [
+                    "Branding"
+                ],
+                "summary": "Get landing page configuration",
+                "description": "Returns the landing page configuration for a specific branding record",
+                "operationId": "getLandingPageConfig",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Branding ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Branding not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Branding"
+                ],
+                "summary": "Update landing page configuration",
+                "description": "Updates the landing page configuration for a specific branding record",
+                "operationId": "updateLandingPageConfig",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Branding ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "hero_title": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    },
+                                    "hero_subtitle": {
+                                        "type": "string"
+                                    },
+                                    "hero_background_image": {
+                                        "type": "string",
+                                        "maxLength": 500
+                                    },
+                                    "hero_overlay_color": {
+                                        "type": "string",
+                                        "maxLength": 7
+                                    },
+                                    "hero_overlay_opacity": {
+                                        "type": "integer",
+                                        "maximum": 100,
+                                        "minimum": 0
+                                    },
+                                    "hero_cta_text": {
+                                        "type": "string",
+                                        "maxLength": 100
+                                    },
+                                    "hero_cta_url": {
+                                        "type": "string",
+                                        "maxLength": 500
+                                    },
+                                    "landing_page_sections": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object"
+                                        }
+                                    },
+                                    "seo_title": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    },
+                                    "seo_description": {
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "type": "object"
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Branding not found"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/branding/{id}/landing-page/toggle": {
+            "post": {
+                "tags": [
+                    "Branding"
+                ],
+                "summary": "Toggle landing page",
+                "description": "Enables or disables the landing page for a specific branding record",
+                "operationId": "toggleLandingPage",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Branding ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "enabled"
+                                ],
+                                "properties": {
+                                    "enabled": {
+                                        "type": "boolean"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "landing_page_enabled": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Branding not found"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/branding/public/landing-page": {
+            "get": {
+                "tags": [
+                    "Branding"
+                ],
+                "summary": "Get public landing page",
+                "description": "Returns the public landing page configuration based on domain",
+                "operationId": "getPublicLandingPage",
+                "parameters": [
+                    {
+                        "name": "domain",
+                        "in": "query",
+                        "description": "Domain to get landing page for",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Landing page not found or not enabled"
                     }
                 }
             }
@@ -7787,6 +8202,163 @@
                 ]
             }
         },
+        "/api/environments/{id}/join": {
+            "post": {
+                "tags": [
+                    "Environment Membership"
+                ],
+                "summary": "Join an environment",
+                "description": "Join an environment.\n\nCreates a membership record linking the authenticated user to the specified environment.\nNo credentials are required - the user uses their global password.",
+                "operationId": "fdbda03ea9817f5c3dbe09d20100d15a",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Environment ID to join",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Already a member of this environment",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Already a member of this environment"
+                                        },
+                                        "environment_user": {
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "201": {
+                        "description": "Successfully joined the environment",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Successfully joined the environment"
+                                        },
+                                        "environment_user": {
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Environment not found"
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/environments/{id}/leave": {
+            "delete": {
+                "tags": [
+                    "Environment Membership"
+                ],
+                "summary": "Leave an environment",
+                "description": "Leave an environment.",
+                "operationId": "1c8bc94f6fe4c07dc307086dc2b0ec4d",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Environment ID to leave",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successfully left the environment",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Successfully left the environment"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not a member of this environment"
+                    },
+                    "403": {
+                        "description": "Cannot leave - you are the owner of this environment"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/user/environments": {
+            "get": {
+                "tags": [
+                    "Environment Membership"
+                ],
+                "summary": "Get user's environments",
+                "description": "Get all environments the authenticated user is a member of.",
+                "operationId": "b0bc8da31296cce2adaa07d86dac7e86",
+                "responses": {
+                    "200": {
+                        "description": "List of environments",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "environments": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object"
+                                            }
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
         "/activities/{activityId}/event-content": {
             "get": {
                 "tags": [
@@ -8571,6 +9143,515 @@
                         "bearerAuth": []
                     }
                 ]
+            }
+        },
+        "/legal-pages": {
+            "get": {
+                "tags": [
+                    "Legal Pages"
+                ],
+                "summary": "Get all legal page types with status",
+                "description": "Returns all available legal page types with their current status",
+                "operationId": "getLegalPageTypes",
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "page_types": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "properties": {
+                                                            "type": {
+                                                                "type": "string",
+                                                                "example": "privacy_policy"
+                                                            },
+                                                            "name": {
+                                                                "type": "string",
+                                                                "example": "Privacy Policy"
+                                                            },
+                                                            "description": {
+                                                                "type": "string"
+                                                            },
+                                                            "is_set": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "is_published": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "page_id": {
+                                                                "type": "integer",
+                                                                "nullable": true
+                                                            }
+                                                        },
+                                                        "type": "object"
+                                                    }
+                                                },
+                                                "dynamic_tags": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "properties": {
+                                                            "name": {
+                                                                "type": "string"
+                                                            },
+                                                            "tag": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "type": "object"
+                                                    }
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Legal Pages"
+                ],
+                "summary": "Create or update a legal page",
+                "description": "Creates a new legal page or updates an existing one",
+                "operationId": "storeLegalPage",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "page_type"
+                                ],
+                                "properties": {
+                                    "page_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "about_us",
+                                            "privacy_policy",
+                                            "legal_notice",
+                                            "terms_of_service"
+                                        ]
+                                    },
+                                    "title": {
+                                        "type": "string"
+                                    },
+                                    "content": {
+                                        "type": "string"
+                                    },
+                                    "seo_title": {
+                                        "type": "string"
+                                    },
+                                    "seo_description": {
+                                        "type": "string"
+                                    },
+                                    "is_published": {
+                                        "type": "boolean"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Page saved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/LegalPage"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/legal-pages/{id}": {
+            "get": {
+                "tags": [
+                    "Legal Pages"
+                ],
+                "summary": "Get a legal page by ID",
+                "description": "Returns a specific legal page",
+                "operationId": "getLegalPageById",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/LegalPage"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Page not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Legal Pages"
+                ],
+                "summary": "Update a legal page",
+                "description": "Updates an existing legal page",
+                "operationId": "updateLegalPage",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "title": {
+                                        "type": "string"
+                                    },
+                                    "content": {
+                                        "type": "string"
+                                    },
+                                    "seo_title": {
+                                        "type": "string"
+                                    },
+                                    "seo_description": {
+                                        "type": "string"
+                                    },
+                                    "is_published": {
+                                        "type": "boolean"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Page updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/LegalPage"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Page not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Legal Pages"
+                ],
+                "summary": "Delete a legal page",
+                "description": "Deletes a legal page",
+                "operationId": "deleteLegalPage",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Page deleted successfully"
+                    },
+                    "404": {
+                        "description": "Page not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/legal-pages/type/{pageType}": {
+            "get": {
+                "tags": [
+                    "Legal Pages"
+                ],
+                "summary": "Get a legal page by type",
+                "description": "Returns a legal page by its type",
+                "operationId": "getLegalPageByType",
+                "parameters": [
+                    {
+                        "name": "pageType",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "about_us",
+                                "privacy_policy",
+                                "legal_notice",
+                                "terms_of_service"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/LegalPage"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Page not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/legal-pages/{id}/publish": {
+            "post": {
+                "tags": [
+                    "Legal Pages"
+                ],
+                "summary": "Publish a legal page",
+                "description": "Publishes a legal page",
+                "operationId": "publishLegalPage",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Page published successfully"
+                    },
+                    "404": {
+                        "description": "Page not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/legal-pages/{id}/unpublish": {
+            "post": {
+                "tags": [
+                    "Legal Pages"
+                ],
+                "summary": "Unpublish a legal page",
+                "description": "Unpublishes a legal page",
+                "operationId": "unpublishLegalPage",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Page unpublished successfully"
+                    },
+                    "404": {
+                        "description": "Page not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/legal-pages/public/{pageType}": {
+            "get": {
+                "tags": [
+                    "Legal Pages"
+                ],
+                "summary": "Get a public legal page",
+                "description": "Returns a published legal page for public viewing",
+                "operationId": "getPublicLegalPage",
+                "parameters": [
+                    {
+                        "name": "pageType",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "about_us",
+                                "privacy_policy",
+                                "legal_notice",
+                                "terms_of_service"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "title": {
+                                                    "type": "string"
+                                                },
+                                                "content": {
+                                                    "type": "string"
+                                                },
+                                                "seo_title": {
+                                                    "type": "string"
+                                                },
+                                                "seo_description": {
+                                                    "type": "string"
+                                                },
+                                                "updated_at": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Page not found or not published"
+                    }
+                }
             }
         },
         "/activities/{activityId}/lesson-content": {
@@ -10948,338 +12029,6 @@
                 "security": [
                     {
                         "sanctum": []
-                    }
-                ]
-            }
-        },
-        "/products/{product}/assets": {
-            "get": {
-                "tags": [
-                    "Product Assets"
-                ],
-                "summary": "Get list of product assets",
-                "description": "Returns list of assets (external links) for a specific product. Only accessible by product owner.",
-                "operationId": "getProductAssets",
-                "parameters": [
-                    {
-                        "name": "product",
-                        "in": "path",
-                        "description": "Product ID",
-                        "required": true,
-                        "schema": {
-                            "type": "integer"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Successful operation",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "example": "success"
-                                        },
-                                        "data": {
-                                            "type": "array",
-                                            "items": {
-                                                "$ref": "#/components/schemas/ProductAsset"
-                                            }
-                                        }
-                                    },
-                                    "type": "object"
-                                }
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden - User does not own this product"
-                    },
-                    "404": {
-                        "description": "Product not found"
-                    }
-                },
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ]
-            },
-            "post": {
-                "tags": [
-                    "Product Assets"
-                ],
-                "summary": "Add external link asset to product",
-                "description": "Creates a new external link asset for a product. Only accessible by product owner.",
-                "operationId": "storeProductAsset",
-                "parameters": [
-                    {
-                        "name": "product",
-                        "in": "path",
-                        "description": "Product ID",
-                        "required": true,
-                        "schema": {
-                            "type": "integer"
-                        }
-                    }
-                ],
-                "requestBody": {
-                    "description": "Asset data",
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "required": [
-                                    "asset_type",
-                                    "title",
-                                    "external_url"
-                                ],
-                                "properties": {
-                                    "asset_type": {
-                                        "type": "string",
-                                        "enum": [
-                                            "external_link"
-                                        ],
-                                        "example": "external_link"
-                                    },
-                                    "external_url": {
-                                        "type": "string",
-                                        "format": "url",
-                                        "example": "https://drive.google.com/file/d/abc123/view"
-                                    },
-                                    "title": {
-                                        "type": "string",
-                                        "maxLength": 255,
-                                        "example": "Course Materials PDF"
-                                    },
-                                    "description": {
-                                        "type": "string",
-                                        "example": "Comprehensive course materials",
-                                        "nullable": true
-                                    },
-                                    "display_order": {
-                                        "type": "integer",
-                                        "default": 0,
-                                        "example": 1,
-                                        "nullable": true
-                                    },
-                                    "is_active": {
-                                        "type": "boolean",
-                                        "default": true,
-                                        "example": true,
-                                        "nullable": true
-                                    }
-                                },
-                                "type": "object"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "201": {
-                        "description": "Asset created successfully",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "example": "success"
-                                        },
-                                        "message": {
-                                            "type": "string",
-                                            "example": "Asset added successfully"
-                                        },
-                                        "data": {
-                                            "$ref": "#/components/schemas/ProductAsset"
-                                        }
-                                    },
-                                    "type": "object"
-                                }
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden - User does not own this product"
-                    },
-                    "404": {
-                        "description": "Product not found"
-                    },
-                    "422": {
-                        "description": "Validation error"
-                    }
-                },
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ]
-            }
-        },
-        "/products/{product}/assets/{asset}": {
-            "put": {
-                "tags": [
-                    "Product Assets"
-                ],
-                "summary": "Update product asset",
-                "description": "Updates an existing product asset. Only accessible by product owner.",
-                "operationId": "updateProductAsset",
-                "parameters": [
-                    {
-                        "name": "product",
-                        "in": "path",
-                        "description": "Product ID",
-                        "required": true,
-                        "schema": {
-                            "type": "integer"
-                        }
-                    },
-                    {
-                        "name": "asset",
-                        "in": "path",
-                        "description": "Asset ID",
-                        "required": true,
-                        "schema": {
-                            "type": "integer"
-                        }
-                    }
-                ],
-                "requestBody": {
-                    "description": "Asset data to update",
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "properties": {
-                                    "external_url": {
-                                        "type": "string",
-                                        "format": "url",
-                                        "example": "https://drive.google.com/file/d/abc123/view"
-                                    },
-                                    "title": {
-                                        "type": "string",
-                                        "maxLength": 255,
-                                        "example": "Updated Title"
-                                    },
-                                    "description": {
-                                        "type": "string",
-                                        "example": "Updated description",
-                                        "nullable": true
-                                    },
-                                    "display_order": {
-                                        "type": "integer",
-                                        "example": 2
-                                    },
-                                    "is_active": {
-                                        "type": "boolean",
-                                        "example": false
-                                    }
-                                },
-                                "type": "object"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Asset updated successfully",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "example": "success"
-                                        },
-                                        "message": {
-                                            "type": "string",
-                                            "example": "Asset updated successfully"
-                                        },
-                                        "data": {
-                                            "$ref": "#/components/schemas/ProductAsset"
-                                        }
-                                    },
-                                    "type": "object"
-                                }
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden - User does not own this product"
-                    },
-                    "404": {
-                        "description": "Product or asset not found"
-                    },
-                    "422": {
-                        "description": "Validation error"
-                    }
-                },
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ]
-            },
-            "delete": {
-                "tags": [
-                    "Product Assets"
-                ],
-                "summary": "Delete product asset",
-                "description": "Deletes a product asset. Only accessible by product owner.",
-                "operationId": "deleteProductAsset",
-                "parameters": [
-                    {
-                        "name": "product",
-                        "in": "path",
-                        "description": "Product ID",
-                        "required": true,
-                        "schema": {
-                            "type": "integer"
-                        }
-                    },
-                    {
-                        "name": "asset",
-                        "in": "path",
-                        "description": "Asset ID",
-                        "required": true,
-                        "schema": {
-                            "type": "integer"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Asset deleted successfully",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "example": "success"
-                                        },
-                                        "message": {
-                                            "type": "string",
-                                            "example": "Asset deleted successfully"
-                                        }
-                                    },
-                                    "type": "object"
-                                }
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden - User does not own this product"
-                    },
-                    "404": {
-                        "description": "Product or asset not found"
-                    }
-                },
-                "security": [
-                    {
-                        "bearerAuth": []
                     }
                 ]
             }
@@ -16223,6 +16972,72 @@
                 },
                 "type": "object"
             },
+            "LegalPage": {
+                "required": [
+                    "environment_id",
+                    "user_id",
+                    "page_type"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64",
+                        "example": 1
+                    },
+                    "environment_id": {
+                        "type": "integer",
+                        "format": "int64",
+                        "example": 1
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "format": "int64",
+                        "example": 1
+                    },
+                    "page_type": {
+                        "type": "string",
+                        "example": "privacy_policy"
+                    },
+                    "title": {
+                        "type": "string",
+                        "example": "Privacy Policy",
+                        "nullable": true
+                    },
+                    "content": {
+                        "type": "string",
+                        "example": "<p>Your privacy is important to us...</p>",
+                        "nullable": true
+                    },
+                    "seo_title": {
+                        "type": "string",
+                        "example": "Privacy Policy - Company Name",
+                        "nullable": true
+                    },
+                    "seo_description": {
+                        "type": "string",
+                        "example": "Learn about how we protect your privacy",
+                        "nullable": true
+                    },
+                    "is_published": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "published_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
             "LessonContent": {
                 "required": [
                     "activity_id",
@@ -16673,6 +17488,11 @@
                     "updated_at": {
                         "type": "string",
                         "format": "date-time"
+                    },
+                    "file_url": {
+                        "type": "string",
+                        "example": "http://media-service/api/stream/...",
+                        "nullable": true
                     }
                 },
                 "type": "object"
@@ -17623,6 +18443,169 @@
                     }
                 },
                 "type": "object"
+            },
+            "EnvironmentLiveSettings": {
+                "title": "EnvironmentLiveSettings",
+                "description": "Live session settings for an environment",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64",
+                        "example": 1
+                    },
+                    "environment_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "live_sessions_enabled": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "monthly_minutes_limit": {
+                        "type": "integer",
+                        "example": 1000
+                    },
+                    "monthly_minutes_used": {
+                        "type": "integer",
+                        "example": 250
+                    },
+                    "max_concurrent_sessions": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "max_participants_per_session": {
+                        "type": "integer",
+                        "example": 100
+                    },
+                    "billing_cycle_resets_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "LiveSession": {
+                "title": "LiveSession",
+                "description": "Live Session model for webinars",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64",
+                        "example": 1
+                    },
+                    "environment_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "created_by": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "course_id": {
+                        "type": "integer",
+                        "example": 1,
+                        "nullable": true
+                    },
+                    "title": {
+                        "type": "string",
+                        "example": "Introduction to Web Development"
+                    },
+                    "description": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "room_name": {
+                        "type": "string",
+                        "example": "env_1_session_abc123"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "scheduled",
+                            "live",
+                            "ended",
+                            "cancelled"
+                        ]
+                    },
+                    "scheduled_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "ended_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "duration_minutes": {
+                        "type": "integer",
+                        "example": 60
+                    },
+                    "max_participants": {
+                        "type": "integer",
+                        "example": 100
+                    },
+                    "settings": {
+                        "type": "object",
+                        "nullable": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
+            "LiveSessionParticipant": {
+                "title": "LiveSessionParticipant",
+                "description": "Participant in a live session",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64",
+                        "example": 1
+                    },
+                    "live_session_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "role": {
+                        "type": "string",
+                        "enum": [
+                            "host",
+                            "co-host",
+                            "viewer"
+                        ]
+                    },
+                    "joined_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "left_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "duration_seconds": {
+                        "type": "integer",
+                        "example": 3600
+                    }
+                },
+                "type": "object"
             }
         },
         "responses": {
@@ -17782,8 +18765,16 @@
             "description": "API endpoints for branding management"
         },
         {
+            "name": "Academy Switch",
+            "description": "API Endpoints for cross-domain academy switching. Allows users to seamlessly switch between academies on different domains."
+        },
+        {
             "name": "Environments",
             "description": "API Endpoints for managing environments"
+        },
+        {
+            "name": "Environment Membership",
+            "description": "API Endpoints for managing user environment memberships. Supports the Identity Unification model where users can join environments without creating new credentials."
         },
         {
             "name": "Onboarding",
@@ -17818,16 +18809,16 @@
             "description": "Environment Credentials"
         },
         {
+            "name": "Legal Pages",
+            "description": "Legal Pages"
+        },
+        {
             "name": "Lesson Responses",
             "description": "Lesson Responses"
         },
         {
             "name": "Payment Gateways",
             "description": "Payment Gateways"
-        },
-        {
-            "name": "Product Assets",
-            "description": "Product Assets"
         },
         {
             "name": "Product Categories",

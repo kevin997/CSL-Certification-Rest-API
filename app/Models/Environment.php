@@ -245,4 +245,20 @@ class Environment extends Model
     {
         return $this->hasMany(WithdrawalRequest::class);
     }
+
+    /**
+     * Get the live session settings for this environment.
+     */
+    public function liveSettings(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(EnvironmentLiveSettings::class);
+    }
+
+    /**
+     * Get the live sessions for this environment.
+     */
+    public function liveSessions(): HasMany
+    {
+        return $this->hasMany(LiveSession::class);
+    }
 }

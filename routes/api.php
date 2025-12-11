@@ -975,3 +975,26 @@ Route::middleware(['auth:sanctum'])->prefix('instructor')->group(function () {
         Route::post('/centralized/toggle', [\App\Http\Controllers\Api\Instructor\PaymentConfigController::class, 'toggleCentralized']);
     });
 });
+
+// Live Sessions Routes
+Route::middleware(['auth:sanctum'])->prefix('live-sessions')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Api\LiveSessionController::class, 'index']);
+    Route::post('/', [\App\Http\Controllers\Api\LiveSessionController::class, 'store']);
+    Route::get('/stats', [\App\Http\Controllers\Api\LiveSessionController::class, 'stats']);
+    Route::get('/{liveSession}', [\App\Http\Controllers\Api\LiveSessionController::class, 'show']);
+    Route::put('/{liveSession}', [\App\Http\Controllers\Api\LiveSessionController::class, 'update']);
+    Route::delete('/{liveSession}', [\App\Http\Controllers\Api\LiveSessionController::class, 'destroy']);
+    Route::post('/{liveSession}/start', [\App\Http\Controllers\Api\LiveSessionController::class, 'start']);
+    Route::post('/{liveSession}/end', [\App\Http\Controllers\Api\LiveSessionController::class, 'end']);
+    Route::post('/{liveSession}/token', [\App\Http\Controllers\Api\LiveSessionTokenController::class, 'generateToken']);
+});
+
+// LiveKit Webhook (no auth - uses signature verification)
+Route::post('/webhooks/livekit', [\App\Http\Controllers\Api\LiveKitWebhookController::class, 'handle']);
+
+// Live Settings Routes
+Route::middleware(['auth:sanctum'])->prefix('live-settings')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Api\EnvironmentLiveSettingsController::class, 'show']);
+    Route::put('/', [\App\Http\Controllers\Api\EnvironmentLiveSettingsController::class, 'update']);
+    Route::get('/usage', [\App\Http\Controllers\Api\EnvironmentLiveSettingsController::class, 'usage']);
+});

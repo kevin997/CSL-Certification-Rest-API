@@ -26,9 +26,9 @@ class InstructorCommission extends Model
         'transaction_id',
         'order_id',
         'gross_amount',
-        'commission_rate',
-        'commission_amount',
-        'net_amount',
+        'platform_fee_rate',
+        'platform_fee_amount',
+        'instructor_payout_amount',
         'currency',
         'status',
         'paid_at',
@@ -42,9 +42,9 @@ class InstructorCommission extends Model
      */
     protected $casts = [
         'gross_amount' => 'decimal:2',
-        'commission_rate' => 'decimal:4',
-        'commission_amount' => 'decimal:2',
-        'net_amount' => 'decimal:2',
+        'platform_fee_rate' => 'decimal:4',
+        'platform_fee_amount' => 'decimal:2',
+        'instructor_payout_amount' => 'decimal:2',
         'paid_at' => 'datetime',
     ];
 
