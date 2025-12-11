@@ -18,65 +18,34 @@ Congratulations! Your CSL learning environment has been successfully created and
 Access Your Environment
 @endcomponent
 
-## Next Steps - {{ $domainType === 'subdomain' ? 'Subdomain' : 'Custom Domain' }} Configuration
+## Your Academy is Ready!
 
-@if($isSubdomain)
-### Subdomain Configuration for Vercel
+Your environment is being configured automatically and will be available at **{{ $environment->primary_domain }}** within a few minutes.
 
-Your environment is configured with a subdomain. To set up your Vercel deployment:
+**What happens next:**
+- Your academy URL is being set up automatically
+- SSL certificate will be provisioned for secure access
+- Once ready, simply visit your URL and log in with the credentials above
 
-1. **Add Domain to Vercel Project:**
-   - Go to your Vercel project settings
-   - Navigate to "Domains" section
-   - Add the domain: `{{ $environment->primary_domain }}`
-   - Vercel will automatically handle the DNS configuration
+## Getting Started
 
-2. **DNS Configuration (if needed):**
-   - If you need to configure DNS manually, add a CNAME record:
-   - **Type:** CNAME
-   - **Name:** {{ explode('.', $environment->primary_domain)[0] }}
-   - **Value:** cname.vercel-dns.com
-
-3. **SSL Certificate:**
-   - Vercel will automatically provision and renew SSL certificates
-   - Your environment will be accessible via HTTPS
-
-@else
-### Custom Domain Configuration for Vercel
-
-Your environment is configured with a custom domain. To set up your Vercel deployment:
-
-1. **Add Domain to Vercel Project:**
-   - Go to your Vercel project settings
-   - Navigate to "Domains" section
-   - Add the domain: `{{ $environment->primary_domain }}`
-
-2. **DNS Configuration:**
-   - Update your domain's DNS settings with your registrar
-   - Add the following records:
-   - **Type:** A
-   - **Name:** @ (or your subdomain)
-   - **Value:** 76.76.19.19
-   - **Type:** CNAME
-   - **Name:** www
-   - **Value:** cname.vercel-dns.com
-
-3. **SSL Certificate:**
-   - Vercel will automatically provision and renew SSL certificates
-   - Your environment will be accessible via HTTPS
-
-@endif
+1. **Log in** to your admin dashboard using the credentials above
+2. **Change your password** after first login for security
+3. **Customize** your branding, colors, and logo
+4. **Create courses** and start building your learning content
+5. **Invite team members** to collaborate
 
 ## Important Security Notes
 
 - **Change your password** after first login
 - **Enable two-factor authentication** for enhanced security
 - **Review user permissions** and roles regularly
-- **Keep your environment updated** with latest features
 
 ## Support
 
 If you need any assistance with the setup process or have questions about your environment, please contact our support team.
+
+**Join our WhatsApp Support Group:** [Click here to join](https://chat.whatsapp.com/E4W3kHnCticCzxYFp66rE4?mode=ac_t) for immediate assistance!
 
 **Documentation:** [CSL Setup Guide](https://docs.cfpcsl.com/setup)  
 **Support:** [support@cfpcsl.com](mailto:support@cfpcsl.com)
