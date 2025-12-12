@@ -463,6 +463,7 @@ class BrandingController extends Controller
             if ($branding) {
                 // Format branding data for public use
                 $publicBranding = [
+                    'id' => $branding->id,
                     'company_name' => $branding->company_name,
                     'logo_url' => $branding->logo_path ?: null,
                     'favicon_url' => $branding->favicon_path ?: null,
@@ -478,6 +479,11 @@ class BrandingController extends Controller
                 return response()->json([
                     'status' => 'success',
                     'data' => $publicBranding,
+                    'environment' => [
+                        'id' => $environment->id,
+                        'name' => $environment->name,
+                        'primary_domain' => $environment->primary_domain,
+                    ],
                 ]);
             }
         }
@@ -503,11 +509,17 @@ class BrandingController extends Controller
                     'custom_js' => null,
                     'environment_id' => null,
                 ],
+                'environment' => $environment ? [
+                    'id' => $environment->id,
+                    'name' => $environment->name,
+                    'primary_domain' => $environment->primary_domain,
+                ] : null,
             ]);
         }
 
         // Format branding data for public use
         $publicBranding = [
+            'id' => $branding->id,
             'company_name' => $branding->company_name,
             'logo_url' => $branding->logo_path ?: null,
             'favicon_url' => $branding->favicon_path ?: null,
@@ -523,6 +535,109 @@ class BrandingController extends Controller
         return response()->json([
             'status' => 'success',
             'data' => $publicBranding,
+            'environment' => $environment ? [
+                'id' => $environment->id,
+                'name' => $environment->name,
+                'primary_domain' => $environment->primary_domain,
+            ] : null,
+        ]);
+    }
+
+    /**
+     * Create or update branding for a given environment.
+     *
+     * Route: PUT /api/environments/{id}/branding
+     */
+    public function upsertForEnvironment(Request $request, int $id)
+    {
+        $environment = Environment::findOrFail($id);
+
+        // Authorization: allow teachers, or environment owner
+        if (!$request->user()->isTeacher() && $environment->owner_id !== $request->user()->id) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'company_name' => 'required|string|max:255',
+            'logo_url' => 'nullable|string|url',
+            'favicon_url' => 'nullable|string|url',
+            'primary_color' => 'nullable|string|max:7',
+            'secondary_color' => 'nullable|string|max:7',
+            'accent_color' => 'nullable|string|max:7',
+            'font_family' => 'nullable|string|max:100',
+            'custom_css' => 'nullable|string',
+            'custom_js' => 'nullable|string',
+            'custom_domain' => 'nullable|string|max:255',
+            'is_active' => 'nullable|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => $validator->errors(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $branding = Branding::firstOrNew([
+            'environment_id' => $environment->id,
+        ]);
+
+        // Preserve original creator if already set, otherwise set to current user
+        if (!$branding->exists || !$branding->user_id) {
+            $branding->user_id = Auth::id();
+        }
+
+        $branding->company_name = $request->company_name;
+
+        if ($request->has('logo_url')) {
+            $branding->logo_path = $request->logo_url;
+        }
+
+        if ($request->has('favicon_url')) {
+            $branding->favicon_path = $request->favicon_url;
+        }
+
+        if ($request->has('primary_color')) {
+            $branding->primary_color = $request->primary_color;
+        }
+
+        if ($request->has('secondary_color')) {
+            $branding->secondary_color = $request->secondary_color;
+        }
+
+        if ($request->has('accent_color')) {
+            $branding->accent_color = $request->accent_color;
+        }
+
+        if ($request->has('font_family')) {
+            $branding->font_family = $request->font_family;
+        }
+
+        if ($request->has('custom_css')) {
+            $branding->custom_css = $request->custom_css;
+        }
+
+        if ($request->has('custom_js')) {
+            $branding->custom_js = $request->custom_js;
+        }
+
+        if ($request->has('custom_domain')) {
+            $branding->custom_domain = $request->custom_domain;
+        }
+
+        if ($request->has('is_active')) {
+            $branding->is_active = $request->is_active;
+        } else {
+            $branding->is_active = true;
+        }
+
+        $branding->environment_id = $environment->id;
+        $branding->save();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Branding settings saved successfully',
+            'data' => $branding,
         ]);
     }
 

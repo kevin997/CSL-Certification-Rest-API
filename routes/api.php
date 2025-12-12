@@ -569,6 +569,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/branding', [BrandingController::class, 'index']);
     Route::get('/branding/{id}', [BrandingController::class, 'show'])->where('id', '[0-9]+');
     Route::put('/branding/{id}', [BrandingController::class, 'update'])->where('id', '[0-9]+');
+    Route::put('/environments/{id}/branding', [BrandingController::class, 'upsertForEnvironment'])->where('id', '[0-9]+');
     Route::post('/branding/preview', [BrandingController::class, 'preview']);
 
     // Landing Page Routes
