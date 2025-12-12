@@ -1766,13 +1766,20 @@ class StorefrontController extends Controller
                                 break;
 
                             case 'payment_links':
-                                // For TaraMoney - multiple payment options (WhatsApp, Telegram, Dikalo, SMS)
+                                // For TaraMoney - check if generalLink is available (new API)
                                 $responseData['payment_type'] = 'taramoney';
-                                $responseData['payment_links'] = $paymentResult['payment_links'] ?? [];
-                                $responseData['whatsapp_link'] = $paymentResult['whatsapp_link'] ?? null;
-                                $responseData['telegram_link'] = $paymentResult['telegram_link'] ?? null;
-                                $responseData['dikalo_link'] = $paymentResult['dikalo_link'] ?? null;
-                                $responseData['sms_link'] = $paymentResult['sms_link'] ?? null;
+                                if (!empty($paymentResult['general_link'])) {
+                                    // Direct redirect using generalLink
+                                    $responseData['redirect_url'] = $paymentResult['general_link'];
+                                    $responseData['general_link'] = $paymentResult['general_link'];
+                                } else {
+                                    // Fallback: multiple payment options (WhatsApp, Telegram, Dikalo, SMS)
+                                    $responseData['payment_links'] = $paymentResult['payment_links'] ?? [];
+                                    $responseData['whatsapp_link'] = $paymentResult['whatsapp_link'] ?? null;
+                                    $responseData['telegram_link'] = $paymentResult['telegram_link'] ?? null;
+                                    $responseData['dikalo_link'] = $paymentResult['dikalo_link'] ?? null;
+                                    $responseData['sms_link'] = $paymentResult['sms_link'] ?? null;
+                                }
                                 break;
 
                             default:
@@ -2263,6 +2270,30 @@ class StorefrontController extends Controller
                     // For Lygos redirect-based payments
                     $responseData['payment_type'] = 'lygos';
                     $responseData['redirect_url'] = $result['value'];
+                    break;
+
+                case 'redirect_url':
+                    // For TaraMoney with generalLink (new API)
+                    $responseData['payment_type'] = 'taramoney';
+                    $responseData['redirect_url'] = $result['redirect_url'] ?? $result['general_link'] ?? $result['value'];
+                    $responseData['general_link'] = $result['general_link'] ?? null;
+                    break;
+
+                case 'payment_links':
+                    // For TaraMoney - check if generalLink is available
+                    $responseData['payment_type'] = 'taramoney';
+                    if (!empty($result['general_link'])) {
+                        // Direct redirect using generalLink
+                        $responseData['redirect_url'] = $result['general_link'];
+                        $responseData['general_link'] = $result['general_link'];
+                    } else {
+                        // Fallback: multiple payment options
+                        $responseData['payment_links'] = $result['payment_links'] ?? [];
+                        $responseData['whatsapp_link'] = $result['whatsapp_link'] ?? null;
+                        $responseData['telegram_link'] = $result['telegram_link'] ?? null;
+                        $responseData['dikalo_link'] = $result['dikalo_link'] ?? null;
+                        $responseData['sms_link'] = $result['sms_link'] ?? null;
+                    }
                     break;
 
                 default:

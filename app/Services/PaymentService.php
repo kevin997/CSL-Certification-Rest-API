@@ -646,10 +646,13 @@ class PaymentService
                     'publishable_key' => $paymentResponse['publishable_key'] ?? null,
                     // TaraMoney payment links (if present)
                     'payment_links' => $paymentResponse['payment_links'] ?? null,
+                    'general_link' => $paymentResponse['general_link'] ?? null,
+                    'redirect_url' => $paymentResponse['redirect_url'] ?? null,
                     'whatsapp_link' => $paymentResponse['whatsapp_link'] ?? null,
                     'telegram_link' => $paymentResponse['telegram_link'] ?? null,
                     'dikalo_link' => $paymentResponse['dikalo_link'] ?? null,
                     'sms_link' => $paymentResponse['sms_link'] ?? null,
+                    'card_link' => $paymentResponse['card_link'] ?? null,
                 ];
 
                 $response['transaction'] = $transaction;

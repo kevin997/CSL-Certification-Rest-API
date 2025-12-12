@@ -227,7 +227,7 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                     ]);
 
                     // Return all payment links for user selection
-                    // Don't use a single redirect URL - let frontend display all options
+                    // Use generalLink for direct redirect if available, otherwise show all options
                     $paymentLinks = [
                         'whatsapp' => $responseData['whatsappLink'] ?? null,
                         'telegram' => $responseData['telegramLink'] ?? null,
@@ -238,16 +238,25 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                     // Filter out null links
                     $paymentLinks = array_filter($paymentLinks);
 
+                    // Check if generalLink is available (new TaraMoney API)
+                    $generalLink = $responseData['generalLink'] ?? null;
+                    $hasGeneralLink = !empty($generalLink);
+
                     return [
                         'success' => true,
-                        'message' => 'Payment links created successfully. Choose your preferred payment method.',
+                        'message' => $hasGeneralLink 
+                            ? 'Payment link created successfully.' 
+                            : 'Payment links created successfully. Choose your preferred payment method.',
                         'transaction_id' => $gatewayId,
-                        'type' => 'payment_links', // Changed from 'payment_url' to 'payment_links'
+                        'type' => $hasGeneralLink ? 'redirect_url' : 'payment_links',
+                        'redirect_url' => $generalLink,
+                        'general_link' => $generalLink,
                         'payment_links' => $paymentLinks,
                         'whatsapp_link' => $responseData['whatsappLink'] ?? null,
                         'telegram_link' => $responseData['telegramLink'] ?? null,
                         'dikalo_link' => $responseData['dikaloLink'] ?? null,
                         'sms_link' => $responseData['smsLink'] ?? null,
+                        'card_link' => $responseData['cardLink'] ?? null,
                         'amount' => $transaction->total_amount,
                         'currency' => $transaction->currency,
                         'payment_method' => 'taramoney',
