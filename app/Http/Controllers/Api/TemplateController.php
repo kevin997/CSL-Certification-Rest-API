@@ -86,12 +86,46 @@ class TemplateController extends Controller
      *     )
      * )
      */
-    public function index()
+    public function index(Request $request)
     {
-        $templates = Template::where('created_by', Auth::id())
-            ->orWhere('is_public', true)
-            ->with('blocks')
-            ->paginate(10);
+        $validator = Validator::make($request->all(), [
+            'search' => 'nullable|string|max:255',
+            'per_page' => 'nullable|integer|min:1|max:100',
+            'include_blocks' => 'nullable|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => $validator->errors(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $query = Template::query()
+            ->where(function ($q) {
+                $q->where('created_by', Auth::id())
+                    ->orWhere('is_public', true);
+            });
+
+        if ($request->filled('search')) {
+            $search = $request->input('search');
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhere('template_code', 'like', "%{$search}%");
+            });
+        }
+
+        // Only include blocks if explicitly requested (avoid heavy payload for large lists)
+        $includeBlocks = $request->boolean('include_blocks', false);
+        if ($includeBlocks) {
+            $query->with('blocks');
+        }
+
+        $perPage = (int) $request->input('per_page', 20);
+        $templates = $query
+            ->orderBy('updated_at', 'desc')
+            ->paginate($perPage);
 
         return response()->json([
             'status' => 'success',

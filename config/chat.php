@@ -42,7 +42,7 @@ return [
     |
     */
     'main_api' => [
-        'url' => env('MAIN_API_URL', 'https://api.csl-certification.com'),
+        'url' => env('MAIN_API_URL', 'https://certification.csl-certification.com'),
         'token' => env('MAIN_API_TOKEN'),
         'timeout' => env('MAIN_API_TIMEOUT', 30),
         'retry_attempts' => env('MAIN_API_RETRY_ATTEMPTS', 3),

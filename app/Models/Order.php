@@ -24,6 +24,7 @@ class Order extends Model
         'environment_id',
         'order_number',
         'status', // pending, completed, failed, refunded
+        'type',
         'total_amount',
         'currency',
         'payment_method',
@@ -48,6 +49,9 @@ class Order extends Model
     const STATUS_FAILED = 'failed';
     const STATUS_REFUNDED = 'refunded';
     const STATUS_PARTIALLY_REFUNDED = 'partially_refunded';
+
+    const TYPE_STOREFRONT = 'storefront';
+    const TYPE_SUBSCRIPTION_PRODUCT = 'subscription_product';
 
     /**
      * The attributes that should be cast.
@@ -76,7 +80,7 @@ class Order extends Model
     {
         return $this->hasMany(OrderItem::class);
     }
-    
+
     /**
      * Alias for items() to maintain compatibility with existing code.
      */
@@ -100,7 +104,7 @@ class Order extends Model
     {
         return $this->hasOne(Transaction::class);
     }
-    
+
     /**
      * Get all transactions associated with this order
      */

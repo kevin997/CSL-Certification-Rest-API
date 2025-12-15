@@ -7,14 +7,32 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Schedule;
 use App\Console\Commands\GenerateMonthlyInvoices;
 use App\Console\Commands\RegularizeCompletedOrders;
+use App\Console\Commands\SendProductSubscriptionReminders;
 
-
+/*
+|--------------------------------------------------------------------------
+| Console Routes
+|--------------------------------------------------------------------------
+|
+| This file is where you may define all of your Closure based console
+| commands. Each Closure is bound to a command instance allowing a
+| simple approach to interacting with each command's IO methods.
+|
+*/
 
 Artisan::command('inspire', function () {
     /** @var ClosureCommand $this */
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+/*
+|--------------------------------------------------------------------------
+| Schedule Commands
+|--------------------------------------------------------------------------
+|
+| This file is where you may define all of your scheduled commands.
+|
+*/
 
 Schedule::command(GenerateMonthlyInvoices::class)
     ->lastDayOfMonth('23:59');
@@ -24,7 +42,7 @@ Schedule::command(RegularizeCompletedOrders::class)
     ->everyFiveMinutes()
     ->withoutOverlapping()
     ->runInBackground();
-    
+
 // Clean old backups daily at 1:00 AM
 Schedule::command('backup:clean')
     ->dailyAt('01:00')
@@ -88,3 +106,9 @@ Schedule::command('backup:sales-database --email')
     ->onSuccess(function () {
         \Illuminate\Support\Facades\Log::info('Sales database backup completed successfully');
     });
+
+// Product subscription reminders - runs daily at 5:00 AM
+Schedule::command(SendProductSubscriptionReminders::class)
+    ->dailyAt('05:00')
+    ->withoutOverlapping(3600)
+    ->runInBackground();

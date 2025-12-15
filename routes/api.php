@@ -39,6 +39,7 @@ use App\Http\Controllers\Api\QuestionController;
 use App\Http\Controllers\Api\QuizContentController;
 use App\Http\Controllers\Api\ReferralController;
 use App\Http\Controllers\Api\SubscriptionController;
+use App\Http\Controllers\Api\SubscriptionProductController;
 use App\Http\Controllers\Api\TemplateController;
 use App\Http\Controllers\Api\TemplateActivityQuestionController;
 use App\Http\Controllers\Api\TextContentController;
@@ -517,14 +518,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/plans/{id}', [PlanController::class, 'show']);
     Route::get('/plans/type/{type}', [PlanController::class, 'getByType']);
     Route::post('/plans/compare', [PlanController::class, 'compare']);
-    
+
     // Authenticated Plan Management
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/plans', [PlanController::class, 'store']);
         Route::put('/plans/{id}', [PlanController::class, 'update']);
         Route::delete('/plans/{id}', [PlanController::class, 'destroy']);
         Route::get('/admin/personalization-requests', [PersonalizationRequestController::class, 'index']);
-    Route::put('/admin/personalization-requests/{id}', [PersonalizationRequestController::class, 'update']);
+        Route::put('/admin/personalization-requests/{id}', [PersonalizationRequestController::class, 'update']);
     });
 
 
@@ -731,6 +732,18 @@ Route::group(['prefix' => 'storefront'], function () {
 
 // Continue payment for a pending order
 Route::post('/storefront/orders/{orderId}/continue-payment', [StorefrontController::class, 'continuePayment'])->middleware('auth:sanctum');
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/subscription-products/subscriptions', [SubscriptionProductController::class, 'index']);
+    Route::get('/subscription-products/subscriptions/{subscriptionId}', [SubscriptionProductController::class, 'show']);
+    Route::get('/subscription-products/users/{userId}/subscriptions', [SubscriptionProductController::class, 'userSubscriptions']);
+    Route::post('/subscription-products/{environmentId}/subscribe', [SubscriptionProductController::class, 'subscribe']);
+    Route::post('/subscription-products/orders/{orderId}/continue-payment', [SubscriptionProductController::class, 'continuePayment']);
+    Route::post('/subscription-products/subscriptions/{subscriptionId}/renew', [SubscriptionProductController::class, 'renew']);
+    Route::post('/subscription-products/subscriptions/{subscriptionId}/cancel', [SubscriptionProductController::class, 'cancel']);
+    Route::post('/subscription-products/subscriptions/{subscriptionId}/pause', [SubscriptionProductController::class, 'pause']);
+    Route::post('/subscription-products/subscriptions/{subscriptionId}/resume', [SubscriptionProductController::class, 'resume']);
+});
 
 // Payment Routes
 Route::group(['prefix' => 'payments'], function () {

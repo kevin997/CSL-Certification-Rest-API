@@ -8,6 +8,7 @@ use App\Models\AssetDelivery;
 use App\Models\Product;
 use App\Models\Enrollment;
 use App\Models\Order;
+use App\Models\ProductSubscription;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\DB;
@@ -40,13 +41,29 @@ class ProcessOrderItems implements ShouldQueue
     {
         $order = $event->order;
 
+        $order->loadMissing(['user']);
+
+        if ($order->type === Order::TYPE_SUBSCRIPTION_PRODUCT) {
+            $subscriptionItems = DB::table('order_items')
+                ->where('order_id', $order->id)
+                ->where('is_subscription', true)
+                ->get();
+
+            $this->processSubscriptionProductOrder($order, $subscriptionItems);
+
+            $order->status = Order::STATUS_COMPLETED;
+            $order->save();
+
+            return;
+        }
+
         //set order status as completed
         $order->status = Order::STATUS_COMPLETED;
         $order->save();
-        
+
         // Get the order items
         $orderItems = DB::table('order_items')->where('order_id', $order->id)->get();
-        
+
         foreach ($orderItems as $item) {
             $product = Product::find($item->product_id);
 
@@ -75,6 +92,77 @@ class ProcessOrderItems implements ShouldQueue
         }
     }
 
+    private function processSubscriptionProductOrder(Order $order, $subscriptionItems): void
+    {
+        if ($subscriptionItems->isEmpty()) {
+            Log::warning("No subscription items found for subscription_product order {$order->id}");
+            return;
+        }
+
+        foreach ($subscriptionItems as $item) {
+            if (!empty($item->subscription_id)) {
+                continue;
+            }
+
+            $product = Product::find($item->product_id);
+
+            if (!$product) {
+                Log::warning("Product not found for subscription order item {$item->id}");
+                continue;
+            }
+
+            if (!$product->is_subscription) {
+                Log::warning("Non-subscription product in subscription_product order {$order->id}, item {$item->id}");
+                continue;
+            }
+
+            $now = now();
+
+            $existing = ProductSubscription::where('environment_id', $order->environment_id)
+                ->where('user_id', $order->user_id)
+                ->where('product_id', $product->id)
+                ->orderByDesc('id')
+                ->first();
+
+            $isFirst = !$existing;
+
+            $startsAt = $existing?->starts_at ?? $now;
+            $baseStart = $existing?->ends_at && $existing->ends_at->isFuture() ? $existing->ends_at : $now;
+
+            $interval = $product->subscription_interval ?? 'monthly';
+            $count = (int) ($product->subscription_interval_count ?? 1);
+
+            $endsAt = $interval === 'yearly'
+                ? $baseStart->copy()->addYears($count)
+                : $baseStart->copy()->addMonths($count);
+
+            $trialEndsAt = null;
+            if ($isFirst) {
+                $trialDays = (int) ($product->trial_days ?? 0);
+                if ($trialDays > 0) {
+                    $trialEndsAt = $now->copy()->addDays($trialDays);
+                }
+            }
+
+            $subscription = ProductSubscription::create([
+                'environment_id' => $order->environment_id,
+                'user_id' => $order->user_id,
+                'product_id' => $product->id,
+                'status' => 'active',
+                'starts_at' => $startsAt,
+                'ends_at' => $endsAt,
+                'trial_ends_at' => $trialEndsAt,
+            ]);
+
+            DB::table('order_items')
+                ->where('id', $item->id)
+                ->update([
+                    'subscription_id' => $subscription->id,
+                    'subscription_status' => $subscription->status,
+                ]);
+        }
+    }
+
     /**
      * Process courses associated with a product.
      *
@@ -87,7 +175,7 @@ class ProcessOrderItems implements ShouldQueue
         $productCourses = DB::table('product_courses')
             ->where('product_id', $product->id)
             ->get();
-            
+
         foreach ($productCourses as $productCourse) {
             // Create enrollment if it doesn't exist
             $enrollment = DB::table('enrollments')
@@ -95,7 +183,7 @@ class ProcessOrderItems implements ShouldQueue
                 ->where('course_id', $productCourse->course_id)
                 ->where('environment_id', $order->environment_id)
                 ->first();
-                
+
             if (!$enrollment) {
                 Enrollment::create([
                     'user_id' => $order->user_id,
@@ -105,7 +193,7 @@ class ProcessOrderItems implements ShouldQueue
                     'progress_percentage' => 0,
                     'last_activity_at' => now(),
                 ]);
-                
+
                 Log::info("Created enrollment for user {$order->user_id} in course {$productCourse->course_id}");
             }
         }
@@ -179,7 +267,7 @@ class ProcessOrderItems implements ShouldQueue
             ->where('product_id', $product->id)
             ->where('environment_id', $order->environment_id)
             ->first();
-            
+
         if (!$subscription) {
             // Create new subscription
             DB::table('subscriptions')->insert([
@@ -192,7 +280,7 @@ class ProcessOrderItems implements ShouldQueue
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
-            
+
             Log::info("Created subscription for user {$order->user_id} with product {$product->id}");
         } else {
             // Update existing subscription
@@ -203,7 +291,7 @@ class ProcessOrderItems implements ShouldQueue
                     'end_date' => now()->addDays($product->subscription_duration),
                     'updated_at' => now(),
                 ]);
-                
+
             Log::info("Updated subscription {$subscription->id} for user {$order->user_id}");
         }
     }
