@@ -43,6 +43,7 @@ use App\Http\Controllers\Api\SubscriptionProductController;
 use App\Http\Controllers\Api\TemplateController;
 use App\Http\Controllers\Api\TemplateActivityQuestionController;
 use App\Http\Controllers\Api\TextContentController;
+use App\Http\Controllers\Api\SessionAuthController;
 use App\Http\Controllers\Api\TokenController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\ValidationController;
@@ -58,12 +59,14 @@ use App\Http\Controllers\Api\Onboarding\OnboardingController;
 use App\Http\Controllers\Api\ReferralEnvironmentController;
 use App\Http\Controllers\Api\FinanceController;
 use App\Http\Controllers\Api\AnalyticsController;
+use App\Http\Controllers\Api\AnalyticsWidgetsController;
 use App\Http\Controllers\Api\Onboarding\StandaloneOnboardingController;
 use App\Http\Controllers\Api\Onboarding\SupportedOnboardingController;
 use App\Http\Controllers\Api\Onboarding\DemoOnboardingController;
 use App\Http\Controllers\Api\LessonDiscussionController;
 use Illuminate\Support\Facades\Broadcast;
 use App\Http\Controllers\Api\UserNotificationController;
+use App\Http\Controllers\Api\PushSubscriptionController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\ChatAnalyticsController;
 use App\Http\Controllers\Api\DigitalProductController;
@@ -156,10 +159,17 @@ Route::get('/user', function (Request $request) {
     $user = $request->user();
     $response = $user->toArray();
 
+    // Cookie-session auth: environment context is stored in session.
+    $sessionEnvironmentId = session('current_environment_id');
+
     // Extract environment ID from token abilities
     $token = $request->bearerToken();
-    $tokenId = explode('|', $token)[0];
-    $tokenModel = $user->tokens()->find($tokenId);
+    $tokenModel = null;
+
+    if (is_string($token) && $token !== '' && str_contains($token, '|')) {
+        $tokenId = explode('|', $token)[0];
+        $tokenModel = $user->tokens()->find($tokenId);
+    }
 
     if ($tokenModel) {
         $abilities = $tokenModel->abilities;
@@ -175,7 +185,43 @@ Route::get('/user', function (Request $request) {
 
         $response['environment_id'] = $environmentId;
     } else {
-        $response['environment_id'] = null;
+        $response['environment_id'] = $sessionEnvironmentId ? (int) $sessionEnvironmentId : null;
+    }
+
+    return response()->json($response);
+})->middleware('auth:sanctum');
+
+Route::get('/session/user', function (Request $request) {
+    $user = $request->user();
+    $response = $user->toArray();
+
+    // Cookie-session auth: environment context is stored in session.
+    $sessionEnvironmentId = session('current_environment_id');
+
+    // Extract environment ID from token abilities
+    $token = $request->bearerToken();
+    $tokenModel = null;
+
+    if (is_string($token) && $token !== '' && str_contains($token, '|')) {
+        $tokenId = explode('|', $token)[0];
+        $tokenModel = $user->tokens()->find($tokenId);
+    }
+
+    if ($tokenModel) {
+        $abilities = $tokenModel->abilities;
+        $environmentId = null;
+
+        // Find environment_id in abilities
+        foreach ($abilities as $ability) {
+            if (strpos($ability, 'environment_id:') === 0) {
+                $environmentId = (int) substr($ability, strlen('environment_id:'));
+                break;
+            }
+        }
+
+        $response['environment_id'] = $environmentId;
+    } else {
+        $response['environment_id'] = $sessionEnvironmentId ? (int) $sessionEnvironmentId : null;
     }
 
     return response()->json($response);
@@ -193,6 +239,9 @@ Route::middleware(['throttle:reset'])->group(function () {
 // Authentication endpoints with rate limiting
 Route::middleware(['throttle:login'])->group(function () {
     Route::post('/tokens', [TokenController::class, 'createToken']);
+
+    Route::post('/session/login', [SessionAuthController::class, 'login']);
+    Route::post('/session/logout', [SessionAuthController::class, 'logout'])->middleware('auth:sanctum');
 });
 
 Route::delete('/tokens', [TokenController::class, 'revokeTokens'])->middleware('auth:sanctum');
@@ -642,10 +691,21 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/analytics/course-analytics', [AnalyticsController::class, 'courseAnalytics']);
     Route::get('/analytics/certificate-analytics', [AnalyticsController::class, 'certificateAnalytics']);
 
+    // Analytics widgets (financial + traffic)
+    Route::get('/analytics/financial-widgets', [AnalyticsWidgetsController::class, 'financialWidgets']);
+    Route::get('/analytics/traffic-widgets', [AnalyticsWidgetsController::class, 'trafficWidgets']);
+
     // File routes
     Route::post('/files', [FileController::class, 'store']);
     Route::post('/files/batch', [FileController::class, 'batchStore']); // New batch route
     Route::get('/environments/{environmentId}/files', [FileController::class, 'getByEnvironment']);
+
+    // Media Asset routes
+    Route::get('/media', [App\Http\Controllers\MediaAssetController::class, 'index']); // Listing
+    Route::post('/media/upload/init', [App\Http\Controllers\MediaAssetController::class, 'initUpload']);
+    Route::post('/media/upload/{id}/complete', [App\Http\Controllers\MediaAssetController::class, 'completeUpload']);
+    Route::get('/media/playback/{id}', [App\Http\Controllers\MediaAssetController::class, 'playbackSession']);
+    Route::get('/media/{id}', [App\Http\Controllers\MediaAssetController::class, 'show']);
 
     // User Notification routes
     Route::get('/environments/{environmentId}/notifications', [UserNotificationController::class, 'index']);
@@ -654,6 +714,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/environments/{environmentId}/notifications/read-all', [UserNotificationController::class, 'markAllAsRead']);
     // Test broadcast route (auth required): expects environment_id, optional user_id, type, title, message, data
     Route::post('/notifications/test-broadcast', [UserNotificationController::class, 'testBroadcast']);
+
+    // Web Push (Native) routes
+    Route::get('/push/vapid-public-key', [PushSubscriptionController::class, 'vapidPublicKey']);
+    Route::post('/environments/{environmentId}/push-subscriptions', [PushSubscriptionController::class, 'store']);
+    Route::delete('/environments/{environmentId}/push-subscriptions', [PushSubscriptionController::class, 'destroy']);
     Route::get('/files/{id}', [FileController::class, 'show']);
     Route::put('/files/{id}', [FileController::class, 'update']);
     Route::delete('/files/{id}', [FileController::class, 'destroy']);

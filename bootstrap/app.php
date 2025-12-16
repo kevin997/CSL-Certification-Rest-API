@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\BrandingMiddleware;
+use App\Http\Middleware\ConfigureTenantCorsAndSanctum;
 use App\Http\Middleware\DetectEnvironment;
 use App\Http\Middleware\EnforceHttps;
 use App\Providers\EnvironmentAuthServiceProvider;
@@ -24,6 +25,10 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware) {
+        $middleware->statefulApi();
+
+        $middleware->prepend(ConfigureTenantCorsAndSanctum::class);
+
         // HTTPS enforcement middleware (runs first for security)
         $middleware->append(EnforceHttps::class);
 

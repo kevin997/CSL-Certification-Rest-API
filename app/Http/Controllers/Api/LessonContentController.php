@@ -164,6 +164,7 @@ class LessonContentController extends Controller
             'enable_instructor_feedback' => 'nullable|boolean',
             'enable_questions' => 'nullable|boolean',
             'show_results' => 'nullable|boolean',
+            'audio_media_asset_id' => 'nullable|integer|exists:media_assets,id',
             'content_parts' => 'nullable|array',
             'content_parts.*.title' => 'required_with:content_parts|string|max:255',
             'content_parts.*.content_type' => 'required_with:content_parts|string|in:wysiwyg,video',
@@ -216,6 +217,7 @@ class LessonContentController extends Controller
             'enable_instructor_feedback' => $request->enable_instructor_feedback ?? false,
             'enable_questions' => $request->enable_questions ?? false,
             'show_results' => $request->show_results ?? false,
+            'audio_media_asset_id' => $request->audio_media_asset_id,
         ]);
 
         // Create content parts if provided
@@ -512,6 +514,7 @@ class LessonContentController extends Controller
             'enable_instructor_feedback' => 'nullable|boolean',
             'enable_questions' => 'nullable|boolean',
             'show_results' => 'nullable|boolean',
+            'audio_media_asset_id' => 'nullable|integer|exists:media_assets,id',
             'content_parts' => 'nullable|array',
             'content_parts.*.id' => 'nullable|integer|exists:lesson_content_parts,id',
             'content_parts.*.title' => 'required_with:content_parts|string|max:255',

@@ -97,6 +97,12 @@ class VideoContentController extends Controller
         $block = Block::findOrFail($activity->block_id);
         $template = Template::findOrFail($block->template_id);
 
+        $request->merge([
+            'video_url' => $request->video_url ?: null,
+            'thumbnail_url' => $request->thumbnail_url ?: null,
+            'captions_url' => $request->captions_url ?: null,
+        ]);
+
         // Check if user has permission to add content to this activity
         if ($template->created_by !== Auth::id()) {
             return response()->json([
@@ -116,7 +122,8 @@ class VideoContentController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'video_url' => 'required|string|url',
+            'video_url' => 'nullable|string|url|required_without:media_asset_id',
+            'media_asset_id' => 'nullable|integer|required_without:video_url',
             'video_type' => 'required|string|in:youtube,vimeo,mp4,webm',
             'duration' => 'nullable|integer',
             'thumbnail_url' => 'nullable|string|url',
@@ -145,6 +152,7 @@ class VideoContentController extends Controller
             'title' => $request->title,
             'description' => $request->description,
             'video_url' => $request->video_url,
+            'media_asset_id' => $request->media_asset_id,
             'video_type' => $request->video_type,
             'duration' => $request->duration,
             'thumbnail_url' => $request->thumbnail_url,
@@ -285,6 +293,12 @@ class VideoContentController extends Controller
         $block = Block::findOrFail($activity->block_id);
         $template = Template::findOrFail($block->template_id);
 
+        $request->merge([
+            'video_url' => $request->video_url ?: null,
+            'thumbnail_url' => $request->thumbnail_url ?: null,
+            'captions_url' => $request->captions_url ?: null,
+        ]);
+
         // Check if user has permission to update this content
         if ($template->created_by !== Auth::id()) {
             return response()->json([
@@ -299,6 +313,7 @@ class VideoContentController extends Controller
             'title' => 'string|max:255',
             'description' => 'nullable|string',
             'video_url' => 'string|url',
+            'media_asset_id' => 'nullable|integer',
             'video_type' => 'string|in:youtube,vimeo,mp4,webm',
             'duration' => 'nullable|integer',
             'thumbnail_url' => 'nullable|string|url',

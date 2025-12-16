@@ -195,7 +195,6 @@ class ChatService
             ]);
 
             return $result;
-
         } catch (\Exception $e) {
             Log::error('Error in getCourseDiscussions', [
                 'course_id' => $courseId,
@@ -410,8 +409,10 @@ class ChatService
                     }
                 }
 
-                // Deduplicate participants by user_id
-                $uniqueParticipants = $allParticipants->unique('user_id');
+                // Deduplicate participants by user_id (online only)
+                $uniqueParticipants = $allParticipants
+                    ->where('is_online', true)
+                    ->unique('user_id');
 
                 $summaries[] = [
                     'courseId' => $course['id'],
@@ -426,7 +427,6 @@ class ChatService
                         'timestamp' => $latestMessage->created_at->toISOString()
                     ] : null
                 ];
-
             } catch (\Exception $e) {
                 Log::warning('Failed to get discussion summary for course', [
                     'course_id' => $course['id'],

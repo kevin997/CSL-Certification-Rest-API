@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Events\EnvironmentNotification;
 use Illuminate\Support\Facades\Validator;
+use App\Services\NotificationService;
 
 class UserNotificationController extends Controller
 {
@@ -132,18 +133,23 @@ class UserNotificationController extends Controller
         }
 
         $envId = (int) $request->input('environment_id');
-        $userId = $request->input('user_id');
-        $type = $request->input('type', 'info');
-        $title = $request->input('title', 'Test Notification');
-        $message = $request->input('message', 'This is a test environment-scoped notification');
-        $data = $request->input('data', []);
+        $targetUserId = (int) ($request->input('user_id') ?? Auth::id());
+        $type = (string) $request->input('type', 'info');
+        $title = (string) $request->input('title', 'Test Notification');
+        $message = (string) $request->input('message', 'This is a test environment-scoped notification');
+        $data = (array) $request->input('data', []);
 
-        event(new EnvironmentNotification($envId, $type, $title, $message, $data, $userId));
+        /** @var NotificationService $svc */
+        $svc = app(NotificationService::class);
+        $notification = $svc->createPaymentNotification($envId, $targetUserId, $type, $title, $message, $data);
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Notification broadcast queued',
-            'payload' => compact('envId', 'userId', 'type', 'title', 'message', 'data'),
+            'message' => 'Notification created',
+            'data' => [
+                'notification_id' => $notification?->id,
+            ],
+            'payload' => compact('envId', 'targetUserId', 'type', 'title', 'message', 'data'),
         ]);
     }
 }

@@ -34,7 +34,7 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
-    
+
     'mailjet' => [
         'key' => env('MAILJET_APIKEY'),
         'secret' => env('MAILJET_APISECRET'),
@@ -54,6 +54,10 @@ return [
         'api_key' => env('LIVEKIT_API_KEY'),
         'api_secret' => env('LIVEKIT_API_SECRET'),
         'server_url' => env('LIVEKIT_SERVER_URL', 'ws://localhost:7880'),
+    ],
+
+    'ipgeolocation' => [
+        'api_key' => env('IPGEOLOCATION_API_KEY', 'f632e06f3f6a489299101706b1a2fa32'),
     ],
 
 ];

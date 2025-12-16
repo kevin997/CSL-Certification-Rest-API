@@ -8202,6 +8202,136 @@
                 ]
             }
         },
+        "/api/live-settings": {
+            "get": {
+                "tags": [
+                    "Live Settings"
+                ],
+                "summary": "Get live session settings for an environment",
+                "operationId": "620bbff0602d0776f69cf0b5fba858af",
+                "parameters": [
+                    {
+                        "name": "environment_id",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Live settings retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/EnvironmentLiveSettings"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Settings not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Live Settings"
+                ],
+                "summary": "Update live session settings for an environment",
+                "operationId": "4eca914463d28d383e759e3ad66d46e4",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "environment_id"
+                                ],
+                                "properties": {
+                                    "environment_id": {
+                                        "type": "integer",
+                                        "example": 1
+                                    },
+                                    "live_sessions_enabled": {
+                                        "type": "boolean",
+                                        "example": true
+                                    },
+                                    "monthly_minutes_limit": {
+                                        "type": "integer",
+                                        "example": 1000
+                                    },
+                                    "max_concurrent_sessions": {
+                                        "type": "integer",
+                                        "example": 1
+                                    },
+                                    "max_participants_per_session": {
+                                        "type": "integer",
+                                        "example": 100
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Settings updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/EnvironmentLiveSettings"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/live-settings/usage": {
+            "get": {
+                "tags": [
+                    "Live Settings"
+                ],
+                "summary": "Get usage statistics for live sessions",
+                "operationId": "c2cfc168b2a03b83f9f216112a3def36",
+                "parameters": [
+                    {
+                        "name": "environment_id",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Usage statistics retrieved successfully"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
         "/api/environments/{id}/join": {
             "post": {
                 "tags": [
@@ -10193,6 +10323,341 @@
                         "description": "Lesson not found"
                     }
                 }
+            }
+        },
+        "/api/webhooks/livekit": {
+            "post": {
+                "tags": [
+                    "LiveKit Webhooks"
+                ],
+                "summary": "Handle LiveKit webhook events",
+                "operationId": "6b448469f0fd097c9ea7d48ef9896b84",
+                "responses": {
+                    "200": {
+                        "description": "Webhook processed"
+                    }
+                }
+            }
+        },
+        "/api/live-sessions": {
+            "get": {
+                "tags": [
+                    "Live Sessions"
+                ],
+                "summary": "List live sessions",
+                "operationId": "fc9e2d34f71702ed1f2f59bec936bea5",
+                "parameters": [
+                    {
+                        "name": "environment_id",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "scheduled",
+                                "live",
+                                "ended",
+                                "cancelled"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of live sessions"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Live Sessions"
+                ],
+                "summary": "Create a new live session",
+                "operationId": "e147b9a1340f168a625062aa01bb8312",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "environment_id",
+                                    "title",
+                                    "scheduled_at"
+                                ],
+                                "properties": {
+                                    "environment_id": {
+                                        "type": "integer"
+                                    },
+                                    "title": {
+                                        "type": "string"
+                                    },
+                                    "description": {
+                                        "type": "string"
+                                    },
+                                    "course_id": {
+                                        "type": "integer"
+                                    },
+                                    "scheduled_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "max_participants": {
+                                        "type": "integer"
+                                    },
+                                    "settings": {
+                                        "type": "object"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Session created successfully"
+                    },
+                    "403": {
+                        "description": "Live sessions not enabled"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/live-sessions/{id}": {
+            "get": {
+                "tags": [
+                    "Live Sessions"
+                ],
+                "summary": "Get a specific live session",
+                "operationId": "0d1fe587544693e61ee7847da4bfcc7a",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Session details"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Live Sessions"
+                ],
+                "summary": "Update a live session",
+                "operationId": "b90e301627ae3e15f8e43b3d982b45f5",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Session updated"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Live Sessions"
+                ],
+                "summary": "Cancel/delete a live session",
+                "operationId": "6dedea5cc1993263f898d345e036015e",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Session cancelled"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/live-sessions/{id}/start": {
+            "post": {
+                "tags": [
+                    "Live Sessions"
+                ],
+                "summary": "Start a live session",
+                "operationId": "f2bc8f7e4237745160220571a842f6dc",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Session started"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/live-sessions/{id}/end": {
+            "post": {
+                "tags": [
+                    "Live Sessions"
+                ],
+                "summary": "End a live session",
+                "operationId": "737df93372171512a54652ac4c267486",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Session ended"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/live-sessions/stats": {
+            "get": {
+                "tags": [
+                    "Live Sessions"
+                ],
+                "summary": "Get live session statistics for an environment",
+                "operationId": "5c39ffd6b38f026220d738b948d56e31",
+                "parameters": [
+                    {
+                        "name": "environment_id",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Session statistics"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/live-sessions/{id}/token": {
+            "post": {
+                "tags": [
+                    "Live Session Tokens"
+                ],
+                "summary": "Generate a token to join a live session",
+                "operationId": "3608f89d56a302c562edb5a6aaa2a702",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Token generated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "token": {
+                                            "type": "string"
+                                        },
+                                        "server_url": {
+                                            "type": "string"
+                                        },
+                                        "room_name": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Cannot join session"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
             }
         },
         "/api/onboarding/demo": {
@@ -18773,8 +19238,24 @@
             "description": "API Endpoints for managing environments"
         },
         {
+            "name": "Live Settings",
+            "description": "API Endpoints for managing environment live session settings"
+        },
+        {
             "name": "Environment Membership",
             "description": "API Endpoints for managing user environment memberships. Supports the Identity Unification model where users can join environments without creating new credentials."
+        },
+        {
+            "name": "LiveKit Webhooks",
+            "description": "Webhook endpoints for LiveKit events"
+        },
+        {
+            "name": "Live Sessions",
+            "description": "API endpoints for managing live sessions/webinars"
+        },
+        {
+            "name": "Live Session Tokens",
+            "description": "API endpoints for generating LiveKit tokens"
         },
         {
             "name": "Onboarding",

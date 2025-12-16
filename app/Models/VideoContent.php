@@ -22,6 +22,7 @@ class VideoContent extends Model
         'title',
         'description',
         'video_url',
+        'media_asset_id',
         'video_type', // youtube, vimeo, mp4, webm
         'duration',
         'thumbnail_url',

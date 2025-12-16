@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Events\EnvironmentNotification;
 use App\Models\UserNotification;
 use App\Models\User;
 use App\Models\Environment;
@@ -29,7 +30,7 @@ class NotificationService
         array $data = []
     ): ?UserNotification {
         try {
-            return UserNotification::create([
+            $notification = UserNotification::create([
                 'environment_id' => $environmentId,
                 'user_id' => $userId,
                 'type' => $type,
@@ -37,6 +38,38 @@ class NotificationService
                 'message' => $message,
                 'data' => $data,
             ]);
+
+            event(new EnvironmentNotification(
+                $environmentId,
+                $type,
+                $title,
+                $message,
+                $data,
+                $userId
+            ));
+
+            try {
+                /** @var PushNotificationService $push */
+                $push = app(PushNotificationService::class);
+                $push->sendToUser($environmentId, $userId, [
+                    'title' => $title,
+                    'body' => $message,
+                    'data' => array_merge($data, [
+                        'url' => '/notifications',
+                        'type' => $type,
+                        'environment_id' => $environmentId,
+                    ]),
+                ]);
+            } catch (\Throwable $e) {
+                // Never break the main flow if push fails.
+                Log::warning('Web push send failed', [
+                    'environment_id' => $environmentId,
+                    'user_id' => $userId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            return $notification;
         } catch (\Exception $e) {
             Log::error('Failed to create payment notification', [
                 'error' => $e->getMessage(),
@@ -67,7 +100,7 @@ class NotificationService
     ): ?UserNotification {
         $title = 'Payment Successful';
         $message = "Your payment of {$amount} {$currency} for order #{$orderId} was successful.";
-        
+
         return $this->createPaymentNotification(
             $environmentId,
             $userId,
@@ -104,7 +137,7 @@ class NotificationService
     ): ?UserNotification {
         $title = 'Payment Failed';
         $message = "Your payment of {$amount} {$currency} for order #{$orderId} failed. Reason: {$reason}";
-        
+
         return $this->createPaymentNotification(
             $environmentId,
             $userId,
@@ -140,7 +173,7 @@ class NotificationService
     ): ?UserNotification {
         $title = 'Subscription Created';
         $message = "Your subscription to {$productName} has been created. It will expire on {$endDate}.";
-        
+
         return $this->createPaymentNotification(
             $environmentId,
             $userId,
@@ -175,7 +208,7 @@ class NotificationService
     ): ?UserNotification {
         $title = 'Subscription Updated';
         $message = "Your subscription to {$productName} has been updated. It will now expire on {$endDate}.";
-        
+
         return $this->createPaymentNotification(
             $environmentId,
             $userId,
@@ -210,7 +243,7 @@ class NotificationService
     ): ?UserNotification {
         $title = 'Subscription Canceled';
         $message = "Your subscription to {$productName} has been canceled. It will remain active until {$endDate}.";
-        
+
         return $this->createPaymentNotification(
             $environmentId,
             $userId,

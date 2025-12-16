@@ -28,6 +28,8 @@ class QuizQuestion extends Model
         'options',
         'image_url',    // URL to image used for questions like matching or hotspot
         'image_alt',    // Alt text description for the image
+        'stimulus_type',
+        'stimulus_media_asset_id',
         'blanks',
         'matrix_rows',
         'matrix_columns',
