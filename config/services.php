@@ -60,4 +60,10 @@ return [
         'api_key' => env('IPGEOLOCATION_API_KEY', 'f632e06f3f6a489299101706b1a2fa32'),
     ],
 
+    'vapid' => [
+        'public_key' => env('VAPID_PUBLIC_KEY', ''),
+        'private_key' => env('VAPID_PRIVATE_KEY', ''),
+        'subject' => env('VAPID_SUBJECT', ''),
+    ],
+
 ];

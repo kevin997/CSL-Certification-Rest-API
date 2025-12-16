@@ -11,9 +11,9 @@ class PushNotificationService
 {
     private function buildWebPush(): ?WebPush
     {
-        $publicKey = (string) env('VAPID_PUBLIC_KEY', 'BGXX0uU01rtvrPCa_wfKwSKI3dK2M5_IqGWO7UUsH7S4vmrUya_R1or7xvsLilNcF5q1Gy_M5Q_397lTRHrQRlE');
-        $privateKey = (string) env('VAPID_PRIVATE_KEY', 'HLJ92u4KrOx7jLMLw8aq9JzHQhmiVOWUwJgfaIDCUyk');
-        $subject = (string) env('VAPID_SUBJECT', 'mailto:kevinliboire@gmail.com');
+        $publicKey = (string) config('services.vapid.public_key', '');
+        $privateKey = (string) config('services.vapid.private_key', '');
+        $subject = (string) config('services.vapid.subject', '');
 
         if ($publicKey === '' || $privateKey === '') {
             return null;

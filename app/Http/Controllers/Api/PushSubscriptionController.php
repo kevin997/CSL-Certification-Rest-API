@@ -16,7 +16,7 @@ class PushSubscriptionController extends Controller
         return response()->json([
             'status' => 'success',
             'data' => [
-                'publicKey' => (string) env('VAPID_PUBLIC_KEY', ''),
+                'publicKey' => (string) config('services.vapid.public_key', ''),
             ],
         ]);
     }
