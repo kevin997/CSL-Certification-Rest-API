@@ -15,6 +15,8 @@ class PersonalizationRequest extends Model
         'whatsapp_number',
         'academy_name',
         'description',
+        'organization_type',
+        'niche',
         'status',
     ];
 }

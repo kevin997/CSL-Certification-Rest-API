@@ -23,6 +23,8 @@ class PersonalizationRequestController extends Controller
             'whatsapp_number' => 'required|string|max:255',
             'academy_name' => 'required|string|max:255',
             'description' => 'required|string',
+            'organization_type' => 'nullable|string',
+            'niche' => 'nullable|string',
         ]);
 
         $personalizationRequest = PersonalizationRequest::create($validatedData);

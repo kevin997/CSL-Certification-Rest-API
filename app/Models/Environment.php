@@ -51,6 +51,8 @@ class Environment extends Model
         'description',
         'country_code', //default CM
         'state_code', // default null
+        'organization_type',
+        'niche',
         'payment_settings'
     ];
 

@@ -18,12 +18,12 @@ Congratulations! Your CSL learning environment has been successfully created and
 Access Your Environment
 @endcomponent
 
-## Your Academy is Ready!
+## Your Campus is Ready!
 
 Your environment is being configured automatically and will be available at **{{ $environment->primary_domain }}** within a few minutes.
 
 **What happens next:**
-- Your academy URL is being set up automatically
+- Your campus URL is being set up automatically
 - SSL certificate will be provisioned for secure access
 - Once ready, simply visit your URL and log in with the credentials above
 

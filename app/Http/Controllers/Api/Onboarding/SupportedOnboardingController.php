@@ -28,7 +28,7 @@ class SupportedOnboardingController extends Controller
      * Onboard a new user with the supported plan.
      *
      * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      * 
      * @OA\Post(
      *     path="/api/onboarding/supported",
@@ -43,9 +43,9 @@ class SupportedOnboardingController extends Controller
      *             @OA\Property(property="name", type="string", example="John Doe"),
      *             @OA\Property(property="email", type="string", format="email", example="john@example.com"),
      *             @OA\Property(property="password", type="string", format="password", example="password123"),
-     *             @OA\Property(property="environment_name", type="string", example="John's Academy"),
+     *             @OA\Property(property="environment_name", type="string", example="John's Campus"),
      *             @OA\Property(property="domain_type", type="string", enum={"subdomain", "custom"}, example="subdomain"),
-     *             @OA\Property(property="domain", type="string", example="johns-academy"),
+     *             @OA\Property(property="domain", type="string", example="johns-campus"),
      *             @OA\Property(property="description", type="string", example="A platform for teaching computer science"),
      *             @OA\Property(property="payment_method", type="string", enum={"stripe", "lygos", "paypal", "monetbill"}, example="stripe"),
      *             @OA\Property(property="payment_token", type="string", example="tok_visa")
@@ -64,7 +64,7 @@ class SupportedOnboardingController extends Controller
      *                 @OA\Property(property="environment_id", type="integer", example=1),
      *                 @OA\Property(property="subscription_id", type="integer", example=1),
      *                 @OA\Property(property="payment_id", type="integer", example=1),
-     *                 @OA\Property(property="domain", type="string", example="johns-academy.csl-brands.com")
+     *                 @OA\Property(property="domain", type="string", example="johns-campus.csl-brands.com")
      *             )
      *         )
      *     ),
@@ -119,6 +119,8 @@ class SupportedOnboardingController extends Controller
             'state_code' => 'nullable|string',
             'payment_method' => 'required|in:stripe,lygos,paypal,monetbill,taramoney',
             'payment_token' => 'required|string',
+            'organization_type' => 'nullable|string',
+            'niche' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -172,6 +174,8 @@ class SupportedOnboardingController extends Controller
                     'is_active' => true,
                     'country_code' => $request->country_code ?? 'CM', // Default to Cameroon if not provided
                     'state_code' => $request->state_code, // Null by default if not provided
+                    'organization_type' => $request->organization_type,
+                    'niche' => $request->niche,
                 ]);
                 
                 // Use SubscriptionManager to handle subscription and payment creation
@@ -356,7 +360,7 @@ class SupportedOnboardingController extends Controller
      *
      * @param  \Illuminate\Http\Request  $request
      * @param  \App\Models\User  $existingUser
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      */
     private function handleRetryPayment(Request $request, User $existingUser)
     {

@@ -13,22 +13,22 @@ use Illuminate\Support\Str;
 
 /**
  * @OA\Tag(
- *     name="Academy Switch",
- *     description="API Endpoints for cross-domain academy switching. Allows users to seamlessly switch between academies on different domains."
+ *     name="Campus Switch",
+ *     description="API Endpoints for cross-domain campus switching. Allows users to seamlessly switch between campuses on different domains."
  * )
  */
 class AcademySwitchController extends Controller
 {
     /**
-     * Generate a short-lived token for switching to another academy/domain.
+     * Generate a short-lived token for switching to another campus/domain.
      * 
      * This token is used for cross-domain authentication when a user wants to
-     * switch from one academy domain to another.
+     * switch from one campus domain to another.
      *
      * @OA\Post(
      *     path="/api/auth/academy-switch-token",
-     *     summary="Generate academy switch token",
-     *     tags={"Academy Switch"},
+     *     summary="Generate campus switch token",
+     *     tags={"Campus Switch"},
      *     security={{"sanctum":{}}},
      *     @OA\RequestBody(
      *         required=true,
@@ -79,7 +79,7 @@ class AcademySwitchController extends Controller
 
         if (!$isOwner && !$isMember) {
             return response()->json([
-                'message' => 'You are not a member of this academy',
+                'message' => 'You are not a member of this campus',
             ], 403);
         }
 
@@ -132,8 +132,8 @@ class AcademySwitchController extends Controller
      *
      * @OA\Post(
      *     path="/api/auth/validate-switch-token",
-     *     summary="Validate academy switch token",
-     *     tags={"Academy Switch"},
+     *     summary="Validate campus switch token",
+     *     tags={"Campus Switch"},
      *     @OA\RequestBody(
      *         required=true,
      *         @OA\JsonContent(

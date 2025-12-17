@@ -25,7 +25,7 @@ class StandaloneOnboardingController extends Controller
      * Onboard a new user with the standalone plan.
      *
      * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      * 
      * @OA\Post(
      *     path="/api/onboarding/standalone",
@@ -40,9 +40,9 @@ class StandaloneOnboardingController extends Controller
      *             @OA\Property(property="name", type="string", example="John Doe"),
      *             @OA\Property(property="email", type="string", format="email", example="john@example.com"),
      *             @OA\Property(property="password", type="string", format="password", example="password123"),
-     *             @OA\Property(property="environment_name", type="string", example="John's Academy"),
+     *             @OA\Property(property="environment_name", type="string", example="John's Campus"),
      *             @OA\Property(property="domain_type", type="string", enum={"subdomain", "custom"}, example="subdomain"),
-     *             @OA\Property(property="domain", type="string", example="johns-academy"),
+     *             @OA\Property(property="domain", type="string", example="johns-campus"),
      *             @OA\Property(property="description", type="string", example="A platform for teaching computer science"),
      *             @OA\Property(property="country_code", type="string", example="CM"),
      *             @OA\Property(property="state_code", type="string", example="CE")
@@ -60,7 +60,7 @@ class StandaloneOnboardingController extends Controller
      *                 @OA\Property(property="user_id", type="integer", example=1),
      *                 @OA\Property(property="environment_id", type="integer", example=1),
      *                 @OA\Property(property="subscription_id", type="integer", example=1),
-     *                 @OA\Property(property="domain", type="string", example="johns-academy.csl-cert.com")
+     *                 @OA\Property(property="domain", type="string", example="johns-campus.csl-cert.com")
      *             )
      *         )
      *     ),
@@ -88,6 +88,8 @@ class StandaloneOnboardingController extends Controller
             'description' => 'nullable|string',
             'country_code' => 'nullable|string|size:2',
             'state_code' => 'nullable|string',
+            'organization_type' => 'nullable|string',
+            'niche' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -135,6 +137,8 @@ class StandaloneOnboardingController extends Controller
                     'is_active' => true,
                     'country_code' => $request->country_code ?? 'CM', // Default to Cameroon if not provided
                     'state_code' => $request->state_code, // Null by default if not provided
+                    'organization_type' => $request->organization_type,
+                    'niche' => $request->niche,
                 ]);
                 
                 // Create the subscription
