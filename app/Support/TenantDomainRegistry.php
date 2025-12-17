@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Cache;
 
 class TenantDomainRegistry
 {
-    protected const CACHE_KEY = 'tenant_domains:all_hosts_v1';
+    protected const CACHE_KEY = 'tenant_domains:all_hosts_v2';
 
     /**
      * @return array<int, string> hosts (no scheme), may include ports
@@ -47,6 +47,8 @@ class TenantDomainRegistry
     protected static function getDevHosts(): array
     {
         return [
+            'kursa.csl-brands.com',
+            'sales.csl-brands.com',
             'localhost:3000',
             '127.0.0.1:3000',
             'localhost:3001',
