@@ -41,7 +41,7 @@ class BrandingController extends Controller
     /**
      * Display the current user's branding settings.
      *
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      * 
      * @OA\Get(
      *     path="/branding",
@@ -88,10 +88,210 @@ class BrandingController extends Controller
     }
 
     /**
+     * Display a specific branding record.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\JsonResponse
+     *
+     * @OA\Get(
+     *     path="/branding/{id}",
+     *     summary="Get specific branding settings",
+     *     description="Returns a specific branding record by ID",
+     *     operationId="getBrandingById",
+     *     tags={"Branding"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="id",
+     *         in="path",
+     *         required=true,
+     *         description="Branding ID",
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Successful operation",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="data", ref="#/components/schemas/Branding")
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthenticated"),
+     *     @OA\Response(response=404, description="Branding not found")
+     * )
+     */
+    public function show(int $id)
+    {
+        $branding = Branding::where('user_id', Auth::id())->find($id);
+
+        if (!$branding) {
+            // Try finding by environment_id if user is owner/admin
+            $branding = Branding::whereHas('environment', function ($query) {
+                $query->where('owner_id', Auth::id());
+            })->find($id);
+        }
+
+        if (!$branding) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Branding not found',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $branding,
+        ]);
+    }
+
+    /**
+     * Update a specific branding record.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $id
+     * @return \Illuminate\Http\JsonResponse
+     *
+     * @OA\Put(
+     *     path="/branding/{id}",
+     *     summary="Update specific branding settings",
+     *     description="Updates a specific branding record by ID",
+     *     operationId="updateBrandingById",
+     *     tags={"Branding"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="id",
+     *         in="path",
+     *         required=true,
+     *         description="Branding ID",
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\RequestBody(
+     *         description="Branding data",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="company_name", type="string", example="CSL Certification"),
+     *             @OA\Property(property="logo_url", type="string", example="https://..."),
+     *             @OA\Property(property="favicon_url", type="string", example="https://..."),
+     *             @OA\Property(property="primary_color", type="string", example="#3498db"),
+     *             @OA\Property(property="secondary_color", type="string", example="#2ecc71"),
+     *             @OA\Property(property="accent_color", type="string", example="#e74c3c"),
+     *             @OA\Property(property="font_family", type="string", example="Roboto, sans-serif"),
+     *             @OA\Property(property="custom_css", type="string"),
+     *             @OA\Property(property="custom_js", type="string"),
+     *             @OA\Property(property="is_active", type="boolean", example=true)
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Branding settings updated successfully",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="message", type="string", example="Branding settings updated successfully"),
+     *             @OA\Property(property="data", ref="#/components/schemas/Branding")
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthenticated"),
+     *     @OA\Response(response=404, description="Branding not found"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
+     */
+    public function update(Request $request, int $id)
+    {
+        $branding = Branding::where('user_id', Auth::id())->find($id);
+
+        if (!$branding) {
+            // Try finding by environment_id if user is owner/admin
+            $branding = Branding::whereHas('environment', function ($query) {
+                $query->where('owner_id', Auth::id());
+            })->find($id);
+        }
+
+        if (!$branding) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Branding not found',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'company_name' => 'sometimes|required|string|max:255',
+            'logo_url' => 'nullable|string',
+            'favicon_url' => 'nullable|string',
+            'primary_color' => 'nullable|string|max:7',
+            'secondary_color' => 'nullable|string|max:7',
+            'accent_color' => 'nullable|string|max:7',
+            'font_family' => 'nullable|string|max:100',
+            'custom_css' => 'nullable|string',
+            'custom_js' => 'nullable|string',
+            'custom_domain' => 'nullable|string|max:255',
+            'is_active' => 'nullable|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => $validator->errors(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        if ($request->has('company_name')) {
+            $branding->company_name = $request->company_name;
+        }
+
+        if ($request->has('logo_url')) {
+            $branding->logo_path = $request->logo_url;
+        }
+
+        if ($request->has('favicon_url')) {
+            $branding->favicon_path = $request->favicon_url;
+        }
+
+        if ($request->has('primary_color')) {
+            $branding->primary_color = $request->primary_color;
+        }
+
+        if ($request->has('secondary_color')) {
+            $branding->secondary_color = $request->secondary_color;
+        }
+
+        if ($request->has('accent_color')) {
+            $branding->accent_color = $request->accent_color;
+        }
+
+        if ($request->has('font_family')) {
+            $branding->font_family = $request->font_family;
+        }
+
+        if ($request->has('custom_css')) {
+            $branding->custom_css = $request->custom_css;
+        }
+
+        if ($request->has('custom_js')) {
+            $branding->custom_js = $request->custom_js;
+        }
+
+        if ($request->has('custom_domain')) {
+            $branding->custom_domain = $request->custom_domain;
+        }
+
+        if ($request->has('is_active')) {
+            $branding->is_active = $request->is_active;
+        }
+
+        $branding->save();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Branding settings updated successfully',
+            'data' => $branding,
+        ]);
+    }
+
+    /**
      * Store or update branding settings.
      *
      * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      * 
      * @OA\Post(
      *     path="/branding",
@@ -218,7 +418,7 @@ class BrandingController extends Controller
     /**
      * Reset branding settings to default.
      *
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      * 
      * @OA\Post(
      *     path="/branding/reset",
@@ -280,7 +480,7 @@ class BrandingController extends Controller
      * Preview branding settings.
      *
      * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      * 
      * @OA\Get(
      *     path="/branding/preview",
@@ -376,7 +576,7 @@ class BrandingController extends Controller
      * Get public branding settings for a specific domain.
      *
      * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      * 
      * @OA\Get(
      *     path="/branding/public",
