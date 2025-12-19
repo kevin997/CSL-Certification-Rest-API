@@ -1,7 +1,10 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
+
 
 return new class extends Migration
 {
@@ -10,7 +13,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-        DB::statement("ALTER TABLE `video_contents` MODIFY `video_url` VARCHAR(255) NULL");
+        Schema::table('video_contents', function (Blueprint $table) {
+            $table->string('video_url')->nullable()->change();
+        });
     }
 
     /**
@@ -18,7 +23,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        DB::statement("UPDATE `video_contents` SET `video_url` = '' WHERE `video_url` IS NULL");
-        DB::statement("ALTER TABLE `video_contents` MODIFY `video_url` VARCHAR(255) NOT NULL");
+        DB::table('video_contents')->whereNull('video_url')->update(['video_url' => '']);
+        
+        Schema::table('video_contents', function (Blueprint $table) {
+            $table->string('video_url')->nullable(false)->change();
+        });
     }
 };

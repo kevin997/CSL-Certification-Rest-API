@@ -23,6 +23,7 @@ class Branding extends Model
         'company_name',
         'logo_path',
         'favicon_path',
+        'banner_path',
         'primary_color',
         'secondary_color',
         'accent_color',

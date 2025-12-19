@@ -11,6 +11,7 @@ use App\Models\PaymentGatewaySetting;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ProductReview;
+use App\Models\Enrollment;
 use App\Models\User;
 use App\Services\Tax\TaxZoneService;
 use Illuminate\Http\Request;
@@ -1309,6 +1310,18 @@ class StorefrontController extends Controller
 
         $products = $query->paginate($perPage);
 
+        $learnersCount = Enrollment::where('environment_id', $environment->id)
+            ->whereIn('status', [Enrollment::STATUS_ENROLLED, Enrollment::STATUS_IN_PROGRESS])
+            ->count();
+
+        $salesCount = Order::where('environment_id', $environment->id)
+            ->where('status', Order::STATUS_COMPLETED)
+            ->count();
+
+        $reviewsCount = ProductReview::where('environment_id', $environment->id)
+            ->where('status', 'approved')
+            ->count();
+
         return response()->json([
             'data' => $products->items(),
             'meta' => [
@@ -1321,6 +1334,16 @@ class StorefrontController extends Controller
                 'total' => $products->total(),
             ],
             'categories' => $categories,
+            'environment' => [
+                'id' => $environment->id,
+                'name' => $environment->name,
+                'primary_domain' => $environment->primary_domain,
+            ],
+            'metrics' => [
+                'learners_count' => $learnersCount,
+                'sales_count' => $salesCount,
+                'reviews_count' => $reviewsCount,
+            ],
         ]);
     }
 
@@ -1445,7 +1468,7 @@ class StorefrontController extends Controller
         // Check if environment uses centralized payment gateways
         $targetEnvironmentId = $environment->id;
         $paymentConfig = \App\Models\EnvironmentPaymentConfig::where('environment_id', $environment->id)->first();
-        
+
         if ($paymentConfig && $paymentConfig->use_centralized_gateways) {
             // Use centralized gateways from environment 1 (platform gateways)
             $targetEnvironmentId = 1;
@@ -1486,7 +1509,7 @@ class StorefrontController extends Controller
         // Check if environment uses centralized payment gateways
         $targetEnvironmentId = $environment->id;
         $paymentConfig = \App\Models\EnvironmentPaymentConfig::where('environment_id', $environment->id)->first();
-        
+
         if ($paymentConfig && $paymentConfig->use_centralized_gateways) {
             // Use centralized gateways from environment 1 (platform gateways)
             $targetEnvironmentId = 1;
@@ -1741,7 +1764,7 @@ class StorefrontController extends Controller
                     $responseData["currency"] = $transaction->currency;
                     $responseData['transaction'] = $transaction;
                     DB::commit();
-                    
+
                     if ($paymentResult['success']) {
                         // Add payment-specific data to the response based on the gateway type
                         switch ($paymentResult['type']) {
@@ -2302,7 +2325,7 @@ class StorefrontController extends Controller
                     // No payment_url needed for standard payment type
                     break;
             }
-            
+
 
             return response()->json([
                 'success' => true,
@@ -2487,7 +2510,7 @@ class StorefrontController extends Controller
         if (!$environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
-        
+
         // Validate request
         $validator = Validator::make($request->all(), [
             'product_id' => 'required|exists:products,id',
@@ -2496,7 +2519,7 @@ class StorefrontController extends Controller
             'password' => 'nullable|string|min:8',
             'phone_number' => 'nullable|string|max:20',
         ]);
-        
+
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -2504,7 +2527,7 @@ class StorefrontController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
-        
+
         // Get authenticated user or create new one
         $user = auth('sanctum')->user();
 
@@ -2525,7 +2548,7 @@ class StorefrontController extends Controller
             if ($request->has(['name', 'email', 'password'])) {
                 // Check if user exists
                 $existingUser = User::where('email', $request->email)->first();
-                
+
                 if ($existingUser) {
                     // Check if user is part of the environment
                     $environmentUser = EnvironmentUser::where('environment_id', $environmentId)
@@ -2539,10 +2562,10 @@ class StorefrontController extends Controller
                             $environment,
                             false // isNewUser = false
                         ));
-                        
+
                         // Use this user for enrollment
                         $user = $existingUser;
-                        
+
                         // Create token for the existing user so they are logged in
                         $token = $user->createToken('auth_token')->plainTextToken;
                     } else {
@@ -2561,7 +2584,7 @@ class StorefrontController extends Controller
                         $user = User::create([
                             'name' => $request->name,
                             'email' => $request->email,
-                            'role' => 'learner', 
+                            'role' => 'learner',
                             'password' => Hash::make($request->password),
                             'whatsapp_number' => $request->phone_number,
                         ]);
@@ -2592,19 +2615,19 @@ class StorefrontController extends Controller
             // Ensure existing user is added to the environment if not already a member
             event(new \App\Events\UserCreatedDuringCheckout($user, $environment, false));
         }
-        
+
         // Get and validate product
         $product = Product::where('id', $request->product_id)
             ->where('environment_id', $environmentId)
             ->first();
-            
+
         if (!$product) {
             return response()->json([
                 'success' => false,
                 'message' => 'Product not found'
             ], 404);
         }
-        
+
         if (!$product->is_free) {
             return response()->json([
                 'success' => false,
@@ -2612,7 +2635,7 @@ class StorefrontController extends Controller
                 'error_code' => 'COURSE_NOT_FREE'
             ], 400);
         }
-        
+
         // Create a free order
         try {
             DB::beginTransaction();
@@ -2656,7 +2679,6 @@ class StorefrontController extends Controller
                     'status' => 'completed'
                 ]
             ]);
-
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([

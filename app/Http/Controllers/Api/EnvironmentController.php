@@ -727,6 +727,21 @@ class EnvironmentController extends Controller
             ], 500);
         }
     }
+
+       public function publicIndex(Request $request)
+    {
+        $environments = Environment::where('is_active', true)
+            ->whereHas('branding', function($q) {
+                $q->where('is_active', true);
+            })
+            ->with(['branding' => function($q) {
+                $q->where('is_active', true);
+            }])
+            ->orderBy('id', 'desc')
+            ->cursorPaginate($request->input('per_page', 10));
+
+        return \App\Http\Resources\PublicEnvironmentResource::collection($environments);
+    }
 }
 
 /**

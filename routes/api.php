@@ -267,6 +267,7 @@ Route::post('/admin/sales/logout', [\App\Http\Controllers\Api\Sales\AuthControll
 
 // Environment routes
 Route::get('/current-environment', [EnvironmentController::class, 'getCurrentEnvironment']);
+Route::get('/public/environments', [EnvironmentController::class, 'publicIndex']);
 
 // Public Plan routes
 Route::get('/public/plans', [PlanController::class, 'index']);

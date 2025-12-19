@@ -217,6 +217,7 @@ class BrandingController extends Controller
             'company_name' => 'sometimes|required|string|max:255',
             'logo_url' => 'nullable|string',
             'favicon_url' => 'nullable|string',
+            'banner_url' => 'nullable|string',
             'primary_color' => 'nullable|string|max:7',
             'secondary_color' => 'nullable|string|max:7',
             'accent_color' => 'nullable|string|max:7',
@@ -244,6 +245,10 @@ class BrandingController extends Controller
 
         if ($request->has('favicon_url')) {
             $branding->favicon_path = $request->favicon_url;
+        }
+
+        if ($request->has('banner_url')) {
+            $branding->banner_path = $request->banner_url;
         }
 
         if ($request->has('primary_color')) {
@@ -340,6 +345,7 @@ class BrandingController extends Controller
             'company_name' => 'required|string|max:255',
             'logo_url' => 'nullable|string|url',
             'favicon_url' => 'nullable|string|url',
+            'banner_url' => 'nullable|string|url',
             'primary_color' => 'nullable|string|max:7',
             'secondary_color' => 'nullable|string|max:7',
             'accent_color' => 'nullable|string|max:7',
@@ -369,6 +375,11 @@ class BrandingController extends Controller
         // Handle favicon URL
         if ($request->has('favicon_url')) {
             $branding->favicon_path = $request->favicon_url;
+        }
+
+        // Handle banner URL
+        if ($request->has('banner_url')) {
+            $branding->banner_path = $request->banner_url;
         }
 
         // Update other fields if provided
@@ -667,6 +678,7 @@ class BrandingController extends Controller
                     'company_name' => $branding->company_name,
                     'logo_url' => $branding->logo_path ?: null,
                     'favicon_url' => $branding->favicon_path ?: null,
+                    'banner_url' => $branding->banner_path ?: null,
                     'primary_color' => $branding->primary_color,
                     'secondary_color' => $branding->secondary_color,
                     'accent_color' => $branding->accent_color,
@@ -701,6 +713,7 @@ class BrandingController extends Controller
                     'company_name' => 'CSL',
                     'logo_url' => null,
                     'favicon_url' => null,
+                    'banner_url' => null,
                     'primary_color' => '#0db002',
                     'secondary_color' => '#38c172',
                     'accent_color' => '#e3342f',
@@ -723,6 +736,7 @@ class BrandingController extends Controller
             'company_name' => $branding->company_name,
             'logo_url' => $branding->logo_path ?: null,
             'favicon_url' => $branding->favicon_path ?: null,
+            'banner_url' => $branding->banner_path ?: null,
             'primary_color' => $branding->primary_color,
             'secondary_color' => $branding->secondary_color,
             'accent_color' => $branding->accent_color,
@@ -761,6 +775,7 @@ class BrandingController extends Controller
             'company_name' => 'required|string|max:255',
             'logo_url' => 'nullable|string|url',
             'favicon_url' => 'nullable|string|url',
+            'banner_url' => 'nullable|string|url',
             'primary_color' => 'nullable|string|max:7',
             'secondary_color' => 'nullable|string|max:7',
             'accent_color' => 'nullable|string|max:7',
@@ -795,6 +810,10 @@ class BrandingController extends Controller
 
         if ($request->has('favicon_url')) {
             $branding->favicon_path = $request->favicon_url;
+        }
+
+        if ($request->has('banner_url')) {
+            $branding->banner_path = $request->banner_url;
         }
 
         if ($request->has('primary_color')) {
@@ -1152,6 +1171,7 @@ class BrandingController extends Controller
                 'branding' => [
                     'company_name' => $branding->company_name,
                     'logo_url' => $branding->logo_path,
+                    'banner_url' => $branding->banner_path,
                     'primary_color' => $branding->primary_color,
                     'secondary_color' => $branding->secondary_color,
                     'accent_color' => $branding->accent_color,
