@@ -174,7 +174,7 @@ class Environment extends Model
      */
     public function branding(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
-        return $this->hasOne(Branding::class, "environment_id")->where('is_active', true)->latest();
+        return $this->hasOne(Branding::class, "environment_id")->where('is_active', 1)->latest();
     }
 
     /**

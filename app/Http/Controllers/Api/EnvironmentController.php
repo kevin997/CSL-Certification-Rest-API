@@ -730,11 +730,19 @@ class EnvironmentController extends Controller
 
     public function publicIndex(Request $request)
     {
-        $environments = Environment::where('is_active', true)
-            ->with(['branding'])
-            ->orderBy('id', 'asc')
-            ->cursorPaginate($request->input('per_page', 10));
+        // Use whereHas with a closure to disable the global EnvironmentScope
+        // This ensures check for brandings works across ALL environments, ignoring the current session/domain context
+        $query = Environment::where('is_active', 1)
+            ->whereHas('brandings', function ($q) {
+                $q->withoutGlobalScope(\App\Scopes\EnvironmentScope::class);
+            })
+            ->with(['branding' => function ($q) {
+                $q->withoutGlobalScope(\App\Scopes\EnvironmentScope::class);
+            }])
+            ->orderBy('id', 'asc');
 
+        $environments = $query->cursorPaginate($request->input('per_page', 10));
+        
         return \App\Http\Resources\PublicEnvironmentResource::collection($environments);
     }
 }
