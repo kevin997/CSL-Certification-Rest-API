@@ -728,16 +728,11 @@ class EnvironmentController extends Controller
         }
     }
 
-       public function publicIndex(Request $request)
+    public function publicIndex(Request $request)
     {
         $environments = Environment::where('is_active', true)
-            ->whereHas('branding', function($q) {
-                $q->where('is_active', true);
-            })
-            ->with(['branding' => function($q) {
-                $q->where('is_active', true);
-            }])
-            ->orderBy('id', 'desc')
+            ->with(['branding'])
+            ->orderBy('id', 'asc')
             ->cursorPaginate($request->input('per_page', 10));
 
         return \App\Http\Resources\PublicEnvironmentResource::collection($environments);
