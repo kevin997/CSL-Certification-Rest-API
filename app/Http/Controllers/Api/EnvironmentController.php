@@ -754,20 +754,16 @@ class EnvironmentController extends Controller
                 }
                 
                 // Handle subscription changes
+                $newSubscription = null;
                 if ($wasDemo && !$isDemo) {
                     // Promoting from demo to standalone
-                    $this->promoteToStandalone($environment, $owner);
+                    $newSubscription = $this->promoteToStandalone($environment, $owner);
                     $subscriptionMessage = 'Subscription promoted to standalone plan.';
                 } else {
                     // Demoting from standalone to demo (if needed)
-                    $this->demoteToDemo($environment, $owner);
+                    $newSubscription = $this->demoteToDemo($environment, $owner);
                     $subscriptionMessage = 'Subscription changed to demo trial.';
                 }
-                
-                // Load the updated subscription for response
-                // added relations: 'subscription' to fix Property [id] does not exist on this collection instance.
-                $environment->load('subscription');
-                $latestSubscription = $environment->subscription->first();
                 
                 return response()->json([
                     'status' => 'success',
@@ -776,12 +772,12 @@ class EnvironmentController extends Controller
                         'id' => $environment->id,
                         'name' => $environment->name,
                         'is_demo' => $environment->is_demo,
-                        'subscription' => $latestSubscription ? [
-                            'id' => $latestSubscription->id,
-                            'plan_id' => $latestSubscription->plan_id,
-                            'status' => $latestSubscription->status,
-                            'starts_at' => $latestSubscription->starts_at,
-                            'ends_at' => $latestSubscription->ends_at,
+                        'subscription' => $newSubscription ? [
+                            'id' => $newSubscription->id,
+                            'plan_id' => $newSubscription->plan_id,
+                            'status' => $newSubscription->status,
+                            'starts_at' => $newSubscription->starts_at,
+                            'ends_at' => $newSubscription->ends_at,
                         ] : null
                     ]
                 ], 200);
