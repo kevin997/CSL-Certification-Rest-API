@@ -26,7 +26,8 @@ class ConfigureTenantCorsAndSanctum
         }
 
         // Sanctum expects domains/hosts without scheme.
-        config()->set('sanctum.stateful', $allowedHosts);
+        // Sanctum stateful domains are now handled dynamically in config/sanctum.php
+        // config()->set('sanctum.stateful', $allowedHosts);
 
         return $next($request);
     }

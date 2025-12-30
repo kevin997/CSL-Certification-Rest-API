@@ -108,6 +108,12 @@ if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ] || [ "$CONTA
     fi
 fi
 
+# Explicitly clear caches as requested
+echo "Clearing specific caches..."
+php artisan config:clear
+php artisan route:clear
+php artisan cache:clear
+
 # Clear and optimize for better performance
 echo "Clearing and optimizing cache..."
 if php artisan optimize:clear && php artisan optimize; then

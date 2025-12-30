@@ -42,6 +42,21 @@ class AppServiceProvider extends ServiceProvider
             BackupZipWasCreated::class,
             MailBackupWithAttachment::class
         );
+
+        // Dynamically configure Sanctum stateful domains for multi-tenancy
+        // This must be done here (not config file) to avoid CLI crashes when request() is unavailable
+        if (!$this->app->runningInConsole() && request()->hasHeader('Origin')) {
+            $origin = request()->header('Origin');
+            $host = parse_url($origin, PHP_URL_HOST);
+            
+            if ($host && str_ends_with($host, 'csl-brands.com')) {
+                $currentStateful = config('sanctum.stateful', []);
+                if (!in_array($host, $currentStateful)) {
+                    $currentStateful[] = $host;
+                    config(['sanctum.stateful' => $currentStateful]);
+                }
+            }
+        }
     }
 
     /**
