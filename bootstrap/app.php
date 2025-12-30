@@ -36,6 +36,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->append(DetectEnvironment::class);
         $middleware->append(BrandingMiddleware::class);
         $middleware->append(\App\Http\Middleware\PreventIndexing::class);
+        
+        // Fix XSRF-TOKEN cookie domain for cross-subdomain auth
+        // This must run after the response is generated to modify the cookie
+        $middleware->append(\App\Http\Middleware\FixXsrfCookieDomain::class);
 
         // Chat rate limiting middleware aliases
         $middleware->alias([

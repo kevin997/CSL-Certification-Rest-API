@@ -83,6 +83,59 @@ class TokenController extends Controller
             ]);
         }
 
+        // Check domain-based role restrictions BEFORE creating token
+        $userRoleCheck = $user->role instanceof UserRole ? $user->role->value : $user->role;
+        $isAdminOrSalesAgent = in_array($userRoleCheck, [
+            UserRole::ADMIN->value,
+            UserRole::SUPER_ADMIN->value, 
+            UserRole::SALES_AGENT->value,
+            'admin',
+            'super_admin',
+            'sales_agent'
+        ]);
+
+        if ($isAdminOrSalesAgent) {
+            // Admin/sales agent users can ONLY login from allowed admin domains
+            $frontendDomain = $request->header('X-Frontend-Domain', '');
+            $origin = $request->header('Origin', '');
+            $referer = $request->header('Referer', '');
+            
+            // Extract host from various headers
+            $requestHost = $this->extractHostFromHeaders($frontendDomain, $origin, $referer);
+            
+            // List of allowed admin domains
+            $allowedAdminDomains = [
+                'sales.csl-brands.com',
+                'kursa.csl-brands.com',
+                'localhost:3001',
+                'localhost',
+                '127.0.0.1:3001',
+                '127.0.0.1',
+            ];
+            
+            // Check if request is from an allowed admin domain
+            $isAllowedDomain = false;
+            foreach ($allowedAdminDomains as $allowed) {
+                if ($requestHost === $allowed || str_starts_with($requestHost, $allowed . ':')) {
+                    $isAllowedDomain = true;
+                    break;
+                }
+            }
+            
+            if (!$isAllowedDomain) {
+                Log::warning('Admin/sales agent token creation attempt from unauthorized domain', [
+                    'user_id' => $user->id,
+                    'user_role' => $userRoleCheck,
+                    'request_host' => $requestHost,
+                    'frontend_domain' => $frontendDomain,
+                ]);
+                
+                throw ValidationException::withMessages([
+                    'credentials' => ['Access denied. Wrong password or domain not allowed.'],
+                ]);
+            }
+        }
+
         // If authenticated via environment credentials, manually log in the user
         if ($authenticatedViaEnvironment) {
             Auth::login($user);
@@ -361,5 +414,45 @@ class TokenController extends Controller
         $request->user()->tokens()->delete();
 
         return response()->json(['message' => 'All tokens revoked successfully']);
+    }
+
+    /**
+     * Extract host from request headers.
+     * Priority: X-Frontend-Domain > Origin > Referer
+     */
+    private function extractHostFromHeaders(string $frontendDomain, string $origin, string $referer): string
+    {
+        // Use X-Frontend-Domain if provided (set by our frontend)
+        if (!empty($frontendDomain)) {
+            // Remove any scheme if accidentally included
+            $frontendDomain = preg_replace('#^https?://#', '', $frontendDomain);
+            return strtolower(trim($frontendDomain));
+        }
+
+        // Try Origin header
+        if (!empty($origin)) {
+            $parsed = parse_url($origin);
+            if (isset($parsed['host'])) {
+                $host = strtolower($parsed['host']);
+                if (isset($parsed['port'])) {
+                    $host .= ':' . $parsed['port'];
+                }
+                return $host;
+            }
+        }
+
+        // Try Referer header
+        if (!empty($referer)) {
+            $parsed = parse_url($referer);
+            if (isset($parsed['host'])) {
+                $host = strtolower($parsed['host']);
+                if (isset($parsed['port'])) {
+                    $host .= ':' . $parsed['port'];
+                }
+                return $host;
+            }
+        }
+
+        return '';
     }
 }
