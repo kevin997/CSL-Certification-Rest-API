@@ -18,9 +18,9 @@ return Application::configure(basePath: dirname(__DIR__))
         channels: __DIR__ . '/../routes/channels.php',
         health: '/up',
         then: function () {
-            // Public API routes without authentication
+            // Public API routes without authentication - use higher rate limit for SSR
             Route::prefix('api')
-                ->middleware(['throttle:api'])
+                ->middleware(['throttle:public-api'])
                 ->group(base_path('routes/api-public.php'));
         },
     )

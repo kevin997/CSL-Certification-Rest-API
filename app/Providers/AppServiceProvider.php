@@ -49,9 +49,15 @@ class AppServiceProvider extends ServiceProvider
      */
     protected function configureRateLimiting(): void
     {
-        // API rate limiter - 60 requests per minute per user/IP
+        // API rate limiter - 120 requests per minute per user/IP (increased for SPA needs)
         RateLimiter::for('api', function (Request $request) {
-            return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+            return Limit::perMinute(120)->by($request->user()?->id ?: $request->ip());
+        });
+
+        // Public API rate limiter - 180 requests per minute for public/readonly endpoints
+        // Used for server-side rendering and unauthenticated browsing
+        RateLimiter::for('public-api', function (Request $request) {
+            return Limit::perMinute(180)->by($request->ip());
         });
 
         // Login rate limiter - 5 attempts per minute per IP
