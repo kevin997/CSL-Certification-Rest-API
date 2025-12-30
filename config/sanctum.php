@@ -13,12 +13,17 @@ return [
     | authentication cookies. Typically, these should include your local
     | and production domains which access your API via a frontend SPA.
     |
+    | For multi-tenant systems, we dynamically add the current request host
+    | so that any subdomain of csl-brands.com is automatically considered
+    | stateful without needing to maintain a static list.
+    |
     */
 
-    'stateful' => explode(',', env('SANCTUM_STATEFUL_DOMAINS', sprintf(
-        '%s%s',
-        'localhost,localhost:3000,localhost:3001,127.0.0.1,127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:8000,::1',
-        Sanctum::currentApplicationUrlWithPort()
+    'stateful' => array_filter(array_unique(array_merge(
+        // Base stateful domains (localhost for development)
+        explode(',', env('SANCTUM_STATEFUL_DOMAINS', 'localhost,localhost:3000,localhost:3001,127.0.0.1,127.0.0.1:3000,::1')),
+        // Dynamically add the current request host (handles any tenant domain)
+        [Sanctum::currentApplicationUrlWithPort(), parse_url(request()?->headers?->get('origin') ?? '', PHP_URL_HOST) ?: null]
     ))),
 
     /*

@@ -33,15 +33,19 @@ class IsolateSession
             $slug = Str::slug($frontendDomain, '_');
             
             // Set a unique session cookie name per frontend domain
+            // This provides isolation - each frontend gets its own session
             $cookieName = 'csl_session_' . $slug;
             Config::set('session.cookie', $cookieName);
             
-            // CRITICAL: Set the session domain to null or the specific frontend domain
-            // This prevents the cookie from being shared with other subdomains.
-            // Setting to null means the cookie will be scoped to the exact host.
-            Config::set('session.domain', null);
+            // CRITICAL FIX: Set the session domain to the ROOT domain
+            // This allows the session cookie to be sent from the frontend subdomain
+            // The unique cookie NAME still provides isolation between frontends
+            $rootDomain = $this->getRootDomain($frontendDomain);
+            if ($rootDomain) {
+                Config::set('session.domain', '.' . $rootDomain);
+            }
             
-            // Also ensure SameSite is set appropriately for cross-origin requests
+            // Ensure SameSite is set appropriately for cross-origin requests
             // 'lax' works for most cases, 'none' is needed for third-party contexts
             // but requires secure cookies (HTTPS)
             if (Config::get('session.secure')) {
@@ -50,6 +54,28 @@ class IsolateSession
         }
 
         return $next($request);
+    }
+    
+    /**
+     * Extract the root domain from a host.
+     * e.g., "learning.csl-brands.com" -> "csl-brands.com"
+     */
+    protected function getRootDomain(string $host): ?string
+    {
+        // Handle localhost and IP addresses
+        if ($host === 'localhost' || filter_var($host, FILTER_VALIDATE_IP)) {
+            return null;
+        }
+
+        $parts = explode('.', $host);
+        
+        // Need at least 2 parts for a valid domain
+        if (count($parts) < 2) {
+            return null;
+        }
+
+        // Return the last two parts (e.g., "csl-brands.com")
+        return implode('.', array_slice($parts, -2));
     }
 
     /**
