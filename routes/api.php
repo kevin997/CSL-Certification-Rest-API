@@ -1020,6 +1020,10 @@ Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
         Route::get('/{id}', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'show']);
     });
 
+    // Audit Logs
+    Route::get('/audit-logs', [\App\Http\Controllers\Api\Admin\AuditLogController::class, 'index']);
+    Route::get('/audit-logs/{id}', [\App\Http\Controllers\Api\Admin\AuditLogController::class, 'show']);
+
     // Environment Payment Configuration
     Route::prefix('environment-payment-configs')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController::class, 'index']);
@@ -1027,6 +1031,7 @@ Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
         Route::put('/{environmentId}', [\App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController::class, 'update']);
         Route::post('/{environmentId}/toggle', [\App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController::class, 'toggle']);
     });
+
 });
 
 // Instructor API Endpoints for Earnings and Withdrawals

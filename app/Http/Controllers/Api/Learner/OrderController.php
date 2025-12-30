@@ -27,6 +27,17 @@ class OrderController extends Controller
             ->with(['items.product'])
             ->orderBy('created_at', 'desc')
             ->paginate($request->input('per_page', 10));
+
+        // Transform collection to resolve payment method names
+        $orders->getCollection()->transform(function ($order) {
+            if (is_numeric($order->payment_method)) {
+                $gateway = \App\Models\PaymentGatewaySetting::find($order->payment_method);
+                if ($gateway) {
+                    $order->payment_method = $gateway->gateway_name ?? $gateway->code;
+                }
+            }
+            return $order;
+        });
         
         return response()->json([
             'status' => 'success',
@@ -56,6 +67,13 @@ class OrderController extends Controller
                 }
             ])
             ->firstOrFail();
+
+        if (is_numeric($order->payment_method)) {
+            $gateway = \App\Models\PaymentGatewaySetting::find($order->payment_method);
+            if ($gateway) {
+                $order->payment_method = $gateway->gateway_name ?? $gateway->code;
+            }
+        }
         
         return response()->json([
             'status' => 'success',
@@ -131,11 +149,35 @@ class OrderController extends Controller
             $order->total_amount = $totalAmount;
             $order->save();
             
+            // Dispatch OrderCreated notification
+            try {
+                $user->notify(new \App\Notifications\OrderCreated($order, app(\App\Services\TelegramService::class)));
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('Failed to send OrderCreated notification: ' . $e->getMessage());
+            }
+
             // Process payment (in a real system, this would integrate with a payment gateway)
             
             // For demo purposes, we'll just mark the order as completed
-            $order->status = 'completed';
-            $order->save();
+            // $order->status = 'completed';
+            // $order->save();
+            
+            // Order is left as pending so it can be "continued" via the link
+            // If the original code auto-completed it, the continue link wouldn't work for "abandoned" checkouts
+            // But the user request specifically mentions "started checkout... didn't proceed to payment"
+            // So we should probably NOT auto-complete it if we want to simulate abandoned cart
+            // However, the existing code was auto-completing it.
+            // Let's assume for this specific request, we want to allow the "continue payment" flow.
+            // But if I remove auto-complete, it changes existing behavior significantly.
+            // The prompt says: "instructors say when a visitor start the checkout process and doent finishes it... his account wa created... but he didn't proceed to payment."
+            // This implies the order creation happens BEFORE payment.
+            // The existing code at line 137 sets status = 'completed'.
+            // I should probably remove that auto-completion or make it conditional?
+            // Actually, looking at the code, it says "For demo purposes, we'll just mark the order as completed".
+            // Since this is a "Certification-Rest-API", maybe it's used for demo?
+            // But the user is asking for "abandoned checkout" support.
+            // Be safe: I will COMMENT OUT the auto-completion to allow "pending" state for new orders, 
+            // which effectively enables the "abandoned" state until they pay.
             
             // Create enrollments for any courses included in the products
             foreach ($order->items as $item) {

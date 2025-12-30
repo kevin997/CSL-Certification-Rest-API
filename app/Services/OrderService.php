@@ -198,6 +198,20 @@ class OrderService
             }
             
             DB::commit();
+
+            // Dispatch OrderCreated notification
+            try {
+                // Ensure used is loaded
+                if (!$order->relationLoaded('user')) {
+                    $order->load('user');
+                }
+                
+                if ($order->user) {
+                    $order->user->notify(new \App\Notifications\OrderCreated($order, app(\App\Services\TelegramService::class)));
+                }
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('Failed to send OrderCreated notification in OrderService: ' . $e->getMessage());
+            }
             
             return $this->getOrderById($order->id);
         } catch (\Exception $e) {

@@ -338,6 +338,16 @@ class SubscriptionProductController extends Controller
 
             DB::commit();
 
+            // Dispatch OrderCreated notification
+            try {
+                $order->load(['user']);
+                if ($order->user) {
+                    $order->user->notify(new \App\Notifications\OrderCreated($order, app(\App\Services\TelegramService::class)));
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to send OrderCreated notification: ' . $e->getMessage());
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Payment processing initiated',
@@ -453,6 +463,16 @@ class SubscriptionProductController extends Controller
             $responseData = array_merge($responseData, $this->buildPaymentResponseData($paymentResult));
 
             DB::commit();
+
+            // Dispatch OrderCreated notification
+            try {
+                $order->load(['user']);
+                if ($order->user) {
+                    $order->user->notify(new \App\Notifications\OrderCreated($order, app(\App\Services\TelegramService::class)));
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to send OrderCreated notification: ' . $e->getMessage());
+            }
 
             return response()->json([
                 'success' => true,

@@ -98,6 +98,17 @@ class Order extends Model
     }
 
     /**
+     * Get the continue payment URL for the order.
+     */
+    public function getContinuePaymentUrlAttribute()
+    {
+        if ($this->status === 'pending' && $this->environment) {
+            return 'https://' . $this->environment->primary_domain . '/checkout/continue-payment/' . $this->id;
+        }
+        return null;
+    }
+
+    /**
      * Get the transaction associated with this order
      */
     public function transaction(): HasOne

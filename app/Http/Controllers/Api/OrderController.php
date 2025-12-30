@@ -91,7 +91,7 @@ class OrderController extends Controller
      * Display a listing of orders.
      *
      * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      * 
      * @OA\Get(
      *     path="/orders",
@@ -262,11 +262,28 @@ class OrderController extends Controller
     // Pagination
     $perPage = $request->input('per_page', 15);
     $orders = $query->paginate($perPage);
+
+    // Transform orders to resolve payment method name
+    $orders->getCollection()->transform(function ($order) {
+        $order->payment_method = $this->resolvePaymentMethod($order->payment_method);
+        return $order;
+    });
     
     return response()->json([
         'status' => 'success',
         'data' => $orders,
     ]);
+}
+
+private function resolvePaymentMethod($paymentMethod)
+{
+    if (is_numeric($paymentMethod)) {
+        $gateway = \App\Models\PaymentGatewaySetting::find($paymentMethod);
+        if ($gateway) {
+            return $gateway->gateway_name ?? $gateway->code;
+        }
+    }
+    return $paymentMethod;
 }
 
     /**
@@ -371,7 +388,7 @@ class OrderController extends Controller
      * Store a newly created order.
      *
      * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      * 
      * @OA\Post(
      *     path="/orders",
@@ -530,6 +547,20 @@ class OrderController extends Controller
 
             DB::commit();
 
+            // Dispatch OrderCreated notification
+            try {
+                // Ensure used is loaded
+                if (!$order->relationLoaded('user')) {
+                    $order->load('user');
+                }
+                
+                if ($order->user) {
+                    $order->user->notify(new \App\Notifications\OrderCreated($order, app(\App\Services\TelegramService::class)));
+                }
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('Failed to send OrderCreated notification: ' . $e->getMessage());
+            }
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Order created successfully',
@@ -549,7 +580,7 @@ class OrderController extends Controller
      * Display the specified order.
      *
      * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      * 
      * @OA\Get(
      *     path="/orders/{id}",
@@ -615,6 +646,9 @@ class OrderController extends Controller
             ], Response::HTTP_FORBIDDEN);
         }
 
+        // Resolve payment method name
+        $order->payment_method = $this->resolvePaymentMethod($order->payment_method);
+
         return response()->json([
             'status' => 'success',
             'data' => $order,
@@ -626,7 +660,7 @@ class OrderController extends Controller
      *
      * @param  \Illuminate\Http\Request  $request
      * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      * 
      * @OA\Put(
      *     path="/orders/{id}/status",

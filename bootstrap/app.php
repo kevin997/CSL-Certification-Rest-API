@@ -28,6 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->statefulApi();
 
         $middleware->prepend(ConfigureTenantCorsAndSanctum::class);
+        $middleware->prepend(\App\Http\Middleware\IsolateSession::class);
 
         // HTTPS enforcement middleware (runs first for security)
         $middleware->append(EnforceHttps::class);

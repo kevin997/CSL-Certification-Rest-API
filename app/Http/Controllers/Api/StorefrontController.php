@@ -1709,6 +1709,16 @@ class StorefrontController extends Controller
 
                 DB::commit();
 
+                // Dispatch OrderCreated notification
+                try {
+                    $order->load(['user']);
+                    if ($order->user) {
+                        $order->user->notify(new \App\Notifications\OrderCreated($order, app(\App\Services\TelegramService::class)));
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Failed to send OrderCreated notification: ' . $e->getMessage());
+                }
+
                 // Prepare the response data
                 $responseData = [
                     'order_id' => $order->id,
@@ -2663,6 +2673,16 @@ class StorefrontController extends Controller
             ]);
 
             DB::commit();
+
+            // Dispatch OrderCreated notification
+            try {
+                $order->load(['user']);
+                if ($order->user) {
+                    $order->user->notify(new \App\Notifications\OrderCreated($order, app(\App\Services\TelegramService::class)));
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to send OrderCreated notification: ' . $e->getMessage());
+            }
 
             // Dispatch event to handle enrollments and digital delivery
             event(new \App\Events\OrderCompleted($order));
