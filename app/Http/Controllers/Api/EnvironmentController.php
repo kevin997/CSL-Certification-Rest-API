@@ -765,6 +765,7 @@ class EnvironmentController extends Controller
                 }
                 
                 // Load the updated subscription for response
+                // added relations: 'subscription' to fix Property [id] does not exist on this collection instance.
                 $environment->load('subscription');
                 $latestSubscription = $environment->subscription->first();
                 
