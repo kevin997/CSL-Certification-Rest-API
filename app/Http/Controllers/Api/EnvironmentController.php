@@ -4,8 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Environment;
+use App\Models\Plan;
+use App\Models\Subscription;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
@@ -33,6 +38,24 @@ use Illuminate\Validation\Rule;
  */
 class EnvironmentController extends Controller
 {
+    /**
+     * Check if user has administrative privileges.
+     * Allows: teachers, admins, super admins, sales agents.
+     */
+    private function userHasAdminPrivileges($user): bool
+    {
+        return $user->isTeacher() || $user->isAdmin() || $user->isSalesAgent();
+    }
+
+    /**
+     * Check if user can manage a specific environment.
+     * Allows: admins, or the environment owner.
+     */
+    private function userCanManageEnvironment($user, Environment $environment): bool
+    {
+        return $this->userHasAdminPrivileges($user) || $environment->owner_id === $user->id;
+    }
+
     /**
      * @OA\Get(
      *     path="/api/environments",
@@ -65,8 +88,8 @@ class EnvironmentController extends Controller
      */
     public function index(Request $request)
     {
-        // If user is admin, return all environments
-        if ($request->user()->isTeacher()) {
+        // If user has admin privileges, return all environments
+        if ($this->userHasAdminPrivileges($request->user())) {
             return Environment::all();
         }
         
@@ -186,7 +209,7 @@ class EnvironmentController extends Controller
         $environment = Environment::findOrFail($id);
         
         // Check if user has permission to view this environment
-        if (!$request->user()->isTeacher() && $environment->owner_id !== $request->user()->id) {
+        if (!$this->userCanManageEnvironment($request->user(), $environment)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -252,7 +275,7 @@ class EnvironmentController extends Controller
         $environment = Environment::findOrFail($id);
         
         // Check if user has permission to update this environment
-        if (!$request->user()->isTeacher() && $environment->owner_id !== $request->user()->id) {
+        if (!$this->userCanManageEnvironment($request->user(), $environment)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -265,7 +288,7 @@ class EnvironmentController extends Controller
         ];
 
         // Allow admins to update primary_domain
-        if ($request->user()->isTeacher()) {
+        if ($this->userHasAdminPrivileges($request->user())) {
             $validationRules['primary_domain'] = [
                 'sometimes',
                 'required',
@@ -289,7 +312,7 @@ class EnvironmentController extends Controller
             'description',
         ];
 
-        if ($request->user()->isTeacher() && $request->has('primary_domain')) {
+        if ($this->userHasAdminPrivileges($request->user()) && $request->has('primary_domain')) {
             $fillableFields[] = 'primary_domain';
         }
 
@@ -326,7 +349,7 @@ class EnvironmentController extends Controller
         $environment = Environment::findOrFail($id);
         
         // Check if user has permission to delete this environment
-        if (!$request->user()->isTeacher() && $environment->owner_id !== $request->user()->id) {
+        if (!$this->userCanManageEnvironment($request->user(), $environment)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -409,7 +432,7 @@ class EnvironmentController extends Controller
         $environment = Environment::findOrFail($id);
         
         // Check if user has permission to view this environment's users
-        if (!$request->user()->isTeacher() && $environment->owner_id !== $request->user()->id) {
+        if (!$this->userCanManageEnvironment($request->user(), $environment)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -462,7 +485,7 @@ class EnvironmentController extends Controller
         $environment = Environment::findOrFail($id);
         
         // Check if user has permission to add users to this environment
-        if (!$request->user()->isTeacher() && $environment->owner_id !== $request->user()->id) {
+        if (!$this->userCanManageEnvironment($request->user(), $environment)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -572,7 +595,7 @@ class EnvironmentController extends Controller
         $environment = Environment::findOrFail($id);
         
         // Check if user has permission to remove users from this environment
-        if (!$request->user()->isTeacher() && $environment->owner_id !== $request->user()->id) {
+        if (!$this->userCanManageEnvironment($request->user(), $environment)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -689,7 +712,7 @@ class EnvironmentController extends Controller
             $environment = Environment::findOrFail($id);
             
             // Check if user has admin permissions
-            if (!$request->user()->isTeacher()) {
+            if (!$this->userHasAdminPrivileges($request->user())) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Unauthorized. Admin access required.'
@@ -701,18 +724,260 @@ class EnvironmentController extends Controller
                 'is_demo' => 'required|boolean'
             ]);
             
-            // Update demo status
-            $environment->is_demo = $request->is_demo;
-            $environment->save();
+            // Check if the status is actually changing
+            $wasDemo = $environment->is_demo;
+            $isDemo = $request->is_demo;
+            
+            if ($wasDemo === $isDemo) {
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Environment demo status unchanged',
+                    'data' => [
+                        'id' => $environment->id,
+                        'name' => $environment->name,
+                        'is_demo' => $environment->is_demo
+                    ]
+                ], 200);
+            }
+            
+            // Use database transaction for atomicity
+            return DB::transaction(function () use ($environment, $isDemo, $wasDemo) {
+                // Update demo status
+                $environment->is_demo = $isDemo;
+                $environment->save();
+                
+                // Get the environment owner
+                $owner = User::find($environment->owner_id);
+                
+                if (!$owner) {
+                    throw new \Exception('Environment owner not found');
+                }
+                
+                // Handle subscription changes
+                if ($wasDemo && !$isDemo) {
+                    // Promoting from demo to standalone
+                    $this->promoteToStandalone($environment, $owner);
+                    $subscriptionMessage = 'Subscription promoted to standalone plan.';
+                } else {
+                    // Demoting from standalone to demo (if needed)
+                    $this->demoteToDemo($environment, $owner);
+                    $subscriptionMessage = 'Subscription changed to demo trial.';
+                }
+                
+                // Load the updated subscription for response
+                $environment->load('subscription');
+                
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Environment demo status updated successfully. ' . $subscriptionMessage,
+                    'data' => [
+                        'id' => $environment->id,
+                        'name' => $environment->name,
+                        'is_demo' => $environment->is_demo,
+                        'subscription' => $environment->subscription ? [
+                            'id' => $environment->subscription->id,
+                            'plan_id' => $environment->subscription->plan_id,
+                            'status' => $environment->subscription->status,
+                            'starts_at' => $environment->subscription->starts_at,
+                            'ends_at' => $environment->subscription->ends_at,
+                        ] : null
+                    ]
+                ], 200);
+            });
+            
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Environment not found'
+            ], 404);
+        } catch (\Exception $e) {
+            Log::error('Failed to update environment demo status', [
+                'environment_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to update environment demo status: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Promote an environment from demo to standalone plan.
+     * Cancels any existing demo/trial subscription and creates an active standalone subscription.
+     *
+     * @param Environment $environment
+     * @param User $owner
+     * @return Subscription
+     */
+    private function promoteToStandalone(Environment $environment, User $owner): Subscription
+    {
+        // Get the standalone plan
+        $standalonePlan = Plan::where('type', 'standalone')->firstOrFail();
+        
+        // Cancel any existing subscriptions for this environment
+        Subscription::where('environment_id', $environment->id)
+            ->whereIn('status', [Subscription::STATUS_ACTIVE, Subscription::STATUS_TRIAL])
+            ->update([
+                'status' => Subscription::STATUS_CANCELED,
+                'canceled_at' => now(),
+                'ends_at' => now(),
+            ]);
+        
+        // Create a new active standalone subscription
+        $subscription = Subscription::create([
+            'user_id' => $owner->id,
+            'plan_id' => $standalonePlan->id,
+            'environment_id' => $environment->id,
+            'billing_cycle' => 'monthly',
+            'starts_at' => now(),
+            'ends_at' => null, // No end date for standalone (free) plan
+            'status' => Subscription::STATUS_ACTIVE,
+        ]);
+        
+        Log::info('Environment promoted to standalone plan', [
+            'environment_id' => $environment->id,
+            'subscription_id' => $subscription->id,
+            'owner_id' => $owner->id,
+        ]);
+        
+        return $subscription;
+    }
+
+    /**
+     * Demote an environment from standalone to demo/trial plan.
+     * Cancels the standalone subscription and creates a new demo trial subscription.
+     *
+     * @param Environment $environment
+     * @param User $owner
+     * @return Subscription
+     */
+    private function demoteToDemo(Environment $environment, User $owner): Subscription
+    {
+        // Get the demo plan
+        $demoPlan = Plan::where('type', 'demo')->firstOrFail();
+        
+        // Cancel any existing subscriptions for this environment
+        Subscription::where('environment_id', $environment->id)
+            ->whereIn('status', [Subscription::STATUS_ACTIVE, Subscription::STATUS_TRIAL])
+            ->update([
+                'status' => Subscription::STATUS_CANCELED,
+                'canceled_at' => now(),
+                'ends_at' => now(),
+            ]);
+        
+        // Create a new demo trial subscription (14 days from now)
+        $expiresAt = \Carbon\Carbon::now()->addDays(14);
+        
+        $subscription = Subscription::create([
+            'user_id' => $owner->id,
+            'plan_id' => $demoPlan->id,
+            'environment_id' => $environment->id,
+            'billing_cycle' => 'monthly',
+            'starts_at' => now(),
+            'ends_at' => $expiresAt,
+            'status' => Subscription::STATUS_TRIAL,
+            'trial_ends_at' => $expiresAt,
+        ]);
+        
+        Log::info('Environment demoted to demo trial', [
+            'environment_id' => $environment->id,
+            'subscription_id' => $subscription->id,
+            'owner_id' => $owner->id,
+            'expires_at' => $expiresAt,
+        ]);
+        
+        return $subscription;
+    }
+
+    /**
+     * Update the environment owner's password.
+     * Only accessible by admins/sales agents.
+     *
+     * @param int $id
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     *
+     * @OA\Put(
+     *     path="/api/environments/{id}/owner-password",
+     *     summary="Update environment owner's password",
+     *     tags={"Environments"},
+     *     security={{"sanctum":{}}},
+     *     @OA\Parameter(
+     *         name="id",
+     *         in="path",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"password"},
+     *             @OA\Property(property="password", type="string", minLength=6, example="newSecurePassword123")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Password updated successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="message", type="string", example="Owner password updated successfully")
+     *         )
+     *     ),
+     *     @OA\Response(response=403, description="Unauthorized - Admin access required"),
+     *     @OA\Response(response=404, description="Environment not found"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
+     */
+    public function updateOwnerPassword($id, Request $request)
+    {
+        try {
+            $environment = Environment::findOrFail($id);
+            
+            // Check if user has admin permissions
+            if (!$this->userHasAdminPrivileges($request->user())) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unauthorized. Admin access required.'
+                ], 403);
+            }
+            
+            // Validate request
+            $validator = Validator::make($request->all(), [
+                'password' => 'required|string|min:6',
+            ]);
+            
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => 'error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+            
+            // Get the environment owner
+            $owner = User::find($environment->owner_id);
+            
+            if (!$owner) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Environment owner not found'
+                ], 404);
+            }
+            
+            // Update the owner's password
+            $owner->password = Hash::make($request->password);
+            $owner->save();
+            
+            Log::info('Environment owner password updated by admin', [
+                'environment_id' => $environment->id,
+                'owner_id' => $owner->id,
+                'admin_id' => $request->user()->id,
+            ]);
             
             return response()->json([
                 'status' => 'success',
-                'message' => 'Environment demo status updated successfully',
-                'data' => [
-                    'id' => $environment->id,
-                    'name' => $environment->name,
-                    'is_demo' => $environment->is_demo
-                ]
+                'message' => 'Owner password updated successfully'
             ], 200);
             
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -721,9 +986,13 @@ class EnvironmentController extends Controller
                 'message' => 'Environment not found'
             ], 404);
         } catch (\Exception $e) {
+            Log::error('Failed to update environment owner password', [
+                'environment_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to update environment demo status'
+                'message' => 'Failed to update owner password'
             ], 500);
         }
     }
