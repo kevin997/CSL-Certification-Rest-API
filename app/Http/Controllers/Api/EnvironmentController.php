@@ -766,6 +766,7 @@ class EnvironmentController extends Controller
                 
                 // Load the updated subscription for response
                 $environment->load('subscription');
+                $latestSubscription = $environment->subscription->first();
                 
                 return response()->json([
                     'status' => 'success',
@@ -774,12 +775,12 @@ class EnvironmentController extends Controller
                         'id' => $environment->id,
                         'name' => $environment->name,
                         'is_demo' => $environment->is_demo,
-                        'subscription' => $environment->subscription ? [
-                            'id' => $environment->subscription->id,
-                            'plan_id' => $environment->subscription->plan_id,
-                            'status' => $environment->subscription->status,
-                            'starts_at' => $environment->subscription->starts_at,
-                            'ends_at' => $environment->subscription->ends_at,
+                        'subscription' => $latestSubscription ? [
+                            'id' => $latestSubscription->id,
+                            'plan_id' => $latestSubscription->plan_id,
+                            'status' => $latestSubscription->status,
+                            'starts_at' => $latestSubscription->starts_at,
+                            'ends_at' => $latestSubscription->ends_at,
                         ] : null
                     ]
                 ], 200);
