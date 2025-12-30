@@ -45,12 +45,8 @@ class IsolateSession
                 Config::set('session.domain', '.' . $rootDomain);
             }
             
-            // Ensure SameSite is set appropriately for cross-origin requests
-            // 'lax' works for most cases, 'none' is needed for third-party contexts
-            // but requires secure cookies (HTTPS)
-            if (Config::get('session.secure')) {
-                Config::set('session.same_site', 'none');
-            }
+            // Note: SameSite and Secure are controlled via SESSION_SAME_SITE 
+            // and SESSION_SECURE_COOKIE env vars for cross-origin cookie auth
         }
 
         return $next($request);
