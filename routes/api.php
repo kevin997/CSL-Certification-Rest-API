@@ -710,6 +710,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/media/{id}', [App\Http\Controllers\MediaAssetController::class, 'show']);
     Route::delete('/media/{id}', [App\Http\Controllers\MediaAssetController::class, 'destroy']); // Deletion
 
+
+
     // User Notification routes
     Route::get('/environments/{environmentId}/notifications', [UserNotificationController::class, 'index']);
     Route::get('/environments/{environmentId}/notifications/unread-count', [UserNotificationController::class, 'unreadCount']);
@@ -726,6 +728,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/files/{id}', [FileController::class, 'update']);
     Route::delete('/files/{id}', [FileController::class, 'destroy']);
 });
+
+// Webhook routes (Signature verified, no auth:sanctum)
+Route::post('/webhooks/media/processing', [App\Http\Controllers\MediaAssetController::class, 'processingWebhook']);
 
 // Note: Public routes (/branding/public, /environment/status, /subscription/current)
 // are defined in routes/api-public.php to bypass Sanctum's EnsureFrontendRequestsAreStateful middleware
