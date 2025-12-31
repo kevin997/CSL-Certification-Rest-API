@@ -160,6 +160,41 @@ class MediaAssetController extends Controller
     }
 
     /**
+     * Delete a media asset
+     */
+    public function destroy(Request $request, $id)
+    {
+        $environmentId = $request->user()->environment_id ?? 1;
+        $mediaAsset = MediaAsset::where('id', $id)
+            ->where('environment_id', $environmentId)
+            ->firstOrFail();
+
+        // 1. Delete from Media Service (if uploaded)
+        $uploadId = $mediaAsset->meta['upload_id'] ?? null;
+        if ($uploadId) {
+            try {
+                $baseUrl = $this->mediaServiceBaseUrl();
+                // Assuming DELETE /api/media/{upload_id} exists on the Media Service
+                // Or /api/media/uploads/{upload_id} depending on how Media Service is structured
+                // Based on initUpload being /api/media/uploads/init, let's guess /api/media/uploads/{uploadId} or just /api/media/{uploadId}
+                // Let's assume standard REST resource: DELETE /api/media/{uploadId}
+                $url = "{$baseUrl}/api/media/{$uploadId}";
+                
+                Log::info('Deleting external media asset: ' . $url);
+                Http::acceptJson()->delete($url);
+            } catch (\Exception $e) {
+                // Log but continue to delete local record
+                Log::error('Failed to delete remote media asset: ' . $e->getMessage());
+            }
+        }
+
+        // 2. Delete local record
+        $mediaAsset->delete();
+
+        return response()->json(['message' => 'Media asset deleted successfully']);
+    }
+
+    /**
      * Get playback session
      */
     public function playbackSession(Request $request, $id)
@@ -224,10 +259,13 @@ class MediaAssetController extends Controller
         }
 
         $payload = $request->json()->all();
-        $uploadId = $payload['upload_id'] ?? null;
+        $uploadId = null;
+        if (isset($payload['upload_id'])) {
+            $uploadId = (string)$payload['upload_id'];
+        }
         $status = $payload['status'] ?? null;
 
-        if (!is_string($uploadId) || $uploadId === '' || !Str::isUuid($uploadId)) {
+        if ($uploadId === null || !Str::isUuid($uploadId)) {
             return response()->json(['error' => 'Invalid upload_id'], 422);
         }
 

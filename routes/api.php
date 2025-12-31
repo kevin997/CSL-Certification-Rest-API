@@ -708,6 +708,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/media/upload/{id}/complete', [App\Http\Controllers\MediaAssetController::class, 'completeUpload']);
     Route::get('/media/playback/{id}', [App\Http\Controllers\MediaAssetController::class, 'playbackSession']);
     Route::get('/media/{id}', [App\Http\Controllers\MediaAssetController::class, 'show']);
+    Route::delete('/media/{id}', [App\Http\Controllers\MediaAssetController::class, 'destroy']); // Deletion
 
     // User Notification routes
     Route::get('/environments/{environmentId}/notifications', [UserNotificationController::class, 'index']);
