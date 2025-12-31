@@ -40,6 +40,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Fix XSRF-TOKEN cookie domain for cross-subdomain auth
         // This must run after the response is generated to modify the cookie
         $middleware->append(\App\Http\Middleware\FixXsrfCookieDomain::class);
+        $middleware->append(\App\Http\Middleware\SetXsrfCookie::class);
 
         // Chat rate limiting middleware aliases
         $middleware->alias([
