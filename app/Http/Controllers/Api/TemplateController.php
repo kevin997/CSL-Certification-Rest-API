@@ -107,6 +107,9 @@ class TemplateController extends Controller
                     ->orWhere('is_public', true);
             });
 
+        // Always include blocks_count for list views without loading blocks payload
+        $query->withCount('blocks');
+
         if ($request->filled('search')) {
             $search = $request->input('search');
             $query->where(function ($q) use ($search) {
@@ -360,7 +363,7 @@ class TemplateController extends Controller
         if ($template->status === 'published') {
             // Only allow certain fields to be updated when template is published
             $allowedFields = ['is_public', 'thumbnail_path'];
-            
+
             // If trying to update restricted fields, return error
             $restrictedFields = array_diff(array_keys($request->all()), $allowedFields);
             if (!empty($restrictedFields)) {
@@ -370,7 +373,7 @@ class TemplateController extends Controller
                     'restricted_fields' => $restrictedFields,
                 ], Response::HTTP_FORBIDDEN);
             }
-            
+
             // Only update allowed fields
             $template->update($request->only($allowedFields));
         } else {
