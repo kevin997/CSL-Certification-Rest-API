@@ -119,8 +119,13 @@ class VideoContentController extends Controller
             ], Response::HTTP_BAD_REQUEST);
         }
 
+        $resolvedTitle = (string) ($request->title ?? '');
+        if (trim($resolvedTitle) === '') {
+            $resolvedTitle = (string) ($activity->title ?? '');
+        }
+
         $validator = Validator::make($request->all(), [
-            'title' => 'required|string|max:255',
+            'title' => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'video_url' => 'nullable|string|url|required_without:media_asset_id',
             'media_asset_id' => 'nullable|integer|required_without:video_url',
@@ -149,7 +154,7 @@ class VideoContentController extends Controller
 
         $videoContent = VideoContent::create([
             'activity_id' => $activityId,
-            'title' => $request->title,
+            'title' => $resolvedTitle,
             'description' => $request->description,
             'video_url' => $request->video_url,
             'media_asset_id' => $request->media_asset_id,
@@ -220,7 +225,14 @@ class VideoContentController extends Controller
             ], Response::HTTP_FORBIDDEN);
         }
 
-        $videoContent = VideoContent::where('activity_id', $activityId)->firstOrFail();
+        $videoContent = VideoContent::where('activity_id', $activityId)->first();
+
+        if (!$videoContent) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Video content not found for this activity',
+            ], Response::HTTP_NOT_FOUND);
+        }
 
         return response()->json([
             'status' => 'success',
@@ -309,12 +321,18 @@ class VideoContentController extends Controller
 
         $videoContent = VideoContent::where('activity_id', $activityId)->firstOrFail();
 
+        // Resolve title: use provided title, or fall back to activity title
+        $resolvedTitle = $request->title;
+        if ($resolvedTitle === null || (is_string($resolvedTitle) && trim($resolvedTitle) === '')) {
+            $resolvedTitle = $activity->title ?? $videoContent->title;
+        }
+
         $validator = Validator::make($request->all(), [
-            'title' => 'string|max:255',
+            'title' => 'nullable|string|max:255',
             'description' => 'nullable|string',
-            'video_url' => 'string|url',
+            'video_url' => 'nullable|string|url',
             'media_asset_id' => 'nullable|integer',
-            'video_type' => 'string|in:youtube,vimeo,mp4,webm',
+            'video_type' => 'nullable|string|in:youtube,vimeo,mp4,webm',
             'duration' => 'nullable|integer',
             'thumbnail_url' => 'nullable|string|url',
             'transcript' => 'nullable|string',
@@ -328,7 +346,20 @@ class VideoContentController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $videoContent->update($request->all());
+        // Build update data with resolved title
+        $updateData = array_filter([
+            'title' => $resolvedTitle,
+            'description' => $request->description,
+            'video_url' => $request->video_url,
+            'media_asset_id' => $request->media_asset_id,
+            'video_type' => $request->video_type,
+            'duration' => $request->duration,
+            'thumbnail_url' => $request->thumbnail_url,
+            'transcript' => $request->transcript,
+            'captions_url' => $request->captions_url,
+        ], fn($value) => $value !== null);
+
+        $videoContent->update($updateData);
 
         return response()->json([
             'status' => 'success',

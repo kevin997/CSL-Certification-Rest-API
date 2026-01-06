@@ -179,7 +179,7 @@ class MediaAssetController extends Controller
                 // Based on initUpload being /api/media/uploads/init, let's guess /api/media/uploads/{uploadId} or just /api/media/{uploadId}
                 // Let's assume standard REST resource: DELETE /api/media/{uploadId}
                 $url = "{$baseUrl}/api/media/{$uploadId}";
-                
+
                 Log::info('Deleting external media asset: ' . $url);
                 Http::acceptJson()->delete($url);
             } catch (\Exception $e) {
@@ -284,16 +284,35 @@ class MediaAssetController extends Controller
         $nextMeta['processing_meta'] = $processingMeta;
         $nextMeta['media_upload_status'] = $status;
 
-        $mediaAsset->update([
+        // Extract size and mime_type from processing_meta if available
+        $updateData = [
             'status' => $status,
             'meta' => $nextMeta,
-        ]);
+        ];
+
+        if (isset($processingMeta['file_size']) && $processingMeta['file_size'] > 0) {
+            $updateData['size'] = $processingMeta['file_size'];
+        }
+
+        if (isset($processingMeta['mime_type']) && !empty($processingMeta['mime_type'])) {
+            $updateData['mime_type'] = $processingMeta['mime_type'];
+        }
+
+        $mediaAsset->update($updateData);
 
         Log::info('Media processing webhook received', [
             'media_asset_id' => $mediaAsset->id,
             'upload_id' => $uploadId,
             'status' => $status,
         ]);
+
+        // Broadcast WebSocket event for real-time updates
+        broadcast(new \App\Events\MediaProcessingStatusUpdated(
+            $mediaAsset->id,
+            $uploadId,
+            $status,
+            $processingMeta
+        ));
 
         return response()->json(['ok' => true]);
     }

@@ -497,7 +497,7 @@ class ActivityController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'type' => 'required|string|in:text,video,quiz,lesson,assignment,documentation,event,certificate,feedback',
+            'type' => 'required|string|in:text,video,quiz,lesson,assignment,documentation,event,certificate,feedback,webinar',
             'is_required' => 'boolean',
             'order' => 'nullable|integer',
             'settings' => 'nullable|json',
@@ -549,16 +549,16 @@ class ActivityController extends Controller
         try {
             // Add detailed logging to identify where the error occurs
             Log::info('Activity show method called with ID: ' . $id);
-            
+
             $activity = Activity::findOrFail($id);
             Log::info('Activity found', ['activity_id' => $activity->id, 'block_id' => $activity->block_id]);
-            
+
             $block = Block::findOrFail($activity->block_id);
             Log::info('Block found', ['block_id' => $block->id, 'template_id' => $block->template_id]);
-            
+
             $template = Template::findOrFail($block->template_id);
             Log::info('Template found', ['template_id' => $template->id, 'is_public' => $template->is_public]);
-            
+
             // Check if user has access to this template
             if (!$template->is_public && $template->created_by !== Auth::id()) {
                 Log::warning('Permission denied for user to access activity', [
@@ -566,7 +566,7 @@ class ActivityController extends Controller
                     'template_owner' => $template->created_by,
                     'is_public' => $template->is_public
                 ]);
-                
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'You do not have permission to view this activity',
@@ -576,7 +576,7 @@ class ActivityController extends Controller
             // Load the specific content based on activity type
             $contentRelation = $this->getContentRelationship($activity->type);
             Log::info('Loading content relation', ['type' => $activity->type, 'relation' => $contentRelation]);
-            
+
             // Check if the relationship exists before trying to load it
             if ($contentRelation && method_exists($activity, $contentRelation)) {
                 $activity->load($contentRelation);
@@ -600,7 +600,7 @@ class ActivityController extends Controller
                 'trace' => $e->getTraceAsString(),
                 'activity_id' => $id
             ]);
-            
+
             // Return a more informative error response
             return response()->json([
                 'status' => 'error',
@@ -630,7 +630,7 @@ class ActivityController extends Controller
                 'message' => 'You do not have permission to update this activity',
             ], Response::HTTP_FORBIDDEN);
         }
-        
+
         // Check if template is published and enforce restrictions
         // if ($template->status === 'published') {
         //     return response()->json([
@@ -684,7 +684,7 @@ class ActivityController extends Controller
                 'message' => 'You do not have permission to delete this activity',
             ], Response::HTTP_FORBIDDEN);
         }
-        
+
         // Check if template is published and enforce restrictions
         // if ($template->status === 'published') {
         //     return response()->json([
@@ -731,7 +731,7 @@ class ActivityController extends Controller
                 'message' => 'You do not have permission to reorder activities in this block',
             ], Response::HTTP_FORBIDDEN);
         }
-        
+
         // Check if template is published and enforce restrictions
         // if ($template->status === 'published') {
         //     return response()->json([
@@ -756,7 +756,7 @@ class ActivityController extends Controller
         // Update the order of each activity
         foreach ($request->activities as $activityData) {
             $activity = Activity::findOrFail($activityData['id']);
-            
+
             // Ensure the activity belongs to the specified block
             if ($activity->block_id != $blockId) {
                 return response()->json([
@@ -764,7 +764,7 @@ class ActivityController extends Controller
                     'message' => 'One or more activities do not belong to this block',
                 ], Response::HTTP_BAD_REQUEST);
             }
-            
+
             $activity->update(['order' => $activityData['order']]);
         }
 
@@ -778,7 +778,7 @@ class ActivityController extends Controller
             'data' => $updatedActivities,
         ]);
     }
-    
+
     /**
      * Duplicate an existing activity.
      *
@@ -789,10 +789,10 @@ class ActivityController extends Controller
     {
         // Find the activity to duplicate
         $activity = Activity::findOrFail($id);
-        
+
         // Get the block
         $block = Block::findOrFail($activity->block_id);
-        
+
         // Check if user has permission to duplicate this activity
         $template = Template::findOrFail($block->template_id);
         if ($template->created_by !== Auth::id()) {
@@ -801,17 +801,17 @@ class ActivityController extends Controller
                 'message' => 'You do not have permission to duplicate this activity',
             ], Response::HTTP_FORBIDDEN);
         }
-        
+
         // Create a duplicate activity
         $newActivity = $activity->replicate();
         $newActivity->title = $activity->title . ' (Copy)';
-        
+
         // Get the highest order in the block and add 1
         $maxOrder = Activity::where('block_id', $block->id)->max('order');
         $newActivity->order = $maxOrder + 1;
-        
+
         $newActivity->save();
-        
+
         // Note: Content duplication would need to be handled separately
         // depending on the activity type
         $contentRelationship = $this->getContentRelationship($activity->type);
@@ -821,7 +821,7 @@ class ActivityController extends Controller
             $newContent->activity_id = $newActivity->id;
             $newContent->save();
         }
-        
+
         return response()->json([
             'status' => 'success',
             'message' => 'Activity duplicated successfully',
@@ -854,7 +854,7 @@ class ActivityController extends Controller
 
         // Get the block
         $block = Block::findOrFail($blockId);
-        
+
         // Check if user has permission to delete activities from this block
         $template = Template::findOrFail($block->template_id);
         if ($template->created_by !== Auth::id()) {
@@ -865,10 +865,10 @@ class ActivityController extends Controller
         }
 
         $activityIds = $request->activity_ids;
-        
+
         // Verify all activities belong to the specified block
         $activities = Activity::whereIn('id', $activityIds)->get();
-        
+
         foreach ($activities as $activity) {
             if ($activity->block_id != $blockId) {
                 return response()->json([
@@ -887,7 +887,7 @@ class ActivityController extends Controller
                     if ($contentRelationship && $activity->$contentRelationship) {
                         $activity->$contentRelationship->delete();
                     }
-                    
+
                     // Delete the activity
                     $activity->delete();
                 }
@@ -898,7 +898,6 @@ class ActivityController extends Controller
                 'message' => count($activities) . ' activities deleted successfully',
                 'deleted_count' => count($activities),
             ]);
-
         } catch (\Exception $e) {
             Log::error('Error in batch delete activities', [
                 'block_id' => $blockId,
@@ -928,13 +927,13 @@ class ActivityController extends Controller
             // If it's another type of object, try to convert to string
             $type = (string) $type;
         }
-        
+
         // Log the type for debugging
         Log::info('Activity type in getContentRelationship', [
             'type' => $type,
             'type_class' => is_object($type) ? get_class($type) : gettype($type)
         ]);
-        
+
         $contentRelationships = [
             'text' => 'textContent',
             'video' => 'videoContent',
@@ -954,7 +953,7 @@ class ActivityController extends Controller
             Log::warning('Unknown activity type encountered', ['type' => $type]);
             return null;
         }
-        
+
         return $contentRelationships[$type];
     }
 
@@ -997,7 +996,6 @@ class ActivityController extends Controller
                     'activity_type' => $activity->type,
                 ],
             ], Response::HTTP_OK);
-
         } catch (\Exception $e) {
             Log::error('Error checking activity content', [
                 'activity_id' => $id,
@@ -1022,7 +1020,7 @@ class ActivityController extends Controller
     {
         // Validate the request
         $validator = Validator::make($request->all(), [
-            'type' => 'required|string|in:text,video,quiz,lesson,assignment,documentation,event,certificate,feedback',
+            'type' => 'required|string|in:text,video,quiz,lesson,assignment,documentation,event,certificate,feedback,webinar',
         ]);
 
         if ($validator->fails()) {
@@ -1076,7 +1074,6 @@ class ActivityController extends Controller
                 'message' => 'Activity type changed successfully',
                 'data' => $activity,
             ], Response::HTTP_OK);
-
         } catch (\Exception $e) {
             Log::error('Error changing activity type', [
                 'activity_id' => $id,
