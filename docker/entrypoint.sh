@@ -90,7 +90,7 @@ if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ] || [ "$CONTA
 fi
 
 # Run migrations and seed database
-if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ] || [ "$CONTAINER_ROLE" = "scheduler" ] || [ "$CONTAINER_ROLE" = "nightwatch" ]; then
+if [ "$CONTAINER_ROLE" = "app" ]; then
     # Run migrations with error handling
     echo "Running database migrations..."
     if php artisan migrate --force; then
