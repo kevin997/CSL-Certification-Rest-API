@@ -249,7 +249,7 @@ class PaymentConfigController extends Controller
 
         // Ensure user is instructor/admin of this environment
         $user = $request->user();
-        if (!$user || !in_array($user->role->value, ['instructor', 'admin'])) {
+        if (!$user || !in_array($user->role->value, ['super_admin', 'admin', 'company_teacher', 'individual_teacher', 'company_team_member'])) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized. Only instructors can manage payment settings.'
