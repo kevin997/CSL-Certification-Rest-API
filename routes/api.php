@@ -756,6 +756,9 @@ Route::post('/subdomains/validate', [ValidationController::class, 'validateSubdo
 Route::post('/domains/validate', [ValidationController::class, 'validateDomain']);
 Route::post('/emails/validate', [ValidationController::class, 'validateEmail']);
 
+// Enrollment code public route - allows unauthenticated users to redeem codes with account creation
+Route::post('/enrollment-codes/redeem-with-registration', [EnrollmentCodeController::class, 'redeemWithRegistration']);
+
 // Certificate public routes
 Route::get('/certificates/download/{path}', [CertificateController::class, 'download'])->name('api.certificates.download');
 Route::get('/certificates/preview/{path}', [CertificateController::class, 'preview'])->name('api.certificates.preview');

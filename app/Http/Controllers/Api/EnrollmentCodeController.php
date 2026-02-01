@@ -4,11 +4,15 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\EnrollmentCode;
+use App\Events\UserCreatedDuringCheckout;
+use App\Models\Environment;
 use App\Models\Product;
 use App\Models\Enrollment;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Carbon\Carbon;
@@ -74,7 +78,6 @@ class EnrollmentCodeController extends Controller
                 'message' => count($codes) . ' enrollment codes generated successfully',
                 'data' => $codes,
             ], 201);
-
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -275,7 +278,7 @@ class EnrollmentCodeController extends Controller
             $enrolledCourses = [];
 
             // Get environment_id (default to 1 if not set in request)
-            $environmentId = $request->get('environment_id', 1);
+            $environmentId = session('current_environment_id');
 
             // Create enrollments for each course in the product
             foreach ($productCourses as $productCourse) {
@@ -326,7 +329,175 @@ class EnrollmentCodeController extends Controller
                     'thumbnail' => $product->thumbnail_path,
                 ],
             ], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to redeem code: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
 
+    /**
+     * Redeem enrollment code with account creation (public endpoint).
+     *
+     * POST /api/enrollment-codes/redeem-with-registration
+     */
+    public function redeemWithRegistration(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'code' => 'required|string|size:4',
+            'product_id' => 'required|integer|exists:products,id',
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255|unique:users',
+            'password' => 'required|string|min:8',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $codeString = strtoupper($request->code);
+
+        // Find the code
+        $enrollmentCode = EnrollmentCode::where('code', $codeString)->first();
+
+        if (!$enrollmentCode) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid enrollment code. Please check and try again.',
+            ], 404);
+        }
+
+        // Validate product
+        if ($enrollmentCode->product_id != $request->product_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This code is not valid for this product.',
+            ], 400);
+        }
+
+        // Check if code is already used
+        if ($enrollmentCode->status === 'used') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This code has already been used.',
+            ], 400);
+        }
+
+        // Check if code is deactivated
+        if ($enrollmentCode->status === 'deactivated') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This code has been deactivated and is no longer valid.',
+            ], 400);
+        }
+
+        // Check if code is expired
+        if ($enrollmentCode->isExpired()) {
+            $enrollmentCode->update(['status' => 'expired']);
+            return response()->json([
+                'success' => false,
+                'message' => 'This code has expired.',
+            ], 400);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Create new user account
+            $user = User::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'password' => Hash::make($request->password),
+                'role' => 'learner', // Default role for students
+            ]);
+
+            // Get product and its courses
+            $product = Product::with(['category'])->find($request->product_id);
+
+            // Get the courses associated with this product
+            $productCourses = DB::table('product_courses')
+                ->where('product_id', $request->product_id)
+                ->get();
+
+            if ($productCourses->isEmpty()) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This product has no courses associated with it.',
+                ], 400);
+            }
+
+            $enrolledCourses = [];
+
+            // Get environment_id (default to 1 if not set in request)
+            $environmentId = session('current_environment_id');
+
+            $environment = Environment::find($environmentId);
+            if (!$environment) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid environment.',
+                ], 400);
+            }
+
+            // Ensure environment membership + welcome email is created after DB commit
+            // (listener is queued; avoids it reading uncommitted transaction state)
+            DB::afterCommit(function () use ($user, $environment) {
+                event(new UserCreatedDuringCheckout($user, $environment, true));
+            });
+
+            // Create enrollments for each course in the product
+            foreach ($productCourses as $productCourse) {
+                $enrollment = Enrollment::create([
+                    'user_id' => $user->id,
+                    'course_id' => $productCourse->course_id,
+                    'environment_id' => $environmentId,
+                    'status' => Enrollment::STATUS_ENROLLED,
+                    'progress_percentage' => 0,
+                    'last_activity_at' => now(),
+                ]);
+
+                $enrolledCourses[] = [
+                    'id' => $enrollment->id,
+                    'course_id' => $enrollment->course_id,
+                ];
+            }
+
+            // Mark code as used
+            $enrollmentCode->markAsUsed($user->id);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Account created and successfully enrolled! Please login with your credentials.',
+                'redirect_to_login' => true,
+                'enrollment' => [
+                    'id' => $enrolledCourses[0]['id'] ?? null,
+                    'product_id' => $request->product_id,
+                    'user_id' => $user->id,
+                    'enrollment_date' => Carbon::now()->toISOString(),
+                    'courses_enrolled' => count($enrolledCourses),
+                ],
+                'product' => [
+                    'id' => $product->id,
+                    'title' => $product->name,
+                    'slug' => $product->slug ?? '',
+                    'thumbnail' => $product->thumbnail_path,
+                ],
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                ],
+            ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -425,7 +596,6 @@ class EnrollmentCodeController extends Controller
                 'message' => $deactivatedCount . ' code(s) deactivated successfully',
                 'deactivated_count' => $deactivatedCount,
             ]);
-
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
