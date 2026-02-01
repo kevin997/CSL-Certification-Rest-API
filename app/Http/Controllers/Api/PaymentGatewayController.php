@@ -212,10 +212,21 @@ class PaymentGatewayController extends Controller
             'mode' => 'required|in:sandbox,live',
             'is_default' => 'boolean',
             'settings' => 'required|array',
-            'settings.api_key' => 'required_if:gateway_name,stripe,lygos|string',
+            // Stripe validation
+            'settings.api_key' => 'required_if:gateway_name,stripe,lygos,taramoney|string',
             'settings.publishable_key' => 'required_if:gateway_name,stripe|string',
+            // PayPal validation
             'settings.client_id' => 'required_if:gateway_name,paypal|string',
             'settings.client_secret' => 'required_if:gateway_name,paypal|string',
+            // TaraMoney validation
+            'settings.business_id' => 'required_if:gateway_name,taramoney|string',
+            'settings.webhook_secret' => 'nullable|string',
+            'settings.test_api_key' => 'nullable|string',
+            'settings.test_business_id' => 'nullable|string',
+            'settings.test_mode' => 'nullable|boolean',
+            // MonetBill validation
+            'settings.service_key' => 'required_if:gateway_name,monetbill|string',
+            'settings.service_secret' => 'required_if:gateway_name,monetbill|string',
         ]);
 
         if ($validator->fails()) {
@@ -437,10 +448,21 @@ class PaymentGatewayController extends Controller
             'mode' => 'in:sandbox,live',
             'is_default' => 'boolean',
             'settings' => 'array',
-            'settings.api_key' => 'string|required_if:gateway_name,stripe,lygos',
+            // Stripe validation
+            'settings.api_key' => 'string|required_if:gateway_name,stripe,lygos,taramoney',
             'settings.publishable_key' => 'string|required_if:gateway_name,stripe',
+            // PayPal validation
             'settings.client_id' => 'string|required_if:gateway_name,paypal',
             'settings.client_secret' => 'string|required_if:gateway_name,paypal',
+            // TaraMoney validation
+            'settings.business_id' => 'string|required_if:gateway_name,taramoney',
+            'settings.webhook_secret' => 'nullable|string',
+            'settings.test_api_key' => 'nullable|string',
+            'settings.test_business_id' => 'nullable|string',
+            'settings.test_mode' => 'nullable|boolean',
+            // MonetBill validation
+            'settings.service_key' => 'string|required_if:gateway_name,monetbill',
+            'settings.service_secret' => 'string|required_if:gateway_name,monetbill',
         ]);
 
         if ($validator->fails()) {
@@ -643,10 +665,7 @@ class PaymentGatewayController extends Controller
                 'required_settings' => [
                     'api_key' => 'API Key',
                     'publishable_key' => 'Publishable Key',
-                    'webhook_secret' => 'Webhook Secret (optional)',
-                    'success_url' => 'Success URL',
-                    'failure_url' => 'Failure URL',
-                    'webhook_url' => 'Webhook URL'
+                    'webhook_secret' => 'Webhook Secret (optional)'
                 ]
             ],
             [
@@ -655,21 +674,7 @@ class PaymentGatewayController extends Controller
                 'description' => 'Process payments with PayPal',
                 'required_settings' => [
                     'client_id' => 'Client ID',
-                    'client_secret' => 'Client Secret',
-                    'success_url' => 'Success URL',
-                    'failure_url' => 'Failure URL',
-                    'webhook_url' => 'Webhook URL'
-                ]
-            ],
-            [
-                'code' => 'lygos',
-                'name' => 'Lygos',
-                'description' => 'Process payments in Africa with Lygos',
-                'required_settings' => [
-                    'api_key' => 'API Key',
-                    'success_url' => 'Success URL',
-                    'failure_url' => 'Failure URL',
-                    'webhook_url' => 'Webhook URL'
+                    'client_secret' => 'Client Secret'
                 ]
             ],
             [
@@ -679,17 +684,25 @@ class PaymentGatewayController extends Controller
                 'required_settings' => [
                     'service_key' => 'Service Key',
                     'service_secret' => 'Service Secret',
-                    'test_service_key' => 'Test Service Key',
-                    'test_service_secret' => 'Test Service Secret',
+                    'test_service_key' => 'Test Service Key (optional)',
+                    'test_service_secret' => 'Test Service Secret (optional)',
                     'widget_version' => 'Widget Version',
-                    'test_mode' => 'Test Mode',
-                    'logo_url' => 'Logo URL',
-                    'supported_currencies' => 'Supported Currencies',
-                    'display_name' => 'Display Name',
-                    'description' => 'Description',
-                    'success_url' => 'Success URL',
-                    'failure_url' => 'Failure URL',
-                    'webhook_url' => 'Webhook URL'
+                    'logo_url' => 'Logo URL (optional)',
+                    'supported_currencies' => 'Supported Currencies (optional)'
+                ]
+            ],
+            [
+                'code' => 'taramoney',
+                'name' => 'TaraMoney',
+                'description' => 'Pay with TaraMoney - WhatsApp, Telegram, PayPal or Mobile Money',
+                'required_settings' => [
+                    'api_key' => 'API Key',
+                    'business_id' => 'Business ID',
+                    'webhook_secret' => 'Webhook Secret (optional)',
+                    'test_api_key' => 'Test API Key (optional)',
+                    'test_business_id' => 'Test Business ID (optional)',
+                    'logo_url' => 'Logo URL (optional)',
+                    'supported_currencies' => 'Supported Currencies (optional)'
                 ]
             ]
         ];

@@ -6,6 +6,7 @@ use App\Models\QuizContent;
 use App\Models\QuizQuestion;
 use App\Models\QuizSubmission;
 use App\Models\QuizQuestionResponse;
+use App\Models\AssessmentViolation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
@@ -531,5 +532,86 @@ class QuizSubmissionController extends Controller
             'status' => 'success',
             'data' => $submissions,
         ]);
+    }
+
+    /**
+     * Log a proctoring violation for a quiz submission
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $submissionId
+     * @return \Illuminate\Http\Response
+     */
+    public function logViolation(Request $request, $submissionId)
+    {
+        $validator = Validator::make($request->all(), [
+            'violation_type' => 'required|in:tab_switch,window_blur,fullscreen_exit,right_click,copy_paste,devtools_open',
+            'question_index' => 'nullable|integer',
+            'metadata' => 'nullable|array',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $submission = QuizSubmission::find($submissionId);
+        if (!$submission) {
+            return response()->json(['error' => 'Quiz submission not found'], 404);
+        }
+
+        // Verify user owns this submission
+        if ($submission->user_id !== Auth::id()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $violation = AssessmentViolation::create([
+            'quiz_submission_id' => $submissionId,
+            'user_id' => Auth::id(),
+            'violation_type' => $request->violation_type,
+            'violated_at' => now(),
+            'question_index' => $request->question_index,
+            'metadata' => $request->metadata,
+        ]);
+
+        // Check if max violations reached and action needed
+        $quizContent = $submission->quizContent;
+        if ($quizContent->prevent_tab_switching && $quizContent->max_tab_switches) {
+            $violationCount = AssessmentViolation::where('quiz_submission_id', $submissionId)
+                ->where('violation_type', 'tab_switch')
+                ->count();
+
+            if ($violationCount >= $quizContent->max_tab_switches) {
+                if ($quizContent->tab_switch_action === 'auto_submit') {
+                    // Return signal to auto-submit the quiz
+                    return response()->json([
+                        'violation' => $violation,
+                        'action' => 'auto_submitted',
+                        'message' => 'Maximum violations reached. Quiz should be auto-submitted.',
+                    ], 200);
+                }
+            }
+        }
+
+        return response()->json(['violation' => $violation], 201);
+    }
+
+    /**
+     * Get all violations for a quiz submission
+     *
+     * @param  int  $submissionId
+     * @return \Illuminate\Http\Response
+     */
+    public function getViolations($submissionId)
+    {
+        $submission = QuizSubmission::with('violations')->find($submissionId);
+        if (!$submission) {
+            return response()->json(['error' => 'Quiz submission not found'], 404);
+        }
+
+        // Instructors/admins can view all violations, users can only see their own
+        if ($submission->user_id !== Auth::id() && !(Auth::user()->isAdmin() || Auth::user()->isTeacher())) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        return response()->json(['violations' => $submission->violations], 200);
     }
 }

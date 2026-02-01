@@ -78,4 +78,12 @@ class QuizSubmission extends Model
     {
         return $this->hasMany(QuizQuestionResponse::class);
     }
+
+    /**
+     * Get the violations for this submission
+     */
+    public function violations(): HasMany
+    {
+        return $this->hasMany(AssessmentViolation::class);
+    }
 }

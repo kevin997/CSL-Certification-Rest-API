@@ -32,6 +32,13 @@ class QuizContent extends Model
         'show_correct_answers',
         'questions',  // JSON field for storing questions directly
         'created_by',
+        // Proctoring settings
+        'prevent_tab_switching',
+        'tab_switch_action',
+        'max_tab_switches',
+        'fullscreen_required',
+        'disable_right_click',
+        'disable_copy_paste',
     ];
 
     /**
@@ -46,6 +53,11 @@ class QuizContent extends Model
             'show_correct_answers' => 'boolean',
             'questions' => 'array',
             'instruction_format' => 'string',
+            // Proctoring casts
+            'prevent_tab_switching' => 'boolean',
+            'fullscreen_required' => 'boolean',
+            'disable_right_click' => 'boolean',
+            'disable_copy_paste' => 'boolean',
         ];
     }
 

@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\CourseSectionController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DocumentationContentController;
 use App\Http\Controllers\Api\EnrollmentController;
+use App\Http\Controllers\Api\EnrollmentCodeController;
 use App\Http\Controllers\Api\LearnerController;
 use App\Http\Controllers\Api\EventContentController;
 use App\Http\Controllers\Api\EnvironmentController;
@@ -428,6 +429,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/quiz/{quizContentId}/user/submissions', [\App\Http\Controllers\QuizSubmissionController::class, 'getUserSubmissions']);
     Route::get('/quiz/submissions/{submissionId}', [\App\Http\Controllers\QuizSubmissionController::class, 'show']);
     Route::get('/enrollments/{enrollmentId}/quiz-submissions', [\App\Http\Controllers\QuizSubmissionController::class, 'getByEnrollment']);
+
+    // Assessment Violation Routes
+    Route::post('/quiz/submissions/{submissionId}/violations', [\App\Http\Controllers\QuizSubmissionController::class, 'logViolation']);
+    Route::get('/quiz/submissions/{submissionId}/violations', [\App\Http\Controllers\QuizSubmissionController::class, 'getViolations']);
+
     Route::get('/lessons/{lessonId}/responses', [LessonQuestionResponseController::class, 'getResponses']);
 
     // Assignment Content routes
@@ -552,6 +558,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/products/{product}/assets', [ProductAssetController::class, 'store']);
     Route::put('/products/{product}/assets/{asset}', [ProductAssetController::class, 'update']);
     Route::delete('/products/{product}/assets/{asset}', [ProductAssetController::class, 'destroy']);
+
+    // Enrollment Code routes
+    Route::post('/enrollment-codes/generate', [EnrollmentCodeController::class, 'generate']);
+    Route::get('/enrollment-codes', [EnrollmentCodeController::class, 'index']);
+    Route::get('/enrollment-codes/statistics/{productId}', [EnrollmentCodeController::class, 'statistics']);
+    Route::post('/enrollment-codes/redeem', [EnrollmentCodeController::class, 'redeem']);
+    Route::post('/enrollment-codes/{id}/deactivate', [EnrollmentCodeController::class, 'deactivate']);
+    Route::post('/enrollment-codes/bulk-deactivate', [EnrollmentCodeController::class, 'bulkDeactivate']);
+    Route::post('/enrollment-codes/export', [EnrollmentCodeController::class, 'export']);
+    Route::get('/enrollment-codes/{id}', [EnrollmentCodeController::class, 'show']);
 
     // Order routes
     Route::get('/orders', [OrderController::class, 'index']);

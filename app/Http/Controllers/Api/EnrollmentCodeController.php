@@ -1,0 +1,505 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\EnrollmentCode;
+use App\Models\Product;
+use App\Models\Enrollment;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
+use Carbon\Carbon;
+
+class EnrollmentCodeController extends Controller
+{
+    /**
+     * Generate new enrollment codes for a product.
+     *
+     * POST /api/enrollment-codes/generate
+     */
+    public function generate(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'product_id' => 'required|integer|exists:products,id',
+            'quantity' => 'required|integer|min:1|max:1000',
+            'expires_at' => 'nullable|date|after:now',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $user = Auth::user();
+
+        // Check if user has permission to create codes for this product
+        $product = Product::findOrFail($request->product_id);
+
+        if ($user->id !== $product->created_by && !$user->isAdmin()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have permission to create codes for this product',
+            ], 403);
+        }
+
+        $codes = [];
+
+        try {
+            DB::beginTransaction();
+
+            for ($i = 0; $i < $request->quantity; $i++) {
+                $code = EnrollmentCode::create([
+                    'product_id' => $request->product_id,
+                    'code' => EnrollmentCode::generateUniqueCode(),
+                    'status' => 'active',
+                    'created_by' => $user->id,
+                    'expires_at' => $request->expires_at ? Carbon::parse($request->expires_at) : null,
+                ]);
+
+                // Load relationships
+                $code->load(['product', 'creator']);
+                $codes[] = $code;
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => count($codes) . ' enrollment codes generated successfully',
+                'data' => $codes,
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate codes: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get enrollment codes with filters.
+     *
+     * GET /api/enrollment-codes
+     */
+    public function index(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'product_id' => 'nullable|integer|exists:products,id',
+            'status' => ['nullable', Rule::in(['active', 'used', 'expired', 'deactivated'])],
+            'search' => 'nullable|string|max:4',
+            'created_by' => 'nullable|integer|exists:users,id',
+            'used_by' => 'nullable|integer|exists:users,id',
+            'page' => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|min:1|max:100',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $query = EnrollmentCode::query();
+
+        // Apply filters
+        if ($request->has('product_id')) {
+            $query->where('product_id', $request->product_id);
+        }
+
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->has('search')) {
+            $query->where('code', 'like', '%' . strtoupper($request->search) . '%');
+        }
+
+        if ($request->has('created_by')) {
+            $query->where('created_by', $request->created_by);
+        }
+
+        if ($request->has('used_by')) {
+            $query->where('used_by', $request->used_by);
+        }
+
+        // Load relationships
+        $query->with(['product', 'creator', 'user', 'deactivator']);
+
+        // Order by most recent first
+        $query->orderBy('created_at', 'desc');
+
+        // Paginate
+        $perPage = $request->get('per_page', 10);
+        $codes = $query->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'data' => $codes->items(),
+            'meta' => [
+                'current_page' => $codes->currentPage(),
+                'from' => $codes->firstItem(),
+                'last_page' => $codes->lastPage(),
+                'per_page' => $codes->perPage(),
+                'to' => $codes->lastItem(),
+                'total' => $codes->total(),
+            ],
+        ]);
+    }
+
+    /**
+     * Get statistics for a product's enrollment codes.
+     *
+     * GET /api/enrollment-codes/statistics/{productId}
+     */
+    public function statistics($productId)
+    {
+        $product = Product::findOrFail($productId);
+
+        $totalCodes = EnrollmentCode::where('product_id', $productId)->count();
+        $activeCodes = EnrollmentCode::where('product_id', $productId)->where('status', 'active')->count();
+        $usedCodes = EnrollmentCode::where('product_id', $productId)->where('status', 'used')->count();
+        $expiredCodes = EnrollmentCode::where('product_id', $productId)->where('status', 'expired')->count();
+        $deactivatedCodes = EnrollmentCode::where('product_id', $productId)->where('status', 'deactivated')->count();
+
+        $usageRate = $totalCodes > 0 ? ($usedCodes / $totalCodes) * 100 : 0;
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'product_id' => (int) $productId,
+                'total_codes' => $totalCodes,
+                'active_codes' => $activeCodes,
+                'used_codes' => $usedCodes,
+                'expired_codes' => $expiredCodes,
+                'deactivated_codes' => $deactivatedCodes,
+                'usage_rate' => round($usageRate, 2),
+            ],
+        ]);
+    }
+
+    /**
+     * Redeem an enrollment code.
+     *
+     * POST /api/enrollment-codes/redeem
+     */
+    public function redeem(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'code' => 'required|string|size:4',
+            'product_id' => 'required|integer|exists:products,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $user = Auth::user();
+        $codeString = strtoupper($request->code);
+
+        // Find the code
+        $enrollmentCode = EnrollmentCode::where('code', $codeString)->first();
+
+        if (!$enrollmentCode) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid enrollment code. Please check and try again.',
+            ], 404);
+        }
+
+        // Validate product
+        if ($enrollmentCode->product_id != $request->product_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This code is not valid for this product.',
+            ], 400);
+        }
+
+        // Check if code is already used
+        if ($enrollmentCode->status === 'used') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This code has already been used.',
+            ], 400);
+        }
+
+        // Check if code is deactivated
+        if ($enrollmentCode->status === 'deactivated') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This code has been deactivated and is no longer valid.',
+            ], 400);
+        }
+
+        // Check if code is expired
+        if ($enrollmentCode->isExpired()) {
+            $enrollmentCode->update(['status' => 'expired']);
+            return response()->json([
+                'success' => false,
+                'message' => 'This code has expired.',
+            ], 400);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Get product and its courses
+            $product = Product::with(['category'])->find($request->product_id);
+
+            // Get the courses associated with this product
+            $productCourses = DB::table('product_courses')
+                ->where('product_id', $request->product_id)
+                ->get();
+
+            if ($productCourses->isEmpty()) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This product has no courses associated with it.',
+                ], 400);
+            }
+
+            $enrolledCourses = [];
+
+            // Get environment_id (default to 1 if not set in request)
+            $environmentId = $request->get('environment_id', 1);
+
+            // Create enrollments for each course in the product
+            foreach ($productCourses as $productCourse) {
+                // Check if already enrolled in this course
+                $existingEnrollment = DB::table('enrollments')
+                    ->where('user_id', $user->id)
+                    ->where('course_id', $productCourse->course_id)
+                    ->where('environment_id', $environmentId)
+                    ->whereNull('deleted_at')
+                    ->first();
+
+                if (!$existingEnrollment) {
+                    $enrollment = Enrollment::create([
+                        'user_id' => $user->id,
+                        'course_id' => $productCourse->course_id,
+                        'environment_id' => $environmentId,
+                        'status' => Enrollment::STATUS_ENROLLED,
+                        'progress_percentage' => 0,
+                        'last_activity_at' => now(),
+                    ]);
+
+                    $enrolledCourses[] = [
+                        'id' => $enrollment->id,
+                        'course_id' => $enrollment->course_id,
+                    ];
+                }
+            }
+
+            // Mark code as used
+            $enrollmentCode->markAsUsed($user->id);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Successfully enrolled in the course!',
+                'enrollment' => [
+                    'id' => $enrolledCourses[0]['id'] ?? null,
+                    'product_id' => $request->product_id,
+                    'user_id' => $user->id,
+                    'enrollment_date' => Carbon::now()->toISOString(),
+                    'courses_enrolled' => count($enrolledCourses),
+                ],
+                'product' => [
+                    'id' => $product->id,
+                    'title' => $product->name,
+                    'slug' => $product->slug ?? '',
+                    'thumbnail' => $product->thumbnail_path,
+                ],
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to redeem code: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Deactivate a single enrollment code.
+     *
+     * POST /api/enrollment-codes/{id}/deactivate
+     */
+    public function deactivate($id)
+    {
+        $enrollmentCode = EnrollmentCode::findOrFail($id);
+
+        $user = Auth::user();
+
+        // Check permissions
+        $product = Product::find($enrollmentCode->product_id);
+        if ($user->id !== $product->created_by && !$user->isAdmin()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have permission to deactivate this code',
+            ], 403);
+        }
+
+        if ($enrollmentCode->status === 'deactivated') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This code is already deactivated',
+            ], 400);
+        }
+
+        $enrollmentCode->deactivate($user->id);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Code deactivated successfully',
+            'data' => $enrollmentCode->fresh(['product', 'creator', 'user', 'deactivator']),
+        ]);
+    }
+
+    /**
+     * Bulk deactivate multiple codes.
+     *
+     * POST /api/enrollment-codes/bulk-deactivate
+     */
+    public function bulkDeactivate(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'code_ids' => 'required|array|min:1',
+            'code_ids.*' => 'required|integer|exists:enrollment_codes,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $user = Auth::user();
+
+        try {
+            DB::beginTransaction();
+
+            $deactivatedCount = 0;
+
+            foreach ($request->code_ids as $codeId) {
+                $enrollmentCode = EnrollmentCode::find($codeId);
+
+                if (!$enrollmentCode) {
+                    continue;
+                }
+
+                // Check permissions
+                $product = Product::find($enrollmentCode->product_id);
+                if ($user->id !== $product->created_by && !$user->isAdmin()) {
+                    continue;
+                }
+
+                if ($enrollmentCode->status !== 'deactivated') {
+                    $enrollmentCode->deactivate($user->id);
+                    $deactivatedCount++;
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => $deactivatedCount . ' code(s) deactivated successfully',
+                'deactivated_count' => $deactivatedCount,
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to deactivate codes: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Export codes to CSV.
+     *
+     * POST /api/enrollment-codes/export
+     */
+    public function export(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'product_id' => 'required|integer|exists:products,id',
+            'status' => ['nullable', Rule::in(['active', 'used', 'expired', 'deactivated'])],
+            'format' => ['nullable', Rule::in(['csv', 'xlsx'])],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $query = EnrollmentCode::where('product_id', $request->product_id)
+            ->with(['user']);
+
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        $codes = $query->orderBy('created_at', 'desc')->get();
+
+        // Generate CSV
+        $csv = "Code,Status,Created At,Used By,Used At\n";
+
+        foreach ($codes as $code) {
+            $csv .= sprintf(
+                "%s,%s,%s,%s,%s\n",
+                $code->code,
+                $code->status,
+                $code->created_at->format('Y-m-d H:i:s'),
+                $code->user ? $code->user->email : 'N/A',
+                $code->used_at ? $code->used_at->format('Y-m-d H:i:s') : 'N/A'
+            );
+        }
+
+        $filename = 'enrollment-codes-' . $request->product_id . '-' . time() . '.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
+    }
+
+    /**
+     * Get details of a specific code.
+     *
+     * GET /api/enrollment-codes/{id}
+     */
+    public function show($id)
+    {
+        $enrollmentCode = EnrollmentCode::with(['product', 'creator', 'user', 'deactivator'])
+            ->findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'data' => $enrollmentCode,
+        ]);
+    }
+}
