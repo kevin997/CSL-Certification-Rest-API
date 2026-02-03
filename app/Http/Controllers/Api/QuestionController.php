@@ -281,7 +281,7 @@ class QuestionController extends Controller
             'explanation' => 'nullable|string',
             'points' => 'required|integer|min:1',
             'is_scorable' => 'boolean',
-            'stimulus_type' => 'nullable|string|in:audio,video,image',
+            'stimulus_type' => 'nullable|string|in:none,audio,video,image',
             'stimulus_media_asset_id' => 'nullable|integer|exists:media_assets,id',
         ]);
 
@@ -331,8 +331,8 @@ class QuestionController extends Controller
             'options' => $request->question_type === 'questionnaire' ? null : ($request->options ? $request->options : null),
             'image_url' => $request->image_url,
             'image_alt' => $request->image_alt,
-            'stimulus_type' => $request->stimulus_type,
-            'stimulus_media_asset_id' => $request->stimulus_media_asset_id,
+            'stimulus_type' => $request->stimulus_type ?? 'none',
+            'stimulus_media_asset_id' => $request->stimulus_media_asset_id ?? null,
             'blanks' => $request->blanks ? $request->blanks : null,
             'matrix_rows' => $request->matrix_rows ? $request->matrix_rows : null,
             'matrix_columns' => $request->matrix_columns ? $request->matrix_columns : null,
@@ -473,7 +473,7 @@ class QuestionController extends Controller
             'explanation' => 'nullable|string',
             'points' => 'integer|min:1',
             'is_scorable' => 'boolean',
-            'stimulus_type' => 'nullable|string|in:audio,video,image',
+            'stimulus_type' => 'nullable|string|in:none,audio,video,image',
             'stimulus_media_asset_id' => 'nullable|integer|exists:media_assets,id',
         ]);
 
