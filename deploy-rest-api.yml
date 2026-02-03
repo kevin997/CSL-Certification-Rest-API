@@ -109,12 +109,18 @@
       debug:
         var: memory_check.stdout_lines
 
-    - name: Fail if insufficient disk space
-      fail:
-        msg: "Insufficient disk space. Less than 10GB available."
-      when:
-        - disk_space_before.stdout is defined
-        - disk_space_before.stdout | regex_search('([0-9.]+)G.*\\/$') | float < 10
+    - name: Check disk space availability
+      shell: |
+        AVAIL=$(df -BG / | tail -1 | awk '{print $4}' | sed 's/G//')
+        if [ "$AVAIL" -lt 10 ]; then
+          echo "Insufficient disk space: ${AVAIL}GB available"
+          exit 1
+        else
+          echo "Sufficient disk space: ${AVAIL}GB available"
+          exit 0
+        fi
+      register: disk_check_result
+      ignore_errors: no
         
     - name: Check if Docker registry is running
       shell: docker ps | grep registry
