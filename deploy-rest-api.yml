@@ -77,17 +77,44 @@
         GIT_SSH_COMMAND: "ssh -i /home/ubuntu/.ssh/github_deploy_key -o StrictHostKeyChecking=no"
 
     # Docker cleanup and preparation
+    - name: Stop old containers to free resources
+      shell: |
+        cd {{ app_dir }}
+        docker compose down || true
+      ignore_errors: yes
+
+    - name: Remove old application images
+      shell: |
+        docker rmi {{ app_name }}:latest || true
+        docker rmi {{ docker_image }}:latest || true
+      ignore_errors: yes
+
     - name: Clean up Docker system
       shell: docker system prune -af --volumes
       ignore_errors: yes
-      
+
     - name: Check disk space before build
       shell: df -h /
       register: disk_space_before
-      
+
     - name: Display disk space before build
       debug:
         var: disk_space_before.stdout_lines
+
+    - name: Check available memory
+      shell: free -h
+      register: memory_check
+
+    - name: Display available memory
+      debug:
+        var: memory_check.stdout_lines
+
+    - name: Fail if insufficient disk space
+      fail:
+        msg: "Insufficient disk space. Less than 10GB available."
+      when:
+        - disk_space_before.stdout is defined
+        - disk_space_before.stdout | regex_search('([0-9.]+)G.*\\/$') | float < 10
         
     - name: Check if Docker registry is running
       shell: docker ps | grep registry
@@ -142,16 +169,59 @@
       args:
         executable: /bin/bash
 
-    # Docker build and push - optimized with BuildKit
-    - name: Build Docker image
+    # Pre-pull base images to avoid timeout during build
+    - name: Pre-pull PHP base image
+      shell: |
+        docker pull php:8.3-fpm || \
+        docker pull php:8.3-fpm || \
+        docker pull php:8.3-fpm
+      register: php_pull_result
+      ignore_errors: yes
+      async: 900   # 15 minutes timeout
+      poll: 15     # Check every 15 seconds
+
+    - name: Pre-pull Composer image
+      shell: |
+        docker pull composer:2 || \
+        docker pull composer:2 || \
+        docker pull composer:2
+      register: composer_pull_result
+      ignore_errors: yes
+      async: 600   # 10 minutes timeout
+      poll: 15
+
+    # Docker build and push - optimized with BuildKit and retry logic
+    - name: Build Docker image (attempt 1)
       shell: |
         cd {{ app_dir }}
         # Build with BuildKit for better caching and performance
-        DOCKER_BUILDKIT=1 docker build -t {{ app_name }}:latest .
+        DOCKER_BUILDKIT=1 docker build --progress=plain -t {{ app_name }}:latest .
       register: docker_build_result
-      ignore_errors: no
-      async: 1800  # 30 minutes timeout
+      ignore_errors: yes
+      async: 2400  # 40 minutes timeout
       poll: 30     # Check every 30 seconds
+
+    - name: Build Docker image (attempt 2 - retry if first failed)
+      shell: |
+        cd {{ app_dir }}
+        DOCKER_BUILDKIT=1 docker build --no-cache --progress=plain -t {{ app_name }}:latest .
+      register: docker_build_retry
+      when: docker_build_result.failed | default(false)
+      ignore_errors: no
+      async: 2400  # 40 minutes timeout
+      poll: 30     # Check every 30 seconds
+
+    - name: Display build output if failed
+      debug:
+        msg: "Build failed. Output: {{ docker_build_result.stderr | default('No error output') }}"
+      when: docker_build_result.failed | default(false)
+
+    - name: Check if build succeeded
+      fail:
+        msg: "Docker build failed after retry"
+      when:
+        - docker_build_result.failed | default(false)
+        - docker_build_retry.failed | default(false)
 
     - name: Tag and push Docker image to registry
       shell: |
