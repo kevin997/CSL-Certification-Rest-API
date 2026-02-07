@@ -52,6 +52,7 @@ class Order extends Model
 
     const TYPE_STOREFRONT = 'storefront';
     const TYPE_SUBSCRIPTION_PRODUCT = 'subscription_product';
+    const TYPE_ENROLLMENT_CODE = 'enrollment_code';
 
     /**
      * The attributes that should be cast.

@@ -5,15 +5,21 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\EnrollmentCode;
 use App\Events\UserCreatedDuringCheckout;
+use App\Events\OrderCompleted;
 use App\Models\Environment;
 use App\Models\Product;
 use App\Models\Enrollment;
 use App\Models\User;
+use App\Models\Order;
+use App\Models\OrderItem;
+use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Carbon\Carbon;
 
@@ -307,10 +313,80 @@ class EnrollmentCodeController extends Controller
                 }
             }
 
+            // Create order for commission tracking (using actual product price)
+            $productPrice = $product->price ?? 0;
+            $order = Order::create([
+                'user_id' => $user->id,
+                'environment_id' => $environmentId,
+                'order_number' => 'ORD-' . strtoupper(Str::random(8)),
+                'status' => Order::STATUS_COMPLETED,
+                'type' => Order::TYPE_ENROLLMENT_CODE,
+                'total_amount' => $productPrice,
+                'currency' => $product->currency ?? 'USD',
+                'payment_method' => 'enrollment_code',
+                'billing_name' => $user->name,
+                'billing_email' => $user->email,
+            ]);
+
+            // Create order item for the product
+            OrderItem::create([
+                'order_id' => $order->id,
+                'product_id' => $product->id,
+                'quantity' => 1,
+                'price' => $productPrice,
+                'discount' => 0,
+                'total' => $productPrice,
+                'is_subscription' => false,
+            ]);
+
+            // Create transaction for commission tracking
+            $transaction = Transaction::create([
+                'order_id' => $order->id,
+                'environment_id' => $environmentId,
+                'customer_id' => $user->id,
+                'customer_email' => $user->email,
+                'customer_name' => $user->name,
+                'amount' => $productPrice,
+                'fee_amount' => 0,
+                'tax_amount' => 0,
+                'total_amount' => $productPrice,
+                'currency' => $product->currency ?? 'USD',
+                'status' => Transaction::STATUS_COMPLETED,
+                'payment_method' => 'enrollment_code',
+                'description' => 'Enrollment code redemption: ' . $enrollmentCode->code,
+                'paid_at' => now(),
+            ]);
+
+            // Create commission record if product has value
+            if ($productPrice > 0) {
+                try {
+                    $commissionService = app(\App\Services\InstructorCommissionService::class);
+                    $commissionService->createCommissionRecord($transaction);
+
+                    Log::info('Commission created for enrollment code redemption', [
+                        'order_id' => $order->id,
+                        'transaction_id' => $transaction->id,
+                        'product_id' => $product->id,
+                        'product_price' => $productPrice,
+                        'code' => $enrollmentCode->code,
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('Failed to create commission for enrollment code', [
+                        'order_id' => $order->id,
+                        'transaction_id' => $transaction->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                    // Don't fail the redemption if commission creation fails
+                }
+            }
+
             // Mark code as used
             $enrollmentCode->markAsUsed($user->id);
 
             DB::commit();
+
+            // Fire OrderCompleted event for additional processing
+            event(new OrderCompleted($order));
 
             return response()->json([
                 'success' => true,
@@ -470,10 +546,81 @@ class EnrollmentCodeController extends Controller
                 ];
             }
 
+            // Create order for commission tracking (using actual product price)
+            $productPrice = $product->price ?? 0;
+            $order = Order::create([
+                'user_id' => $user->id,
+                'environment_id' => $environmentId,
+                'order_number' => 'ORD-' . strtoupper(Str::random(8)),
+                'status' => Order::STATUS_COMPLETED,
+                'type' => Order::TYPE_ENROLLMENT_CODE,
+                'total_amount' => $productPrice,
+                'currency' => $product->currency ?? 'USD',
+                'payment_method' => 'enrollment_code',
+                'billing_name' => $user->name,
+                'billing_email' => $user->email,
+            ]);
+
+            // Create order item for the product
+            OrderItem::create([
+                'order_id' => $order->id,
+                'product_id' => $product->id,
+                'quantity' => 1,
+                'price' => $productPrice,
+                'discount' => 0,
+                'total' => $productPrice,
+                'is_subscription' => false,
+            ]);
+
+            // Create transaction for commission tracking
+            $transaction = Transaction::create([
+                'order_id' => $order->id,
+                'environment_id' => $environmentId,
+                'customer_id' => $user->id,
+                'customer_email' => $user->email,
+                'customer_name' => $user->name,
+                'amount' => $productPrice,
+                'fee_amount' => 0,
+                'tax_amount' => 0,
+                'total_amount' => $productPrice,
+                'currency' => $product->currency ?? 'USD',
+                'status' => Transaction::STATUS_COMPLETED,
+                'payment_method' => 'enrollment_code',
+                'description' => 'Enrollment code redemption: ' . $enrollmentCode->code,
+                'paid_at' => now(),
+            ]);
+
+            // Create commission record if product has value
+            if ($productPrice > 0) {
+                try {
+                    $commissionService = app(\App\Services\InstructorCommissionService::class);
+                    $commissionService->createCommissionRecord($transaction);
+
+                    Log::info('Commission created for enrollment code redemption with registration', [
+                        'order_id' => $order->id,
+                        'transaction_id' => $transaction->id,
+                        'product_id' => $product->id,
+                        'product_price' => $productPrice,
+                        'code' => $enrollmentCode->code,
+                        'user_id' => $user->id,
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('Failed to create commission for enrollment code with registration', [
+                        'order_id' => $order->id,
+                        'transaction_id' => $transaction->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                    // Don't fail the redemption if commission creation fails
+                }
+            }
+
             // Mark code as used
             $enrollmentCode->markAsUsed($user->id);
 
             DB::commit();
+
+            // Fire OrderCompleted event for additional processing
+            event(new OrderCompleted($order));
 
             return response()->json([
                 'success' => true,
