@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Environment;
 use App\Models\ThirdPartyService;
 use App\Services\CertificateGenerationService;
 use Illuminate\Http\Request;
@@ -54,7 +55,7 @@ class ThirdPartyServiceController extends Controller
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'base_url' => 'required|url',
+            'base_url' => 'nullable|url',
             'api_key' => 'nullable|string',
             'api_secret' => 'nullable|string',
             'bearer_token' => 'nullable|string',
@@ -63,6 +64,7 @@ class ThirdPartyServiceController extends Controller
             'is_active' => 'boolean',
             'service_type' => 'required|string|max:255',
             'config' => 'nullable|array',
+            'environment_id' => 'nullable|integer|exists:environments,id',
         ]);
 
         if ($validator->fails()) {
@@ -131,7 +133,7 @@ class ThirdPartyServiceController extends Controller
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string',
-            'base_url' => 'sometimes|required|url',
+            'base_url' => 'nullable|url',
             'api_key' => 'nullable|string',
             'api_secret' => 'nullable|string',
             'bearer_token' => 'nullable|string',
@@ -140,6 +142,7 @@ class ThirdPartyServiceController extends Controller
             'is_active' => 'boolean',
             'service_type' => 'sometimes|required|string|max:255',
             'config' => 'nullable|array',
+            'environment_id' => 'nullable|integer|exists:environments,id',
         ]);
 
         if ($validator->fails()) {
@@ -329,6 +332,11 @@ class ThirdPartyServiceController extends Controller
                 'description' => 'Cloud storage service',
             ],
             [
+                'value' => 'whatsapp',
+                'label' => 'WhatsApp',
+                'description' => 'WhatsApp group or number for learner communication',
+            ],
+            [
                 'value' => 'other',
                 'label' => 'Other',
                 'description' => 'Other third party service',
@@ -338,6 +346,80 @@ class ThirdPartyServiceController extends Controller
         return response()->json([
             'success' => true,
             'data' => $types,
+        ]);
+    }
+
+    /**
+     * Get public WhatsApp configuration for the current environment.
+     * Used by learners to see the WhatsApp button in the study room.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getWhatsAppConfig(Request $request)
+    {
+        // Detect environment from domain headers (same pattern as BrandingController::getPublicBranding)
+        $domain = null;
+
+        $frontendDomainHeader = $request->header('X-Frontend-Domain');
+        $origin = $request->header('Origin');
+        $referer = $request->header('Referer');
+
+        if ($frontendDomainHeader) {
+            $domain = $frontendDomainHeader;
+        } elseif ($origin) {
+            $parsedOrigin = parse_url($origin);
+            $domain = $parsedOrigin['host'] ?? null;
+        } elseif ($referer) {
+            $parsedReferer = parse_url($referer);
+            $domain = $parsedReferer['host'] ?? null;
+        }
+
+        if (!$domain) {
+            $domain = $request->getHost();
+        }
+
+        // Find environment by domain
+        $environment = Environment::where('primary_domain', $domain)
+            ->orWhere(function ($query) use ($domain) {
+                $query->whereNotNull('additional_domains')
+                    ->whereJsonContains('additional_domains', $domain);
+            })
+            ->where('is_active', true)
+            ->first();
+
+        if (!$environment) {
+            return response()->json([
+                'success' => true,
+                'data' => null,
+            ]);
+        }
+
+        // Query without global scopes to avoid session-based filtering on public route
+        $service = ThirdPartyService::withoutGlobalScopes()
+            ->where('service_type', 'whatsapp')
+            ->where('environment_id', $environment->id)
+            ->where('is_active', true)
+            ->first();
+
+        if (!$service) {
+            return response()->json([
+                'success' => true,
+                'data' => null,
+            ]);
+        }
+
+        // Return only safe config (no credentials)
+        $config = $service->config ?? [];
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'type' => $config['type'] ?? 'group',
+                'value' => $config['value'] ?? '',
+                'welcome_message' => $config['welcome_message'] ?? '',
+                'is_active' => $service->is_active,
+            ],
         ]);
     }
 }

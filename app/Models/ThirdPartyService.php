@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToEnvironment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ThirdPartyService extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, BelongsToEnvironment;
 
     /**
      * The attributes that are mass assignable.
@@ -16,6 +17,7 @@ class ThirdPartyService extends Model
      * @var array<int, string>
      */
     protected $fillable = [
+        'environment_id',
         'name',
         'description',
         'base_url',

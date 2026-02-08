@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AnalyticsWidgetsController;
 use App\Http\Controllers\Api\EnvironmentController;
 use App\Http\Controllers\Api\LegalPageController;
 use App\Http\Controllers\Api\SubscriptionController;
+use App\Http\Controllers\Api\ThirdPartyServiceController;
 use App\Http\Controllers\MediaAssetController;
 use Illuminate\Support\Facades\Route;
 
@@ -38,3 +39,6 @@ Route::get('/branding/public/landing-page', [BrandingController::class, 'getPubl
 Route::post('/analytics/visits/track', [AnalyticsWidgetsController::class, 'trackVisit']);
 
 Route::post('/webhooks/media/processing', [MediaAssetController::class, 'processingWebhook']);
+
+// Public WhatsApp config - returns WhatsApp button config based on domain
+Route::get('/integrations/whatsapp/config', [ThirdPartyServiceController::class, 'getWhatsAppConfig']);
