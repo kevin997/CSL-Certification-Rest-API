@@ -10,6 +10,8 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Validation\ValidationException;
 
 /**
  * @OA\Schema(
@@ -255,21 +257,37 @@ class PaymentGatewayController extends Controller
         ]);
 
         // Create payment gateway
-        $paymentGateway = PaymentGatewaySetting::create([
-            'environment_id' => $environmentId,
-            'gateway_name' => $request->input('gateway_name'),
-            'code' => $request->input('code'),
-            'name' => $request->input('name'),
-            'display_name' => $request->input('name'),
-            'description' => $request->input('description'),
-            'status' => $request->input('status'),
-            'mode' => $request->input('mode'),
-            'is_default' => false, // Always set to false initially
-            'webhook_url' => $webhookUrl,
-            'success_url' => $successUrl,
-            'failure_url' => $failureUrl,
-            'settings' => json_encode($request->input('settings')),
-        ]);
+        try {
+            $paymentGateway = PaymentGatewaySetting::create([
+                'environment_id' => $environmentId,
+                'gateway_name' => $request->input('gateway_name'),
+                'code' => $request->input('code'),
+                'name' => $request->input('name'),
+                'display_name' => $request->input('name'),
+                'description' => $request->input('description'),
+                'status' => $request->input('status'),
+                'mode' => $request->input('mode'),
+                'is_default' => false, // Always set to false initially
+                'webhook_url' => $webhookUrl,
+                'success_url' => $successUrl,
+                'failure_url' => $failureUrl,
+                'settings' => json_encode($request->input('settings')),
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+                'errors' => $e->errors(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (UniqueConstraintViolationException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "A payment gateway with code '{$request->input('code')}' already exists in this environment.",
+                'errors' => [
+                    'code' => ["A payment gateway with this code already exists in this environment."]
+                ],
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
 
         // Handle default flag separately if needed
         if ($request->input('is_default', false)) {

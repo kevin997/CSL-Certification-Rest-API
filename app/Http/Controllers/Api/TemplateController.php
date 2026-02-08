@@ -201,6 +201,7 @@ class TemplateController extends Controller
 
         $template = Template::create([
             'title' => $request->title,
+            'template_code' => $request->template_code,
             'description' => $request->description,
             'is_public' => $request->is_public ?? false,
             'status' => $request->status,
@@ -350,6 +351,7 @@ class TemplateController extends Controller
             'status' => 'string|in:draft,published,archived',
             'thumbnail_path' => 'nullable|string',
             'settings' => 'nullable|array',
+             'template_code' => 'nullable|string|max:50',
         ]);
 
         if ($validator->fails()) {
