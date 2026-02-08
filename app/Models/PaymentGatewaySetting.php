@@ -45,13 +45,15 @@ class PaymentGatewaySetting extends Model
 
     /**
      * Validate unique constraints for gateway code.
+     * Each environment can have its own gateways with the same code.
      *
      * @throws \Illuminate\Validation\ValidationException
      */
     protected function validateUniqueConstraints()
     {
-        // Check if another gateway with the same code already exists
+        // Check if another gateway with the same code already exists IN THIS ENVIRONMENT
         $existingGateway = self::query()
+            ->where('environment_id', $this->environment_id) // Scope to current environment
             ->where('code', $this->code)
             ->when($this->exists, function ($query) {
                 // Exclude current record when updating
@@ -62,9 +64,9 @@ class PaymentGatewaySetting extends Model
         if ($existingGateway) {
             throw \Illuminate\Validation\ValidationException::withMessages([
                 'code' => [
-                    "A payment gateway with code '{$this->code}' already exists " .
-                    "(Environment: {$existingGateway->environment_id}, Gateway: {$existingGateway->gateway_name}). " .
-                    "Each gateway code must be unique across all environments."
+                    "A payment gateway with code '{$this->code}' already exists in this environment " .
+                    "(Gateway: {$existingGateway->gateway_name}). " .
+                    "Each gateway code must be unique within an environment."
                 ]
             ]);
         }

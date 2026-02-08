@@ -1513,13 +1513,25 @@ class StorefrontController extends Controller
         if ($paymentConfig && $paymentConfig->use_centralized_gateways) {
             // Use centralized gateways from environment 1 (platform gateways)
             $targetEnvironmentId = 1;
+            \Log::info('Using centralized payment gateways from environment 1', [
+                'requesting_environment' => $environment->id,
+                'target_environment' => $targetEnvironmentId
+            ]);
+        } else {
+            \Log::info('Using local payment gateways', [
+                'environment' => $environment->id,
+                'has_config' => $paymentConfig !== null,
+                'use_centralized' => $paymentConfig ? $paymentConfig->use_centralized_gateways : null
+            ]);
         }
 
         //create an array of gateways we don't fetch
         $excludeGateways = ['lygos'];
 
         // Get active payment gateways for this environment
-        $gateways = PaymentGatewaySetting::where('environment_id', $targetEnvironmentId)
+        // Use withoutGlobalScopes() to bypass EnvironmentScope when fetching centralized gateways
+        $gateways = PaymentGatewaySetting::withoutGlobalScopes()
+            ->where('environment_id', $targetEnvironmentId)
             ->where('status', true)
             ->whereNotIn('code', $excludeGateways)
             ->orderBy('sort_order')
