@@ -25,6 +25,7 @@ class QuizContent extends Model
         'description',
         'instructions',
         'instruction_format',
+        'audio_media_asset_id',
         'passing_score',
         'time_limit',
         'max_attempts',

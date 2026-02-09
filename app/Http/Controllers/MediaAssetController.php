@@ -128,9 +128,28 @@ class MediaAssetController extends Controller
             return response()->json(['error' => 'Media Service processing failed', 'details' => $response->json()], 500);
         }
 
-        $mediaAsset->update(['status' => 'processing']);
+        $responseData = $response->json();
+        $mediaStatus = $responseData['status'] ?? 'processing';
 
-        return response()->json(['media_asset' => $mediaAsset]);
+        // Audio files are marked as 'ready' immediately by the media service (no transcoding)
+        $mediaAsset->update(['status' => $mediaStatus]);
+
+        if ($mediaStatus === 'ready') {
+            Log::info('Audio media ready immediately (no transcoding)', [
+                'media_asset_id' => $mediaAsset->id,
+                'upload_id' => $uploadId,
+            ]);
+
+            // Broadcast WebSocket event so frontend knows immediately
+            broadcast(new \App\Events\MediaProcessingStatusUpdated(
+                $mediaAsset->id,
+                $uploadId,
+                'ready',
+                []
+            ));
+        }
+
+        return response()->json(['media_asset' => $mediaAsset->fresh()]);
     }
 
     /**
@@ -240,6 +259,7 @@ class MediaAssetController extends Controller
         return response()->json([
             'token' => $data['token'] ?? null,
             'stream_url' => $data['manifest_url'] ?? ($data['stream_url'] ?? null),
+            'type' => $data['type'] ?? 'video',
         ]);
     }
 

@@ -162,6 +162,7 @@ class QuizContentController extends Controller
             'description' => 'nullable|string',
             'instructions' => 'nullable|string',
             'instruction_format' => 'nullable|string|in:plain,markdown,html,wysiwyg',
+            'audio_media_asset_id' => 'nullable|integer|exists:media_assets,id',
             'time_limit' => 'nullable|integer',
             'passing_score' => 'required|integer|min:0|max:100',
             'show_correct_answers' => 'boolean',
@@ -216,6 +217,7 @@ class QuizContentController extends Controller
             'description' => $request->description,
             'instructions' => $request->instructions,
             'instruction_format' => $request->instruction_format ?? 'markdown',
+            'audio_media_asset_id' => $request->audio_media_asset_id,
             'time_limit' => $request->time_limit,
             'passing_score' => $request->passing_score,
             'show_correct_answers' => $request->show_correct_answers ?? false,
@@ -391,6 +393,7 @@ class QuizContentController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'string|max:255',
             'description' => 'nullable|string',
+            'audio_media_asset_id' => 'nullable|integer|exists:media_assets,id',
             'time_limit' => 'nullable|integer',
             'passing_score' => 'integer|min:0|max:100',
             'show_correct_answers' => 'boolean',
