@@ -60,7 +60,7 @@ touch /var/www/html/storage/logs/laravel.log
 chmod 777 /var/www/html/storage/logs/laravel.log
 
 # Check MySQL database connection (CSL-DevOps Infrastructure)
-if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ] || [ "$CONTAINER_ROLE" = "scheduler" ] || [ "$CONTAINER_ROLE" = "nightwatch" ]; then
+if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ] || [ "$CONTAINER_ROLE" = "scheduler" ] || [ "$CONTAINER_ROLE" = "nightwatch" ] || [ "$CONTAINER_ROLE" = "outbox-processor" ] || [ "$CONTAINER_ROLE" = "kafka-consumer" ]; then
     echo "Checking MySQL database connection (CSL-DevOps)..."
     RETRY_COUNT=0
     MAX_RETRIES=15
