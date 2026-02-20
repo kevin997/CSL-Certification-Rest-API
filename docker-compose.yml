@@ -51,8 +51,6 @@ services:
       - DB_DATABASE=${DB_DATABASE}
       - DB_USERNAME=${DB_USERNAME}
       - DB_PASSWORD=${DB_PASSWORD}
-      - APP_ENV=${APP_ENV}
-      - APP_DEBUG=${APP_DEBUG:-false}
       - QUEUE_CONNECTION=database
     networks:
       - csl-network
@@ -83,8 +81,6 @@ services:
       - DB_DATABASE=${DB_DATABASE}
       - DB_USERNAME=${DB_USERNAME}
       - DB_PASSWORD=${DB_PASSWORD}
-      - APP_ENV=${APP_ENV}
-      - APP_DEBUG=${APP_DEBUG:-false}
       # Reverb configuration
       - REVERB_APP_ID=${REVERB_APP_ID}
       - REVERB_APP_KEY=${REVERB_APP_KEY}
@@ -119,8 +115,6 @@ services:
       - DB_DATABASE=${DB_DATABASE}
       - DB_USERNAME=${DB_USERNAME}
       - DB_PASSWORD=${DB_PASSWORD}
-      - APP_ENV=${APP_ENV}
-      - APP_DEBUG=${APP_DEBUG:-false}
       # Email configuration for backups
       - MAIL_MAILER=${MAIL_MAILER:-smtp}
       - MAIL_HOST=${MAIL_HOST:-smtp.gmail.com}
@@ -160,8 +154,6 @@ services:
       - DB_DATABASE=${DB_DATABASE}
       - DB_USERNAME=${DB_USERNAME}
       - DB_PASSWORD=${DB_PASSWORD}
-      - APP_ENV=${APP_ENV}
-      - APP_DEBUG=${APP_DEBUG:-false}
       - KAFKA_BROKERS=${KAFKA_BROKERS}
     networks:
       - csl-network
@@ -189,8 +181,6 @@ services:
       - DB_DATABASE=${DB_DATABASE}
       - DB_USERNAME=${DB_USERNAME}
       - DB_PASSWORD=${DB_PASSWORD}
-      - APP_ENV=${APP_ENV}
-      - APP_DEBUG=${APP_DEBUG:-false}
       - KAFKA_BROKERS=${KAFKA_BROKERS}
     networks:
       - csl-network
@@ -221,8 +211,6 @@ services:
       - DB_DATABASE=${DB_DATABASE}
       - DB_USERNAME=${DB_USERNAME}
       - DB_PASSWORD=${DB_PASSWORD}
-      - APP_ENV=${APP_ENV}
-      - APP_DEBUG=${APP_DEBUG:-false}
       # Nightwatch configuration
       - NIGHTWATCH_TOKEN=${NIGHTWATCH_TOKEN}
       - NIGHTWATCH_REQUEST_SAMPLE_RATE=${NIGHTWATCH_REQUEST_SAMPLE_RATE:-0.1}
