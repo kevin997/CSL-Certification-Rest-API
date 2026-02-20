@@ -47,6 +47,35 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Chromium for spatie/laravel-pdf (Browsershot) - rarely changes
+RUN apt-get update && apt-get install -y \
+    chromium \
+    libx11-xcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    libpangocairo-1.0-0 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxss1 \
+    libgtk-3-0 \
+    libnss3 \
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Puppeteer/Browsershot to use system Chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+# Install Puppeteer globally for Browsershot
+RUN npm install -g puppeteer@latest --unsafe-perm
+
 # Install PHP extensions step by step (rarely change - cached layer)
 RUN docker-php-ext-install -j$(nproc) \
         pdo_mysql \
@@ -75,6 +104,12 @@ RUN apt-get update && apt-get install -y libpq-dev \
 
 # Install Redis extension via PECL (rarely change - cached layer)
 RUN pecl install redis && docker-php-ext-enable redis
+
+# Install php-rdkafka extension (rarely change - cached layer)
+RUN apt-get update && apt-get install -y librdkafka-dev \
+    && pecl install rdkafka \
+    && docker-php-ext-enable rdkafka \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Composer (rarely change - cached layer)
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
@@ -144,6 +179,7 @@ RUN mkdir -p /var/www/html/storage/framework/sessions \
     /var/www/html/storage/app/backup-temp \
     /var/www/html/storage/app/private \
     /var/www/html/storage/app/private/CSL-Certification-Rest-API \
+    /var/www/html/storage/app/invoices \
     /var/www/html/bootstrap/cache \
     && touch /var/www/html/storage/logs/laravel.log \
     /var/www/html/storage/logs/queue.log \
@@ -178,9 +214,10 @@ COPY --chown=www-data:www-data . /var/www/html
 COPY --chown=www-data:www-data .env.staging /var/www/html/.env
 
 # Build frontend assets (changes frequently but after code copy)
+# NOTE: node_modules from earlier npm ci is preserved (not in .dockerignore source, so COPY doesn't overwrite it)
+# Puppeteer must remain in node_modules at runtime for PDF generation via Browsershot
 RUN if [ -f "package.json" ]; then \
     npm run build \
-    && rm -rf node_modules \
     && npm cache clean --force; \
     fi
 

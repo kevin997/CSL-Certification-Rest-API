@@ -425,7 +425,7 @@ class EnrollmentCodeController extends Controller
             'code' => 'required|string|size:4',
             'product_id' => 'required|integer|exists:products,id',
             'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
+            'email' => 'required|string|email|max:255',
             'password' => 'required|string|min:8',
         ]);
 
@@ -485,13 +485,53 @@ class EnrollmentCodeController extends Controller
         try {
             DB::beginTransaction();
 
-            // Create new user account
-            $user = User::create([
-                'name' => $request->name,
-                'email' => $request->email,
-                'password' => Hash::make($request->password),
-                'role' => 'learner', // Default role for students
-            ]);
+            // Check if user account already exists
+            $userExisted = false;
+            $existingUser = User::where('email', $request->email)->first();
+
+            if ($existingUser) {
+                // User exists — verify the provided password
+                if (!Hash::check($request->password, $existingUser->password)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'An account with this email already exists. Please enter the correct password for your account.',
+                    ], 422);
+                }
+
+                // Reject non-learner users (admins, teachers, sales agents, etc.)
+                $userRole = $existingUser->role instanceof \App\Enums\UserRole
+                    ? $existingUser->role->value
+                    : $existingUser->role;
+
+                if ($userRole !== \App\Enums\UserRole::LEARNER->value) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This account is not eligible for enrollment code redemption. Please contact support.',
+                    ], 403);
+                }
+
+                $user = $existingUser;
+                $userExisted = true;
+
+                // Authenticate the existing user
+                Auth::login($user);
+                $request->session()->regenerate();
+
+                Log::info('Enrollment code: Existing user authenticated during redemption', [
+                    'user_id' => $user->id,
+                    'email' => $user->email,
+                ]);
+            } else {
+                // Create new user account
+                $user = User::create([
+                    'name' => $request->name,
+                    'email' => $request->email,
+                    'password' => Hash::make($request->password),
+                    'role' => 'learner',
+                ]);
+            }
 
             // Get product and its courses
             $product = Product::with(['category'])->find($request->product_id);
@@ -511,7 +551,7 @@ class EnrollmentCodeController extends Controller
 
             $enrolledCourses = [];
 
-            // Get environment_id (default to 1 if not set in request)
+            // Get environment_id
             $environmentId = session('current_environment_id');
 
             $environment = Environment::find($environmentId);
@@ -523,27 +563,39 @@ class EnrollmentCodeController extends Controller
                 ], 400);
             }
 
-            // Ensure environment membership + welcome email is created after DB commit
-            // (listener is queued; avoids it reading uncommitted transaction state)
-            DB::afterCommit(function () use ($user, $environment) {
-                event(new UserCreatedDuringCheckout($user, $environment, true));
-            });
+            // Only fire UserCreatedDuringCheckout for new users
+            // (existing users already have environment membership)
+            if (!$userExisted) {
+                DB::afterCommit(function () use ($user, $environment) {
+                    event(new UserCreatedDuringCheckout($user, $environment, true));
+                });
+            }
 
             // Create enrollments for each course in the product
             foreach ($productCourses as $productCourse) {
-                $enrollment = Enrollment::create([
-                    'user_id' => $user->id,
-                    'course_id' => $productCourse->course_id,
-                    'environment_id' => $environmentId,
-                    'status' => Enrollment::STATUS_ENROLLED,
-                    'progress_percentage' => 0,
-                    'last_activity_at' => now(),
-                ]);
+                // Check if already enrolled (relevant for existing users)
+                $existingEnrollment = DB::table('enrollments')
+                    ->where('user_id', $user->id)
+                    ->where('course_id', $productCourse->course_id)
+                    ->where('environment_id', $environmentId)
+                    ->whereNull('deleted_at')
+                    ->first();
 
-                $enrolledCourses[] = [
-                    'id' => $enrollment->id,
-                    'course_id' => $enrollment->course_id,
-                ];
+                if (!$existingEnrollment) {
+                    $enrollment = Enrollment::create([
+                        'user_id' => $user->id,
+                        'course_id' => $productCourse->course_id,
+                        'environment_id' => $environmentId,
+                        'status' => Enrollment::STATUS_ENROLLED,
+                        'progress_percentage' => 0,
+                        'last_activity_at' => now(),
+                    ]);
+
+                    $enrolledCourses[] = [
+                        'id' => $enrollment->id,
+                        'course_id' => $enrollment->course_id,
+                    ];
+                }
             }
 
             // Create order for commission tracking (using actual product price)
@@ -624,8 +676,11 @@ class EnrollmentCodeController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Account created and successfully enrolled! Please login with your credentials.',
-                'redirect_to_login' => true,
+                'message' => $userExisted
+                    ? 'Successfully enrolled! Redirecting to your course...'
+                    : 'Account created and successfully enrolled! Please login with your credentials.',
+                'redirect_to_login' => !$userExisted,
+                'user_existed' => $userExisted,
                 'enrollment' => [
                     'id' => $enrolledCourses[0]['id'] ?? null,
                     'product_id' => $request->product_id,

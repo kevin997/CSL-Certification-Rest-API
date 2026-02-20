@@ -149,6 +149,14 @@ elif [ "$CONTAINER_ROLE" = "nightwatch" ]; then
   # Copy nightwatch supervisor config
   cp /var/www/html/docker/supervisor/nightwatch.conf /etc/supervisor/conf.d/
   exec supervisord -c /etc/supervisor/conf.d/supervisord.conf
+elif [ "$CONTAINER_ROLE" = "kafka-consumer" ]; then
+  echo "Starting Kafka consumer (purchase.completed)..."
+  cp /var/www/html/docker/supervisor/kafka-consumer.conf /etc/supervisor/conf.d/
+  exec supervisord -c /etc/supervisor/conf.d/supervisord.conf
+elif [ "$CONTAINER_ROLE" = "outbox-processor" ]; then
+  echo "Starting Kafka outbox processor..."
+  cp /var/www/html/docker/supervisor/outbox-processor.conf /etc/supervisor/conf.d/
+  exec supervisord -c /etc/supervisor/conf.d/supervisord.conf
 elif [ "$CONTAINER_ROLE" = "reverb" ]; then
   echo "Starting Laravel Reverb WebSocket server..."
   exec php artisan reverb:start --host=$REVERB_HOST --port=$REVERB_PORT

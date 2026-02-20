@@ -7,6 +7,7 @@ use App\Traits\HasCreatedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -59,5 +60,15 @@ class Template extends Model
     public function team(): BelongsTo
     {
         return $this->belongsTo(Team::class);
+    }
+
+    /**
+     * Get the users who purchased this template from the marketplace.
+     */
+    public function buyers(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'purchased_templates')
+            ->withPivot('order_id', 'source', 'purchased_at')
+            ->withTimestamps();
     }
 }

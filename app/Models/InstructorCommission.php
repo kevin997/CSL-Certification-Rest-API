@@ -34,6 +34,7 @@ class InstructorCommission extends Model
         'paid_at',
         'payment_reference',
         'withdrawal_request_id',
+        'invoice_id',
         'notes',
     ];
 
@@ -78,5 +79,13 @@ class InstructorCommission extends Model
     public function withdrawalRequest(): BelongsTo
     {
         return $this->belongsTo(WithdrawalRequest::class);
+    }
+
+    /**
+     * Get the invoice associated with this commission.
+     */
+    public function invoice(): BelongsTo
+    {
+        return $this->belongsTo(Invoice::class);
     }
 }

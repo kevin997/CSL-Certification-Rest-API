@@ -66,4 +66,10 @@ return [
         'subject' => env('VAPID_SUBJECT', ''),
     ],
 
+    'kafka' => [
+        'brokers' => env('KAFKA_BROKERS', 'localhost:29092'),
+        'consumer_group' => env('KAFKA_CONSUMER_GROUP', 'csl-certification-consumer'),
+        'purchase_topic' => env('KAFKA_PURCHASE_TOPIC', 'purchase.completed'),
+    ],
+
 ];

@@ -4,6 +4,8 @@ namespace App\Console;
 
 use App\Console\Commands\ArchiveChatMessages;
 use App\Console\Commands\BuildChatSearchIndex;
+use App\Console\Commands\ConsumeKafkaEvents;
+use App\Console\Commands\ProcessKafkaOutbox;
 use App\Console\Commands\SendProductSubscriptionReminders;
 use App\Mail\ArchivalSummaryReport;
 use Illuminate\Console\Scheduling\Schedule;
@@ -20,6 +22,8 @@ class Kernel extends ConsoleKernel
     protected $commands = [
         ArchiveChatMessages::class,
         BuildChatSearchIndex::class,
+        ConsumeKafkaEvents::class,
+        ProcessKafkaOutbox::class,
         SendProductSubscriptionReminders::class,
     ];
 

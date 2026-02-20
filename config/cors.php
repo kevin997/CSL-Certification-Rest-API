@@ -23,10 +23,18 @@ return [
         'http://localhost:3000',
         'http://localhost:3001',
         'http://127.0.0.1:3000',
+        'https://getkursa.app',
+        'https://getkursa.org',
+        'https://getkursa.net',
+        'https://getkursa.com',
     ],
 
     'allowed_origins_patterns' => [
         '#^https?://.*\.csl-brands\.com$#',
+        '#^https?://.*\.getkursa\.app$#',
+        '#^https?://.*\.getkursa\.com$#',
+        '#^https?://.*\.getkursa\.org$#',
+        '#^https?://.*\.getkursa\.net$#',
     ],
 
     'allowed_headers' => ['*'],

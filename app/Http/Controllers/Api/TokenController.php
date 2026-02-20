@@ -87,7 +87,7 @@ class TokenController extends Controller
         $userRoleCheck = $user->role instanceof UserRole ? $user->role->value : $user->role;
         $isAdminOrSalesAgent = in_array($userRoleCheck, [
             UserRole::ADMIN->value,
-            UserRole::SUPER_ADMIN->value, 
+            UserRole::SUPER_ADMIN->value,
             UserRole::SALES_AGENT->value,
             'admin',
             'super_admin',
@@ -99,10 +99,10 @@ class TokenController extends Controller
             $frontendDomain = $request->header('X-Frontend-Domain', '');
             $origin = $request->header('Origin', '');
             $referer = $request->header('Referer', '');
-            
+
             // Extract host from various headers
             $requestHost = $this->extractHostFromHeaders($frontendDomain, $origin, $referer);
-            
+
             // List of allowed admin domains
             $allowedAdminDomains = [
                 'sales.csl-brands.com',
@@ -112,7 +112,7 @@ class TokenController extends Controller
                 '127.0.0.1:3001',
                 '127.0.0.1',
             ];
-            
+
             // Check if request is from an allowed admin domain
             $isAllowedDomain = false;
             foreach ($allowedAdminDomains as $allowed) {
@@ -121,7 +121,7 @@ class TokenController extends Controller
                     break;
                 }
             }
-            
+
             if (!$isAllowedDomain) {
                 Log::warning('Admin/sales agent token creation attempt from unauthorized domain', [
                     'user_id' => $user->id,
@@ -129,7 +129,7 @@ class TokenController extends Controller
                     'request_host' => $requestHost,
                     'frontend_domain' => $frontendDomain,
                 ]);
-                
+
                 throw ValidationException::withMessages([
                     'credentials' => ['Access denied. Wrong password or domain not allowed.'],
                 ]);
@@ -411,7 +411,10 @@ class TokenController extends Controller
      */
     public function revokeTokens(Request $request)
     {
-        $request->user()->tokens()->delete();
+        // Preserve marketplace tokens — they are managed separately by the marketplace frontend
+        $request->user()->tokens()
+            ->where('name', '!=', 'marketplace-auth')
+            ->delete();
 
         return response()->json(['message' => 'All tokens revoked successfully']);
     }

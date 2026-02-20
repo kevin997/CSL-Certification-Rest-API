@@ -7,9 +7,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Services\InvoiceService;
-use Barryvdh\DomPDF\PDF;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Response;
+use function Spatie\LaravelPdf\Support\pdf;
 
 class InvoiceController extends Controller
 {
@@ -22,7 +21,7 @@ class InvoiceController extends Controller
 
     public function index(Request $request)
     {
-        $environmentId = $request->user()->environment_id; // Or get from route
+        $environmentId = session("current_environment_id");
         $filters = $request->only(['status', 'from', 'to']);
         $invoices = $this->service->getInvoices($environmentId, $filters);
 
@@ -63,12 +62,54 @@ class InvoiceController extends Controller
     public function downloadPDF($id)
     {
         $invoice = $this->service->getInvoice($id);
-        $environmentId = $invoice->environment_id;
-        $environment = \App\Models\Environment::findOrFail($environmentId);
-        $branding = \App\Models\Branding::where('environment_id', $environmentId)->first();
-        // Use a PDF library like barryvdh/laravel-dompdf
-        $pdf = app('dompdf.wrapper');
-        $pdf->loadView('invoices.pdf', ['invoice' => $invoice, 'environment' => $environment]);
-        return $pdf->download("invoice-{$invoice->invoice_number}.pdf");
+
+        // Always generate on-the-fly to avoid storing PDFs on disk
+        $environment = \App\Models\Environment::with('owner')->findOrFail($invoice->environment_id);
+        $branding = \App\Models\Branding::where('environment_id', $invoice->environment_id)
+            ->where('is_active', true)
+            ->first();
+        $owner = $environment->owner;
+
+        $transactions = collect();
+        if ($invoice->metadata && isset($invoice->metadata['transaction_ids'])) {
+            $transactions = \App\Models\Transaction::whereIn('id', $invoice->metadata['transaction_ids'])->get();
+        }
+
+        $primaryColor = $branding->primary_color ?? '#4F46E5';
+
+        return pdf()
+            ->view('invoices.spatie-pdf', [
+                'invoice' => $invoice,
+                'environment' => $environment,
+                'branding' => $branding,
+                'owner' => $owner,
+                'transactions' => $transactions,
+                'primaryColor' => $primaryColor,
+            ])
+            ->format('A4')
+            ->name("invoice-{$invoice->invoice_number}.pdf")
+            ->download();
+    }
+
+    /**
+     * Regenerate the PDF for an existing invoice.
+     */
+    public function regeneratePDF($id)
+    {
+        $invoice = $this->service->getInvoice($id);
+        $path = $this->service->generatePdf($invoice);
+
+        if ($path) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Invoice PDF regenerated successfully.',
+                'pdf_path' => $path,
+            ]);
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to regenerate invoice PDF.',
+        ], 500);
     }
 }

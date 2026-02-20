@@ -101,10 +101,16 @@ class TemplateController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+        // Fetch templates the user created, purchased, or are public
+        $purchasedTemplateIds = \App\Models\PurchasedTemplate::where('user_id', Auth::id())
+            ->pluck('template_id')
+            ->toArray();
+
         $query = Template::query()
-            ->where(function ($q) {
+            ->where(function ($q) use ($purchasedTemplateIds) {
                 $q->where('created_by', Auth::id())
-                    ->orWhere('is_public', true);
+                    ->orWhere('is_public', true)
+                    ->orWhereIn('id', $purchasedTemplateIds);
             });
 
         // Always include blocks_count for list views without loading blocks payload
@@ -263,17 +269,26 @@ class TemplateController extends Controller
         $template = Template::with(['blocks.activities'])
             ->findOrFail($id);
 
-        // Check if user has access to this template
-        if (!$template->is_public && $template->created_by !== Auth::id()) {
+        // Check if user has access: creator, public, or purchased
+        $hasPurchased = \App\Models\PurchasedTemplate::where('user_id', Auth::id())
+            ->where('template_id', $template->id)
+            ->exists();
+
+        if (!$template->is_public && $template->created_by !== Auth::id() && !$hasPurchased) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to view this template',
             ], Response::HTTP_FORBIDDEN);
         }
 
+        // Include ownership metadata
+        $templateData = $template->toArray();
+        $templateData['is_purchased'] = $hasPurchased;
+        $templateData['is_owner'] = $template->created_by === Auth::id();
+
         return response()->json([
             'status' => 'success',
-            'data' => $template,
+            'data' => $templateData,
         ]);
     }
 
@@ -351,7 +366,7 @@ class TemplateController extends Controller
             'status' => 'string|in:draft,published,archived',
             'thumbnail_path' => 'nullable|string',
             'settings' => 'nullable|array',
-             'template_code' => 'nullable|string|max:50',
+            'template_code' => 'nullable|string|max:50',
         ]);
 
         if ($validator->fails()) {
@@ -494,8 +509,12 @@ class TemplateController extends Controller
     {
         $template = Template::with(['blocks.activities'])->findOrFail($id);
 
-        // Check if user has permission to view this template
-        if (!$template->is_public && $template->created_by !== Auth::id()) {
+        // Check if user has permission: creator, public, or purchased
+        $hasPurchased = \App\Models\PurchasedTemplate::where('user_id', Auth::id())
+            ->where('template_id', $template->id)
+            ->exists();
+
+        if (!$template->is_public && $template->created_by !== Auth::id() && !$hasPurchased) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to duplicate this template',

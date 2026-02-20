@@ -36,19 +36,31 @@ class GenerateMonthlyInvoices extends Command
 
         $successCount = 0;
         $failCount = 0;
+        $skippedCount = 0;
         $failedEnvironments = [];
 
         foreach ($environments as $env) {
             try {
                 $invoice = $service->generateMonthlyInvoiceForEnvironment($env->id, $month);
                 if ($invoice) {
-                    $service->createPaymentLink($invoice);
-                    $service->sendInvoiceNotification($invoice);
+                    try {
+                        $service->createPaymentLink($invoice);
+                    } catch (\Throwable $e) {
+                        $this->warn("Could not create payment link for invoice {$invoice->id}: {$e->getMessage()}");
+                    }
+                    
+                    try {
+                         $service->sendInvoiceNotification($invoice);
+                    } catch (\Throwable $e) {
+                        $this->warn("Could not send notification for invoice {$invoice->id}: {$e->getMessage()}");
+                    }
+
                     $this->info("Invoice generated for environment {$env->id}");
                     $successCount++;
                 } else {
-                    $failCount++;
-                    $failedEnvironments[] = $env->name ?? $env->id;
+                    // null means nothing to invoice — not an error
+                    $skippedCount++;
+                    $this->info("Skipped environment {$env->id} (no items to invoice)");
                 }
             } catch (\Throwable $e) {
                 $failCount++;
@@ -62,6 +74,6 @@ class GenerateMonthlyInvoices extends Command
         $notification = new InvoiceNotification($successCount, $failCount, $failedEnvironments, $telegramService);
         $notification->toTelegram($notification);
 
-        $this->info("Monthly invoices generated. Success: $successCount, Failed: $failCount");
+        $this->info("Monthly invoices generated. Success: $successCount, Skipped: $skippedCount, Failed: $failCount");
     }
 }

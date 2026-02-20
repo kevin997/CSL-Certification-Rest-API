@@ -2161,10 +2161,10 @@
         "/api/auth/academy-switch-token": {
             "post": {
                 "tags": [
-                    "Academy Switch"
+                    "Campus Switch"
                 ],
-                "summary": "Generate academy switch token",
-                "description": "Generate a short-lived token for switching to another academy/domain.\n\nThis token is used for cross-domain authentication when a user wants to\nswitch from one academy domain to another.",
+                "summary": "Generate campus switch token",
+                "description": "Generate a short-lived token for switching to another campus/domain.\n\nThis token is used for cross-domain authentication when a user wants to\nswitch from one campus domain to another.",
                 "operationId": "25f307e981110ed4f987666eb11a3a0f",
                 "requestBody": {
                     "required": true,
@@ -2230,9 +2230,9 @@
         "/api/auth/validate-switch-token": {
             "post": {
                 "tags": [
-                    "Academy Switch"
+                    "Campus Switch"
                 ],
-                "summary": "Validate academy switch token",
+                "summary": "Validate campus switch token",
                 "description": "Validate a switch token and return authentication credentials.\n\nThis endpoint is called by the target domain to validate the switch token\nand get the user's authentication token for that domain.",
                 "operationId": "049ee7a1db94e50a08492ed07fc9daf7",
                 "requestBody": {
@@ -3851,6 +3851,167 @@
                     },
                     "401": {
                         "description": "Unauthenticated"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/branding/{id}": {
+            "get": {
+                "tags": [
+                    "Branding"
+                ],
+                "summary": "Get specific branding settings",
+                "description": "Returns a specific branding record by ID",
+                "operationId": "getBrandingById",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Branding ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Branding"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "404": {
+                        "description": "Branding not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Branding"
+                ],
+                "summary": "Update specific branding settings",
+                "description": "Updates a specific branding record by ID",
+                "operationId": "updateBrandingById",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Branding ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Branding data",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "company_name": {
+                                        "type": "string",
+                                        "example": "CSL Certification"
+                                    },
+                                    "logo_url": {
+                                        "type": "string",
+                                        "example": "https://..."
+                                    },
+                                    "favicon_url": {
+                                        "type": "string",
+                                        "example": "https://..."
+                                    },
+                                    "primary_color": {
+                                        "type": "string",
+                                        "example": "#3498db"
+                                    },
+                                    "secondary_color": {
+                                        "type": "string",
+                                        "example": "#2ecc71"
+                                    },
+                                    "accent_color": {
+                                        "type": "string",
+                                        "example": "#e74c3c"
+                                    },
+                                    "font_family": {
+                                        "type": "string",
+                                        "example": "Roboto, sans-serif"
+                                    },
+                                    "custom_css": {
+                                        "type": "string"
+                                    },
+                                    "custom_js": {
+                                        "type": "string"
+                                    },
+                                    "is_active": {
+                                        "type": "boolean",
+                                        "example": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Branding settings updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Branding settings updated successfully"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Branding"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "404": {
+                        "description": "Branding not found"
                     },
                     "422": {
                         "description": "Validation error"
@@ -8005,6 +8166,82 @@
                 ]
             }
         },
+        "/api/environments/{id}/owner-password": {
+            "put": {
+                "tags": [
+                    "Environments"
+                ],
+                "summary": "Update environment owner's password",
+                "description": "Update the environment owner's password.\nOnly accessible by admins/sales agents.",
+                "operationId": "f1d656bae1da2199ef43efc63c1b783b",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "password"
+                                ],
+                                "properties": {
+                                    "password": {
+                                        "type": "string",
+                                        "minLength": 6,
+                                        "example": "newSecurePassword123"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Password updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Owner password updated successfully"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Unauthorized - Admin access required"
+                    },
+                    "404": {
+                        "description": "Environment not found"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
         "/environment-credentials/{environmentId}": {
             "get": {
                 "tags": [
@@ -10698,7 +10935,7 @@
                                     },
                                     "environment_name": {
                                         "type": "string",
-                                        "example": "John's Academy"
+                                        "example": "John's Campus"
                                     },
                                     "domain_type": {
                                         "type": "string",
@@ -10710,7 +10947,7 @@
                                     },
                                     "domain": {
                                         "type": "string",
-                                        "example": "johns-academy"
+                                        "example": "johns-campus"
                                     },
                                     "description": {
                                         "type": "string",
@@ -10757,7 +10994,7 @@
                                                 },
                                                 "domain": {
                                                     "type": "string",
-                                                    "example": "johns-academy.csl-cert.com"
+                                                    "example": "johns-campus.csl-cert.com"
                                                 },
                                                 "expires_at": {
                                                     "type": "string",
@@ -11247,7 +11484,7 @@
                                     },
                                     "environment_name": {
                                         "type": "string",
-                                        "example": "John's Academy"
+                                        "example": "John's Campus"
                                     },
                                     "domain_type": {
                                         "type": "string",
@@ -11259,7 +11496,7 @@
                                     },
                                     "domain": {
                                         "type": "string",
-                                        "example": "johns-academy"
+                                        "example": "johns-campus"
                                     },
                                     "description": {
                                         "type": "string",
@@ -11310,7 +11547,7 @@
                                                 },
                                                 "domain": {
                                                     "type": "string",
-                                                    "example": "johns-academy.csl-cert.com"
+                                                    "example": "johns-campus.csl-cert.com"
                                                 }
                                             },
                                             "type": "object"
@@ -11370,7 +11607,7 @@
                                     },
                                     "environment_name": {
                                         "type": "string",
-                                        "example": "John's Academy"
+                                        "example": "John's Campus"
                                     },
                                     "domain_type": {
                                         "type": "string",
@@ -11382,7 +11619,7 @@
                                     },
                                     "domain": {
                                         "type": "string",
-                                        "example": "johns-academy"
+                                        "example": "johns-campus"
                                     },
                                     "description": {
                                         "type": "string",
@@ -11443,7 +11680,7 @@
                                                 },
                                                 "domain": {
                                                     "type": "string",
-                                                    "example": "johns-academy.csl-brands.com"
+                                                    "example": "johns-campus.csl-brands.com"
                                                 }
                                             },
                                             "type": "object"
@@ -16494,6 +16731,209 @@
                     }
                 ]
             }
+        },
+        "/activities/{activityId}/webinar-content": {
+            "get": {
+                "tags": [
+                    "Webinar Content"
+                ],
+                "summary": "Get webinar content for an activity",
+                "operationId": "ef7c3d90f65fa248a3e171b14df81667",
+                "parameters": [
+                    {
+                        "name": "activityId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Webinar content retrieved"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Webinar Content"
+                ],
+                "summary": "Update webinar content for an activity",
+                "operationId": "933331719d216b620892f83057f43b83",
+                "parameters": [
+                    {
+                        "name": "activityId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Webinar content updated"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Webinar Content"
+                ],
+                "summary": "Create webinar content for an activity",
+                "operationId": "c43837400a6b3482860d67d4dc5d1a4d",
+                "parameters": [
+                    {
+                        "name": "activityId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Webinar content created successfully"
+                    },
+                    "400": {
+                        "description": "Invalid activity type"
+                    },
+                    "403": {
+                        "description": "Forbidden"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Webinar Content"
+                ],
+                "summary": "Delete webinar content for an activity",
+                "operationId": "8bc0e2544fd7805c9acade1176919bb6",
+                "parameters": [
+                    {
+                        "name": "activityId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Webinar content deleted"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/activities/{activityId}/webinar-content/link-session": {
+            "post": {
+                "tags": [
+                    "Webinar Content"
+                ],
+                "summary": "Link an existing live session to webinar content",
+                "operationId": "0d08608a87bca67cc15c29611ff445b2",
+                "parameters": [
+                    {
+                        "name": "activityId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Live session linked successfully"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/activities/{activityId}/webinar-content/token": {
+            "post": {
+                "tags": [
+                    "Webinar Content"
+                ],
+                "summary": "Get token to join the webinar",
+                "operationId": "f863e6b61def700cd0857334066fb2e2",
+                "parameters": [
+                    {
+                        "name": "activityId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Token generated successfully"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/activities/{activityId}/webinar-content/status": {
+            "get": {
+                "tags": [
+                    "Webinar Content"
+                ],
+                "summary": "Get current status of the webinar",
+                "operationId": "29e6b02bf19b73dabb7354e0c8c2a0e7",
+                "parameters": [
+                    {
+                        "name": "activityId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Webinar status retrieved"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
         }
     },
     "components": {
@@ -19071,6 +19511,127 @@
                     }
                 },
                 "type": "object"
+            },
+            "WebinarContent": {
+                "title": "WebinarContent",
+                "description": "Webinar content model for webinar-type activities linked to LiveKit sessions",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64",
+                        "example": 1
+                    },
+                    "activity_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "live_session_id": {
+                        "type": "integer",
+                        "example": 1,
+                        "nullable": true
+                    },
+                    "title": {
+                        "type": "string",
+                        "example": "Introduction to Web Development"
+                    },
+                    "description": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "scheduled_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "duration_minutes": {
+                        "type": "integer",
+                        "example": 60
+                    },
+                    "max_participants": {
+                        "type": "integer",
+                        "example": 100
+                    },
+                    "allow_recording": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "enable_chat": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "enable_qa": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "enable_reactions": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "mute_participants_on_join": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "disable_participant_video": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "access_type": {
+                        "type": "string",
+                        "enum": [
+                            "enrolled",
+                            "public",
+                            "invited"
+                        ]
+                    },
+                    "settings": {
+                        "type": "object",
+                        "nullable": true
+                    },
+                    "hosts": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "nullable": true
+                    },
+                    "co_hosts": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "nullable": true
+                    },
+                    "join_instructions": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "prerequisites": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "recording_url": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "draft",
+                            "scheduled",
+                            "live",
+                            "completed",
+                            "cancelled"
+                        ]
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
             }
         },
         "responses": {
@@ -19230,8 +19791,8 @@
             "description": "API endpoints for branding management"
         },
         {
-            "name": "Academy Switch",
-            "description": "API Endpoints for cross-domain academy switching. Allows users to seamlessly switch between academies on different domains."
+            "name": "Campus Switch",
+            "description": "API Endpoints for cross-domain campus switching. Allows users to seamlessly switch between campuses on different domains."
         },
         {
             "name": "Environments",
@@ -19260,6 +19821,10 @@
         {
             "name": "Onboarding",
             "description": "Onboarding validation endpoints"
+        },
+        {
+            "name": "Webinar Content",
+            "description": "API endpoints for managing webinar activity content"
         },
         {
             "name": "Content Types",

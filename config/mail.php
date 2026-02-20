@@ -41,10 +41,10 @@ return [
             'transport' => 'smtp',
             'scheme' => env('MAIL_SCHEME'),
             'url' => env('MAIL_URL'),
-            'host' => env('PHPMAILER_HOST', 'node127-eu.n0c.com'),
+            'host' => env('PHPMAILER_HOST', 'smtp.hostinger.com'),
             'port' => env('PHPMAILER_PORT', 465),
-            'username' => env('PHPMAILER_USERNAME', 'no.reply@cfpcsl.com'),
-            'password' => env('PHPMAILER_PASSWORD'),
+            'username' => env('PHPMAILER_USERNAME', 'no.reply@okenlysolutions.com'),
+            'password' => env('PHPMAILER_PASSWORD', 'NC]^4GLZGw&9'),
             'timeout' => env('PHPMAILER_TIMEOUT', 60),
             'encryption' => env('PHPMAILER_ENCRYPTION', 'ssl'),
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url(env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
@@ -52,10 +52,10 @@ return [
         
         'phpmailer' => [
             'transport' => 'phpmailer',
-            'host' => env('PHPMAILER_HOST', 'node127-eu.n0c.com'),
+            'host' => env('PHPMAILER_HOST', 'smtp.hostinger.com'),
             'port' => env('PHPMAILER_PORT', 465),
-            'username' => env('PHPMAILER_USERNAME', 'no.reply@cfpcsl.com'),
-            'password' => env('PHPMAILER_PASSWORD', 'm?6Vx,mHrH'),
+            'username' => env('PHPMAILER_USERNAME', 'no.reply@okenlysolutions.com'),
+            'password' => env('PHPMAILER_PASSWORD', 'NC]^4GLZGw&9'),
             'encryption' => env('PHPMAILER_ENCRYPTION', 'ssl'), // ssl, tls, or null
             'auth' => env('PHPMAILER_AUTH', true),
             'charset' => env('PHPMAILER_CHARSET', 'UTF-8'),
@@ -130,8 +130,8 @@ return [
     */
 
     'from' => [
-        'address' => env('PHPMAILER_USERNAME', 'no.reply@cfpcsl.com'),
-        'name' => env('MAIL_FROM_NAME', 'CSL'),
+        'address' => env('PHPMAILER_USERNAME', 'no.reply@okenlysolutions.com'),
+        'name' => env('MAIL_FROM_NAME', 'KURSA'),
     ],
 
 ];

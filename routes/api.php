@@ -73,6 +73,7 @@ use App\Http\Controllers\Api\ChatAnalyticsController;
 use App\Http\Controllers\Api\DigitalProductController;
 use App\Http\Controllers\Api\ThirdPartyServiceController;
 use App\Http\Controllers\Api\PersonalizationRequestController;
+use App\Http\Controllers\Api\SellerPanelController;
 
 Route::middleware('auth:sanctum')->post('/broadcasting/auth', function (Request $request) {
     return Broadcast::auth($request);
@@ -166,6 +167,7 @@ Route::get('/user', function (Request $request) {
     // Extract environment ID from token abilities
     $token = $request->bearerToken();
     $tokenModel = null;
+    $isMarketplaceToken = false;
 
     if (is_string($token) && $token !== '' && str_contains($token, '|')) {
         $tokenId = explode('|', $token)[0];
@@ -175,6 +177,7 @@ Route::get('/user', function (Request $request) {
     if ($tokenModel) {
         $abilities = $tokenModel->abilities;
         $environmentId = null;
+        $isMarketplaceToken = in_array('marketplace', $abilities);
 
         // Find environment_id in abilities
         foreach ($abilities as $ability) {
@@ -187,6 +190,17 @@ Route::get('/user', function (Request $request) {
         $response['environment_id'] = $environmentId;
     } else {
         $response['environment_id'] = $sessionEnvironmentId ? (int) $sessionEnvironmentId : null;
+    }
+
+    // For marketplace tokens, include the user's owned environment details
+    if ($isMarketplaceToken) {
+        $ownedEnv = \App\Models\Environment::where('owner_id', $user->id)->first();
+        $response['environment'] = $ownedEnv ? [
+            'id' => $ownedEnv->id,
+            'name' => $ownedEnv->name,
+            'primary_domain' => $ownedEnv->primary_domain,
+            'logo_url' => $ownedEnv->logo_url,
+        ] : null;
     }
 
     return response()->json($response);
@@ -243,6 +257,7 @@ Route::middleware(['throttle:login'])->group(function () {
 
     Route::post('/session/login', [SessionAuthController::class, 'login']);
     Route::post('/session/logout', [SessionAuthController::class, 'logout'])->middleware('auth:sanctum');
+    Route::post('/session/marketplace-token', [SessionAuthController::class, 'marketplaceToken'])->middleware('auth:sanctum');
 });
 
 Route::delete('/tokens', [TokenController::class, 'revokeTokens'])->middleware('auth:sanctum');
@@ -362,6 +377,22 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/templates/{id}', [TemplateController::class, 'update']);
     Route::delete('/templates/{id}', [TemplateController::class, 'destroy']);
     Route::post('/templates/{id}/duplicate', [TemplateController::class, 'duplicate']);
+    Route::post('/templates/{id}/sell', [App\Http\Controllers\Api\MarketplaceController::class, 'sellTemplate']);
+
+    // Seller Panel (BFF proxy to Marketplace API)
+    Route::prefix('seller-panel')->group(function () {
+        Route::get('/dashboard', [SellerPanelController::class, 'dashboard']);
+        Route::get('/orders', [SellerPanelController::class, 'orders']);
+        Route::get('/orders/{id}', [SellerPanelController::class, 'orderShow']);
+        Route::get('/listings', [SellerPanelController::class, 'listings']);
+        Route::put('/listings/{id}', [SellerPanelController::class, 'updateListing']);
+        Route::delete('/listings/{id}', [SellerPanelController::class, 'deleteListing']);
+
+        Route::get('/categories', [SellerPanelController::class, 'categories']);
+        Route::post('/categories', [SellerPanelController::class, 'storeCategory']);
+        Route::put('/categories/{id}', [SellerPanelController::class, 'updateCategory']);
+        Route::delete('/categories/{id}', [SellerPanelController::class, 'deleteCategory']);
+    });
 
     // Block routes
     Route::get('/templates/{templateId}/blocks', [BlockController::class, 'index']);
@@ -701,6 +732,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/subscriptions/{id}', [SubscriptionController::class, 'destroy']);
         Route::post('/subscriptions/{id}/suspend', [SubscriptionController::class, 'suspend']);
         Route::post('/subscriptions/{id}/reactivate', [SubscriptionController::class, 'reactivate']);
+
+        // Admin Invoice Management
+        Route::post('/admin/invoices/regenerate', [\App\Http\Controllers\Api\Admin\InvoiceController::class, 'regenerate']);
     });
 
     // Analytics routes
@@ -1057,7 +1091,6 @@ Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
         Route::put('/{environmentId}', [\App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController::class, 'update']);
         Route::post('/{environmentId}/toggle', [\App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController::class, 'toggle']);
     });
-
 });
 
 // Instructor API Endpoints for Earnings and Withdrawals

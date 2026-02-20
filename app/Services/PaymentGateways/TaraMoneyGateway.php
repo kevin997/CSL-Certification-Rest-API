@@ -194,20 +194,28 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                 'webHookUrl' => $webhookUrl
             ];
 
-            // Generate payment link using TaraMoney Order API
+            // Generate payment link using TaraMoney Payment Links API
             $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
                 'Accept' => 'application/json'
-            ])->post($this->apiBaseUrl . '/order', $requestData);
+            ])
+            ->timeout(15)
+            ->retry(3, 1000, function ($exception) {
+                // Only retry on connection/timeout errors, not 4xx client errors
+                return $exception instanceof \Illuminate\Http\Client\ConnectionException;
+            })
+            ->post($this->apiBaseUrl . '/paymentlinks', $requestData);
 
             // Check if the request was successful
             if ($response->successful()) {
                 $responseData = $response->json();
 
                 // Check if payment links were generated
-                // TaraMoney returns 'API_ORDER_SUCESSFULL' (note the typo in their API)
-                $isSuccess = (isset($responseData['status']) && $responseData['status'] === 'SUCCESS') ||
-                             (isset($responseData['error']) && in_array($responseData['error'], ['API_ORDER_SUCESSFULL', 'API_ORDER_SUCCESSFUL']));
+                // TaraMoney may return status 'SUCCESS' or 'success', and message 'API_ORDER_SUCESSFULL' (legacy typo)
+                $statusVal = strtoupper($responseData['status'] ?? '');
+                $messageVal = $responseData['message'] ?? $responseData['error'] ?? '';
+                $isSuccess = $statusVal === 'SUCCESS' ||
+                             in_array($messageVal, ['API_ORDER_SUCESSFULL', 'API_ORDER_SUCCESSFUL', 'Link successfully generated']);
                 
                 if ($isSuccess) {
                     // Generate a unique gateway transaction ID
@@ -216,7 +224,7 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                     // Update transaction with gateway ID
                     $transaction->gateway_transaction_id = $gatewayId;
                     $transaction->payment_gateway_setting_id = $this->settings->id;
-                    $transaction->gateway_response = json_encode($responseData);
+                    $transaction->gateway_response = $responseData;
                     $transaction->save();
 
                     Log::info('[TaraMoneyGateway] Payment links created successfully', [
@@ -376,7 +384,7 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                     $gatewayId = $responseData['paymentId'] ?? $transaction->transaction_id;
                     $transaction->gateway_transaction_id = $gatewayId;
                     $transaction->payment_gateway_setting_id = $this->settings->id;
-                    $transaction->gateway_response = json_encode($responseData);
+                    $transaction->gateway_response = $responseData;
                     $transaction->save();
 
                     Log::info('[TaraMoneyGateway] Mobile money payment initiated successfully', [

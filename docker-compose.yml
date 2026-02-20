@@ -143,6 +143,64 @@ services:
       timeout: 5s
       retries: 3
       
+  # Kafka Outbox Processor (flushes pending outbox rows to Kafka every 30s)
+  outbox-processor:
+    image: localhost:5000/csl-certification-rest-api:latest
+    container_name: csl-certification-rest-api-outbox-processor
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_started
+    volumes:
+      - app-storage:/var/www/html/storage
+    environment:
+      - CONTAINER_ROLE=outbox-processor
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - APP_ENV=${APP_ENV}
+      - APP_DEBUG=${APP_DEBUG:-false}
+      - KAFKA_BROKERS=${KAFKA_BROKERS}
+    networks:
+      - csl-network
+      - csl-shared-network
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -v grep | grep 'kafka:process-outbox\\|kafka-outbox-processor' || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  # Kafka Consumer Service (marketplace.purchase.completed → PurchasedTemplate)
+  kafka-consumer:
+    image: localhost:5000/csl-certification-rest-api:latest
+    container_name: csl-certification-rest-api-kafka-consumer
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_started
+    volumes:
+      - app-storage:/var/www/html/storage
+    environment:
+      - CONTAINER_ROLE=kafka-consumer
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - APP_ENV=${APP_ENV}
+      - APP_DEBUG=${APP_DEBUG:-false}
+      - KAFKA_BROKERS=${KAFKA_BROKERS}
+    networks:
+      - csl-network
+      - csl-shared-network
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -v grep | grep 'kafka:consume' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   # Nightwatch Agent Service
   nightwatch:
     image: localhost:5000/csl-certification-rest-api:latest

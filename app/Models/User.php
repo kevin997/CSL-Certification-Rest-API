@@ -138,6 +138,16 @@ class User extends Authenticatable
     }
 
     /**
+     * Get the templates purchased by this user from the marketplace.
+     */
+    public function purchasedTemplates(): BelongsToMany
+    {
+        return $this->belongsToMany(Template::class, 'purchased_templates')
+            ->withPivot('order_id', 'source', 'purchased_at')
+            ->withTimestamps();
+    }
+
+    /**
      * Get the courses created by this user.
      */
     public function courses(): HasMany
