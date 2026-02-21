@@ -27,6 +27,8 @@ return [
         'https://getkursa.org',
         'https://getkursa.net',
         'https://getkursa.com',
+        'https://getkursa.space',
+        'https://www.getkursa.space',
     ],
 
     'allowed_origins_patterns' => [
@@ -35,6 +37,8 @@ return [
         '#^https?://.*\.getkursa\.com$#',
         '#^https?://.*\.getkursa\.org$#',
         '#^https?://.*\.getkursa\.net$#',
+        '#^https?://.*\.getkursa\.space$#',
+        '#^https?://getkursa\.space$#',
     ],
 
     'allowed_headers' => ['*'],

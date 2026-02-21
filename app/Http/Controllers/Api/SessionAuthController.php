@@ -99,6 +99,8 @@ class SessionAuthController extends Controller
                 'getkursa.com',
                 'getkursa.net',
                 'getkursa.org',
+                'getkursa.space',
+                'www.getkursa.space',
                 'localhost:3001',  // Sales Website local dev
                 'localhost',       // Allow localhost without port for flexibility
                 '127.0.0.1:3001',
@@ -380,16 +382,18 @@ class SessionAuthController extends Controller
             '127.0.0.1',
             'marketplace.getkursa.app',
             'marketplace.csl-brands.com',
+            'getkursa.space',
+            'www.getkursa.space',
         ];
 
-        // Also allow any subdomain of getkursa.app or csl-brands.com
+        // Also allow any subdomain of getkursa.app, csl-brands.com, or getkursa.space
         foreach ($allowedPatterns as $pattern) {
             if ($host === $pattern) {
                 return true;
             }
         }
 
-        if (str_ends_with($host, '.getkursa.app') || str_ends_with($host, '.csl-brands.com')) {
+        if (str_ends_with($host, '.getkursa.app') || str_ends_with($host, '.csl-brands.com') || str_ends_with($host, '.getkursa.space')) {
             return true;
         }
 
