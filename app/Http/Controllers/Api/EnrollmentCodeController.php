@@ -313,8 +313,8 @@ class EnrollmentCodeController extends Controller
                 }
             }
 
-            // Create order for commission tracking (using actual product price)
-            $productPrice = $product->price ?? 0;
+            // Create order for commission tracking (using actual product price or discount price)
+            $productPrice = $product->discount_price ?? $product->price ?? 0;
             $order = Order::create([
                 'user_id' => $user->id,
                 'environment_id' => $environmentId,
@@ -598,8 +598,8 @@ class EnrollmentCodeController extends Controller
                 }
             }
 
-            // Create order for commission tracking (using actual product price)
-            $productPrice = $product->price ?? 0;
+            // Create order for commission tracking (using actual product price or discount price)
+            $productPrice = $product->discount_price ?? $product->price ?? 0;
             $order = Order::create([
                 'user_id' => $user->id,
                 'environment_id' => $environmentId,
