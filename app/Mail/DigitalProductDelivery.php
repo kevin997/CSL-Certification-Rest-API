@@ -2,11 +2,15 @@
 
 namespace App\Mail;
 
+use App\Helpers\EmailBrandingHelper;
 use App\Models\Order;
 use App\Models\Product;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Address;
+use Illuminate\Mail\Mailables\Content;
+use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Collection;
 
@@ -14,87 +18,66 @@ class DigitalProductDelivery extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
-    /**
-     * The order instance.
-     *
-     * @var Order
-     */
-    public $order;
+    public function __construct(
+        public Order $order,
+        public Product $product,
+        public Collection $deliveries,
+    ) {}
 
-    /**
-     * The product instance.
-     *
-     * @var Product
-     */
-    public $product;
-
-    /**
-     * The asset deliveries collection.
-     *
-     * @var Collection
-     */
-    public $deliveries;
-
-    /**
-     * Create a new message instance.
-     *
-     * @param Order $order
-     * @param Product $product
-     * @param Collection $deliveries
-     * @return void
-     */
-    public function __construct(Order $order, Product $product, Collection $deliveries)
+    public function envelope(): Envelope
     {
-        $this->order = $order;
-        $this->product = $product;
-        $this->deliveries = $deliveries;
+        $this->order->loadMissing(['environment', 'user']);
+
+        $branding = $this->resolveBranding();
+
+        return new Envelope(
+            from: new Address(config('mail.from.address'), $branding['company_name']),
+            subject: '📦 Your Digital Product: ' . $this->product->name,
+        );
     }
 
-    /**
-     * Build the message.
-     *
-     * @return $this
-     */
-    public function build()
+    public function content(): Content
     {
-        // Load the environment relationship if not already loaded
-        if (!$this->order->relationLoaded('environment')) {
-            $this->order->load('environment');
-        }
+        $this->order->loadMissing(['environment', 'user']);
+        $this->deliveries->loadMissing('productAsset');
 
-        // Load the user relationship if not already loaded
-        if (!$this->order->relationLoaded('user')) {
-            $this->order->load('user');
-        }
+        $branding = $this->resolveBranding();
 
-        // Get the environment name or use 'CSL' as fallback
-        $environmentName = $this->order->environment ? $this->order->environment->name : 'CSL';
-
-        // Load environment branding if available
-        $branding = null;
-        if ($this->order->environment) {
-            $branding = \App\Models\Branding::where('environment_id', $this->order->environment->id)
-                ->where('is_active', true)
-                ->first();
-        }
-
-        // Load product asset relationships for deliveries
-        $this->deliveries->load('productAsset');
-
-        // Generate dashboard URL
         $dashboardUrl = $this->order->environment
-            ? url("https://{$this->order->environment->domain}/dashboard")
-            : url('/dashboard');
+            ? 'https://' . $this->order->environment->primary_domain . '/learners/dashboard'
+            : '#';
 
-        return $this->from(config('mail.from.address'), $environmentName)
-                    ->subject('Your Digital Product: ' . $this->product->name)
-                    ->markdown('emails.digital-product-delivery', [
-                        'order' => $this->order,
-                        'product' => $this->product,
-                        'deliveries' => $this->deliveries,
-                        'environment' => $this->order->environment,
-                        'branding' => $branding,
-                        'dashboardUrl' => $dashboardUrl,
-                    ]);
+        return new Content(
+            view: 'emails.digital-product-delivery',
+            with: [
+                'order' => $this->order,
+                'product' => $this->product,
+                'deliveries' => $this->deliveries,
+                'branding' => $branding,
+                'dashboardUrl' => $dashboardUrl,
+            ],
+        );
+    }
+
+    public function attachments(): array
+    {
+        return [];
+    }
+
+    private function resolveBranding(): array
+    {
+        if ($this->order->environment) {
+            return EmailBrandingHelper::resolve($this->order->environment);
+        }
+
+        return [
+            'company_name' => 'KURSA',
+            'primary_color' => '#19682f',
+            'secondary_color' => '#f59c00',
+            'accent_color' => '#ffb733',
+            'font_family' => "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+            'logo_url' => asset('images/logo-kursa.svg'),
+            'login_url' => '#',
+        ];
     }
 }

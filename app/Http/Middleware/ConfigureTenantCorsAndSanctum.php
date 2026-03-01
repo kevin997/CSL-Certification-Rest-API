@@ -25,9 +25,11 @@ class ConfigureTenantCorsAndSanctum
             config()->set('cors.allowed_origins', []);
         }
 
-        // Sanctum expects domains/hosts without scheme.
-        // Sanctum stateful domains are now handled dynamically in config/sanctum.php
-        // config()->set('sanctum.stateful', $allowedHosts);
+        // Dynamically set Sanctum stateful domains from the tenant registry.
+        // This runs before EnsureFrontendRequestsAreStateful reads sanctum.stateful,
+        // so every tenant custom domain (primary + additional) and subdomain gets
+        // session-cookie auth automatically — no static config changes needed.
+        config()->set('sanctum.stateful', $allowedHosts);
 
         return $next($request);
     }

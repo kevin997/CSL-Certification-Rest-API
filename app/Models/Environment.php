@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * @OA\Schema(
@@ -67,6 +68,60 @@ class Environment extends Model
         'is_demo' => 'boolean',
         'payment_settings' => 'array',
     ];
+
+    /** Cache TTL in seconds for domain → environment lookups. */
+    private const DOMAIN_CACHE_TTL = 300;
+
+    /**
+     * Cache invalidation: clear every domain cache key this environment owns.
+     */
+    protected static function boot(): void
+    {
+        parent::boot();
+
+        $clearDomainCaches = function (Environment $env): void {
+            foreach ($env->getAllDomains() as $domain) {
+                Cache::forget("env_by_domain:{$domain}");
+            }
+        };
+
+        static::saved(function (Environment $env) use ($clearDomainCaches): void {
+            $clearDomainCaches($env);
+
+            // Also clear any previously registered domains that may have changed.
+            if ($env->isDirty('primary_domain') && $env->getOriginal('primary_domain')) {
+                Cache::forget('env_by_domain:' . $env->getOriginal('primary_domain'));
+            }
+
+            if ($env->isDirty('additional_domains')) {
+                $old = $env->getOriginal('additional_domains') ?? [];
+                if (is_string($old)) {
+                    $old = json_decode($old, true) ?? [];
+                }
+                foreach ((array) $old as $domain) {
+                    Cache::forget("env_by_domain:{$domain}");
+                }
+            }
+        });
+
+        static::deleted(function (Environment $env) use ($clearDomainCaches): void {
+            $clearDomainCaches($env);
+        });
+    }
+
+    /**
+     * Resolve an active environment by any of its registered domains.
+     * Result is cached to avoid a DB hit on every request.
+     */
+    public static function findByDomain(string $domain): ?self
+    {
+        return Cache::remember("env_by_domain:{$domain}", self::DOMAIN_CACHE_TTL, function () use ($domain): ?self {
+            return static::where('primary_domain', $domain)
+                ->orWhereJsonContains('additional_domains', $domain)
+                ->where('is_active', true)
+                ->first();
+        });
+    }
 
     /**
      * Get the owner of the environment.

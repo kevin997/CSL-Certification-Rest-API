@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use App\Support\TenantDomainRegistry;
 use Illuminate\Validation\ValidationException;
 
 class SessionAuthController extends Controller
@@ -91,28 +92,44 @@ class SessionAuthController extends Controller
             // Extract host from various headers
             $requestHost = $this->extractHostFromHeaders($frontendDomain, $origin, $referer);
 
-            // List of allowed admin domains (host only, no port for production)
-            $allowedAdminDomains = [
-                'sales.csl-brands.com',
-                'kursa.csl-brands.com',
+            // Static baseline: known admin-capable dev + production hosts
+            $staticAdminHosts = [
+                'localhost', 'localhost:3001', 'localhost:3004', 'localhost:3005',
+                '127.0.0.1', '127.0.0.1:3001', '127.0.0.1:3004', '127.0.0.1:3005',
+            ];
+
+            // Production root domains — subdomains are matched via str_ends_with below
+            $allowedRoots = [
+                'getkursa.space',
                 'getkursa.app',
                 'getkursa.com',
                 'getkursa.net',
                 'getkursa.org',
-                'getkursa.space',
-                'www.getkursa.space',
-                'localhost:3001',  // Sales Website local dev
-                'localhost',       // Allow localhost without port for flexibility
-                '127.0.0.1:3001',
-                '127.0.0.1',
+                'csl-brands.com',
             ];
+
+            // Dynamic: all tenant custom domains registered in the DB (cached 5 min)
+            $tenantHosts = TenantDomainRegistry::getAllowedHosts();
 
             // Check if request is from an allowed admin domain
             $isAllowedDomain = false;
-            foreach ($allowedAdminDomains as $allowed) {
+
+            // 1. Exact match against static baseline + live tenant hosts
+            $exactHosts = array_merge($staticAdminHosts, $tenantHosts);
+            foreach ($exactHosts as $allowed) {
                 if ($requestHost === $allowed || str_starts_with($requestHost, $allowed . ':')) {
                     $isAllowedDomain = true;
                     break;
+                }
+            }
+
+            // 2. Wildcard subdomain match for known production root domains
+            if (!$isAllowedDomain) {
+                foreach ($allowedRoots as $root) {
+                    if ($requestHost === $root || str_ends_with($requestHost, '.' . $root)) {
+                        $isAllowedDomain = true;
+                        break;
+                    }
                 }
             }
 

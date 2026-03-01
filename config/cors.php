@@ -20,8 +20,13 @@ return [
     'allowed_methods' => ['*'],
 
     'allowed_origins' => [
-        'http://localhost:3000',
-        'http://localhost:3001',
+        'http://localhost:3000',  // Certification
+        'http://localhost:3001',  // Sales Website
+        'http://localhost:3002',  // Training Website
+        'http://localhost:3003',  // Ambassador App
+        'http://localhost:3004',  // System Admin
+        'http://localhost:3005',  // Brands IDP
+        'http://localhost:5173',  // Marketplace Web
         'http://127.0.0.1:3000',
         'https://getkursa.app',
         'https://getkursa.org',

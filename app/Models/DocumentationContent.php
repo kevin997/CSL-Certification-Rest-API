@@ -19,7 +19,15 @@ class DocumentationContent extends Model
      * @var array<int, string>
      */
     protected $fillable = [
+        'activity_id',
+        'title',
+        'description',
         'content',
+        'format',
+        'version',
+        'tags',
+        'attachments',
+        'related_links',
         'allow_downloads',
         'created_by',
     ];
@@ -33,6 +41,9 @@ class DocumentationContent extends Model
     {
         return [
             'allow_downloads' => 'boolean',
+            'tags' => 'array',
+            'attachments' => 'array',
+            'related_links' => 'array',
         ];
     }
 

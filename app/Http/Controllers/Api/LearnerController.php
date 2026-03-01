@@ -19,7 +19,7 @@ class LearnerController extends Controller
      * Get detailed information about a learner including their enrollments and submissions
      *
      * @param  int  $userId
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      */
     public function show($userId)
     {
@@ -119,7 +119,7 @@ class LearnerController extends Controller
      *
      * @param  int  $userId
      * @param  int  $enrollmentId
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      */
     public function getEnrollmentSubmissions($userId, $enrollmentId)
     {

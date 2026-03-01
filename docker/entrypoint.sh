@@ -113,6 +113,7 @@ echo "Clearing specific caches..."
 php artisan config:clear
 php artisan route:clear
 php artisan cache:clear
+php artisan cache:forget tenant_domains:all_hosts_v2
 
 # Clear and optimize for better performance
 echo "Clearing and optimizing cache..."

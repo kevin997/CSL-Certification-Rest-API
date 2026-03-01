@@ -24,6 +24,11 @@ class AssignmentContent extends Model
         'description',
         'instructions',
         'instruction_format',
+        'submission_type',
+        'max_points',
+        'max_file_size',
+        'allowed_file_types',
+        'resource_files',
         'due_date',
         'passing_score',
         'max_attempts',
@@ -45,6 +50,8 @@ class AssignmentContent extends Model
             'allow_late_submissions' => 'boolean',
             'enable_feedback' => 'boolean',
             'instruction_format' => 'string',
+            'allowed_file_types' => 'array',
+            'resource_files' => 'array',
         ];
     }
 

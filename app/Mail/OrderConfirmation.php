@@ -2,62 +2,75 @@
 
 namespace App\Mail;
 
+use App\Helpers\EmailBrandingHelper;
 use App\Models\Order;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Address;
+use Illuminate\Mail\Mailables\Content;
+use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-class OrderConfirmation extends Mailable
+class OrderConfirmation extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
-    /**
-     * The order instance.
-     *
-     * @var Order
-     */
-    public $order;
+    public function __construct(
+        public Order $order,
+    ) {}
 
-    /**
-     * Create a new message instance.
-     *
-     * @param Order $order
-     * @return void
-     */
-    public function __construct(Order $order)
+    public function envelope(): Envelope
     {
-        $this->order = $order;
+        $this->order->loadMissing(['environment', 'items.product']);
+
+        $branding = $this->resolveBranding();
+
+        return new Envelope(
+            from: new Address(config('mail.from.address'), $branding['company_name']),
+            subject: '✅ Order Confirmation #' . $this->order->order_number,
+        );
     }
 
-    /**
-     * Build the message.
-     *
-     * @return $this
-     */
-    public function build()
+    public function content(): Content
     {
-        // Load the environment relationship if not already loaded
-        if (!$this->order->relationLoaded('environment')) {
-            $this->order->load('environment');
-        }
-        
-        // Get the environment name or use 'CSL' as fallback
-        $environmentName = $this->order->environment ? $this->order->environment->name : 'CSL';
-        
-        // Load environment branding if available
-        $branding = null;
+        $this->order->loadMissing(['environment', 'items.product']);
+
+        $branding = $this->resolveBranding();
+
+        $orderUrl = $this->order->environment
+            ? 'https://' . $this->order->environment->primary_domain . '/learners/orders/' . $this->order->id
+            : '#';
+
+        return new Content(
+            view: 'emails.orders.confirmation',
+            with: [
+                'order' => $this->order,
+                'branding' => $branding,
+                'orderUrl' => $orderUrl,
+            ],
+        );
+    }
+
+    public function attachments(): array
+    {
+        return [];
+    }
+
+    private function resolveBranding(): array
+    {
         if ($this->order->environment) {
-            $branding = \App\Models\Branding::where('environment_id', $this->order->environment->id)
-                ->where('is_active', true)
-                ->first();
+            return EmailBrandingHelper::resolve($this->order->environment);
         }
-        
-        return $this->from(config('mail.from.address'), $environmentName)
-                    ->subject('Order Confirmation #' . $this->order->order_number)
-                    ->markdown('emails.orders.confirmation', [
-                        'environment' => $this->order->environment,
-                        'branding' => $branding
-                    ]);
+
+        return [
+            'company_name' => 'KURSA',
+            'primary_color' => '#19682f',
+            'secondary_color' => '#f59c00',
+            'accent_color' => '#ffb733',
+            'font_family' => "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+            'logo_url' => asset('images/logo-kursa.svg'),
+            'login_url' => '#',
+        ];
     }
 }

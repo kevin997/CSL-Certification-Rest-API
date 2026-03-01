@@ -2,83 +2,76 @@
 
 namespace App\Mail;
 
+use App\Helpers\EmailBrandingHelper;
+use App\Models\IssuedCertificate;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Address;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
-use App\Models\IssuedCertificate;
-use App\Models\User;
-use App\Models\Environment;
 
-class CertificateIssue extends Mailable
+class CertificateIssue extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
-    /**
-     * The issued certificate instance.
-     *
-     * @var IssuedCertificate
-     */
-    public $issuedCertificate;
+    public function __construct(
+        public IssuedCertificate $issuedCertificate,
+    ) {}
 
-    /**
-     * The user instance.
-     *
-     * @var User
-     */
-    public $user;
-
-    /**
-     * The Environment instance.
-     *
-     * @var Environment
-     */
-    public $environment;
-
-    /**
-     * Create a new message instance.
-     *
-     * @param Certificate $certificate
-     * @return void
-     */
-    public function __construct(IssuedCertificate $issuedCertificate)
+    public function envelope(): Envelope
     {
-        $this->issuedCertificate = $issuedCertificate;
-        $this->user = $issuedCertificate->user;
-        $this->environment = $issuedCertificate->environment;
+        $this->issuedCertificate->loadMissing(['user', 'environment', 'certificateContent']);
+
+        $branding = $this->resolveBranding();
+
+        return new Envelope(
+            from: new Address(config('mail.from.address'), $branding['company_name']),
+            subject: '🎓 Congratulations! Your Certificate is Ready',
+        );
     }
 
-    /**
-     * Build the message.
-     *
-     * @return $this
-     */
-    public function build()
+    public function content(): Content
     {
-        // Load the environment relationship if not already loaded
-        if (!$this->issuedCertificate->relationLoaded('environment')) {
-            $this->issuedCertificate->load('environment');
-        }
+        $this->issuedCertificate->loadMissing(['user', 'environment', 'certificateContent']);
 
-        // Get the environment name or use 'CSL' as fallback
-        $environmentName = $this->issuedCertificate->environment ? $this->issuedCertificate->environment->name : 'CSL';
+        $branding = $this->resolveBranding();
 
-        // Load environment branding if available
-        $branding = null;
-        if ($this->issuedCertificate->environment) {
-            $branding = \App\Models\Branding::where('environment_id', $this->issuedCertificate->environment->id)
-                ->where('is_active', true)
-                ->first();
-        }
+        $previewUrl = $this->issuedCertificate->custom_fields['preview_url'] ?? null;
+        $fileUrl = $this->issuedCertificate->file_path ?? null;
 
-        return $this->from(config('mail.from.address'), $environmentName)
-            ->subject(' Congratulations! Your Certificate is Ready')
-            ->markdown('emails.issuing-certificate', [
-                'environment' => $this->issuedCertificate->environment,
+        return new Content(
+            view: 'emails.issuing-certificate',
+            with: [
+                'certificate' => $this->issuedCertificate,
+                'user' => $this->issuedCertificate->user,
                 'branding' => $branding,
-                'certificate' => $this->issuedCertificate
-            ]);
+                'previewUrl' => $previewUrl,
+                'fileUrl' => $fileUrl,
+            ],
+        );
+    }
+
+    public function attachments(): array
+    {
+        return [];
+    }
+
+    private function resolveBranding(): array
+    {
+        if ($this->issuedCertificate->environment) {
+            return EmailBrandingHelper::resolve($this->issuedCertificate->environment);
+        }
+
+        return [
+            'company_name' => 'KURSA',
+            'primary_color' => '#19682f',
+            'secondary_color' => '#f59c00',
+            'accent_color' => '#ffb733',
+            'font_family' => "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+            'logo_url' => asset('images/logo-kursa.svg'),
+            'login_url' => '#',
+        ];
     }
 }

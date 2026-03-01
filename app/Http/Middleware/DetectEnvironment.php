@@ -5,6 +5,8 @@ namespace App\Http\Middleware;
 use App\Models\Environment;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 class DetectEnvironment
@@ -52,70 +54,44 @@ class DetectEnvironment
         //     'url' => $request->fullUrl()
         // ]);
         
-        // Find the environment that matches the domain
-        $environment = Environment::where('primary_domain', $domain)
-            ->orWhereJsonContains('additional_domains', $domain)
-            ->where('is_active', true)
-            ->first();
-        
-        // If no environment found with the detected domain, try with known frontend domains
+        // Find the environment that matches the domain (cached — avoids a DB hit per request).
+        $environment = Environment::findByDomain($domain);
+
+        // If no environment found with the detected domain, try with known platform domains.
+        // These are fixed domains for the platform itself (not tenant-owned subdomains).
+        // Ideally these would be stored as additional_domains in the DB, but until then we
+        // resolve them here and cache the resulting mapping to avoid repeated DB lookups.
         if (!$environment) {
             $knownFrontendDomains = [
                 'csl-certification.vercel.app',
                 'learning.cfpcsl.com',
                 'learning.csl-brands.com',
-                'csl-certification-git-develop-kevin997s-projects.vercel.app'
+                'csl-certification-git-develop-kevin997s-projects.vercel.app',
             ];
-            
-            // First check if detected domain is similar to a known domain (partial match)
-            foreach ($knownFrontendDomains as $frontendDomain) {
-                if (strpos($domain, $frontendDomain) !== false || 
-                    strpos($frontendDomain, $domain) !== false) {
-                    
-                    $environment = Environment::where('primary_domain', $frontendDomain)
-                        ->orWhereJsonContains('additional_domains', $frontendDomain)
-                        ->where('is_active', true)
-                        ->first();
-                    
+
+            foreach ($knownFrontendDomains as $knownDomain) {
+                if (strpos($domain, $knownDomain) !== false ||
+                    strpos($knownDomain, $domain) !== false) {
+
+                    $environment = Environment::findByDomain($knownDomain);
+
                     if ($environment) {
-                        // Log::info('DetectEnvironment: Found environment by partial domain match', [
-                        //     'detected_domain' => $domain,
-                        //     'matched_domain' => $frontendDomain
-                        // ]);
+                        // Cache this alias mapping so the next request skips the loop entirely.
+                        Cache::put("env_by_domain:{$domain}", $environment, 300);
                         break;
                     }
                 }
             }
         }
         
-        // Log the SQL query for debugging
         if (!$environment) {
-            $query = Environment::where('primary_domain', $domain)
-                ->orWhereJsonContains('additional_domains', $domain)
-                ->where('is_active', true)
-                ->toSql();
-            
-            // Log::info('DetectEnvironment: Query used', [
-            //     'sql' => $query,
-            //     'domain' => $domain
-            // ]);
-            
-            // Check all environments to see if there's any partial match
-            $allEnvironments = Environment::where('is_active', true)->get(['id', 'name', 'primary_domain', 'additional_domains']);
-            
-            // Log::info('DetectEnvironment: Available environments', [
-            //     'count' => $allEnvironments->count(),
-            //     'environments' => $allEnvironments->toArray()
-            // ]);
-            
-            // Fallback to first active environment
-            $environment = $allEnvironments->first();
-            if ($environment) {
-                // Log::info('DetectEnvironment: Using fallback environment', [
-                //     'environment_id' => $environment->id,
-                //     'environment_name' => $environment->name
-                // ]);
-            }
+            Log::warning('DetectEnvironment: No environment resolved for domain', [
+                'detected_domain' => $domain,
+                'frontend_header' => $frontendDomainHeader,
+            ]);
+            // Do NOT fall back to an arbitrary environment — that silently leaks another
+            // tenant's data. Routes that strictly require a resolved environment should
+            // use the ResolveEnvironment middleware instead (returns 404 if unresolved).
         } else {
             // Log::info('DetectEnvironment: Environment found', [
             //     'environment_id' => $environment->id,

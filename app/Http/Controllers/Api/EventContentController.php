@@ -50,7 +50,7 @@ class EventContentController extends Controller
      *
      * @param  \Illuminate\Http\Request  $request
      * @param  int  $activityId
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      * 
      * @OA\Post(
      *     path="/activities/{activityId}/event-content",
@@ -136,7 +136,7 @@ class EventContentController extends Controller
         }
 
         // Validate activity type
-        if ($activity->type !== 'event') {
+        if ($activity->type->value !== 'event') {
             return response()->json([
                 'status' => 'error',
                 'message' => 'This activity is not of type event',
@@ -177,8 +177,7 @@ class EventContentController extends Controller
         }
 
         // Check if event content already exists for this activity
-        $existingContent = EventContent::where('activity_id', $activityId)->first();
-        if ($existingContent) {
+        if ($activity->content_id && $activity->content_type === EventContent::class) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Event content already exists for this activity',
@@ -192,11 +191,13 @@ class EventContentController extends Controller
         if ($request->has('attachments')) {
             $data['attachments'] = json_encode($request->attachments);
         }
-        
-        // Add activity_id to data
-        $data['activity_id'] = $activityId;
 
         $eventContent = EventContent::create($data);
+
+        // Link event content to the activity
+        $activity->content_id = $eventContent->id;
+        $activity->content_type = EventContent::class;
+        $activity->save();
 
         return response()->json([
             'status' => 'success',
@@ -209,7 +210,7 @@ class EventContentController extends Controller
      * Display the specified event content.
      *
      * @param  int  $activityId
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      * 
      * @OA\Get(
      *     path="/activities/{activityId}/event-content",
@@ -258,10 +259,17 @@ class EventContentController extends Controller
             ], Response::HTTP_FORBIDDEN);
         }
 
-        $eventContent = EventContent::where('activity_id', $activityId)->firstOrFail();
+        if ($activity->content_type !== EventContent::class || !$activity->content) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Event content not found for this activity',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        $eventContent = $activity->content;
         
         // Decode JSON fields for the response
-        if ($eventContent->attachments) {
+        if (isset($eventContent->attachments) && $eventContent->attachments) {
             $eventContent->attachments = json_decode($eventContent->attachments);
         }
 
@@ -276,7 +284,7 @@ class EventContentController extends Controller
      *
      * @param  \Illuminate\Http\Request  $request
      * @param  int  $activityId
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      * 
      * @OA\Put(
      *     path="/activities/{activityId}/event-content",
@@ -356,7 +364,14 @@ class EventContentController extends Controller
             ], Response::HTTP_FORBIDDEN);
         }
 
-        $eventContent = EventContent::where('activity_id', $activityId)->firstOrFail();
+        if ($activity->content_type !== EventContent::class || !$activity->content) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Event content not found for this activity',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        $eventContent = $activity->content;
 
         $validator = Validator::make($request->all(), [
             'title' => 'string|max:255',
@@ -417,7 +432,7 @@ class EventContentController extends Controller
      * Remove the specified event content from storage.
      *
      * @param  int  $activityId
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      * 
      * @OA\Delete(
      *     path="/activities/{activityId}/event-content",
@@ -466,8 +481,20 @@ class EventContentController extends Controller
             ], Response::HTTP_FORBIDDEN);
         }
 
-        $eventContent = EventContent::where('activity_id', $activityId)->firstOrFail();
+        if ($activity->content_type !== EventContent::class || !$activity->content) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Event content not found for this activity',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        $eventContent = $activity->content;
         $eventContent->delete();
+
+        // Clear the polymorphic reference
+        $activity->content_id = null;
+        $activity->content_type = null;
+        $activity->save();
 
         return response()->json([
             'status' => 'success',

@@ -49,10 +49,20 @@ class TenantDomainRegistry
         return [
             'kursa.csl-brands.com',
             'sales.csl-brands.com',
-            'localhost:3000',
+            'localhost:3000',  // Certification
+            'localhost:3001',  // Sales Website
+            'localhost:3002',  // Training Website
+            'localhost:3003',  // Ambassador App
+            'localhost:3004',  // System Admin
+            'localhost:3005',  // Brands IDP
+            'localhost:5173',  // Marketplace Web
             '127.0.0.1:3000',
-            'localhost:3001',
             '127.0.0.1:3001',
+            '127.0.0.1:3002',
+            '127.0.0.1:3003',
+            '127.0.0.1:3004',
+            '127.0.0.1:3005',
+            '127.0.0.1:5173',
         ];
     }
 
