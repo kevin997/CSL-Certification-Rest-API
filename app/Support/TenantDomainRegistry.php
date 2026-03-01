@@ -41,14 +41,12 @@ class TenantDomainRegistry
         });
     }
 
-    /**
-     * @return array<int, string>
-     */
     protected static function getDevHosts(): array
     {
         return [
             'kursa.csl-brands.com',
             'sales.csl-brands.com',
+            'manager.getkursa.space',
             'localhost:3000',  // Certification
             'localhost:3001',  // Sales Website
             'localhost:3002',  // Training Website

@@ -23,7 +23,7 @@ return [
         '%s%s',
         'localhost,localhost:3000,localhost:3001,localhost:3002,localhost:3003,localhost:3004,localhost:3005,localhost:5173,' .
         '127.0.0.1,127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002,127.0.0.1:3003,127.0.0.1:3004,127.0.0.1:3005,127.0.0.1:5173,127.0.0.1:8000,::1,' .
-        'getkursa.space,getkursa.app,getkursa.com,getkursa.org,getkursa.net,csl-brands.com',
+        'getkursa.space,*.getkursa.space,getkursa.app,getkursa.com,getkursa.org,getkursa.net,csl-brands.com,*.csl-brands.com',
         Sanctum::currentApplicationUrlWithPort()
     ))),
 
