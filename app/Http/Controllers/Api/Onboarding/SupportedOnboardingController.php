@@ -119,8 +119,8 @@ class SupportedOnboardingController extends Controller
             'state_code' => 'nullable|string',
             'payment_method' => 'required|in:stripe,lygos,paypal,monetbill,taramoney',
             'payment_token' => 'required|string',
-            'organization_type' => 'nullable|string',
-            'niche' => 'nullable|string',
+            'organization_type' => 'required|string|in:business,independent',
+            'niche' => 'required|string|in:tech,business,health,arts,development,languages,marketing,finance,education,lifestyle,other',
         ]);
 
         if ($validator->fails()) {
@@ -348,7 +348,8 @@ class SupportedOnboardingController extends Controller
             // Remove any special characters not allowed in domains
             $domain = preg_replace('/[^a-z0-9.-]/', '-', $domain);
             
-            return $domain;
+            // Append the domain suffix
+            return $domain . '.csl-brands.com';
         } else {
             // For custom domains, return as is after removing protocol
             return preg_replace('#^https?://#', '', $domain);

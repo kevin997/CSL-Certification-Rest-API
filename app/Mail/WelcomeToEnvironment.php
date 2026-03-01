@@ -56,13 +56,14 @@ class WelcomeToEnvironment extends Mailable implements ShouldQueue
             ->first();
 
         return new Content(
-            markdown: 'emails.welcome-to-environment',
+            view: 'emails.welcome-to-environment',
             with: [
                 'user' => $this->user,
                 'environment' => $this->environment,
                 'password' => $this->password,
                 'branding' => $branding,
                 'loginUrl' => 'https://' . $this->environment->primary_domain . '/auth/login',
+                'logoUrl' => asset('images/logo-kursa.svg'),
             ],
         );
     }

@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Schedule;
 use App\Console\Commands\GenerateMonthlyInvoices;
 use App\Console\Commands\RegularizeCompletedOrders;
 use App\Console\Commands\SendProductSubscriptionReminders;
+use App\Console\Commands\SendInstructorWeeklyDigest;
+use App\Console\Commands\SendLearnerWeeklyDigest;
 
 /*
 |--------------------------------------------------------------------------
@@ -112,3 +114,21 @@ Schedule::command(SendProductSubscriptionReminders::class)
     ->dailyAt('05:00')
     ->withoutOverlapping(3600)
     ->runInBackground();
+
+// Engagement: Instructor weekly digest - Monday at 8:00 AM
+Schedule::command(SendInstructorWeeklyDigest::class)
+    ->weeklyOn(1, '08:00')
+    ->withoutOverlapping(3600)
+    ->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('Instructor weekly digest failed');
+    });
+
+// Engagement: Learner weekly digest - Wednesday at 8:00 AM
+Schedule::command(SendLearnerWeeklyDigest::class)
+    ->weeklyOn(3, '08:00')
+    ->withoutOverlapping(3600)
+    ->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('Learner weekly digest failed');
+    });

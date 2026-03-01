@@ -2,6 +2,7 @@
 
 namespace App\Mail;
 
+use App\Helpers\EmailBrandingHelper;
 use App\Models\Environment;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
@@ -31,8 +32,10 @@ class EnvironmentSetupMail extends Mailable implements ShouldQueue
      */
     public function envelope(): Envelope
     {
+        $branding = EmailBrandingHelper::resolve($this->environment);
+
         return new Envelope(
-            from: new Address(config('mail.from.address'), 'CSL Brands Team'),
+            from: new Address(config('mail.from.address'), $branding['company_name']),
             subject: "Your Environment '{$this->environment->name}' is Ready!",
         );
     }
@@ -42,20 +45,20 @@ class EnvironmentSetupMail extends Mailable implements ShouldQueue
      */
     public function content(): Content
     {
-        $isSubdomain = $this->isSubdomain();
+        $branding = EmailBrandingHelper::resolve($this->environment);
         $loginUrl = $this->generateLoginUrl();
-        
+
         return new Content(
-            markdown: 'emails.environment-setup',
+            view: 'emails.environment-setup',
             with: [
                 'environment' => $this->environment,
                 'user' => $this->user,
                 'adminEmail' => $this->adminEmail,
                 'adminPassword' => $this->adminPassword,
-                'isSubdomain' => $isSubdomain,
+                'isSubdomain' => $this->isSubdomain(),
                 'loginUrl' => $loginUrl,
-                'domainType' => $isSubdomain ? 'subdomain' : 'custom domain',
-                'branding' => $this->getDefaultBranding(),
+                'domainType' => $this->isSubdomain() ? 'Subdomain' : 'Custom Domain',
+                'branding' => $branding,
             ],
         );
     }
@@ -75,7 +78,8 @@ class EnvironmentSetupMail extends Mailable implements ShouldQueue
      */
     private function isSubdomain(): bool
     {
-        return str_contains($this->environment->primary_domain, '.cfpcsl.com');
+        return str_contains($this->environment->primary_domain, '.csl-brands.com')
+            || str_contains($this->environment->primary_domain, '.cfpcsl.com');
     }
 
     /**
@@ -85,18 +89,5 @@ class EnvironmentSetupMail extends Mailable implements ShouldQueue
     {
         $protocol = app()->environment('production') ? 'https' : 'http';
         return "{$protocol}://{$this->environment->primary_domain}/auth/login";
-    }
-
-    /**
-     * Get default branding for the setup mail.
-     */
-    private function getDefaultBranding(): array
-    {
-        return [
-            'company_name' => 'CSL',
-            'primary_color' => '#1C692F',
-            'secondary_color' => '#F59C08',
-            'font_family' => '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-        ];
     }
 }

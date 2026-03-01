@@ -42,6 +42,7 @@ class SellerPanelController extends Controller
         'is_published',
         'search',
         'flat',
+        'template_id',
     ];
 
     private static array $allowedBodyParams = [

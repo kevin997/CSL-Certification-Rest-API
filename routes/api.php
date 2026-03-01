@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\EnrollmentController;
 use App\Http\Controllers\Api\EnrollmentCodeController;
 use App\Http\Controllers\Api\LearnerController;
 use App\Http\Controllers\Api\EventContentController;
+use App\Http\Controllers\Api\VideoHandInContentController;
 use App\Http\Controllers\Api\EnvironmentController;
 use App\Http\Controllers\Api\EnvironmentCredentialsController;
 use App\Http\Controllers\Api\FeedbackContentController;
@@ -501,6 +502,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/activities/{activityId}/event', [EventContentController::class, 'show']);
     Route::put('/activities/{activityId}/event', [EventContentController::class, 'update']);
     Route::delete('/activities/{activityId}/event', [EventContentController::class, 'destroy']);
+
+    // Video Hand-in Content routes
+    Route::post('/activities/{activityId}/video-hand-in', [VideoHandInContentController::class, 'store']);
+    Route::get('/activities/{activityId}/video-hand-in', [VideoHandInContentController::class, 'show']);
+    Route::put('/activities/{activityId}/video-hand-in', [VideoHandInContentController::class, 'update']);
+    Route::delete('/activities/{activityId}/video-hand-in', [VideoHandInContentController::class, 'destroy']);
 
     // Certificate Content routes
     Route::post('/activities/{activityId}/certificate', [CertificateContentController::class, 'store']);

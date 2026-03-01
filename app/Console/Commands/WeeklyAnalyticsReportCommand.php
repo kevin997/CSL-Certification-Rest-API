@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use App\Mail\WeeklyAnalyticsReport;
 use App\Models\User;
 use App\Models\Environment;
 use App\Models\Order;
@@ -38,11 +39,7 @@ class WeeklyAnalyticsReportCommand extends Command
      * @var array
      */
     protected $recipients = [
-        'kevinliboire@gmail.com',
-        'data.analyst@cfpcsl.com',
-        'romeo.ngangnang@cfpcsl.com',
-        'direction@cfpcsl.com',
-        'comptabilite@cfpcsl.com'
+        'kevinliboire@gmail.com'
     ];
 
     /**
@@ -501,15 +498,13 @@ class WeeklyAnalyticsReportCommand extends Command
      */
     protected function sendEmailReport(string $content, Carbon $weekStart, Carbon $weekEnd)
     {
-        $subject = 'CSL e-Learning - Weekly Analytics Report ' . $weekStart->format('M j') . ' to ' . $weekEnd->format('M j, Y');
-        
         try {
-            Mail::send([], [], function ($message) use ($subject, $content) {
-                $message->to($this->recipients)
-                        ->subject($subject)
-                        ->from('data.analyst@cfpcsl.com', 'CSL e-Learning Analytics')
-                        ->html($content);
-            });
+            $metrics = $this->collectMetrics($weekStart, $weekEnd);
+
+            foreach ($this->recipients as $recipient) {
+                Mail::to($recipient)
+                    ->send(new WeeklyAnalyticsReport($metrics, $weekStart, $weekEnd));
+            }
             
             $this->info('Weekly analytics report sent to: ' . implode(', ', $this->recipients));
             

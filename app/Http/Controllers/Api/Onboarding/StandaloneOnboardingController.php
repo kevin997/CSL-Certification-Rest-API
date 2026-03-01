@@ -88,8 +88,8 @@ class StandaloneOnboardingController extends Controller
             'description' => 'nullable|string',
             'country_code' => 'nullable|string|size:2',
             'state_code' => 'nullable|string',
-            'organization_type' => 'nullable|string',
-            'niche' => 'nullable|string',
+            'organization_type' => 'required|string|in:business,independent',
+            'niche' => 'required|string|in:tech,business,health,arts,development,languages,marketing,finance,education,lifestyle,other',
         ]);
 
         if ($validator->fails()) {

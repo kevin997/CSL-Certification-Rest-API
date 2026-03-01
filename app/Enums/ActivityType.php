@@ -17,4 +17,5 @@ enum ActivityType: string
     case FEEDBACK = 'feedback';
     case WEBINAR = 'webinar';
     case QUESTIONNAIRE = 'questionnaire';
+    case VIDEO_HAND_IN = 'video_hand_in';
 }

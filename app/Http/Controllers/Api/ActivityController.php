@@ -497,7 +497,7 @@ class ActivityController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'type' => 'required|string|in:text,video,quiz,lesson,assignment,documentation,event,certificate,feedback,webinar',
+            'type' => 'required|string|in:text,video,quiz,lesson,assignment,documentation,event,certificate,feedback,webinar,video_hand_in',
             'is_required' => 'boolean',
             'order' => 'nullable|integer',
             'settings' => 'nullable|json',
@@ -1020,7 +1020,7 @@ class ActivityController extends Controller
     {
         // Validate the request
         $validator = Validator::make($request->all(), [
-            'type' => 'required|string|in:text,video,quiz,lesson,assignment,documentation,event,certificate,feedback,webinar',
+            'type' => 'required|string|in:text,video,quiz,lesson,assignment,documentation,event,certificate,feedback,webinar,video_hand_in',
         ]);
 
         if ($validator->fails()) {
