@@ -243,12 +243,21 @@ Route::get('/session/user', function (Request $request) {
     return response()->json($response);
 })->middleware('auth:sanctum');
 
+use App\Http\Controllers\Api\Auth\IdpForgotPasswordController;
+
 // API Authentication Routes
 Route::post('/register', [RegisterController::class, 'register']);
 // Password reset routes with rate limiting
 Route::middleware(['throttle:reset'])->group(function () {
     Route::post('/forgot-password', [ForgotPasswordController::class, 'sendResetLinkEmail']);
     Route::post('/reset-password', [ResetPasswordController::class, 'reset']);
+
+    // IDP 4-digit OTP forgot password routes
+    Route::prefix('idp')->group(function () {
+        Route::post('/forgot-password/send-otp', [IdpForgotPasswordController::class, 'sendOtp']);
+        Route::post('/forgot-password/verify-otp', [IdpForgotPasswordController::class, 'verifyOtp']);
+        Route::post('/forgot-password/reset', [IdpForgotPasswordController::class, 'resetPassword']);
+    });
 });
 
 // Token management routes
@@ -1085,6 +1094,28 @@ Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
         Route::get('/export', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'export']);
         Route::get('/environment/{environmentId}', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'byEnvironment']);
         Route::get('/{id}', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'show']);
+        Route::put('/{id}', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'update']);
+    });
+
+    // System Dashboard
+    Route::prefix('system-dashboard')->group(function () {
+        Route::get('/overview',              [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'overview']);
+        Route::get('/environments',          [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'environments']);
+        Route::get('/enrollment-trends',     [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'enrollmentTrends']);
+        Route::get('/revenue-trends',        [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'revenueTrends']);
+        Route::get('/environment-growth',    [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'environmentGrowth']);
+        Route::get('/environments-by-country', [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'environmentsByCountry']);
+        Route::get('/top-environments',      [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'topEnvironments']);
+        Route::get('/recent-activity',       [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'recentActivity']);
+    });
+
+    // Admin Orders Management
+    Route::prefix('orders')->group(function () {
+        Route::get('/',        [\App\Http\Controllers\Api\Admin\OrderController::class, 'index']);
+        Route::get('/stats',   [\App\Http\Controllers\Api\Admin\OrderController::class, 'stats']);
+        Route::get('/{id}',    [\App\Http\Controllers\Api\Admin\OrderController::class, 'show']);
+        Route::put('/{id}',    [\App\Http\Controllers\Api\Admin\OrderController::class, 'update']);
+        Route::delete('/{id}', [\App\Http\Controllers\Api\Admin\OrderController::class, 'destroy']);
     });
 
     // Audit Logs

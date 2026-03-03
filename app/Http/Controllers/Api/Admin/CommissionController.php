@@ -183,22 +183,22 @@ class CommissionController extends Controller
 
         $stats = [
             'total_commissions' => $query->count(),
-            'total_amount' => $query->sum('amount'),
+            'total_amount' => $query->sum('gross_amount'),
             'pending_amount' => InstructorCommission::where('status', 'pending')
                 ->when($request->has('environment_id'), function ($q) use ($request) {
                     $q->where('environment_id', $request->environment_id);
                 })
-                ->sum('amount'),
+                ->sum('gross_amount'),
             'approved_amount' => InstructorCommission::where('status', 'approved')
                 ->when($request->has('environment_id'), function ($q) use ($request) {
                     $q->where('environment_id', $request->environment_id);
                 })
-                ->sum('amount'),
+                ->sum('gross_amount'),
             'paid_amount' => InstructorCommission::where('status', 'paid')
                 ->when($request->has('environment_id'), function ($q) use ($request) {
                     $q->where('environment_id', $request->environment_id);
                 })
-                ->sum('amount'),
+                ->sum('gross_amount'),
             'pending_count' => InstructorCommission::where('status', 'pending')
                 ->when($request->has('environment_id'), function ($q) use ($request) {
                     $q->where('environment_id', $request->environment_id);

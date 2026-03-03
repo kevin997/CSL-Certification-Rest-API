@@ -202,8 +202,8 @@ class CentralizedTransactionController extends Controller
             ->when($request->has('end_date'), function ($q) use ($request) {
                 $q->whereDate('created_at', '<=', $request->end_date);
             })
-            ->select('gateway', DB::raw('SUM(total_amount) as total'), DB::raw('COUNT(*) as count'))
-            ->groupBy('gateway')
+            ->select('payment_method', DB::raw('SUM(total_amount) as total'), DB::raw('COUNT(*) as count'))
+            ->groupBy('payment_method')
             ->get();
 
         $stats['revenue_by_gateway'] = $revenueByGateway;
@@ -211,6 +211,40 @@ class CentralizedTransactionController extends Controller
         return response()->json([
             'success' => true,
             'data' => $stats
+        ]);
+    }
+
+    /**
+     * Update a transaction (status, amount)
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function update(Request $request, int $id): JsonResponse
+    {
+        if (!$request->user() || $request->user()->role->value !== 'super_admin') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $transaction = Transaction::find($id);
+
+        if (!$transaction) {
+            return response()->json(['success' => false, 'message' => 'Transaction not found'], 404);
+        }
+
+        $validated = $request->validate([
+            'status'       => 'sometimes|in:pending,completed,failed,refunded,partially_refunded',
+            'total_amount' => 'sometimes|numeric|min:0',
+            'notes'        => 'sometimes|nullable|string|max:1000',
+        ]);
+
+        $transaction->fill($validated);
+        $transaction->save();
+
+        return response()->json([
+            'success' => true,
+            'data'    => $transaction->load(['order', 'environment']),
         ]);
     }
 
@@ -312,7 +346,7 @@ class CentralizedTransactionController extends Controller
             'Content-Disposition' => "attachment; filename=\"{$filename}\"",
         ];
 
-        $callback = function() use ($transactions) {
+        $callback = function () use ($transactions) {
             $file = fopen('php://output', 'w');
 
             // CSV Headers
