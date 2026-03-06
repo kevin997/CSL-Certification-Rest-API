@@ -6,6 +6,7 @@ use App\Traits\BelongsToEnvironment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Branding extends Model
@@ -38,6 +39,7 @@ class Branding extends Model
         'hero_cta_text',
         'hero_cta_url',
         'landing_page_sections',
+        'craft_page_data',
         'seo_title',
         'seo_description',
         'custom_js',
@@ -56,6 +58,7 @@ class Branding extends Model
             'is_active' => 'boolean',
             'landing_page_enabled' => 'boolean',
             'landing_page_sections' => 'array',
+            'craft_page_data' => 'array',
             'hero_overlay_opacity' => 'integer',
         ];
     }
@@ -67,6 +70,7 @@ class Branding extends Model
     {
         return [
             'enabled' => $this->landing_page_enabled,
+            'craft_page_data' => $this->craft_page_data,
             'hero' => [
                 'title' => $this->hero_title,
                 'subtitle' => $this->hero_subtitle,
@@ -98,5 +102,13 @@ class Branding extends Model
     public function environment(): BelongsTo
     {
         return $this->belongsTo(Environment::class);
+    }
+
+    /**
+     * Get the landing page popups for this branding.
+     */
+    public function popups(): HasMany
+    {
+        return $this->hasMany(LandingPagePopup::class);
     }
 }

@@ -973,8 +973,8 @@ class BrandingController extends Controller
             'hero_cta_url' => 'nullable|string|max:500',
             'landing_page_sections' => 'nullable|array',
             'landing_page_sections.*.id' => 'nullable|string',
-            'landing_page_sections.*.type' => 'required_with:landing_page_sections|string|in:text,features,testimonials,cta,featured_products,custom',
-            'landing_page_sections.*.content' => 'nullable|string', // Content is optional for block-based sections
+            'landing_page_sections.*.type' => 'required_with:landing_page_sections|string|in:text,features,testimonials,cta,featured_products,trust_widget,custom',
+            'landing_page_sections.*.content' => 'nullable|string',
             'landing_page_sections.*.order' => 'nullable|integer',
             'landing_page_sections.*.settings' => 'nullable|array',
             'landing_page_sections.*.settings.title' => 'nullable|string|max:255',
@@ -997,6 +997,7 @@ class BrandingController extends Controller
             'landing_page_sections.*.settings.primaryButtonUrl' => 'nullable|string|max:500',
             'landing_page_sections.*.settings.secondaryButtonText' => 'nullable|string|max:100',
             'landing_page_sections.*.settings.secondaryButtonUrl' => 'nullable|string|max:500',
+            'craft_page_data' => 'nullable|array',
             'seo_title' => 'nullable|string|max:255',
             'seo_description' => 'nullable|string|max:500',
         ]);
@@ -1163,11 +1164,24 @@ class BrandingController extends Controller
         }
 
         // Return landing page config with branding
+        $config = $branding->getLandingPageConfig();
+
+        // Get active popups
+        $popups = $branding->popups()
+            ->currentlyActive()
+            ->get([
+                'id', 'title', 'content', 'trigger_type', 'trigger_value',
+                'display_frequency', 'position', 'size',
+                'background_color', 'text_color', 'overlay_color', 'overlay_opacity',
+                'cta_text', 'cta_url', 'cta_button_color', 'image_url',
+            ]);
+
         return response()->json([
             'status' => 'success',
             'data' => [
                 'enabled' => true,
-                'landing_page' => $branding->getLandingPageConfig(),
+                'landing_page' => $config,
+                'popups' => $popups,
                 'branding' => [
                     'company_name' => $branding->company_name,
                     'logo_url' => $branding->logo_path,

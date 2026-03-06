@@ -224,6 +224,18 @@ class SessionAuthController extends Controller
             $isAccountSetup = $envUser ? $envUser->is_account_setup : null;
         }
 
+        // For admin/sales_agent roles, issue a Sanctum API token so cross-domain
+        // clients (e.g. manager.getkursa.space) can authenticate via Bearer header
+        // instead of relying on session cookies, which cannot cross root domains.
+        $adminRoles = [
+            UserRole::ADMIN->value, UserRole::SUPER_ADMIN->value, UserRole::SALES_AGENT->value,
+            'admin', 'super_admin', 'sales_agent',
+        ];
+        $apiToken = null;
+        if (in_array($role, $adminRoles)) {
+            $apiToken = $user->createToken('admin-session')->plainTextToken;
+        }
+
         return response()->json([
             'success' => true,
             'user' => $user,
@@ -232,11 +244,17 @@ class SessionAuthController extends Controller
             'user_role' => $user->role instanceof UserRole ? $user->role->value : $user->role,
             'environment_role' => $environmentRoleValue,
             'is_account_setup' => $isAccountSetup,
+            'api_token' => $apiToken,
         ]);
     }
 
     public function logout(Request $request)
     {
+        // Revoke the current Sanctum API token if the request is token-authenticated
+        if ($request->user() && $request->bearerToken()) {
+            $request->user()->currentAccessToken()->delete();
+        }
+
         Auth::guard('web')->logout();
 
         $request->session()->invalidate();

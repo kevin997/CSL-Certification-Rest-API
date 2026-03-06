@@ -44,7 +44,7 @@ class FileController extends Controller
             'description' => 'nullable|string',
             'file_type' => 'required|string|max:100',
             'file_size' => 'required|integer',
-            'file_url' => 'required|url|max:2048',
+            'file_url' => 'required|string|max:2048',
             'public_id' => 'required|string|max:255',
             'resource_type' => 'required|string|max:50',
             'environment_id' => 'required|integer|exists:environments,id',

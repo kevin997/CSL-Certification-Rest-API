@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\BrandingController;
 use App\Http\Controllers\Api\AnalyticsWidgetsController;
 use App\Http\Controllers\Api\EnvironmentController;
+use App\Http\Controllers\Api\LandingPagePopupController;
 use App\Http\Controllers\Api\LegalPageController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\ThirdPartyServiceController;
@@ -34,6 +35,9 @@ Route::get('/legal-pages/public/{pageType}', [LegalPageController::class, 'getPu
 
 // Public landing page - returns landing page configuration based on domain
 Route::get('/branding/public/landing-page', [BrandingController::class, 'getPublicLandingPage']);
+
+// Public landing page popups - returns active popups based on domain
+Route::get('/branding/public/popups', [LandingPagePopupController::class, 'publicPopups']);
 
 // Public analytics visit tracking (guest-safe)
 Route::post('/analytics/visits/track', [AnalyticsWidgetsController::class, 'trackVisit']);

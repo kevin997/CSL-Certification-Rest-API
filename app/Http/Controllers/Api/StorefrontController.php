@@ -1908,6 +1908,54 @@ class StorefrontController extends Controller
     }
 
     /**
+     * Get all product reviews for a store/environment
+     *
+     * @param Request $request
+     * @param string $environmentId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getStoreReviews(Request $request, string $environmentId)
+    {
+        $environment = $this->getEnvironmentById($environmentId);
+
+        if (!$environment) {
+            return response()->json(['message' => 'Environment not found'], 404);
+        }
+
+        $limit = $request->get('limit', 10);
+
+        // Get approved reviews for any product in this environment
+        $reviewsQuery = ProductReview::where('environment_id', $environment->id)
+            ->where('status', 'approved')
+            ->orderBy('created_at', 'desc');
+
+        // Optional: limit the number of reviews returned
+        if ($limit > 0) {
+            $reviews = $reviewsQuery->take($limit)->get();
+        } else {
+            $reviews = $reviewsQuery->get();
+        }
+
+        // Get average rating across all products in the store
+        $averageRating = ProductReview::where('environment_id', $environment->id)
+            ->where('status', 'approved')
+            ->avg('rating') ?: 0;
+
+        $totalReviews = ProductReview::where('environment_id', $environment->id)
+            ->where('status', 'approved')
+            ->count();
+
+        // Load product details (id, name, slug) for each review to display context
+        $reviews->load(['product:id,name,slug']);
+
+        return response()->json([
+            'data' => $reviews,
+            'average_rating' => round($averageRating, 1),
+            'total_reviews' => $totalReviews
+        ]);
+    }
+
+    /**
      * Submit a product review
      *
      * @param Request $request

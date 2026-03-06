@@ -75,6 +75,7 @@ use App\Http\Controllers\Api\DigitalProductController;
 use App\Http\Controllers\Api\ThirdPartyServiceController;
 use App\Http\Controllers\Api\PersonalizationRequestController;
 use App\Http\Controllers\Api\SellerPanelController;
+use App\Http\Controllers\Api\Auth\IdpForgotPasswordController;
 
 Route::middleware('auth:sanctum')->post('/broadcasting/auth', function (Request $request) {
     return Broadcast::auth($request);
@@ -243,7 +244,6 @@ Route::get('/session/user', function (Request $request) {
     return response()->json($response);
 })->middleware('auth:sanctum');
 
-use App\Http\Controllers\Api\Auth\IdpForgotPasswordController;
 
 // API Authentication Routes
 Route::post('/register', [RegisterController::class, 'register']);
@@ -692,6 +692,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/branding/{id}/landing-page', [BrandingController::class, 'updateLandingPageConfig'])->where('id', '[0-9]+');
     Route::post('/branding/{id}/landing-page/toggle', [BrandingController::class, 'toggleLandingPage'])->where('id', '[0-9]+');
 
+    // Landing Page Popup Routes
+    Route::get('/branding/{brandingId}/popups', [\App\Http\Controllers\Api\LandingPagePopupController::class, 'index'])->where('brandingId', '[0-9]+');
+    Route::post('/branding/{brandingId}/popups', [\App\Http\Controllers\Api\LandingPagePopupController::class, 'store'])->where('brandingId', '[0-9]+');
+    Route::get('/branding/{brandingId}/popups/{popupId}', [\App\Http\Controllers\Api\LandingPagePopupController::class, 'show'])->where(['brandingId' => '[0-9]+', 'popupId' => '[0-9]+']);
+    Route::put('/branding/{brandingId}/popups/{popupId}', [\App\Http\Controllers\Api\LandingPagePopupController::class, 'update'])->where(['brandingId' => '[0-9]+', 'popupId' => '[0-9]+']);
+    Route::delete('/branding/{brandingId}/popups/{popupId}', [\App\Http\Controllers\Api\LandingPagePopupController::class, 'destroy'])->where(['brandingId' => '[0-9]+', 'popupId' => '[0-9]+']);
+    Route::post('/branding/{brandingId}/popups/{popupId}/toggle', [\App\Http\Controllers\Api\LandingPagePopupController::class, 'toggle'])->where(['brandingId' => '[0-9]+', 'popupId' => '[0-9]+']);
+
     // Legal Pages Routes (About Us, Privacy Policy, Legal Notice, Terms of Service)
     Route::get('/legal-pages', [LegalPageController::class, 'index']);
     Route::get('/legal-pages/type/{pageType}', [LegalPageController::class, 'showByType']);
@@ -850,6 +858,9 @@ Route::group(['prefix' => 'storefront'], function () {
     Route::get('/{environmentId}/orders/{orderId}', [StorefrontController::class, 'getOrder']);
 
 
+
+    // Get all approved product reviews for the entire store
+    Route::get('/{environmentId}/reviews', [StorefrontController::class, 'getStoreReviews']);
 
     // Get product reviews
     Route::get('/{environmentId}/products/{productId}/reviews', [StorefrontController::class, 'getProductReviews']);
