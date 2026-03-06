@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\LandingPagePopupController;
 use App\Http\Controllers\Api\LegalPageController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\ThirdPartyServiceController;
+use App\Http\Controllers\Api\TokenController;
 use App\Http\Controllers\MediaAssetController;
 use Illuminate\Support\Facades\Route;
 
@@ -46,3 +47,8 @@ Route::post('/webhooks/media/processing', [MediaAssetController::class, 'process
 
 // Public WhatsApp config - returns WhatsApp button config based on domain
 Route::get('/integrations/whatsapp/config', [ThirdPartyServiceController::class, 'getWhatsAppConfig']);
+
+// Admin token login — no CSRF required (cross-domain admin clients like manager.getkursa.space
+// cannot use cookie-based Sanctum auth since they are on a different root domain than the API).
+// This endpoint authenticates and returns a Sanctum API token for Bearer auth.
+Route::post('/admin/token-login', [TokenController::class, 'createToken']);

@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\EnvironmentUser;
 use App\Models\Environment;
 use App\Enums\UserRole;
+use App\Support\TenantDomainRegistry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -103,22 +104,36 @@ class TokenController extends Controller
             // Extract host from various headers
             $requestHost = $this->extractHostFromHeaders($frontendDomain, $origin, $referer);
 
-            // List of allowed admin domains
-            $allowedAdminDomains = [
-                'sales.csl-brands.com',
-                'kursa.csl-brands.com',
-                'localhost:3001',
-                'localhost',
-                '127.0.0.1:3001',
-                '127.0.0.1',
+            // Static baseline: known admin-capable dev + production hosts
+            $staticAdminHosts = [
+                'localhost', 'localhost:3001', 'localhost:3004', 'localhost:3005',
+                '127.0.0.1', '127.0.0.1:3001', '127.0.0.1:3004', '127.0.0.1:3005',
             ];
 
-            // Check if request is from an allowed admin domain
+            // Production root domains — any subdomain is matched via str_ends_with
+            $allowedRoots = [
+                'getkursa.space', 'getkursa.app', 'getkursa.com',
+                'getkursa.net', 'getkursa.org', 'csl-brands.com',
+            ];
+
+            // Dynamic: tenant custom domains registered in the DB
+            $tenantHosts = TenantDomainRegistry::getAllowedHosts();
+
             $isAllowedDomain = false;
-            foreach ($allowedAdminDomains as $allowed) {
+
+            foreach (array_merge($staticAdminHosts, $tenantHosts) as $allowed) {
                 if ($requestHost === $allowed || str_starts_with($requestHost, $allowed . ':')) {
                     $isAllowedDomain = true;
                     break;
+                }
+            }
+
+            if (!$isAllowedDomain) {
+                foreach ($allowedRoots as $root) {
+                    if ($requestHost === $root || str_ends_with($requestHost, '.' . $root)) {
+                        $isAllowedDomain = true;
+                        break;
+                    }
                 }
             }
 
