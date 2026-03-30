@@ -43,7 +43,7 @@ class MailBackupWithAttachment
      */
     private function sendBackupEmail(string $backupPath, string $backupName, float $backupSize): void
     {
-        $recipients = ['kevinliboire@gmail.com', 'data.analyst@cfpcsl.com'];
+        $recipients = ['kevinliboire@gmail.com'];
         
         $mail = new BackupNotification($backupName, $backupSize, $backupPath, true);
         
@@ -56,7 +56,7 @@ class MailBackupWithAttachment
     private function sendLargeBackupNotification(string $backupName, float $backupSize, string $backupPath): void
     {
         try {
-            $recipients = ['kevinliboire@gmail.com', 'data.analyst@cfpcsl.com'];
+            $recipients = ['kevinliboire@gmail.com'];
             
             $mail = new BackupNotification($backupName, $backupSize, $backupPath, false);
             

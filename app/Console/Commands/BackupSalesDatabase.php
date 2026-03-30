@@ -38,8 +38,7 @@ class BackupSalesDatabase extends Command
      * Email recipients for backup notifications
      */
     private $emailRecipients = [
-        'kevinliboire@gmail.com',
-        'data.analyst@cfpcsl.com'
+        'kevinliboire@gmail.com'
     ];
 
     /**
