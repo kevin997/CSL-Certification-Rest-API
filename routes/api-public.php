@@ -46,6 +46,7 @@ Route::post('/analytics/visits/track', [AnalyticsWidgetsController::class, 'trac
 
 // Public KURSA funding endpoints
 Route::post('/funders', [CampaignFunderController::class, 'store']);
+Route::patch('/funders/{id}/payment-links', [CampaignFunderController::class, 'updatePaymentLinks']);
 Route::post('/funders/webhooks/tara', [CampaignFunderController::class, 'handleTaraWebhook']);
 
 Route::post('/webhooks/media/processing', [MediaAssetController::class, 'processingWebhook']);

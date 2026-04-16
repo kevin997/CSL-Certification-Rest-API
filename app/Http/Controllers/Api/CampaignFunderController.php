@@ -65,6 +65,40 @@ class CampaignFunderController extends Controller
     }
 
     /**
+     * Update payment link metadata for an existing campaign funder.
+     */
+    public function updatePaymentLinks(Request $request, int $id): JsonResponse
+    {
+        $campaignFunder = CampaignFunder::findOrFail($id);
+
+        $validatedData = $request->validate([
+            'payment_links' => 'nullable|array',
+            'payment_links.whatsapp' => 'nullable|url',
+            'payment_links.telegram' => 'nullable|url',
+            'payment_links.dikalo' => 'nullable|url',
+            'payment_links.sms' => 'nullable|string',
+            'meta' => 'nullable|array',
+            'tara_payment_id' => 'nullable|string|max:255',
+            'tara_collection_id' => 'nullable|string|max:255',
+        ]);
+
+        $mergedMeta = array_merge($campaignFunder->meta ?? [], $validatedData['meta'] ?? []);
+
+        $campaignFunder->update([
+            'payment_links' => $validatedData['payment_links'] ?? $campaignFunder->payment_links,
+            'meta' => !empty($mergedMeta) ? $mergedMeta : $campaignFunder->meta,
+            'tara_payment_id' => $validatedData['tara_payment_id'] ?? $campaignFunder->tara_payment_id,
+            'tara_collection_id' => $validatedData['tara_collection_id'] ?? $campaignFunder->tara_collection_id,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Campaign funder payment links updated successfully',
+            'data' => $campaignFunder->fresh(),
+        ]);
+    }
+
+    /**
      * Process Tara webhook updates for a campaign funder payment.
      */
     public function handleTaraWebhook(Request $request): JsonResponse
@@ -72,6 +106,7 @@ class CampaignFunderController extends Controller
         $expectedBusinessId = env('TARA_BUSINESS_ID');
         $expectedSecret = env('TARA_WEBHOOK_SECRET');
         $providedSecret = $request->query('token');
+        $funderId = $request->query('funder_id');
 
         if (!empty($expectedSecret) && $providedSecret !== $expectedSecret) {
             return response()->json([
@@ -103,13 +138,17 @@ class CampaignFunderController extends Controller
             ], 401);
         }
 
-        $campaignFunderQuery = CampaignFunder::where('tara_payment_id', $validatedData['paymentId']);
+        if (!empty($funderId)) {
+            $campaignFunder = CampaignFunder::find($funderId);
+        } else {
+            $campaignFunderQuery = CampaignFunder::where('tara_payment_id', $validatedData['paymentId']);
 
-        if (!empty($validatedData['collectionId'])) {
-            $campaignFunderQuery->orWhere('tara_collection_id', $validatedData['collectionId']);
+            if (!empty($validatedData['collectionId'])) {
+                $campaignFunderQuery->orWhere('tara_collection_id', $validatedData['collectionId']);
+            }
+
+            $campaignFunder = $campaignFunderQuery->latest('id')->first();
         }
-
-        $campaignFunder = $campaignFunderQuery->latest('id')->first();
 
         if (!$campaignFunder) {
             return response()->json([
