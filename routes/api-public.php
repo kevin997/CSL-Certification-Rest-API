@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\BrandingController;
+use App\Http\Controllers\Api\CampaignFunderController;
 use App\Http\Controllers\Api\AnalyticsWidgetsController;
 use App\Http\Controllers\Api\EnvironmentController;
 use App\Http\Controllers\Api\LandingPagePopupController;
@@ -42,6 +43,10 @@ Route::get('/branding/public/popups', [LandingPagePopupController::class, 'publi
 
 // Public analytics visit tracking (guest-safe)
 Route::post('/analytics/visits/track', [AnalyticsWidgetsController::class, 'trackVisit']);
+
+// Public KURSA funding endpoints
+Route::post('/funders', [CampaignFunderController::class, 'store']);
+Route::post('/funders/webhooks/tara', [CampaignFunderController::class, 'handleTaraWebhook']);
 
 Route::post('/webhooks/media/processing', [MediaAssetController::class, 'processingWebhook']);
 
