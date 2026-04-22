@@ -14,7 +14,7 @@ class ConfigureTenantCorsAndSanctum
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $allowedHosts = TenantDomainRegistry::getAllowedHosts();
+        $allowedHosts = $this->getAllowedHosts();
 
         $origin = $request->header('Origin');
         $originHost = $this->extractHostWithPortFromOrigin($origin);
@@ -25,14 +25,28 @@ class ConfigureTenantCorsAndSanctum
             config()->set('cors.allowed_origins', []);
         }
 
-        // Dynamically set Sanctum stateful domains from the tenant registry.
-        // We merge with the existing sanctum.stateful config (which includes local and base prod hosts)
-        // so every tenant custom domain (primary + additional) and subdomain gets
-        // session-cookie auth automatically without needing to maintain a static list.
+        // Only domains that can actually receive cookies from the current API
+        // host should be treated as stateful. Cross-root admin apps still need
+        // CORS access, but must authenticate with bearer tokens instead of CSRF.
         $existingStateful = config('sanctum.stateful', []);
-        config()->set('sanctum.stateful', array_values(array_unique(array_merge($existingStateful, $allowedHosts))));
+        $apiHost = strtolower($request->getHost());
+
+        $statefulHosts = array_values(array_unique(array_filter(
+            array_merge($existingStateful, $allowedHosts),
+            fn (string $host): bool => $this->canShareCookiesWithApiHost($host, $apiHost),
+        )));
+
+        config()->set('sanctum.stateful', $statefulHosts);
 
         return $next($request);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function getAllowedHosts(): array
+    {
+        return TenantDomainRegistry::getAllowedHosts();
     }
 
     protected function extractHostWithPortFromOrigin(?string $origin): ?string
@@ -55,5 +69,54 @@ class ConfigureTenantCorsAndSanctum
         $port = $parsed['port'] ?? null;
 
         return $port ? ($host . ':' . $port) : $host;
+    }
+
+    protected function canShareCookiesWithApiHost(string $frontendHost, string $apiHost): bool
+    {
+        $normalizedFrontendHost = $this->normalizeHostForComparison($frontendHost);
+        $normalizedApiHost = $this->normalizeHostForComparison($apiHost);
+
+        if (!$normalizedFrontendHost || !$normalizedApiHost) {
+            return false;
+        }
+
+        if ($normalizedFrontendHost === $normalizedApiHost) {
+            return true;
+        }
+
+        if ($this->isLocalHost($normalizedFrontendHost) || $this->isLocalHost($normalizedApiHost)) {
+            return $normalizedFrontendHost === $normalizedApiHost;
+        }
+
+        return $this->getRegistrableDomain($normalizedFrontendHost) === $this->getRegistrableDomain($normalizedApiHost);
+    }
+
+    protected function normalizeHostForComparison(string $host): string
+    {
+        $host = strtolower(trim($host));
+        $host = preg_replace('/:\d+$/', '', $host) ?? $host;
+
+        return ltrim($host, '.');
+    }
+
+    protected function isLocalHost(string $host): bool
+    {
+        return $host === 'localhost' || filter_var($host, FILTER_VALIDATE_IP) !== false;
+    }
+
+    protected function getRegistrableDomain(string $host): ?string
+    {
+        if ($this->isLocalHost($host)) {
+            return $host;
+        }
+
+        $host = preg_replace('/^\*\./', '', $host) ?? $host;
+        $parts = explode('.', $host);
+
+        if (count($parts) < 2) {
+            return null;
+        }
+
+        return implode('.', array_slice($parts, -2));
     }
 }
