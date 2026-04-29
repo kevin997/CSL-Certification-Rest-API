@@ -2787,9 +2787,11 @@ class StorefrontController extends Controller
      * @param string $environmentId
      * @return \Illuminate\Http\JsonResponse
      */
-    public function calculateProductPriceWithCommission(Request $request)
+    public function calculateProductPriceWithCommission(Request $request, ?string $environmentId = null)
     {
-        $environmentId = session("current_environment_id");
+        $environmentId = $environmentId
+            ?? session("current_environment_id")
+            ?? $request->input('environment_id');
         $environment = $this->getEnvironmentById($environmentId);
 
         if (!$environment) {
@@ -2822,11 +2824,12 @@ class StorefrontController extends Controller
             $baseCommission = $basePrice * $commissionRate;
             $finalBasePrice = $basePrice + $baseCommission;
 
-            // Calculate commission for discount price if provided
+            // Discounts reduce only the seller's base price. The platform still
+            // receives the full commission calculated from the regular price.
             $finalDiscountPrice = null;
             $discountCommission = null;
             if ($discountPrice !== null) {
-                $discountCommission = $discountPrice * $commissionRate;
+                $discountCommission = $baseCommission;
                 $finalDiscountPrice = $discountPrice + $discountCommission;
             }
 
