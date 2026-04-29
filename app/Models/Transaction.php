@@ -113,6 +113,34 @@ class Transaction extends Model
                 $transaction->total_amount = $transaction->amount + $transaction->fee_amount + $transaction->tax_amount;
             }
         });
+
+        static::created(function ($transaction) {
+            self::auditTransactionEvent($transaction, 'created');
+        });
+
+        static::updated(function ($transaction) {
+            self::auditTransactionEvent($transaction, 'updated', [
+                'changes' => $transaction->getChanges(),
+                'previous' => $transaction->getOriginal(),
+            ]);
+        });
+
+        static::deleted(function ($transaction) {
+            self::auditTransactionEvent($transaction, 'deleted');
+        });
+    }
+
+    private static function auditTransactionEvent(Transaction $transaction, string $action, array $metadata = []): void
+    {
+        try {
+            AuditLog::logTransactionEvent($transaction, $action, $metadata);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to create transaction audit log', [
+                'transaction_id' => $transaction->transaction_id,
+                'action' => $action,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

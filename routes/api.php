@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\ProductAssetController;
 use App\Http\Controllers\Api\ProductCategoryController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\ProductReviewController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\QuestionController;
 use App\Http\Controllers\Api\QuizContentController;
@@ -379,6 +380,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/invoices', [App\Http\Controllers\Api\InvoiceController::class, 'generateMonthlyInvoices']);
     Route::put('/invoices/{id}', [App\Http\Controllers\Api\InvoiceController::class, 'markAsPaid']);
     Route::get('/invoices/{id}/download', [App\Http\Controllers\Api\InvoiceController::class, 'downloadPDF']);
+
+    // Product review moderation routes
+    Route::get('/product-reviews', [ProductReviewController::class, 'index']);
+    Route::put('/product-reviews/{id}', [ProductReviewController::class, 'update']);
+    Route::delete('/product-reviews/{id}', [ProductReviewController::class, 'destroy']);
 
     // Template routes
     Route::get('/templates', [TemplateController::class, 'index']);

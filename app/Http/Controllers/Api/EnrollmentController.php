@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Course;
 use App\Models\Enrollment;
+use App\Models\EnvironmentUser;
 use App\Models\User;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
@@ -102,18 +104,61 @@ class EnrollmentController extends Controller
             $query->where('status', $request->input('status'));
         }
 
-        // Apply sorting
         $sortBy = $request->input('sort_by', 'created_at');
         $sortOrder = $request->input('sort_order', 'desc');
         $query->orderBy($sortBy, $sortOrder);
 
-        // Apply pagination
         $perPage = $request->input('per_page', 15);
-        $enrollments = $query->paginate($perPage);
+        $page = LengthAwarePaginator::resolveCurrentPage();
+        $enrollments = $query->get();
+
+        if (!$request->filled('course_id') && !$request->filled('status')) {
+            $enrolledUserIds = $enrollments->pluck('user_id')->filter()->unique()->values();
+
+            $environmentUsers = EnvironmentUser::where('environment_id', $environmentId)
+                ->when($request->filled('user_id'), function ($query) use ($request) {
+                    $query->where('user_id', $request->input('user_id'));
+                })
+                ->when($enrolledUserIds->isNotEmpty(), function ($query) use ($enrolledUserIds) {
+                    $query->whereNotIn('user_id', $enrolledUserIds);
+                })
+                ->with('user:id,name,email,profile_photo_path')
+                ->get()
+                ->map(function (EnvironmentUser $environmentUser) {
+                    return [
+                        'id' => 'environment-user-' . $environmentUser->id,
+                        'course_id' => null,
+                        'user_id' => (string) $environmentUser->user_id,
+                        'user' => $environmentUser->user,
+                        'course' => null,
+                        'status' => 'active',
+                        'progress_percentage' => 0,
+                        'created_at' => $environmentUser->created_at,
+                        'updated_at' => $environmentUser->updated_at,
+                        'enrolled_at' => $environmentUser->joined_at ?? $environmentUser->created_at,
+                        'completed_at' => null,
+                        'last_activity_at' => null,
+                        'is_environment_member_only' => true,
+                    ];
+                });
+
+            $enrollments = $enrollments->concat($environmentUsers);
+        }
+
+        $enrollments = $enrollments->sortBy($sortBy, SORT_REGULAR, $sortOrder === 'desc')->values();
+
+        $paginatedEnrollments = new LengthAwarePaginator(
+            $enrollments->forPage($page, $perPage)->values(),
+            $enrollments->count(),
+            $perPage,
+            $page,
+            ['path' => LengthAwarePaginator::resolveCurrentPath()]
+        );
+        $paginatedEnrollments->appends($request->query());
 
         return response()->json([
             'status' => 'success',
-            'data' => $enrollments,
+            'data' => $paginatedEnrollments,
         ]);
     }
 

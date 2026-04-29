@@ -42,6 +42,7 @@ class ProcessOrderItems implements ShouldQueue
         $order = $event->order;
 
         $order->loadMissing(['user']);
+        $wasAlreadyCompleted = $order->status === Order::STATUS_COMPLETED;
 
         if ($order->type === Order::TYPE_SUBSCRIPTION_PRODUCT) {
             $subscriptionItems = DB::table('order_items')
@@ -60,6 +61,13 @@ class ProcessOrderItems implements ShouldQueue
         //set order status as completed
         $order->status = Order::STATUS_COMPLETED;
         $order->save();
+
+        if (!$wasAlreadyCompleted && $order->referral_id) {
+            $referral = \App\Models\EnvironmentReferral::find($order->referral_id);
+            if ($referral) {
+                event(new \App\Events\OrderCompletedWithReferral($order, $referral));
+            }
+        }
 
         // Get the order items
         $orderItems = DB::table('order_items')->where('order_id', $order->id)->get();
@@ -223,22 +231,34 @@ class ProcessOrderItems implements ShouldQueue
         $deliveries = collect();
 
         foreach ($assets as $asset) {
-            // Create AssetDelivery record
-            $delivery = AssetDelivery::create([
-                'order_id' => $order->id,
-                'order_item_id' => $orderItem->id,
-                'product_asset_id' => $asset->id,
-                'user_id' => $order->user_id,
-                'environment_id' => $order->environment_id,
-                // download_token auto-generated in model boot()
-                // access_granted_at auto-set in model boot()
-                'max_access_count' => 0,
-                'status' => AssetDelivery::STATUS_ACTIVE,
-            ]);
+            $delivery = AssetDelivery::firstOrCreate(
+                [
+                    'order_id' => $order->id,
+                    'order_item_id' => $orderItem->id,
+                    'product_asset_id' => $asset->id,
+                    'user_id' => $order->user_id,
+                    'environment_id' => $order->environment_id,
+                ],
+                [
+                    // download_token auto-generated in model boot()
+                    // access_granted_at auto-set in model boot()
+                    'max_access_count' => 0,
+                    'status' => AssetDelivery::STATUS_ACTIVE,
+                ]
+            );
 
             $deliveries->push($delivery);
 
-            Log::info("Created asset delivery {$delivery->id} for user {$order->user_id}, asset {$asset->id}");
+            if ($delivery->wasRecentlyCreated) {
+                Log::info("Created asset delivery {$delivery->id} for user {$order->user_id}, asset {$asset->id}");
+            } else {
+                Log::info("Asset delivery {$delivery->id} already exists for user {$order->user_id}, asset {$asset->id}");
+            }
+        }
+
+        if ($deliveries->every(fn ($delivery) => !$delivery->wasRecentlyCreated)) {
+            Log::info("Skipping duplicate digital product delivery email for order {$order->id}, product {$product->id}");
+            return;
         }
 
         // Send delivery email with all assets

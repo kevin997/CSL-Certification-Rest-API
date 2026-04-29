@@ -47,7 +47,7 @@ class PaymentGatewayFactory
         $gatewayInstance = new $gatewayClass();
         $gatewayInstance->initialize($settings);
         
-        return $gatewayInstance;
+        return new AuditedPaymentGateway($gatewayInstance, $settings);
     }
     
     /**

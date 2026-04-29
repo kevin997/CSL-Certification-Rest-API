@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Log;
 
 class PaymentGatewaySetting extends Model
 {
@@ -41,6 +42,54 @@ class PaymentGatewaySetting extends Model
                     ->update(['is_default' => false]);
             }
         });
+
+        static::created(function ($gateway) {
+            self::auditGatewaySettingEvent($gateway, 'created');
+        });
+
+        static::updated(function ($gateway) {
+            self::auditGatewaySettingEvent($gateway, 'updated', [
+                'changes' => $gateway->getChanges(),
+                'previous' => $gateway->getOriginal(),
+            ]);
+        });
+
+        static::deleted(function ($gateway) {
+            self::auditGatewaySettingEvent($gateway, 'deleted');
+        });
+    }
+
+    private static function auditGatewaySettingEvent(PaymentGatewaySetting $gateway, string $action, array $metadata = []): void
+    {
+        try {
+            AuditLog::logPaymentGatewayOperation(
+                'payment_gateway_setting',
+                $action,
+                null,
+                [
+                    'id' => $gateway->id,
+                    'environment_id' => $gateway->environment_id,
+                    'gateway_name' => $gateway->gateway_name,
+                    'code' => $gateway->code,
+                    'status' => $gateway->status,
+                    'is_default' => $gateway->is_default,
+                    'mode' => $gateway->mode,
+                ],
+                $metadata,
+                AuditLog::STATUS_SUCCESS,
+                self::class,
+                (string) $gateway->getKey(),
+                $gateway->environment_id,
+                $gateway->updated_by ?? $gateway->created_by,
+                "Payment gateway setting {$action}"
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Failed to create payment gateway setting audit log', [
+                'payment_gateway_setting_id' => $gateway->id,
+                'action' => $action,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

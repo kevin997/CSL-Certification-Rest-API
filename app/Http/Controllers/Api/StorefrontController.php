@@ -1549,6 +1549,8 @@ class StorefrontController extends Controller
      */
     public function checkout(Request $request, string $environmentId)
     {
+        return $this->checkoutWithExplicitPaymentState($request, $environmentId);
+
         $environment = $this->getEnvironmentById($environmentId);
 
         if (!$environment) {
@@ -1810,6 +1812,13 @@ class StorefrontController extends Controller
                                 $responseData['redirect_url'] = $paymentResult['value'];
                                 break;
 
+                            case 'redirect_url':
+                                // For TaraMoney generalLink and any gateway that returns a direct redirect URL
+                                $responseData['payment_type'] = $gatewayCode === 'taramoney' ? 'taramoney' : $gatewayCode;
+                                $responseData['redirect_url'] = $paymentResult['redirect_url'] ?? $paymentResult['general_link'] ?? $paymentResult['value'] ?? null;
+                                $responseData['general_link'] = $paymentResult['general_link'] ?? null;
+                                break;
+
                             case 'payment_links':
                                 // For TaraMoney - check if generalLink is available (new API)
                                 $responseData['payment_type'] = 'taramoney';
@@ -1857,11 +1866,294 @@ class StorefrontController extends Controller
                 'data' => $responseData
             ]);
         } catch (\Exception $e) {
-            DB::rollBack();
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to process checkout',
                 'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    private function checkoutWithExplicitPaymentState(Request $request, string $environmentId)
+    {
+        $environment = $this->getEnvironmentById($environmentId);
+
+        if (!$environment) {
+            return response()->json(['message' => 'Environment not found'], 404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|max:255',
+            'phone_number' => 'nullable|string|max:20',
+            'products' => 'required|array|min:1',
+            'products.*.id' => 'required|exists:products,id',
+            'products.*.quantity' => 'required|integer|min:1',
+            'payment_method' => 'nullable',
+            'billing_address' => 'required|string|max:255',
+            'billing_city' => 'required|string|max:255',
+            'billing_state' => 'required|string|max:255',
+            'billing_zip' => 'nullable|string|max:20',
+            'billing_country' => 'required|string|max:255',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $authenticatedUser = $request->user('sanctum');
+        if ($authenticatedUser) {
+            foreach ($request->input('products') as $productData) {
+                $product = Product::find($productData['id']);
+                if ($product && $product->created_by === $authenticatedUser->id) {
+                    return response()->json(['message' => 'Instructors cannot purchase their own courses.'], 403);
+                }
+            }
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $userExists = User::where('email', $request->input('email'))->exists();
+            $user = User::firstOrCreate(
+                ['email' => $request->input('email')],
+                [
+                    'name' => $request->input('name'),
+                    'password' => bcrypt(Str::random(16)),
+                ]
+            );
+
+            event(new \App\Events\UserCreatedDuringCheckout($user, $environment, !$userExists));
+
+            $totalAmount = 0;
+            $currency = null;
+            $orderItems = [];
+
+            foreach ($request->input('products') as $item) {
+                $product = Product::where('id', $item['id'])
+                    ->where('environment_id', $environment->id)
+                    ->firstOrFail();
+
+                $price = $product->discount_price ?? $product->price;
+                $quantity = (int) $item['quantity'];
+                $lineTotal = $price * $quantity;
+                $currency = $currency ?? $product->currency;
+
+                $orderItems[] = [
+                    'product' => $product,
+                    'quantity' => $quantity,
+                    'price' => $price,
+                    'total' => $lineTotal,
+                ];
+
+                $totalAmount += $lineTotal;
+            }
+
+            $referral = null;
+            if ($request->filled('referral_code')) {
+                $referral = \App\Models\EnvironmentReferral::where('code', $request->input('referral_code'))
+                    ->where('environment_id', $environment->id)
+                    ->where('is_active', true)
+                    ->first();
+
+                if (
+                    $referral
+                    && (!$referral->expiration_date || now()->isBefore($referral->expiration_date))
+                    && ($referral->max_uses <= 0 || $referral->uses_count < $referral->max_uses)
+                ) {
+                    $discount = $referral->discount_type === 'fixed'
+                        ? min($totalAmount, (float) $referral->discount_value)
+                        : $totalAmount * (((float) $referral->discount_value) / 100);
+                    $totalAmount = max(0, $totalAmount - $discount);
+                } else {
+                    $referral = null;
+                }
+            }
+
+            $isFree = $totalAmount <= 0;
+            $gatewayCode = null;
+            $paymentMethod = $request->input('payment_method');
+
+            if (!$isFree) {
+                if (!$paymentMethod || !is_numeric($paymentMethod)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'A valid payment method is required for paid checkout',
+                    ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                }
+
+                $gatewaySettings = PaymentGatewaySetting::find($paymentMethod);
+                if (!$gatewaySettings || !$gatewaySettings->status) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Selected payment method is not available',
+                    ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                }
+
+                $gatewayCode = $gatewaySettings->code;
+            }
+
+            $order = new Order();
+            $order->user_id = $user->id;
+            $order->environment_id = $environment->id;
+            $order->order_number = 'ORD-' . strtoupper(Str::random(8));
+            $order->status = 'pending';
+            $order->payment_method = $isFree ? 'free' : $paymentMethod;
+            $order->billing_name = $request->input('name');
+            $order->billing_email = $request->input('email');
+            $order->phone_number = $request->input('phone_number');
+            $order->billing_address = $request->input('billing_address');
+            $order->billing_city = $request->input('billing_city');
+            $order->billing_state = $request->input('billing_state');
+            $order->billing_zip = $request->input('billing_zip') ?? '00000';
+            $order->billing_country = $request->input('billing_country');
+            $order->notes = $request->input('notes');
+            $order->referral_id = $referral?->id;
+            $order->total_amount = $totalAmount;
+            $order->currency = $currency;
+            $order->save();
+
+            foreach ($orderItems as $item) {
+                $orderItem = new OrderItem();
+                $orderItem->order_id = $order->id;
+                $orderItem->product_id = $item['product']->id;
+                $orderItem->quantity = $item['quantity'];
+                $orderItem->price = $item['price'];
+                $orderItem->total = $item['total'];
+                $orderItem->save();
+            }
+
+            DB::commit();
+
+            try {
+                $order->load(['user']);
+                if ($order->user) {
+                    $order->user->notify(new \App\Notifications\OrderCreated($order, app(\App\Services\TelegramService::class)));
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to send OrderCreated notification: ' . $e->getMessage());
+            }
+
+            $responseData = [
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+                'total_amount' => $totalAmount,
+                'currency' => $currency,
+                'status' => 'pending',
+            ];
+
+            if ($isFree) {
+                event(new \App\Events\OrderCompleted($order));
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Order completed successfully',
+                    'data' => array_merge($responseData, [
+                        'status' => 'completed',
+                        'payment_type' => 'free',
+                    ]),
+                ]);
+            }
+
+            $orderService = app()->make(\App\Services\OrderService::class);
+            $gatewayFactory = app()->make(\App\Services\PaymentGateways\PaymentGatewayFactory::class);
+            $commissionService = app()->make(\App\Services\Commission\CommissionService::class);
+            $taxZoneService = app()->make(\App\Services\Tax\TaxZoneService::class);
+            $environmentPaymentConfigService = app()->make(\App\Services\EnvironmentPaymentConfigService::class);
+
+            $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService, $taxZoneService, $environmentPaymentConfigService);
+            $paymentResult = $paymentService->createPayment($order->id, $gatewayCode, [], $environment->name);
+
+            if (!($paymentResult['success'] ?? false)) {
+                Log::error('Payment creation failed', [
+                    'order_id' => $order->id,
+                    'gateway' => $gatewayCode,
+                    'message' => $paymentResult['message'] ?? 'Unknown error',
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $paymentResult['message'] ?? 'Payment creation failed',
+                    'data' => $responseData,
+                ], Response::HTTP_BAD_GATEWAY);
+            }
+
+            $transaction = $paymentResult['transaction'] ?? null;
+            if ($transaction) {
+                $responseData['total_amount'] = $transaction->total_amount;
+                $responseData['currency'] = $transaction->currency;
+                $responseData['transaction'] = $transaction;
+            }
+
+            switch ($paymentResult['type'] ?? null) {
+                case 'client_secret':
+                    $responseData['payment_type'] = 'stripe';
+                    $responseData['client_secret'] = $paymentResult['value'];
+                    $responseData['publishable_key'] = $paymentResult['publishable_key'] ?? null;
+                    break;
+
+                case 'checkout_url':
+                    $responseData['payment_type'] = 'paypal';
+                    $responseData['redirect_url'] = $paymentResult['value'];
+                    break;
+
+                case 'payment_url':
+                    $responseData['payment_type'] = $gatewayCode;
+                    $responseData['redirect_url'] = $paymentResult['value'];
+                    break;
+
+                case 'redirect_url':
+                    $responseData['payment_type'] = $gatewayCode === 'taramoney' ? 'taramoney' : $gatewayCode;
+                    $responseData['redirect_url'] = $paymentResult['redirect_url'] ?? $paymentResult['general_link'] ?? $paymentResult['value'] ?? null;
+                    $responseData['general_link'] = $paymentResult['general_link'] ?? null;
+                    break;
+
+                case 'payment_links':
+                    $responseData['payment_type'] = 'taramoney';
+                    if (!empty($paymentResult['general_link'])) {
+                        $responseData['redirect_url'] = $paymentResult['general_link'];
+                        $responseData['general_link'] = $paymentResult['general_link'];
+                    } else {
+                        $responseData['payment_links'] = $paymentResult['payment_links'] ?? [];
+                        $responseData['whatsapp_link'] = $paymentResult['whatsapp_link'] ?? null;
+                        $responseData['telegram_link'] = $paymentResult['telegram_link'] ?? null;
+                        $responseData['dikalo_link'] = $paymentResult['dikalo_link'] ?? null;
+                        $responseData['sms_link'] = $paymentResult['sms_link'] ?? null;
+                    }
+                    break;
+
+                default:
+                    Log::error('Unsupported payment response type', [
+                        'order_id' => $order->id,
+                        'gateway' => $gatewayCode,
+                        'payment_result' => $paymentResult,
+                    ]);
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unsupported payment response from gateway',
+                        'data' => $responseData,
+                    ], Response::HTTP_BAD_GATEWAY);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Order created successfully',
+                'data' => $responseData,
+            ]);
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to process checkout',
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
