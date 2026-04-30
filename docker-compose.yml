@@ -22,6 +22,8 @@ services:
       - DB_DATABASE=${DB_DATABASE}
       - DB_USERNAME=${DB_USERNAME}
       - DB_PASSWORD=${DB_PASSWORD}
+      - MARKETPLACE_API_URL=${MARKETPLACE_API_URL:-http://csl-marketplace-api}
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET}
       - CONTAINER_ROLE=app
     networks:
       - csl-network

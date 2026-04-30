@@ -12,7 +12,7 @@ class SellerPanelController extends Controller
 {
     private function marketplaceUrl(): string
     {
-        return rtrim(env('MARKETPLACE_API_URL', 'http://localhost:8003'), '/');
+        return rtrim(env('MARKETPLACE_API_URL', 'http://csl-marketplace-api'), '/');
     }
 
     private function proxyGet(Request $request, string $path)
@@ -57,14 +57,14 @@ class SellerPanelController extends Controller
     private function proxy(string $method, Request $request, string $path)
     {
         $user = Auth::user();
-        if (!$user) {
+        if (! $user) {
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
         // Use internal service-to-service route to avoid deadlock:
         // php artisan serve is single-threaded, so a token-based proxy
         // that triggers a callback to /api/user would block forever.
-        $url = $this->marketplaceUrl() . '/api/internal/' . ltrim($path, '/');
+        $url = $this->marketplaceUrl().'/api/internal/'.ltrim($path, '/');
 
         $cleanQuery = $request->only(self::$allowedQueryParams);
 
