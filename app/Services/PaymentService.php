@@ -5,7 +5,12 @@ namespace App\Services;
 use App\Models\Order;
 use App\Models\Transaction;
 use App\Models\Environment;
+use App\Models\Invoice;
+use App\Models\Payment;
 use App\Models\PaymentGatewaySetting;
+use App\Models\Plan;
+use App\Models\Subscription;
+use App\Models\InstructorCommission;
 use App\Services\PaymentGateways\PaymentGatewayFactory;
 use App\Services\PaymentGateways\PaymentGatewayInterface;
 use App\Services\Commission\CommissionService;
@@ -1251,7 +1256,7 @@ class PaymentService
      * @param array $callbackData The callback data received from the payment gateway
      * @return bool True if processing was successful, false otherwise
      */
-    public function processSuccessCallback(string $gateway, string $transactionId, int $environmentId, array $callbackData): bool
+    public function processSuccessCallback(string $gateway, string $transactionId, $environmentId, array $callbackData): bool
     {
         try {
             // Find the transaction using smart lookup that handles cross-environment supported plan transactions
@@ -1266,15 +1271,23 @@ class PaymentService
                 return false;
             }
 
-            // Update the transaction status
-            $transaction->status = Transaction::STATUS_COMPLETED;
-            $transaction->gateway_status = 'completed';
-            $transaction->notes = 'Payment completed via ' . $gateway;
-            $transaction->paid_at = now();
-            $transaction->save();
+            DB::transaction(function () use ($transaction, $gateway, $callbackData) {
+                $transaction = Transaction::withoutGlobalScopes()
+                    ->whereKey($transaction->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-            // Process any related records (orders, subscriptions, etc.)
-            $this->processRelatedRecords($transaction);
+                $alreadyCompleted = $transaction->status === Transaction::STATUS_COMPLETED;
+
+                $transaction->status = Transaction::STATUS_COMPLETED;
+                $transaction->gateway_status = 'completed';
+                $transaction->gateway_response = $callbackData;
+                $transaction->notes = 'Payment completed via ' . $gateway;
+                $transaction->paid_at = $transaction->paid_at ?: now();
+                $transaction->save();
+
+                $this->processRelatedRecords($transaction, !$alreadyCompleted);
+            });
 
             return true;
         } catch (\Exception $e) {
@@ -1296,7 +1309,7 @@ class PaymentService
      * @param array $callbackData The callback data received from the payment gateway
      * @return bool True if processing was successful, false otherwise
      */
-    public function processFailureCallback(string $gateway, string $transactionId, int $environmentId, array $callbackData): bool
+    public function processFailureCallback(string $gateway, string $transactionId, $environmentId, array $callbackData): bool
     {
         try {
             // Find the transaction using smart lookup that handles cross-environment supported plan transactions
@@ -1311,11 +1324,35 @@ class PaymentService
                 return false;
             }
 
-            // Update the transaction status
-            $transaction->status = Transaction::STATUS_FAILED;
-            $transaction->gateway_status = 'failed';
-            $transaction->notes = 'Payment failed via ' . $gateway;
-            $transaction->save();
+            DB::transaction(function () use ($transaction, $gateway, $callbackData) {
+                $transaction = Transaction::withoutGlobalScopes()
+                    ->whereKey($transaction->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                if ($transaction->status === Transaction::STATUS_COMPLETED) {
+                    Log::warning('Ignoring failure callback for already completed transaction', [
+                        'transaction_id' => $transaction->transaction_id,
+                        'gateway' => $gateway,
+                    ]);
+                    return;
+                }
+
+                $transaction->status = Transaction::STATUS_FAILED;
+                $transaction->gateway_status = 'failed';
+                $transaction->gateway_response = $callbackData;
+                $transaction->notes = 'Payment failed via ' . $gateway;
+                $transaction->save();
+
+                $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
+                if ($payment && $payment->status !== Payment::STATUS_COMPLETED) {
+                    $payment->markAsFailed(
+                        $transaction->gateway_transaction_id,
+                        'failed',
+                        $callbackData
+                    );
+                }
+            });
 
             return true;
         } catch (\Exception $e) {
@@ -1337,7 +1374,7 @@ class PaymentService
      * @param array $callbackData The callback data received from the payment gateway
      * @return bool True if processing was successful, false otherwise
      */
-    public function processCancelledCallback(string $gateway, string $transactionId, int $environmentId, array $callbackData): bool
+    public function processCancelledCallback(string $gateway, string $transactionId, $environmentId, array $callbackData): bool
     {
         try {
             // Find the transaction using smart lookup that handles cross-environment supported plan transactions
@@ -1352,11 +1389,26 @@ class PaymentService
                 return false;
             }
 
-            // Update the transaction status
-            $transaction->status = Transaction::STATUS_CANCELLED;
-            $transaction->gateway_status = 'cancelled';
-            $transaction->notes = 'Payment cancelled via ' . $gateway;
-            $transaction->save();
+            DB::transaction(function () use ($transaction, $gateway, $callbackData) {
+                $transaction = Transaction::withoutGlobalScopes()
+                    ->whereKey($transaction->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                if ($transaction->status === Transaction::STATUS_COMPLETED) {
+                    Log::warning('Ignoring cancellation callback for already completed transaction', [
+                        'transaction_id' => $transaction->transaction_id,
+                        'gateway' => $gateway,
+                    ]);
+                    return;
+                }
+
+                $transaction->status = Transaction::STATUS_CANCELLED;
+                $transaction->gateway_status = 'cancelled';
+                $transaction->gateway_response = $callbackData;
+                $transaction->notes = 'Payment cancelled via ' . $gateway;
+                $transaction->save();
+            });
 
             return true;
         } catch (\Exception $e) {
@@ -1376,17 +1428,91 @@ class PaymentService
      * @param Transaction $transaction
      * @return void
      */
-    protected function processRelatedRecords(Transaction $transaction): void
+    protected function processRelatedRecords(Transaction $transaction, bool $shouldDispatchOrderEvent = true): void
     {
+        $this->createCommissionRecordIfNeeded($transaction);
 
+        if ($shouldDispatchOrderEvent) {
+            $order = Order::where('id', $transaction->order_id)->first();
+            if ($order && $order->status !== Order::STATUS_COMPLETED) {
+                event(new \App\Events\OrderCompleted($order));
+            }
+        }
 
+        if ($transaction->invoice_id) {
+            Invoice::where('id', $transaction->invoice_id)->update([
+                'status' => 'paid',
+                'paid_at' => now(),
+                'payment_gateway' => $transaction->payment_method,
+                'payment_link' => null,
+            ]);
+        }
 
-        // Update related order if exists
-        $order = Order::where('id', $transaction->order_id)->first();
-        if ($order) event(new \App\Events\OrderCompleted($order));
+        $details = is_array($transaction->payment_method_details)
+            ? $transaction->payment_method_details
+            : json_decode($transaction->payment_method_details ?: '[]', true);
 
-        // Process subscriptions or other related records
-        // Additional logic can be added here as needed
+        $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
+        if ($payment) {
+            $paymentAlreadyCompleted = $payment->status === Payment::STATUS_COMPLETED;
+
+            $payment->markAsCompleted(
+                $transaction->gateway_transaction_id,
+                $transaction->gateway_status,
+                $transaction->gateway_response
+            );
+
+            if ($paymentAlreadyCompleted) {
+                return;
+            }
+        }
+
+        $metadata = $details['metadata'] ?? [];
+        if (($details['source_type'] ?? null) === 'subscription_plan_change') {
+            $subscription = Subscription::find($metadata['subscription_id'] ?? $details['source_id'] ?? null);
+            $plan = Plan::find($metadata['new_plan_id'] ?? null);
+
+            if ($subscription && $plan) {
+                $subscription->update([
+                    'plan_id' => $plan->id,
+                    'billing_cycle' => $metadata['billing_cycle'] ?? $subscription->billing_cycle,
+                    'status' => Subscription::STATUS_ACTIVE,
+                    'last_payment_at' => now(),
+                    'next_payment_at' => ($metadata['billing_cycle'] ?? $subscription->billing_cycle) === 'annual'
+                        ? now()->addYear()
+                        : now()->addMonth(),
+                    'ends_at' => ($metadata['billing_cycle'] ?? $subscription->billing_cycle) === 'annual'
+                        ? now()->addYear()
+                        : now()->addMonth(),
+                ]);
+            }
+        }
+    }
+
+    protected function createCommissionRecordIfNeeded(Transaction $transaction): void
+    {
+        if (!$transaction->order_id) {
+            return;
+        }
+
+        try {
+            $config = app(EnvironmentPaymentConfigService::class)->getConfig($transaction->environment_id);
+
+            if (!$config || !$config->use_centralized_gateways) {
+                return;
+            }
+
+            if (InstructorCommission::where('transaction_id', $transaction->id)->exists()) {
+                return;
+            }
+
+            app(InstructorCommissionService::class)->createCommissionRecord($transaction);
+        } catch (\Throwable $e) {
+            Log::error('Failed to create commission record from callback', [
+                'transaction_id' => $transaction->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -1400,9 +1526,11 @@ class PaymentService
     private function findTransactionForCallback($transactionId, $environment_id)
     {
         // First, try environment-specific lookup (existing behavior)
-        $transaction = Transaction::where("transaction_id", $transactionId)
-            ->where("environment_id", $environment_id)
-            ->where("status", Transaction::STATUS_PENDING)
+        $transaction = Transaction::where(function ($query) use ($transactionId) {
+                $query->where('transaction_id', $transactionId)
+                    ->orWhere('gateway_transaction_id', $transactionId);
+            })
+            ->when(is_numeric($environment_id), fn ($query) => $query->where("environment_id", $environment_id))
             ->whereHas("paymentGatewaySetting")
             ->first();
 
@@ -1413,8 +1541,10 @@ class PaymentService
         // If not found, try global lookup for supported plan transactions
         // IMPORTANT: Use withoutGlobalScopes to bypass EnvironmentScope for cross-environment lookup
         $globalTransaction = Transaction::withoutGlobalScopes()
-            ->where("transaction_id", $transactionId)
-            ->where("status", Transaction::STATUS_PENDING)
+            ->where(function ($query) use ($transactionId) {
+                $query->where('transaction_id', $transactionId)
+                    ->orWhere('gateway_transaction_id', $transactionId);
+            })
             ->whereHas("paymentGatewaySetting")
             ->first();
 
@@ -1460,6 +1590,14 @@ class PaymentService
 
         // Check transaction notes for supported plan indicators
         if ($transaction->notes && stripos($transaction->notes, 'supported') !== false) {
+            return true;
+        }
+
+        $details = is_array($transaction->payment_method_details)
+            ? $transaction->payment_method_details
+            : json_decode($transaction->payment_method_details ?: '[]', true);
+
+        if (($details['scope'] ?? null) === 'platform') {
             return true;
         }
 

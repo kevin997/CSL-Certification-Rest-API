@@ -12,6 +12,8 @@ use App\Models\Environment;
 use App\Models\PaymentGatewaySetting;
 use App\Models\Subscription;
 use App\Models\Plan;
+use App\Models\Invoice;
+use App\Models\InstructorCommission;
 use App\Services\PaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -107,6 +109,8 @@ class TransactionController extends Controller
      */
     public function callbackSuccess(Request $request, $environment_id)
     {
+        $auditEnvironmentId = is_numeric($environment_id) ? (int) $environment_id : null;
+
         Log::error('Received Success CallBack ', [
             'environment_id' => $environment_id,
             "data" => $request->all(),
@@ -132,7 +136,12 @@ class TransactionController extends Controller
 
         $environment = null;
         $protocol = app()->environment('production') ? 'https' : 'http';
-        $transactionId = $request->get('payment_ref') ?? $request->get("order_id") ?? null;
+        $transactionId = $request->get('payment_ref')
+            ?? $request->get('transaction_id')
+            ?? $request->get('reference')
+            ?? $request->get('id')
+            ?? $request->get("order_id")
+            ?? null;
 
         Log::info('Looking for transaction', [
             'gateway_transaction_id' => $transactionId,
@@ -166,10 +175,8 @@ class TransactionController extends Controller
         }
 
         //Get The Environment with relationship to Branding
-        $environment = Environment::where("id", $environment_id)
-            ->first();
-        $branding = Branding::where("environment_id", $environment_id)
-            ->first();
+        $environment = $auditEnvironmentId ? Environment::where("id", $auditEnvironmentId)->first() : null;
+        $branding = $auditEnvironmentId ? Branding::where("environment_id", $auditEnvironmentId)->first() : null;
 
         // Check if transaction exists (either pending or completed)
         if (!$transaction && !$completedTransaction) {
@@ -238,7 +245,6 @@ class TransactionController extends Controller
 
         // Get gateway settings from transaction
         $gatewaySettings = $transaction->paymentGatewaySetting;
-        $gateway = $gatewaySettings->code;
 
         // Check if gateway settings exist
         if (!$gatewaySettings) {
@@ -249,6 +255,8 @@ class TransactionController extends Controller
             return response()->json(['error' => 'Payment gateway settings not found'], 404);
         }
 
+        $gateway = $gatewaySettings->code;
+
 
 
         // Log the callback to AuditLog
@@ -258,7 +266,7 @@ class TransactionController extends Controller
             $request->all(),
             'Transaction',
             $transactionId,
-            $environment_id,
+            $auditEnvironmentId,
             'Payment success callback received',
             AuditLog::STATUS_SUCCESS
         );
@@ -266,9 +274,10 @@ class TransactionController extends Controller
         try {
             // Process payment only if status indicates success
             $result = null;
-            $status = $request->get("status", "");
+            $status = strtolower((string) $request->get("status", ""));
             $successStatuses = ["success", "successful", "1", 1];
-            $cancelledStatuses = ["cancelled", "failed", "0", 0];
+            $failedStatuses = ["failed", "failure", "0", 0, "error"];
+            $cancelledStatuses = ["cancelled", "cancelled_by_user", "cancel"];
 
 
             $paymentService = app(PaymentService::class);
@@ -277,6 +286,16 @@ class TransactionController extends Controller
                 // Update transaction status through PaymentService
 
                 $result = $paymentService->processSuccessCallback($gateway, $transactionId, $environment_id, $request->all());
+            }
+
+            if (in_array($status, $failedStatuses, true)) {
+                $result = $paymentService->processFailureCallback($gateway, $transactionId, $environment_id, $request->all());
+                return view('payment.callback-failed', [
+                    'transaction' => $transaction,
+                    'environment' => $environment,
+                    "branding" => $branding,
+                    "protocol" => $protocol
+                ]);
             }
 
             if (in_array($status, $cancelledStatuses, true)) {
@@ -353,6 +372,8 @@ class TransactionController extends Controller
 
     public function callbackFailure(Request $request, $environment_id)
     {
+        $auditEnvironmentId = is_numeric($environment_id) ? (int) $environment_id : null;
+
         Log::error('Received Failure CallBack ', [
             'environment_id' => $environment_id,
             "data" => $request->all(),
@@ -361,7 +382,12 @@ class TransactionController extends Controller
         ]);
 
         $environment = null;
-        $transactionId = $request->get('payment_ref') ?? $request->get("order_id") ?? null;
+        $transactionId = $request->get('payment_ref')
+            ?? $request->get('transaction_id')
+            ?? $request->get('reference')
+            ?? $request->get('id')
+            ?? $request->get("order_id")
+            ?? null;
         $protocol = app()->environment('production') ? 'https' : 'http';
 
         Log::info('Looking for transaction', [
@@ -379,9 +405,8 @@ class TransactionController extends Controller
 
         // Use smart transaction lookup that handles cross-environment supported plan transactions
         $transaction = $this->findTransactionForCallback($transactionId, $environment_id);
-        $environment = Environment::find($environment_id);
-        $branding = Branding::where("environment_id", $environment_id)
-            ->first();
+        $environment = $auditEnvironmentId ? Environment::find($auditEnvironmentId) : null;
+        $branding = $auditEnvironmentId ? Branding::where("environment_id", $auditEnvironmentId)->first() : null;
 
         // Check if transaction exists
         if (!$transaction) {
@@ -400,7 +425,6 @@ class TransactionController extends Controller
 
         // Get gateway settings from transaction
         $gatewaySettings = $transaction->paymentGatewaySetting;
-        $gateway = $gatewaySettings->code;
 
         // Check if gateway settings exist
         if (!$gatewaySettings) {
@@ -411,15 +435,17 @@ class TransactionController extends Controller
             return response()->json(['error' => 'Payment gateway settings not found'], 404);
         }
 
+        $gateway = $gatewaySettings->code;
+
         // Log the callback to AuditLog
         $auditLog = AuditLog::logCallback(
             $gateway,
-            'success',
+            'failure',
             $request->all(),
             'Transaction',
             $transactionId,
-            $environment_id,
-            'Payment success callback received',
+            $auditEnvironmentId,
+            'Payment failure callback received',
             AuditLog::STATUS_SUCCESS
         );
 
@@ -433,9 +459,9 @@ class TransactionController extends Controller
         try {
             // Process payment only if status indicates success
             $result = null;
-            $status = $request->get("status", "");
+            $status = strtolower((string) $request->get("status", ""));
             $failed = ["failed", "failure", "0", 0, "error"];
-            $cancelledStatuses = ["cancelled", "failed", "0", 0];
+            $cancelledStatuses = ["cancelled", "cancelled_by_user", "cancel"];
 
 
             $paymentService = app(PaymentService::class);
@@ -444,9 +470,7 @@ class TransactionController extends Controller
                 // Update transaction status through PaymentService
 
                 $result = $paymentService->processFailureCallback($gateway, $transactionId, $environment_id, $request->all());
-            }
-
-            if (in_array($status, $cancelledStatuses, true)) {
+            } elseif (in_array($status, $cancelledStatuses, true)) {
                 $result = $paymentService->processCancelledCallback($gateway, $transactionId, $environment_id, $request->all());
                 
                 // Check if this is a supported plan payment (environment setup)
@@ -462,7 +486,7 @@ class TransactionController extends Controller
             }
 
             if (!$result) {
-                Log::error('Failed to process payment success callback', [
+                Log::error('Failed to process payment failure callback', [
                     'gateway' => $gateway,
                     'environment_id' => $environment,
                     'transaction_id' => $transactionId
@@ -471,7 +495,7 @@ class TransactionController extends Controller
                 // Update audit log with failure
                 $auditLog->update([
                     'status' => AuditLog::STATUS_FAILURE,
-                    'notes' => 'Failed to process payment success callback'
+                    'notes' => 'Failed to process payment failure callback'
                 ]);
 
                 // Check if this is a supported plan payment (environment setup)
@@ -499,7 +523,7 @@ class TransactionController extends Controller
                 "protocol" => $protocol
             ]);
         } catch (\Exception $e) {
-            Log::error('Error in payment success callback', [
+            Log::error('Error in payment failure callback', [
                 'error' => $e->getMessage(),
                 'gateway' => $gateway,
                 'environment_id' => $environment,
@@ -522,6 +546,128 @@ class TransactionController extends Controller
         }
 
 
+    }
+
+    public function paypalReturn(Request $request)
+    {
+        $transaction = null;
+
+        try {
+            $transactionId = $request->query('transaction_id');
+            $paypalOrderId = $request->query('token') ?? $request->query('order_id');
+
+            if (!$transactionId || !$paypalOrderId) {
+                Log::error('PayPal return missing required identifiers', [
+                    'transaction_id' => $transactionId,
+                    'token_present' => !empty($paypalOrderId),
+                    'payload' => $request->all(),
+                ]);
+
+                return response()->json(['error' => 'Missing PayPal transaction identifiers'], 400);
+            }
+
+            $transaction = Transaction::withoutGlobalScopes()->find($transactionId);
+            if (!$transaction) {
+                Log::error('PayPal return transaction not found', [
+                    'transaction_id' => $transactionId,
+                    'payload' => $request->all(),
+                ]);
+
+                return response()->json(['error' => 'Transaction not found'], 404);
+            }
+
+            $gatewaySettings = $transaction->payment_gateway_setting_id
+                ? PaymentGatewaySetting::withoutGlobalScopes()->find($transaction->payment_gateway_setting_id)
+                : PaymentGatewaySetting::withoutGlobalScopes()
+                    ->where('code', 'paypal')
+                    ->where('status', true)
+                    ->where(function ($query) use ($transaction) {
+                        $query->where('environment_id', $transaction->environment_id)
+                            ->orWhereNull('environment_id');
+                    })
+                    ->orderByRaw('environment_id IS NULL')
+                    ->first();
+
+            if (!$gatewaySettings) {
+                Log::error('PayPal gateway settings not found for return callback', [
+                    'transaction_id' => $transaction->transaction_id,
+                    'payment_gateway_setting_id' => $transaction->payment_gateway_setting_id,
+                ]);
+
+                return response()->json(['error' => 'PayPal gateway settings not found'], 404);
+            }
+
+            $gateway = \App\Services\PaymentGateways\PaymentGatewayFactory::create('paypal', $gatewaySettings);
+            if (!$gateway) {
+                return response()->json(['error' => 'PayPal gateway unavailable'], 500);
+            }
+
+            $result = $gateway->processPayment($transaction, ['order_id' => $paypalOrderId]);
+            $payload = array_merge($request->all(), ['paypal_capture' => $result]);
+
+            if (($result['success'] ?? false) && strtoupper((string) ($result['status'] ?? 'COMPLETED')) === 'COMPLETED') {
+                $this->processCompletedWebhookTransaction($transaction, $result['status'] ?? 'COMPLETED', $payload);
+                $transaction->refresh();
+
+                return $this->renderPayPalCallbackView($transaction, 'success');
+            }
+
+            $this->processFailedWebhookTransaction($transaction, $result['status'] ?? 'failed', $payload, 'PayPal capture failed during return callback');
+            $transaction->refresh();
+
+            return $this->renderPayPalCallbackView($transaction, 'failed');
+        } catch (\Exception $e) {
+            Log::error('Error processing PayPal return callback', [
+                'error' => $e->getMessage(),
+                'payload' => $request->all(),
+                'transaction_id' => $transaction?->transaction_id,
+            ]);
+
+            return $transaction
+                ? $this->renderPayPalCallbackView($transaction, 'failed')
+                : response()->json(['error' => 'Error processing PayPal return callback'], 500);
+        }
+    }
+
+    public function paypalCancel(Request $request)
+    {
+        $transactionId = $request->query('transaction_id');
+        $transaction = $transactionId ? Transaction::withoutGlobalScopes()->find($transactionId) : null;
+
+        if (!$transaction) {
+            Log::error('PayPal cancel transaction not found', [
+                'transaction_id' => $transactionId,
+                'payload' => $request->all(),
+            ]);
+
+            return response()->json(['error' => 'Transaction not found'], 404);
+        }
+
+        $this->processFailedWebhookTransaction($transaction, 'cancelled', $request->all(), 'PayPal payment cancelled by customer');
+        $transaction->refresh();
+
+        return $this->renderPayPalCallbackView($transaction, 'cancelled');
+    }
+
+    private function renderPayPalCallbackView(Transaction $transaction, string $state)
+    {
+        $environment = $transaction->environment_id ? Environment::find($transaction->environment_id) : null;
+        $branding = $transaction->environment_id ? Branding::where('environment_id', $transaction->environment_id)->first() : null;
+        $protocol = app()->environment('production') ? 'https' : 'http';
+        $isSupportedPlan = $this->isSupportedPlanPayment($transaction);
+
+        $viewPath = match ($state) {
+            'success' => $isSupportedPlan ? 'payment.environment-setup.callback-success' : 'payment.callback-success',
+            'cancelled' => $isSupportedPlan ? 'payment.environment-setup.callback-cancelled' : 'payment.callback-cancelled',
+            default => $isSupportedPlan ? 'payment.environment-setup.callback-failed' : 'payment.callback-failed',
+        };
+
+        return view($viewPath, [
+            'transaction' => $transaction,
+            'environment' => $environment,
+            'branding' => $branding,
+            'protocol' => $protocol,
+        ]);
     }
 
 
@@ -617,13 +763,15 @@ class TransactionController extends Controller
     public function webhook(Request $request, $gateway, $environment_id)
     {
         try {
+            $auditEnvironmentId = is_numeric($environment_id) ? (int) $environment_id : null;
+
             // Log the incoming webhook to AuditLog
             $auditLog = AuditLog::logWebhook(
                 $gateway,
                 $request->all(),
                 'Transaction', // entity type
                 null, // entity id (not known yet)
-                $environment_id,
+                $auditEnvironmentId,
                 null, // response data (will be updated later)
                 ['headers' => $request->header()],
                 AuditLog::STATUS_SUCCESS // Initial status
@@ -638,9 +786,17 @@ class TransactionController extends Controller
             ]);
 
             // Find the gateway settings for this environment
-            $gatewaySettings = PaymentGatewaySetting::where('environment_id', $environment_id)
-                ->where('code', $gateway)
-                ->first();
+            $gatewaySettings = (is_numeric($environment_id)
+                    ? PaymentGatewaySetting::where('environment_id', $environment_id)
+                        ->where('code', $gateway)
+                        ->first()
+                    : null)
+                ?: PaymentGatewaySetting::withoutGlobalScopes()
+                    ->whereNull('environment_id')
+                    ->where('code', $gateway)
+                    ->where('status', true)
+                    ->orderByDesc('is_default')
+                    ->first();
 
             if (!$gatewaySettings) {
                 Log::error('Gateway settings not found', [
@@ -683,6 +839,10 @@ class TransactionController extends Controller
 
                 case 'taramoney':
                     $response = $this->handleTaraMoneyWebhook($payload, $headers, $gatewaySettings);
+                    break;
+
+                case 'moneroo':
+                    $response = $this->handleMonerooWebhook($payload, $headers, $gatewaySettings);
                     break;
 
                 default:
@@ -848,64 +1008,17 @@ class TransactionController extends Controller
             return response()->json(['status' => 'success', 'message' => 'No matching transaction']);
         }
 
-        // Update transaction status
-        $transaction->status = Transaction::STATUS_COMPLETED;
-        $transaction->gateway_status = $paymentIntent->status ?? $paymentIntent['status'] ?? 'succeeded';
-        $transaction->gateway_response = json_encode($paymentIntent);
-        $transaction->paid_at = now();
-        $transaction->save();
+        $payload = is_array($paymentIntent) ? $paymentIntent : json_decode(json_encode($paymentIntent), true);
+        $this->processCompletedWebhookTransaction(
+            $transaction,
+            $paymentIntent->status ?? $paymentIntent['status'] ?? 'succeeded',
+            $payload ?: []
+        );
 
         Log::info('Transaction marked as completed from webhook', [
             'transaction_id' => $transaction->id,
             'gateway_transaction_id' => $transaction->gateway_transaction_id
         ]);
-
-        // Check if this is a subscription payment (For environement owners)
-        $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
-
-        if ($payment) {
-            // Update subscription status to active
-            $payment->status = Payment::STATUS_COMPLETED;
-            $payment->save();
-
-            //check if this is a subscription payment
-            $subscription = Subscription::where('id', $payment->subscription_id)->first();
-            if ($subscription) {
-                $subscription->status = Subscription::STATUS_ACTIVE;
-                $subscription->last_payment_at = now();
-
-                if ($subscription->billing_cycle == 'monthly') {
-                    $subscription->next_payment_at = now()->addMonth();
-                } else {
-                    $subscription->next_payment_at = now()->addYear();
-                }
-
-                //update end date of subcription
-                if ($subscription->billing_cycle == 'monthly') {
-                    $subscription->ends_at = now()->addMonth();
-                } else {
-                    $subscription->ends_at = now()->addYear();
-                }
-
-                $subscription->save();
-                /**
-                 * To-do
-                 * Send notification of subcription renewed and payment success /mail/telegram/database
-                 */
-            }
-            Log::info('Payment activated', ['payment_id' => $payment->id]);
-        }
-
-        /**
-         * To-do
-         */
-
-        //implement check for EnrollementSubscription Payment
-
-
-        //check if this is an order payment
-        $order = Order::where('id', $transaction->order_id)->first();
-        if ($order) event(new \App\Events\OrderCompleted($order));
 
         return response()->json(['status' => 'success', 'message' => 'Payment success processed']);
     }
@@ -970,12 +1083,13 @@ class TransactionController extends Controller
             $errorMessage = $paymentIntent['last_payment_error']['message'] ?? '';
         }
 
-        // Update transaction status
-        $transaction->status = Transaction::STATUS_FAILED;
-        $transaction->gateway_status = $paymentIntent->status ?? $paymentIntent['status'] ?? 'failed';
-        $transaction->gateway_response = json_encode($paymentIntent);
-        $transaction->notes = $errorMessage ? 'Error: ' . $errorMessage : 'Payment failed';
-        $transaction->save();
+        $payload = is_array($paymentIntent) ? $paymentIntent : json_decode(json_encode($paymentIntent), true);
+        $this->processFailedWebhookTransaction(
+            $transaction,
+            $paymentIntent->status ?? $paymentIntent['status'] ?? 'failed',
+            $payload ?: [],
+            $errorMessage ? 'Error: ' . $errorMessage : 'Payment failed'
+        );
 
         Log::info('Transaction marked as failed from webhook', [
             'transaction_id' => $transaction->id,
@@ -983,22 +1097,7 @@ class TransactionController extends Controller
             'error' => $errorMessage
         ]);
 
-        // Check if this is a subscription payment (For environement owners)
-        $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
-
-        if ($payment) {
-            // Update subscription status to active
-            $payment->status = Payment::STATUS_FAILED;
-            $payment->save();
-
-            /**
-             * To-do
-             */
-            // send notification of payment failing through telegram/database/mail
-
-            Log::info('Payment failed', ['payment_id' => $payment->id]);
-        }
-        return response()->json(['status' => 'success', 'message' => 'Payment success processed']);
+        return response()->json(['status' => 'success', 'message' => 'Payment failure processed']);
     }
 
     /**
@@ -1691,6 +1790,15 @@ class TransactionController extends Controller
             $event = $_POST;
         }
 
+        if (!$this->monetbill_check_sign($event, $gatewaySettings)) {
+            Log::warning('Rejected Monetbill webhook with invalid signature', [
+                'environment_id' => $gatewaySettings->environment_id,
+                'reference' => $event['payment_ref'] ?? null,
+            ]);
+
+            return response()->json(['error' => 'Invalid signature'], 400);
+        }
+
         // Get the transaction reference
         $reference = $event['payment_ref'] ?? null;
         $status = $event['status'] ?? null;
@@ -1711,93 +1819,22 @@ class TransactionController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Transaction not found']);
         }
 
+        $normalizedStatus = strtolower((string) $status);
+
         // Process based on status
-        if ($status === 'successful' || $status === 'success' || $status === '1') {
-            $transaction->status = Transaction::STATUS_COMPLETED;
-            $transaction->gateway_status = 'success';
-            $transaction->gateway_response = json_encode($event);
-            $transaction->paid_at = now();
-            $transaction->save();
-            $transaction->refresh();
-
-            // NEW: Create commission record for centralized payments
-            try {
-                $environmentPaymentConfigService = app(\App\Services\EnvironmentPaymentConfigService::class);
-                $instructorCommissionService = app(\App\Services\InstructorCommissionService::class);
-
-                $config = $environmentPaymentConfigService->getConfig($transaction->environment_id);
-
-                if ($config && $config->use_centralized_gateways) {
-                    $instructorCommissionService->createCommissionRecord($transaction);
-                    Log::info('Commission record created for centralized payment', [
-                        'transaction_id' => $transaction->id,
-                        'environment_id' => $transaction->environment_id,
-                    ]);
-                }
-            } catch (\Exception $e) {
-                Log::error('Failed to create commission record', [
-                    'transaction_id' => $transaction->id,
-                    'error' => $e->getMessage(),
-                ]);
-                // Don't fail the transaction if commission creation fails
-            }
-
-            // Check if this is a subscription payment (For environement owners)
-            $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
-
-            if ($payment) {
-                // Update subscription status to active
-                $payment->status = Payment::STATUS_COMPLETED;
-                $payment->save();
-
-                //check if this is a subscription payment
-                $subscription = Subscription::where('id', $payment->subscription_id)->first();
-                if ($subscription) {
-                    $subscription->status = Subscription::STATUS_ACTIVE;
-                    $subscription->last_payment_at = now();
-
-                    if ($subscription->billing_cycle == 'monthly') {
-                        $subscription->next_payment_at = now()->addMonth();
-                    } else {
-                        $subscription->next_payment_at = now()->addYear();
-                    }
-
-                    //update end date of subcription
-                    if ($subscription->billing_cycle == 'monthly') {
-                        $subscription->ends_at = now()->addMonth();
-                    } else {
-                        $subscription->ends_at = now()->addYear();
-                    }
-
-                    $subscription->save();
-                    /**
-                     * To-do
-                     * Send notification of subcription renewed and payment success /mail/telegram/database
-                     */
-                }
-                Log::info('Payment activated', ['payment_id' => $payment->id]);
-            }
-
-            /**
-             * To-do
-             */
-
-            //implement check for EnrollementSubscription Payment
-
-            $order = Order::where('id', $transaction->order_id)->first();
-            if ($order) event(new \App\Events\OrderCompleted($order));
-
+        if (in_array($normalizedStatus, ['successful', 'success', '1'], true)) {
+            $this->processCompletedWebhookTransaction($transaction, 'success', $event);
             Log::info('Monetbill payment success processed', [
                 'transaction_id' => $transaction->id,
                 'gateway_transaction_id' => $reference
             ]);
-        } elseif ($status === 'failed' || $status === 'failure' || $status === '0') {
-            $transaction->status = Transaction::STATUS_FAILED;
-            $transaction->gateway_status = 'failed';
-            $transaction->gateway_response = json_encode($event);
-            $transaction->notes = 'Payment failed: ' . ($event['message'] ?? 'Unknown reason');
-            $transaction->save();
-
+        } elseif (in_array($normalizedStatus, ['failed', 'failure', '0'], true)) {
+            $this->processFailedWebhookTransaction(
+                $transaction,
+                'failed',
+                $event,
+                'Payment failed: ' . ($event['message'] ?? 'Unknown reason')
+            );
             Log::info('Monetbill payment failure processed', [
                 'transaction_id' => $transaction->id,
                 'gateway_transaction_id' => $reference
@@ -1837,8 +1874,18 @@ class TransactionController extends Controller
             $event = $_POST;
         }
 
+        if (!$this->verifyTaraMoneyWebhookSignature($payload, $headers, $gatewaySettings, $event)) {
+            Log::warning('Rejected TaraMoney webhook with invalid signature', [
+                'environment_id' => $gatewaySettings->environment_id,
+                'payment_id' => $event['paymentId'] ?? null,
+            ]);
+
+            return response()->json(['error' => 'Invalid signature'], 400);
+        }
+
         // Get the transaction reference (paymentId from webhook)
         $paymentId = $event['paymentId'] ?? null;
+        $productId = $event['productId'] ?? null;
         $status = $event['status'] ?? null;
 
         if (!$paymentId) {
@@ -1850,89 +1897,30 @@ class TransactionController extends Controller
         // TaraMoney sends paymentId in webhook, which maps to our gateway_transaction_id or transaction_id
         $transaction = $this->findTransactionForWebhook($paymentId, $gatewaySettings);
 
+        if (!$transaction && $productId) {
+            $transaction = $this->findTransactionForWebhook($productId, $gatewaySettings);
+        }
+
         if (!$transaction) {
             Log::error('Transaction not found for TaraMoney webhook', [
                 'payment_id' => $paymentId,
+                'product_id' => $productId,
                 'environment_id' => $gatewaySettings->environment_id
             ]);
             return response()->json(['status' => 'error', 'message' => 'Transaction not found']);
         }
 
+        $normalizedStatus = strtolower((string) $status);
+
         // Process based on status
-        if ($status === 'SUCCESS' || $status === 'success') {
-            $transaction->status = Transaction::STATUS_COMPLETED;
-            $transaction->gateway_status = 'success';
-            $transaction->gateway_response = json_encode($event);
-            $transaction->paid_at = now();
-            $transaction->save();
-            $transaction->refresh();
-
-            // Create commission record for centralized payments
-            try {
-                $environmentPaymentConfigService = app(\App\Services\EnvironmentPaymentConfigService::class);
-                $instructorCommissionService = app(\App\Services\InstructorCommissionService::class);
-
-                $config = $environmentPaymentConfigService->getConfig($transaction->environment_id);
-
-                if ($config && $config->use_centralized_gateways) {
-                    $instructorCommissionService->createCommissionRecord($transaction);
-                    Log::info('Commission record created for centralized payment', [
-                        'transaction_id' => $transaction->id,
-                        'environment_id' => $transaction->environment_id,
-                    ]);
-                }
-            } catch (\Exception $e) {
-                Log::error('Failed to create commission record', [
-                    'transaction_id' => $transaction->id,
-                    'error' => $e->getMessage(),
-                ]);
-                // Don't fail the transaction if commission creation fails
-            }
-
-            // Check if this is a subscription payment
-            $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
-
-            if ($payment) {
-                $payment->status = Payment::STATUS_COMPLETED;
-                $payment->save();
-
-                $subscription = Subscription::where('id', $payment->subscription_id)->first();
-                if ($subscription) {
-                    $subscription->status = Subscription::STATUS_ACTIVE;
-                    $subscription->last_payment_at = now();
-
-                    if ($subscription->billing_cycle == 'monthly') {
-                        $subscription->next_payment_at = now()->addMonth();
-                    } else {
-                        $subscription->next_payment_at = now()->addYear();
-                    }
-
-                    if ($subscription->billing_cycle == 'monthly') {
-                        $subscription->ends_at = now()->addMonth();
-                    } else {
-                        $subscription->ends_at = now()->addYear();
-                    }
-
-                    $subscription->save();
-                }
-                Log::info('Payment activated', ['payment_id' => $payment->id]);
-            }
-
-            // Check if this is an order payment
-            $order = Order::where('id', $transaction->order_id)->first();
-            if ($order) event(new \App\Events\OrderCompleted($order));
-
+        if ($normalizedStatus === 'success') {
+            $this->processCompletedWebhookTransaction($transaction, 'success', $event);
             Log::info('TaraMoney payment success processed', [
                 'transaction_id' => $transaction->id,
                 'gateway_transaction_id' => $paymentId
             ]);
-        } elseif ($status === 'FAILURE' || $status === 'failed' || $status === 'failure') {
-            $transaction->status = Transaction::STATUS_FAILED;
-            $transaction->gateway_status = 'failed';
-            $transaction->gateway_response = json_encode($event);
-            $transaction->notes = 'Payment failed';
-            $transaction->save();
-
+        } elseif (in_array($normalizedStatus, ['failure', 'failed'], true)) {
+            $this->processFailedWebhookTransaction($transaction, 'failed', $event, 'Payment failed');
             Log::info('TaraMoney payment failure processed', [
                 'transaction_id' => $transaction->id,
                 'gateway_transaction_id' => $paymentId
@@ -1945,6 +1933,299 @@ class TransactionController extends Controller
         }
 
         return response()->json(['status' => 'success', 'message' => 'TaraMoney webhook processed']);
+    }
+
+    private function handleMonerooWebhook($payload, $headers, $gatewaySettings)
+    {
+        Log::info('Processing Moneroo webhook', [
+            'environment_id' => $gatewaySettings->environment_id,
+            'headers' => $headers,
+            'payload' => $payload,
+        ]);
+
+        $event = json_decode($payload, true) ?: request()->all();
+
+        if (!$this->verifyMonerooWebhookSignature($payload, $headers, $gatewaySettings)) {
+            Log::warning('Rejected Moneroo webhook with invalid signature', [
+                'environment_id' => $gatewaySettings->environment_id,
+                'reference' => $event['id'] ?? $event['transaction_id'] ?? null,
+            ]);
+
+            return response()->json(['error' => 'Invalid signature'], 400);
+        }
+
+        $reference = $event['metadata']['transaction_id']
+            ?? $event['transaction_id']
+            ?? $event['payment_id']
+            ?? $event['id']
+            ?? $event['reference']
+            ?? null;
+        $status = strtolower((string) ($event['status'] ?? $event['payment_status'] ?? $event['data']['status'] ?? ''));
+
+        if (!$reference) {
+            Log::error('Missing transaction reference in Moneroo webhook', ['payload' => $event]);
+            return response()->json(['error' => 'Missing transaction reference'], 400);
+        }
+
+        $transaction = $this->findTransactionForWebhook($reference, $gatewaySettings);
+
+        if (!$transaction) {
+            Log::error('Transaction not found for Moneroo webhook', [
+                'reference' => $reference,
+                'gateway_transaction_id' => $event['id'] ?? null,
+            ]);
+            return response()->json(['status' => 'error', 'message' => 'Transaction not found']);
+        }
+
+        if (empty($transaction->gateway_transaction_id) && !empty($event['id'])) {
+            $transaction->gateway_transaction_id = $event['id'];
+            $transaction->save();
+        }
+
+        if (in_array($status, ['success', 'successful', 'succeeded', 'paid', 'completed'], true)) {
+            $this->processCompletedWebhookTransaction($transaction, $status ?: 'completed', $event);
+        } elseif (in_array($status, ['failed', 'failure', 'cancelled', 'canceled', 'expired'], true)) {
+            $this->processFailedWebhookTransaction($transaction, $status, $event, 'Moneroo payment failed');
+        } else {
+            Log::info('Unhandled Moneroo payment status', [
+                'status' => $status,
+                'transaction_id' => $transaction->transaction_id,
+            ]);
+        }
+
+        return response()->json(['status' => 'success', 'message' => 'Moneroo webhook processed']);
+    }
+
+    private function verifyMonerooWebhookSignature(string $payload, array $headers, PaymentGatewaySetting $gatewaySettings): bool
+    {
+        $secret = $gatewaySettings->getSetting('webhook_secret');
+
+        if (empty($secret)) {
+            Log::warning('[MonerooWebhook] No webhook secret configured; accepting webhook without signature verification');
+            return true;
+        }
+
+        $signature = $headers['x-moneroo-signature'][0]
+            ?? $headers['moneroo-signature'][0]
+            ?? $headers['x-signature'][0]
+            ?? $headers['signature'][0]
+            ?? $headers['x-hub-signature-256'][0]
+            ?? null;
+
+        if (!$signature) {
+            return false;
+        }
+
+        $signature = preg_replace('/^sha256=/i', '', (string) $signature);
+        $expected = hash_hmac('sha256', $payload, $secret);
+
+        return hash_equals($expected, $signature);
+    }
+
+    private function verifyTaraMoneyWebhookSignature(string $payload, array $headers, PaymentGatewaySetting $gatewaySettings, array $event): bool
+    {
+        $secret = $gatewaySettings->getSetting('webhook_secret');
+
+        if (empty($secret)) {
+            Log::warning('[TaraMoneyWebhook] No webhook secret configured; accepting webhook without signature verification');
+            return true;
+        }
+
+        $signature = $headers['x-taramoney-signature'][0]
+            ?? $headers['x-signature'][0]
+            ?? $headers['signature'][0]
+            ?? $headers['x-hub-signature-256'][0]
+            ?? $event['signature']
+            ?? $event['sign']
+            ?? null;
+
+        if (!$signature) {
+            $businessId = $gatewaySettings->getSetting('business_id');
+            $payloadBusinessId = $event['businessId'] ?? null;
+
+            if ($businessId && $payloadBusinessId && hash_equals((string) $businessId, (string) $payloadBusinessId)) {
+                Log::info('[TaraMoneyWebhook] No signature provided by Tara; businessId matched configured gateway');
+                return true;
+            }
+
+            Log::error('[TaraMoneyWebhook] Missing signature and businessId did not match configured gateway', [
+                'business_id_present' => !empty($businessId),
+                'payload_business_id_present' => !empty($payloadBusinessId),
+            ]);
+            return false;
+        }
+
+        $signature = preg_replace('/^sha256=/i', '', (string) $signature);
+        $signedPayload = $payload !== '' ? $payload : json_encode($event);
+        $expected = hash_hmac('sha256', $signedPayload, $secret);
+
+        if (hash_equals($expected, $signature)) {
+            return true;
+        }
+
+        Log::error('[TaraMoneyWebhook] Invalid signature', [
+            'received' => $signature,
+        ]);
+
+        return false;
+    }
+
+    private function processCompletedWebhookTransaction(Transaction $transaction, string $gatewayStatus, array $payload): void
+    {
+        DB::transaction(function () use ($transaction, $gatewayStatus, $payload) {
+            $transaction = Transaction::withoutGlobalScopes()
+                ->whereKey($transaction->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $alreadyCompleted = $transaction->status === Transaction::STATUS_COMPLETED;
+
+            $transaction->status = Transaction::STATUS_COMPLETED;
+            $transaction->gateway_status = $gatewayStatus;
+            $transaction->gateway_response = $payload;
+            $transaction->paid_at = $transaction->paid_at ?: now();
+            $transaction->save();
+            $transaction->refresh();
+
+            $this->createCommissionRecordIfNeeded($transaction);
+            $this->completeRelatedPaymentIfNeeded($transaction, $payload);
+            $this->markInvoicePaidIfNeeded($transaction);
+
+            if (!$alreadyCompleted) {
+                $this->completeOrderIfNeeded($transaction);
+            }
+        });
+    }
+
+    private function processFailedWebhookTransaction(Transaction $transaction, string $gatewayStatus, array $payload, string $notes): void
+    {
+        DB::transaction(function () use ($transaction, $gatewayStatus, $payload, $notes) {
+            $transaction = Transaction::withoutGlobalScopes()
+                ->whereKey($transaction->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($transaction->status === Transaction::STATUS_COMPLETED) {
+                Log::warning('Ignoring failure webhook for already completed transaction', [
+                    'transaction_id' => $transaction->transaction_id,
+                    'gateway_status' => $gatewayStatus,
+                ]);
+                return;
+            }
+
+            $transaction->status = Transaction::STATUS_FAILED;
+            $transaction->gateway_status = $gatewayStatus;
+            $transaction->gateway_response = $payload;
+            $transaction->notes = $notes;
+            $transaction->save();
+
+            $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
+            if ($payment && $payment->status !== Payment::STATUS_COMPLETED) {
+                $payment->markAsFailed(
+                    $transaction->gateway_transaction_id,
+                    $gatewayStatus,
+                    $payload
+                );
+            }
+        });
+    }
+
+    private function createCommissionRecordIfNeeded(Transaction $transaction): void
+    {
+        if (!$transaction->order_id) {
+            return;
+        }
+
+        try {
+            $config = app(\App\Services\EnvironmentPaymentConfigService::class)->getConfig($transaction->environment_id);
+
+            if (!$config || !$config->use_centralized_gateways) {
+                return;
+            }
+
+            if (InstructorCommission::where('transaction_id', $transaction->id)->exists()) {
+                return;
+            }
+
+            app(\App\Services\InstructorCommissionService::class)->createCommissionRecord($transaction);
+            Log::info('Commission record created for centralized payment', [
+                'transaction_id' => $transaction->id,
+                'environment_id' => $transaction->environment_id,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to create commission record', [
+                'transaction_id' => $transaction->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function completeRelatedPaymentIfNeeded(Transaction $transaction, array $payload): void
+    {
+        $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
+
+        if (!$payment) {
+            return;
+        }
+
+        $paymentAlreadyCompleted = $payment->status === Payment::STATUS_COMPLETED;
+
+        $payment->markAsCompleted(
+            $transaction->gateway_transaction_id,
+            $transaction->gateway_status,
+            $payload
+        );
+
+        if ($paymentAlreadyCompleted) {
+            Log::info('Payment already completed; skipping subscription date update', ['payment_id' => $payment->id]);
+            return;
+        }
+
+        $subscription = Subscription::where('id', $payment->subscription_id)->first();
+        if (!$subscription) {
+            Log::info('Payment activated', ['payment_id' => $payment->id]);
+            return;
+        }
+
+        $metadata = $payment->metadata ?? [];
+
+        if (($metadata['type'] ?? null) === 'subscription_plan_change' && !empty($metadata['new_plan_id'])) {
+            $subscription->plan_id = $metadata['new_plan_id'];
+            $subscription->billing_cycle = $metadata['billing_cycle'] ?? $subscription->billing_cycle;
+        }
+
+        $subscription->status = Subscription::STATUS_ACTIVE;
+        $subscription->last_payment_at = now();
+        $subscription->next_payment_at = $subscription->billing_cycle === 'annual' ? now()->addYear() : now()->addMonth();
+        $subscription->ends_at = $subscription->billing_cycle === 'annual' ? now()->addYear() : now()->addMonth();
+        $subscription->save();
+
+        Log::info('Payment activated', ['payment_id' => $payment->id]);
+    }
+
+    private function markInvoicePaidIfNeeded(Transaction $transaction): void
+    {
+        if (!$transaction->invoice_id) {
+            return;
+        }
+
+        Invoice::where('id', $transaction->invoice_id)->update([
+            'status' => 'paid',
+            'paid_at' => now(),
+            'payment_gateway' => $transaction->payment_method,
+            'payment_link' => null,
+        ]);
+    }
+
+    private function completeOrderIfNeeded(Transaction $transaction): void
+    {
+        $order = Order::where('id', $transaction->order_id)->first();
+
+        if (!$order || $order->status === Order::STATUS_COMPLETED) {
+            return;
+        }
+
+        event(new \App\Events\OrderCompleted($order));
     }
 
     /**
@@ -2066,6 +2347,7 @@ class TransactionController extends Controller
         $validator = Validator::make($request->all(), [
             'environment_id' => 'nullable|integer|exists:environments,id',
             'payment_gateway_id' => 'nullable|integer|exists:payment_gateway_settings,id',
+            'transaction_id' => 'nullable|string',
             'order_id' => 'nullable|string',
             'customer_id' => 'nullable|string',
             'status' => 'nullable|in:pending,processing,completed,failed,refunded,partially_refunded',
@@ -2098,6 +2380,13 @@ class TransactionController extends Controller
         // Apply payment gateway filter if provided
         if ($request->has('payment_gateway_id')) {
             $query->where('payment_gateway_setting_id', $request->payment_gateway_id);
+        }
+
+        if ($request->has('transaction_id')) {
+            $query->where(function ($query) use ($request) {
+                $query->where('transaction_id', $request->transaction_id)
+                    ->orWhere('gateway_transaction_id', $request->transaction_id);
+            });
         }
 
         // Apply order filter if provided
@@ -2540,11 +2829,7 @@ class TransactionController extends Controller
             Log::info('[MonetbillWebhook] Signature verified successfully');
         }
 
-        // For now, temporarily return true to allow processing while we debug the signature issue
-        // Remove this line when signature verification is working properly
-        return true;
-
-        // return $result;
+        return $result;
     }
 
     /**
@@ -2572,8 +2857,11 @@ class TransactionController extends Controller
 
         // First, try environment-specific lookup (existing behavior)
         // Use transaction_id for callback lookups (payment_ref parameter)
-        $transaction = Transaction::where("transaction_id", $transactionId)
-            ->where("environment_id", $environment_id)
+        $transaction = Transaction::where(function ($query) use ($transactionId) {
+                $query->where("transaction_id", $transactionId)
+                    ->orWhere("gateway_transaction_id", $transactionId);
+            })
+            ->when(is_numeric($environment_id), fn ($query) => $query->where("environment_id", $environment_id))
             ->where("status", Transaction::STATUS_PENDING)
             ->whereHas("paymentGatewaySetting")
             ->first();
@@ -2590,7 +2878,10 @@ class TransactionController extends Controller
         // If not found, try global lookup for supported plan transactions
         // IMPORTANT: Use withoutGlobalScopes to bypass EnvironmentScope for cross-environment lookup
         $globalTransaction = Transaction::withoutGlobalScopes()
-            ->where("transaction_id", $transactionId)
+            ->where(function ($query) use ($transactionId) {
+                $query->where("transaction_id", $transactionId)
+                    ->orWhere("gateway_transaction_id", $transactionId);
+            })
             ->where("status", Transaction::STATUS_PENDING)
             ->whereHas("paymentGatewaySetting")
             ->first();
@@ -2631,7 +2922,10 @@ class TransactionController extends Controller
 
         // Check for completed transactions as fallback
         $completedTransaction = Transaction::withoutGlobalScopes()
-            ->where("transaction_id", $transactionId)
+            ->where(function ($query) use ($transactionId) {
+                $query->where("transaction_id", $transactionId)
+                    ->orWhere("gateway_transaction_id", $transactionId);
+            })
             ->where("status", Transaction::STATUS_COMPLETED)
             ->whereHas("paymentGatewaySetting")
             ->first();
@@ -2667,7 +2961,10 @@ class TransactionController extends Controller
     private function findTransactionForWebhook($reference, $gatewaySettings)
     {
         // First, try environment-specific lookup (existing behavior)
-        $transaction = Transaction::where('gateway_transaction_id', $reference)
+        $transaction = Transaction::where(function ($query) use ($reference) {
+                $query->where('gateway_transaction_id', $reference)
+                    ->orWhere('transaction_id', $reference);
+            })
             ->where('environment_id', $gatewaySettings->environment_id)
             ->first();
 
@@ -2683,7 +2980,10 @@ class TransactionController extends Controller
         // If not found, try global lookup
         // IMPORTANT: Use withoutGlobalScopes to bypass EnvironmentScope for cross-environment lookup
         $globalTransaction = Transaction::withoutGlobalScopes()
-            ->where('gateway_transaction_id', $reference)
+            ->where(function ($query) use ($reference) {
+                $query->where('gateway_transaction_id', $reference)
+                    ->orWhere('transaction_id', $reference);
+            })
             ->first();
 
         if ($globalTransaction) {
@@ -2740,8 +3040,16 @@ class TransactionController extends Controller
             return true;
         }
 
+        $details = is_array($transaction->payment_method_details)
+            ? $transaction->payment_method_details
+            : json_decode($transaction->payment_method_details ?: '[]', true);
+
+        if (($details['scope'] ?? null) === 'platform') {
+            return true;
+        }
+
         // Check product name if it contains supported plan keywords
-        if ($transaction->product_name && stripos($transaction->product_name, 'supported') !== false) {
+        if (isset($transaction->product_name) && $transaction->product_name && stripos($transaction->product_name, 'supported') !== false) {
             return true;
         }
 

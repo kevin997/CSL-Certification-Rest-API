@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Subscription;
 use App\Models\Payment;
+use App\Services\PlatformPaymentService;
 use App\Services\SubscriptionManager;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -14,10 +15,12 @@ use Illuminate\Support\Facades\Validator;
 class SubscriptionController extends Controller
 {
     protected $subscriptionManager;
+    protected $platformPaymentService;
 
-    public function __construct(SubscriptionManager $subscriptionManager)
+    public function __construct(SubscriptionManager $subscriptionManager, PlatformPaymentService $platformPaymentService)
     {
         $this->subscriptionManager = $subscriptionManager;
+        $this->platformPaymentService = $platformPaymentService;
     }
 
     /**
@@ -563,6 +566,8 @@ class SubscriptionController extends Controller
 
             $validator = Validator::make($request->all(), [
                 'new_plan_id' => 'required|integer|exists:plans,id',
+                'billing_cycle' => 'nullable|in:monthly,annual',
+                'payment_method' => 'nullable|string',
                 'payment_id' => 'nullable|string',
                 'transaction_id' => 'nullable|string',
             ]);
@@ -577,14 +582,108 @@ class SubscriptionController extends Controller
             }
 
             $newPlan = \App\Models\Plan::findOrFail($request->new_plan_id);
+            $billingCycle = $request->input('billing_cycle', $subscription->billing_cycle ?: 'monthly');
+            $amountDue = $this->calculatePlanChangeAmount($subscription, $newPlan, $billingCycle);
 
-            // Update subscription plan
-            $subscription->plan_id = $newPlan->id;
-            $subscription->updated_at = now();
-            $subscription->save();
+            if ($amountDue > 0 && !$request->filled('transaction_id') && !$request->filled('payment_id')) {
+                $paymentMethod = $request->input('payment_method', 'taramoney');
+                $taxInfo = app(\App\Services\Tax\TaxZoneService::class)->calculateTaxByEnvironment(
+                    $amountDue,
+                    $subscription->environment_id
+                );
+
+                $payment = Payment::create([
+                    'subscription_id' => $subscription->id,
+                    'user_id' => $user->id,
+                    'amount' => $amountDue,
+                    'fee_amount' => 0,
+                    'tax_amount' => $taxInfo['tax_amount'] ?? 0,
+                    'tax_rate' => $taxInfo['tax_rate'] ?? 0,
+                    'tax_zone' => $taxInfo['zone_name'] ?? null,
+                    'total_amount' => $amountDue + ($taxInfo['tax_amount'] ?? 0),
+                    'currency' => $request->input('currency', 'USD'),
+                    'payment_method' => $paymentMethod,
+                    'status' => Payment::STATUS_PENDING,
+                    'description' => "Plan change to {$newPlan->name}",
+                    'metadata' => [
+                        'type' => 'subscription_plan_change',
+                        'new_plan_id' => $newPlan->id,
+                        'billing_cycle' => $billingCycle,
+                    ],
+                ]);
+
+                $paymentResult = $this->platformPaymentService->initiate([
+                    'gateway' => $paymentMethod,
+                    'environment_id' => $subscription->environment_id,
+                    'customer_id' => $user->id,
+                    'customer_email' => $user->email,
+                    'customer_name' => $user->name,
+                    'amount' => $payment->amount,
+                    'fee_amount' => $payment->fee_amount,
+                    'tax_amount' => $payment->tax_amount,
+                    'tax_rate' => $payment->tax_rate,
+                    'tax_zone' => $payment->tax_zone,
+                    'total_amount' => $payment->total_amount,
+                    'currency' => $payment->currency,
+                    'description' => $payment->description,
+                    'source_type' => 'subscription_plan_change',
+                    'source_id' => (string) $subscription->id,
+                    'created_by' => $user->id,
+                    'metadata' => [
+                        'payment_id' => $payment->id,
+                        'subscription_id' => $subscription->id,
+                        'new_plan_id' => $newPlan->id,
+                        'billing_cycle' => $billingCycle,
+                    ],
+                    'success_url' => $request->input('success_url'),
+                    'cancel_url' => $request->input('cancel_url'),
+                ]);
+
+                if (!($paymentResult['success'] ?? false)) {
+                    $payment->markAsFailed(null, 'failed', $paymentResult);
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $paymentResult['message'] ?? 'Failed to initiate plan change payment',
+                    ], 422);
+                }
+
+                $payment->update([
+                    'transaction_id' => $paymentResult['transaction']->transaction_id,
+                    'gateway_transaction_id' => $paymentResult['transaction']->gateway_transaction_id,
+                    'gateway_status' => $paymentResult['transaction']->gateway_status ?? 'pending',
+                    'gateway_response' => $paymentResult['gateway_response'] ?? $paymentResult,
+                ]);
+
+                return response()->json([
+                    'status' => 'success',
+                    'requires_payment' => true,
+                    'payment_data' => $paymentResult['payment_data'],
+                    'data' => $subscription->load(['plan', 'payments']),
+                    'message' => 'Plan change payment initiated',
+                ], 200);
+            }
+
+            if ($amountDue > 0) {
+                $completedPayment = Payment::where('subscription_id', $subscription->id)
+                    ->where('status', Payment::STATUS_COMPLETED)
+                    ->where(function ($query) use ($request) {
+                        $query->when($request->filled('transaction_id'), fn ($query) => $query->where('transaction_id', $request->transaction_id)->orWhere('gateway_transaction_id', $request->transaction_id))
+                            ->when($request->filled('payment_id'), fn ($query) => $query->orWhere('transaction_id', $request->payment_id)->orWhere('gateway_transaction_id', $request->payment_id));
+                    })
+                    ->first();
+
+                if (!$completedPayment) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'A completed platform payment is required before this plan can be changed',
+                    ], 402);
+                }
+            }
+
+            $this->applyPlanChange($subscription, $newPlan, $billingCycle);
 
             // Create payment record if payment details provided
-            if ($request->payment_id || $request->transaction_id) {
+            if (($request->payment_id || $request->transaction_id) && $amountDue <= 0) {
                 Payment::create([
                     'subscription_id' => $subscription->id,
                     'user_id' => $user->id,
@@ -602,6 +701,7 @@ class SubscriptionController extends Controller
 
             return response()->json([
                 'status' => 'success',
+                'requires_payment' => false,
                 'data' => $subscription,
                 'message' => 'Plan changed successfully'
             ], 200);
@@ -609,6 +709,36 @@ class SubscriptionController extends Controller
             Log::error('Error changing subscription plan: ' . $e->getMessage());
             return response()->json(['status' => 'error', 'message' => 'Failed to change plan'], 500);
         }
+    }
+
+    private function calculatePlanChangeAmount(Subscription $subscription, \App\Models\Plan $newPlan, string $billingCycle): float
+    {
+        $currentPlan = $subscription->plan;
+        if (!$currentPlan) {
+            return 0.0;
+        }
+
+        $currentPrice = (float) ($billingCycle === 'annual' ? $currentPlan->price_annual : $currentPlan->price_monthly);
+        $newPrice = (float) ($billingCycle === 'annual' ? $newPlan->price_annual : $newPlan->price_monthly);
+        $priceDifference = max(0, $newPrice - $currentPrice);
+        $setupFeeDifference = max(0, (float) ($newPlan->setup_fee ?? 0) - (float) ($currentPlan->setup_fee ?? 0));
+
+        $remainingRatio = 1.0;
+        if ($subscription->ends_at && $subscription->starts_at && $subscription->ends_at->isFuture()) {
+            $totalSeconds = max(1, $subscription->ends_at->diffInSeconds($subscription->starts_at));
+            $remainingSeconds = max(0, $subscription->ends_at->diffInSeconds(now()));
+            $remainingRatio = min(1, $remainingSeconds / $totalSeconds);
+        }
+
+        return round(($priceDifference * $remainingRatio) + $setupFeeDifference, 2);
+    }
+
+    private function applyPlanChange(Subscription $subscription, \App\Models\Plan $newPlan, string $billingCycle): void
+    {
+        $subscription->plan_id = $newPlan->id;
+        $subscription->billing_cycle = $billingCycle;
+        $subscription->updated_at = now();
+        $subscription->save();
     }
 
     /**

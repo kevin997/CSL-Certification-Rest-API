@@ -91,6 +91,7 @@ class PaymentGatewayController extends Controller
         // Validate request parameters
         $validator = Validator::make($request->all(), [
             'environment_id' => 'nullable|integer|exists:environments,id',
+            'scope' => 'nullable|in:platform',
             'status' => 'nullable|boolean',
             'mode' => 'nullable|in:sandbox,live',
         ]);
@@ -103,7 +104,9 @@ class PaymentGatewayController extends Controller
         }
 
         // Build query with filters
-        $query = PaymentGatewaySetting::query();
+        $query = $request->input('scope') === 'platform'
+            ? PaymentGatewaySetting::withoutGlobalScopes()->whereNull('environment_id')
+            : PaymentGatewaySetting::query();
         $environmentId = $request->environment_id;
         $isDemoEnvironment = false;
 
@@ -213,6 +216,9 @@ class PaymentGatewayController extends Controller
             'status' => 'required|boolean',
             'mode' => 'required|in:sandbox,live',
             'is_default' => 'boolean',
+            'webhook_url' => 'nullable|url',
+            'success_url' => 'nullable|url',
+            'failure_url' => 'nullable|url',
             'settings' => 'required|array',
             // Stripe validation
             'settings.api_key' => 'required_if:gateway_name,stripe,lygos,taramoney|string',
@@ -226,6 +232,11 @@ class PaymentGatewayController extends Controller
             'settings.test_api_key' => 'nullable|string',
             'settings.test_business_id' => 'nullable|string',
             'settings.test_mode' => 'nullable|boolean',
+            // Moneroo validation
+            'settings.public_key' => 'required_if:gateway_name,moneroo|string',
+            'settings.secret_key' => 'required_if:gateway_name,moneroo|string',
+            'settings.test_public_key' => 'nullable|string',
+            'settings.test_secret_key' => 'nullable|string',
             // MonetBill validation
             'settings.service_key' => 'required_if:gateway_name,monetbill|string',
             'settings.service_secret' => 'required_if:gateway_name,monetbill|string',
@@ -241,38 +252,58 @@ class PaymentGatewayController extends Controller
         // We'll handle the default flag separately after creation
 
         $environmentId = $request->input('environment_id', null);
+        $callbackEnvironmentId = $environmentId ?: 'platform';
 
         // Generate callback URLs using route helpers
-        $webhookUrl = route('api.transactions.webhook', [
+        $webhookUrl = $request->input('webhook_url') ?: route('api.transactions.webhook', [
             'gateway' => $request->input('code'),
-            'environment_id' => $environmentId
+            'environment_id' => $callbackEnvironmentId
         ]);
 
-        $successUrl = route('api.transactions.callback.success', [
-            'environment_id' => $environmentId
+        $successUrl = $request->input('success_url') ?: route('api.transactions.callback.success', [
+            'environment_id' => $callbackEnvironmentId
         ]);
 
-        $failureUrl = route('api.transactions.callback.failure', [
-            'environment_id' => $environmentId
+        $failureUrl = $request->input('failure_url') ?: route('api.transactions.callback.failure', [
+            'environment_id' => $callbackEnvironmentId
         ]);
+
+        $gatewayPayload = [
+            'environment_id' => $environmentId,
+            'gateway_name' => $request->input('gateway_name'),
+            'code' => $request->input('code'),
+            'display_name' => $request->input('name'),
+            'description' => $request->input('description'),
+            'status' => $request->input('status'),
+            'mode' => $request->input('mode'),
+            'is_default' => false,
+            'webhook_url' => $webhookUrl,
+            'success_url' => $successUrl,
+            'failure_url' => $failureUrl,
+            'settings' => json_encode($request->input('settings')),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
 
         // Create payment gateway
         try {
-            $paymentGateway = PaymentGatewaySetting::create([
-                'environment_id' => $environmentId,
-                'gateway_name' => $request->input('gateway_name'),
-                'code' => $request->input('code'),
-                'name' => $request->input('name'),
-                'display_name' => $request->input('name'),
-                'description' => $request->input('description'),
-                'status' => $request->input('status'),
-                'mode' => $request->input('mode'),
-                'is_default' => false, // Always set to false initially
-                'webhook_url' => $webhookUrl,
-                'success_url' => $successUrl,
-                'failure_url' => $failureUrl,
-                'settings' => json_encode($request->input('settings')),
-            ]);
+            if ($environmentId === null) {
+                $existingPlatformGateway = PaymentGatewaySetting::withoutGlobalScopes()
+                    ->whereNull('environment_id')
+                    ->where('code', $request->input('code'))
+                    ->first();
+
+                if ($existingPlatformGateway) {
+                    throw ValidationException::withMessages([
+                        'code' => ["A platform payment gateway with code '{$request->input('code')}' already exists."]
+                    ]);
+                }
+
+                $paymentGatewayId = DB::table('payment_gateway_settings')->insertGetId($gatewayPayload);
+                $paymentGateway = PaymentGatewaySetting::withoutGlobalScopes()->findOrFail($paymentGatewayId);
+            } else {
+                $paymentGateway = PaymentGatewaySetting::create($gatewayPayload);
+            }
         } catch (ValidationException $e) {
             return response()->json([
                 'status' => 'error',
@@ -465,6 +496,9 @@ class PaymentGatewayController extends Controller
             'status' => 'boolean',
             'mode' => 'in:sandbox,live',
             'is_default' => 'boolean',
+            'webhook_url' => 'nullable|url',
+            'success_url' => 'nullable|url',
+            'failure_url' => 'nullable|url',
             'settings' => 'array',
             // Stripe validation
             'settings.api_key' => 'string|required_if:gateway_name,stripe,lygos,taramoney',
@@ -478,6 +512,11 @@ class PaymentGatewayController extends Controller
             'settings.test_api_key' => 'nullable|string',
             'settings.test_business_id' => 'nullable|string',
             'settings.test_mode' => 'nullable|boolean',
+            // Moneroo validation
+            'settings.public_key' => 'string|required_if:gateway_name,moneroo',
+            'settings.secret_key' => 'string|required_if:gateway_name,moneroo',
+            'settings.test_public_key' => 'nullable|string',
+            'settings.test_secret_key' => 'nullable|string',
             // MonetBill validation
             'settings.service_key' => 'string|required_if:gateway_name,monetbill',
             'settings.service_secret' => 'string|required_if:gateway_name,monetbill',
@@ -496,25 +535,30 @@ class PaymentGatewayController extends Controller
         $updateData = $request->only([
             'gateway_name',
             'code',
-            'name',
             'description',
             'status',
             'mode',
             'is_default',
         ]);
 
+        if ($request->has('name')) {
+            $updateData['display_name'] = $request->input('name');
+        }
+
+        $callbackEnvironmentId = $paymentGateway->environment_id ?: 'platform';
+
         // Generate callback URLs using route helpers
-        $updateData['webhook_url'] = route('api.transactions.webhook', [
+        $updateData['webhook_url'] = $request->input('webhook_url') ?: route('api.transactions.webhook', [
             'gateway' => $request->input('code') ?: $paymentGateway->code,
-            'environment_id' => $paymentGateway->environment_id
+            'environment_id' => $callbackEnvironmentId
         ]);
 
-        $updateData['success_url'] = route('api.transactions.callback.success', [
-            'environment_id' => $paymentGateway->environment_id
+        $updateData['success_url'] = $request->input('success_url') ?: route('api.transactions.callback.success', [
+            'environment_id' => $callbackEnvironmentId
         ]);
 
-        $updateData['failure_url'] = route('api.transactions.callback.failure', [
-            'environment_id' => $paymentGateway->environment_id
+        $updateData['failure_url'] = $request->input('failure_url') ?: route('api.transactions.callback.failure', [
+            'environment_id' => $callbackEnvironmentId
         ]);
 
         // Handle settings update
@@ -522,8 +566,13 @@ class PaymentGatewayController extends Controller
             // Get current settings
             $currentSettings = json_decode((string)$paymentGateway->settings, true) ?: [];
 
-            // Merge with new settings
-            $newSettings = array_merge($currentSettings, $request->input('settings'));
+            $incomingSettings = collect($request->input('settings'))
+                ->reject(fn ($value) => $value === null || $value === '' || (is_string($value) && str_starts_with($value, '••••')))
+                ->all();
+
+            // Merge with new settings without overwriting existing secrets with
+            // blank or masked values from admin forms.
+            $newSettings = array_merge($currentSettings, $incomingSettings);
 
             $updateData['settings'] = json_encode($newSettings);
         }
@@ -696,6 +745,16 @@ class PaymentGatewayController extends Controller
                 ]
             ],
             [
+                'code' => 'lygos',
+                'name' => 'Lygos',
+                'description' => 'Process payments with Lygos',
+                'required_settings' => [
+                    'api_key' => 'API Key',
+                    'merchant_id' => 'Merchant ID (optional)',
+                    'api_url' => 'API URL (optional)'
+                ]
+            ],
+            [
                 'code' => 'monetbill',
                 'name' => 'MonetBill',
                 'description' => 'Process mobile money payments with MonetBill',
@@ -710,6 +769,22 @@ class PaymentGatewayController extends Controller
                 ]
             ],
             [
+                'code' => 'moneroo',
+                'name' => 'Moneroo',
+                'description' => 'Process payments with Moneroo payment orchestration',
+                'website_url' => 'https://moneroo.io/en',
+                'docs_url' => 'https://docs.moneroo.io/',
+                'required_settings' => [
+                    'public_key' => 'Public Key',
+                    'secret_key' => 'Secret Key',
+                    'webhook_secret' => 'Webhook Secret (optional)',
+                    'test_public_key' => 'Test Public Key (optional)',
+                    'test_secret_key' => 'Test Secret Key (optional)',
+                    'test_mode' => 'Test Mode (optional)',
+                    'api_url' => 'API URL (optional)'
+                ]
+            ],
+            [
                 'code' => 'taramoney',
                 'name' => 'TaraMoney',
                 'description' => 'Pay with TaraMoney - WhatsApp, Telegram, PayPal or Mobile Money',
@@ -721,6 +796,116 @@ class PaymentGatewayController extends Controller
                     'test_business_id' => 'Test Business ID (optional)',
                     'logo_url' => 'Logo URL (optional)',
                     'supported_currencies' => 'Supported Currencies (optional)'
+                ]
+            ],
+            [
+                'code' => 'campay',
+                'name' => 'CamPay',
+                'description' => 'Process mobile money payments with CamPay',
+                'coming_soon' => true,
+                'required_settings' => [
+                    'api_key' => 'API Key',
+                    'api_secret' => 'API Secret',
+                    'webhook_secret' => 'Webhook Secret (optional)'
+                ]
+            ],
+            [
+                'code' => 'cinetpay',
+                'name' => 'CinetPay',
+                'description' => 'Process payments with CinetPay',
+                'coming_soon' => true,
+                'required_settings' => [
+                    'api_key' => 'API Key',
+                    'site_id' => 'Site ID',
+                    'secret_key' => 'Secret Key (optional)'
+                ]
+            ],
+            [
+                'code' => 'dohone',
+                'name' => 'Dohone',
+                'description' => 'Process payments with Dohone',
+                'coming_soon' => true,
+                'required_settings' => [
+                    'api_key' => 'API Key',
+                    'merchant_id' => 'Merchant ID',
+                    'webhook_secret' => 'Webhook Secret (optional)'
+                ]
+            ],
+            [
+                'code' => 'flutterwave',
+                'name' => 'Flutterwave',
+                'description' => 'Process card, bank, and mobile money payments with Flutterwave',
+                'coming_soon' => true,
+                'required_settings' => [
+                    'public_key' => 'Public Key',
+                    'secret_key' => 'Secret Key',
+                    'encryption_key' => 'Encryption Key (optional)',
+                    'webhook_secret' => 'Webhook Secret (optional)'
+                ]
+            ],
+            [
+                'code' => 'mastercard',
+                'name' => 'Mastercard',
+                'description' => 'Process Mastercard payments',
+                'coming_soon' => true,
+                'required_settings' => [
+                    'merchant_id' => 'Merchant ID',
+                    'api_key' => 'API Key',
+                    'api_secret' => 'API Secret'
+                ]
+            ],
+            [
+                'code' => 'mycoolpay',
+                'name' => 'MyCoolPay',
+                'description' => 'Process payments with MyCoolPay',
+                'coming_soon' => true,
+                'required_settings' => [
+                    'public_key' => 'Public Key',
+                    'private_key' => 'Private Key',
+                    'webhook_secret' => 'Webhook Secret (optional)'
+                ]
+            ],
+            [
+                'code' => 'olkupay',
+                'name' => 'OlkuPay',
+                'description' => 'Process payments with OlkuPay',
+                'coming_soon' => true,
+                'required_settings' => [
+                    'api_key' => 'API Key',
+                    'merchant_id' => 'Merchant ID',
+                    'webhook_secret' => 'Webhook Secret (optional)'
+                ]
+            ],
+            [
+                'code' => 'revolut',
+                'name' => 'Revolut',
+                'description' => 'Process payments with Revolut Business',
+                'coming_soon' => true,
+                'required_settings' => [
+                    'api_key' => 'API Key',
+                    'webhook_secret' => 'Webhook Secret (optional)'
+                ]
+            ],
+            [
+                'code' => 'tranzak',
+                'name' => 'Tranzak',
+                'description' => 'Process mobile money and card payments with Tranzak',
+                'coming_soon' => true,
+                'required_settings' => [
+                    'app_id' => 'App ID',
+                    'app_key' => 'App Key',
+                    'webhook_secret' => 'Webhook Secret (optional)'
+                ]
+            ],
+            [
+                'code' => 'visa',
+                'name' => 'Visa',
+                'description' => 'Process Visa card payments',
+                'coming_soon' => true,
+                'required_settings' => [
+                    'merchant_id' => 'Merchant ID',
+                    'api_key' => 'API Key',
+                    'api_secret' => 'API Secret'
                 ]
             ]
         ];

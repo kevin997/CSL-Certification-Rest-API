@@ -251,14 +251,37 @@ class InvoiceService
 
     public function createPaymentLink(Invoice $invoice, $gateway = 'stripe')
     {
-        $settings = \App\Models\PaymentGatewaySetting::where('environment_id', 15)
-            ->where('code', $gateway)
-            ->firstOrFail();
-        $gatewayInstance = \App\Services\PaymentGateways\PaymentGatewayFactory::create($gateway, $settings);
-        if (method_exists($gatewayInstance, 'createInvoicePaymentLink')) {
-            return $gatewayInstance->createInvoicePaymentLink($invoice);
+        $invoice->loadMissing('environment.owner');
+        $owner = optional($invoice->environment)->owner;
+
+        $paymentResult = app(PlatformPaymentService::class)->initiate([
+            'gateway' => $gateway,
+            'environment_id' => $invoice->environment_id,
+            'invoice_id' => $invoice->id,
+            'customer_id' => $owner?->id,
+            'customer_email' => $owner?->email,
+            'customer_name' => $owner?->name,
+            'amount' => $invoice->total_fee_amount,
+            'total_amount' => $invoice->total_fee_amount,
+            'currency' => $invoice->currency ?? 'USD',
+            'description' => "Invoice {$invoice->invoice_number} payment",
+            'source_type' => 'invoice',
+            'source_id' => (string) $invoice->id,
+            'created_by' => $owner?->id,
+            'metadata' => [
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+            ],
+        ]);
+
+        if (!($paymentResult['success'] ?? false)) {
+            throw new \RuntimeException($paymentResult['message'] ?? 'Failed to create invoice payment link');
         }
-        throw new \BadMethodCallException("Payment gateway does not support invoice payment links.");
+
+        return $paymentResult['payment_data']['redirect_url']
+            ?? $paymentResult['payment_data']['general_link']
+            ?? $paymentResult['payment_data']['checkout_url']
+            ?? null;
     }
 
     public function getInvoice($invoiceId)

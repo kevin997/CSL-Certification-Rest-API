@@ -32,10 +32,10 @@ class BillingPaymentGatewayController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Build query with filters - always use default environment (ID 1) for billing
+        // Billing/subscription payments are platform-owned.
         // Use withoutGlobalScopes to bypass any environment-based global scopes
         $query = PaymentGatewaySetting::withoutGlobalScopes()
-            ->where('environment_id', 1)
+            ->whereNull('environment_id')
             ->where('code', '!=', 'lygos'); // Exclude lygos from billing
 
         if ($request->has('status')) {
@@ -46,7 +46,7 @@ class BillingPaymentGatewayController extends Controller
             $query->where('mode', $request->mode);
         }
 
-        // Get payment gateways from default environment
+        // Get platform payment gateways
         $paymentGateways = $query->get();
 
         // Prepare response data
@@ -84,10 +84,10 @@ class BillingPaymentGatewayController extends Controller
      */
     public function show($id)
     {
-        // Find payment gateway in default environment only
+        // Find platform payment gateway only
         // Use withoutGlobalScopes to bypass any environment-based global scopes
         $paymentGateway = PaymentGatewaySetting::withoutGlobalScopes()
-            ->where('environment_id', 1)
+            ->whereNull('environment_id')
             ->where('code', '!=', 'lygos') // Exclude lygos from billing
             ->where('id', $id)
             ->first();
@@ -95,7 +95,7 @@ class BillingPaymentGatewayController extends Controller
         if (!$paymentGateway) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Payment gateway not found in default environment',
+                'message' => 'Platform payment gateway not found',
             ], Response::HTTP_NOT_FOUND);
         }
 
@@ -129,10 +129,10 @@ class BillingPaymentGatewayController extends Controller
      */
     public function getAvailableTypes()
     {
-        // Get unique gateway types from default environment
+        // Get unique gateway types from platform payment settings
         // Use withoutGlobalScopes to bypass any environment-based global scopes
         $availableTypes = PaymentGatewaySetting::withoutGlobalScopes()
-            ->where('environment_id', 1)
+            ->whereNull('environment_id')
             ->where('code', '!=', 'lygos') // Exclude lygos from billing
             ->where('status', true)
             ->distinct()
@@ -155,7 +155,7 @@ class BillingPaymentGatewayController extends Controller
     {
         // Use withoutGlobalScopes to bypass any environment-based global scopes
         $defaultGateway = PaymentGatewaySetting::withoutGlobalScopes()
-            ->where('environment_id', 1)
+            ->whereNull('environment_id')
             ->where('code', '!=', 'lygos') // Exclude lygos from billing
             ->where('is_default', true)
             ->where('status', true)

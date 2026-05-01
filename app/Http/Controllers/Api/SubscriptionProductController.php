@@ -57,7 +57,7 @@ class SubscriptionProductController extends Controller
         }
 
         if ($type === 'payment_url') {
-            $data['payment_type'] = 'lygos';
+            $data['payment_type'] = $result['payment_type'] ?? 'lygos';
             $data['redirect_url'] = $value;
             return $data;
         }

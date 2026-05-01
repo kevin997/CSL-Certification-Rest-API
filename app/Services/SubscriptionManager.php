@@ -27,6 +27,11 @@ class SubscriptionManager
      * @var TaxZoneService
      */
     protected $taxZoneService;
+
+    /**
+     * @var PlatformPaymentGatewayResolver
+     */
+    protected $platformGatewayResolver;
     
     /**
      * @var PaymentGatewayInterface
@@ -38,10 +43,12 @@ class SubscriptionManager
      */
     public function __construct(
         PaymentGatewayFactory $gatewayFactory,
-        TaxZoneService $taxZoneService
+        TaxZoneService $taxZoneService,
+        PlatformPaymentGatewayResolver $platformGatewayResolver
     ) {
         $this->gatewayFactory = $gatewayFactory;
         $this->taxZoneService = $taxZoneService;
+        $this->platformGatewayResolver = $platformGatewayResolver;
     }
 
     /**
@@ -64,8 +71,9 @@ class SubscriptionManager
                     throw new \Exception('Plan not found');
                 }
                 
-                // Get environment for tax calculation
-                $environment = Environment::find(1);
+                // Use the subscribing environment for tax and transaction context.
+                // Gateway credentials are resolved from platform-level settings.
+                $environment = Environment::find($subscriptionData['environment_id']);
                 if (!$environment) {
                     throw new \Exception('Environment not found');
                 }
@@ -125,8 +133,9 @@ class SubscriptionManager
         $paymentMethod = $paymentData['payment_method'];
         
         try {
-            // Initialize the payment gateway
-            $gatewayResult = $this->initializeGateway($paymentMethod, $environment->id);
+            // Subscription payments are platform-owned and must not use
+            // instructor/environment storefront gateway credentials.
+            $gatewayResult = $this->initializePlatformGateway($paymentMethod);
             if (!$gatewayResult['success']) {
                 return $gatewayResult;
             }
@@ -436,10 +445,13 @@ class SubscriptionManager
                     'message' => 'Payment links created successfully',
                     'payment_data' => [
                         'payment_links' => $response['payment_links'] ?? [],
+                        'redirect_url' => $response['redirect_url'] ?? null,
+                        'general_link' => $response['general_link'] ?? null,
                         'whatsapp_link' => $response['whatsapp_link'] ?? null,
                         'telegram_link' => $response['telegram_link'] ?? null,
                         'dikalo_link' => $response['dikalo_link'] ?? null,
                         'sms_link' => $response['sms_link'] ?? null,
+                        'card_link' => $response['card_link'] ?? null,
                         'transaction_id' => $payment->transaction_id,
                         'amount' => $payment->total_amount,
                         'currency' => $payment->currency,
@@ -565,6 +577,11 @@ class SubscriptionManager
         }
     }
 
+    protected function initializePlatformGateway(string $gatewayCode): array
+    {
+        return $this->platformGatewayResolver->resolve($gatewayCode);
+    }
+
     /**
      * Update subscription status
      *
@@ -684,8 +701,9 @@ class SubscriptionManager
                     throw new \Exception('Plan not found for subscription');
                 }
                 
-                // Get environment for payment processing
-                $environment = Environment::find(1);
+                // Use subscription environment for tax and transaction context.
+                // Gateway credentials are resolved from platform-level settings.
+                $environment = Environment::find($subscription->environment_id);
                 if (!$environment) {
                     throw new \Exception('Environment not found for subscription');
                 }

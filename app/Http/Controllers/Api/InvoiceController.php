@@ -7,16 +7,19 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Services\InvoiceService;
+use App\Services\PlatformPaymentService;
 use Illuminate\Http\Request;
 use function Spatie\LaravelPdf\Support\pdf;
 
 class InvoiceController extends Controller
 {
     protected $service;
+    protected $platformPaymentService;
 
-    public function __construct(InvoiceService $service)
+    public function __construct(InvoiceService $service, PlatformPaymentService $platformPaymentService)
     {
         $this->service = $service;
+        $this->platformPaymentService = $platformPaymentService;
     }
 
     public function index(Request $request)
@@ -57,6 +60,78 @@ class InvoiceController extends Controller
         $invoice->save();
 
         return response()->json(['success' => true, 'data' => $invoice]);
+    }
+
+    public function initiatePayment(Request $request, $id)
+    {
+        $request->validate([
+            'payment_method' => 'nullable|string',
+            'success_url' => 'nullable|url',
+            'cancel_url' => 'nullable|url',
+        ]);
+
+        $invoice = Invoice::with('environment.owner')->findOrFail($id);
+
+        if ($invoice->status === 'paid') {
+            return response()->json([
+                'success' => true,
+                'requires_payment' => false,
+                'data' => $invoice,
+                'message' => 'Invoice is already paid',
+            ]);
+        }
+
+        $owner = optional($invoice->environment)->owner;
+        $paymentResult = $this->platformPaymentService->initiate([
+            'gateway' => $request->input('payment_method', 'taramoney'),
+            'environment_id' => $invoice->environment_id,
+            'invoice_id' => $invoice->id,
+            'customer_id' => $owner?->id,
+            'customer_email' => $owner?->email,
+            'customer_name' => $owner?->name,
+            'amount' => $invoice->total_fee_amount,
+            'total_amount' => $invoice->total_fee_amount,
+            'currency' => $invoice->currency ?? 'USD',
+            'description' => "Invoice {$invoice->invoice_number} payment",
+            'source_type' => 'invoice',
+            'source_id' => (string) $invoice->id,
+            'created_by' => $owner?->id,
+            'metadata' => [
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+            ],
+            'success_url' => $request->input('success_url'),
+            'cancel_url' => $request->input('cancel_url'),
+        ]);
+
+        if (!($paymentResult['success'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'message' => $paymentResult['message'] ?? 'Failed to initiate invoice payment',
+            ], 422);
+        }
+
+        $paymentLink = $paymentResult['payment_data']['redirect_url']
+            ?? $paymentResult['payment_data']['general_link']
+            ?? $paymentResult['payment_data']['checkout_url']
+            ?? null;
+
+        $invoice->update([
+            'status' => 'sent',
+            'payment_gateway' => $request->input('payment_method', 'taramoney'),
+            'payment_link' => $paymentLink,
+            'metadata' => array_merge($invoice->metadata ?? [], [
+                'platform_payment_transaction_id' => $paymentResult['transaction']->transaction_id,
+            ]),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'requires_payment' => true,
+            'data' => $invoice->fresh(),
+            'payment_data' => $paymentResult['payment_data'],
+            'message' => 'Invoice payment initiated',
+        ]);
     }
 
     public function downloadPDF($id)

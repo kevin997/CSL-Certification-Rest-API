@@ -132,8 +132,8 @@ class PayPalGateway implements PaymentGatewayInterface
             }
             
             // Create return and cancel URLs
-            $returnUrl = URL::to('/api/payments/paypal/return?transaction_id=' . $transaction->id);
-            $cancelUrl = URL::to('/api/payments/paypal/cancel?transaction_id=' . $transaction->id);
+            $returnUrl = route('api.paypal.return', ['transaction_id' => $transaction->id]);
+            $cancelUrl = route('api.paypal.cancel', ['transaction_id' => $transaction->id]);
             
             // Format the amount with 2 decimal places
             $formattedAmount = number_format($transaction->total_amount, 2, '.', '');

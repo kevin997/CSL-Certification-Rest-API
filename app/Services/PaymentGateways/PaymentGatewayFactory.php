@@ -17,7 +17,8 @@ class PaymentGatewayFactory
         'paypal' => PayPalGateway::class,
         'lygos' => LygosGateway::class,
         'monetbill' => MonetbillGateway::class,
-        'taramoney' => TaraMoneyGateway::class
+        'taramoney' => TaraMoneyGateway::class,
+        'moneroo' => MonerooGateway::class,
     ];
     
     /**

@@ -378,6 +378,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/invoices', [App\Http\Controllers\Api\InvoiceController::class, 'index']);
     Route::get('/invoices/{id}', [App\Http\Controllers\Api\InvoiceController::class, 'show']);
     Route::post('/invoices', [App\Http\Controllers\Api\InvoiceController::class, 'generateMonthlyInvoices']);
+    Route::post('/invoices/{id}/pay', [App\Http\Controllers\Api\InvoiceController::class, 'initiatePayment']);
     Route::put('/invoices/{id}', [App\Http\Controllers\Api\InvoiceController::class, 'markAsPaid']);
     Route::get('/invoices/{id}/download', [App\Http\Controllers\Api\InvoiceController::class, 'downloadPDF']);
 
@@ -753,6 +754,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/subscription/{id}/failed-payment', [SubscriptionController::class, 'getFailedPayment']);
         Route::post('/subscription/{id}/renew', [SubscriptionController::class, 'renew']);
         Route::post('/subscription/{id}/cancel-subscription', [SubscriptionController::class, 'cancelSubscription']);
+        Route::post('/platform-payments', [\App\Http\Controllers\Api\PlatformPaymentController::class, 'store']);
 
         // Admin subscription management endpoints
         Route::get('/subscriptions', [SubscriptionController::class, 'index']);
@@ -909,6 +911,8 @@ Route::group(['prefix' => 'payments'], function () {
     Route::match(['get', 'post'], '/transactions/callback/success/{environment_id}', [TransactionController::class, 'callbackSuccess'])->name('api.transactions.callback.success');
     Route::match(['get', 'post'], '/transactions/callback/failure/{environment_id}', [TransactionController::class, 'callbackFailure'])->name('api.transactions.callback.failure');
     Route::match(['get', 'post'], '/transactions/webhook/{gateway}/{environment_id}', [TransactionController::class, 'webhook'])->name('api.transactions.webhook');
+    Route::get('/paypal/return', [TransactionController::class, 'paypalReturn'])->name('api.paypal.return');
+    Route::get('/paypal/cancel', [TransactionController::class, 'paypalCancel'])->name('api.paypal.cancel');
 });
 
 // Team Management Routes

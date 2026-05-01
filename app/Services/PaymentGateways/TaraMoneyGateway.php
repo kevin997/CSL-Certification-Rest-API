@@ -108,7 +108,7 @@ class TaraMoneyGateway implements PaymentGatewayInterface
     public function createPayment(Transaction $transaction, array $paymentData = []): array
     {
         try {
-            $environmentId = session("current_environment_id");
+            $environmentId = $transaction->environment_id ?: session("current_environment_id");
 
             // Get environment details
             $environment = null;
@@ -165,8 +165,19 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                 $baseUrl = $appUrl;
             }
             
-            $returnUrl = $paymentData['return_url'] ?? $baseUrl . '/api/transactions/callback/success?environment_id=' . $environmentId;
-            $webhookUrl = $baseUrl . '/api/transactions/webhook/taramoney?environment_id=' . $environmentId;
+            $callbackEnvironmentId = $this->settings->environment_id ?: ($environmentId ?: 'platform');
+            $returnUrl = $paymentData['return_url']
+                ?? $paymentData['success_url']
+                ?? $this->settings->success_url
+                ?? route('api.transactions.callback.success', ['environment_id' => $callbackEnvironmentId]);
+            $webhookUrl = $paymentData['webhook_url']
+                ?? $this->settings->webhook_url
+                ?? route('api.transactions.webhook', ['gateway' => 'taramoney', 'environment_id' => $callbackEnvironmentId]);
+
+            if ($isLocalHttp) {
+                $returnUrl = str_replace($appUrl, $baseUrl, $returnUrl);
+                $webhookUrl = str_replace($appUrl, $baseUrl, $webhookUrl);
+            }
 
             // Get product information from order
             $order = \App\Models\Order::find($transaction->order_id);
@@ -185,7 +196,7 @@ class TaraMoneyGateway implements PaymentGatewayInterface
             $requestData = [
                 'apiKey' => $this->apiKey,
                 'businessId' => $this->businessId,
-                'productId' => $transaction->order_id ?? 'product-' . $transaction->id,
+                'productId' => $transaction->transaction_id,
                 'productName' => $productName,
                 'productPrice' => (int)$amountInXAF,
                 'productDescription' => $productDescription,
@@ -193,6 +204,15 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                 'returnUrl' => $returnUrl,
                 'webHookUrl' => $webhookUrl
             ];
+
+            Log::info('[TaraMoneyGateway] Prepared TaraMoney payment link request', [
+                'transaction_id' => $transaction->transaction_id,
+                'business_id_present' => !empty($this->businessId),
+                'product_id' => $requestData['productId'],
+                'amount_xaf' => $requestData['productPrice'],
+                'return_url' => $returnUrl,
+                'webhook_url' => $webhookUrl,
+            ]);
 
             // Generate payment link using TaraMoney Payment Links API
             $response = Http::withHeaders([
@@ -323,7 +343,7 @@ class TaraMoneyGateway implements PaymentGatewayInterface
     public function createMobileMoneyPayment(Transaction $transaction, array $paymentData = []): array
     {
         try {
-            $environmentId = session("current_environment_id");
+            $environmentId = $transaction->environment_id ?: session("current_environment_id");
 
             // Validate phone number
             if (empty($paymentData['phoneNumber'])) {
@@ -348,7 +368,10 @@ class TaraMoneyGateway implements PaymentGatewayInterface
             }
 
             // Create webhook URL
-            $webhookUrl = route('api.transactions.webhook', ['gateway' => 'taramoney', 'environment_id' => $environmentId]);
+            $callbackEnvironmentId = $this->settings->environment_id ?: ($environmentId ?: 'platform');
+            $webhookUrl = $paymentData['webhook_url']
+                ?? $this->settings->webhook_url
+                ?? route('api.transactions.webhook', ['gateway' => 'taramoney', 'environment_id' => $callbackEnvironmentId]);
 
             // Get product information
             $order = \App\Models\Order::find($transaction->order_id);
@@ -363,7 +386,7 @@ class TaraMoneyGateway implements PaymentGatewayInterface
             $requestData = [
                 'apiKey' => $this->apiKey,
                 'businessId' => $this->businessId,
-                'productId' => $transaction->order_id ?? 'product-' . $transaction->id,
+                'productId' => $transaction->transaction_id,
                 'productName' => $productName,
                 'productPrice' => (int)$amountInXAF,
                 'phoneNumber' => $paymentData['phoneNumber'],

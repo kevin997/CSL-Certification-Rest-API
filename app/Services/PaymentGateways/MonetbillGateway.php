@@ -109,7 +109,9 @@ class MonetbillGateway implements PaymentGatewayInterface
     {
         try {
 
-            $environmentId = session("current_environment_id");
+            $environmentId = $this->settings->environment_id
+                ?: ($transaction->environment_id ?: session("current_environment_id"));
+            $callbackEnvironmentId = $environmentId ?: 'platform';
 
             // Get environment details
             $environment = null;
@@ -151,8 +153,8 @@ class MonetbillGateway implements PaymentGatewayInterface
             ]);
             
             // Create return and cancel URLs
-            $successUrl = $paymentData['success_url'] ?? route('api.transactions.callback.success', ['environment_id' => $environmentId]);
-            $failureUrl = $paymentData['failure_url'] ?? route('api.transactions.callback.failure', ['environment_id' => $environmentId]);
+            $successUrl = $paymentData['success_url'] ?? route('api.transactions.callback.success', ['environment_id' => $callbackEnvironmentId]);
+            $failureUrl = $paymentData['failure_url'] ?? route('api.transactions.callback.failure', ['environment_id' => $callbackEnvironmentId]);
             
             // Prepare payment data for Monetbill
             $paymentData = [
@@ -168,7 +170,9 @@ class MonetbillGateway implements PaymentGatewayInterface
                 'country' => $paymentData['country'] ?? '',
                 'locale' => $paymentData['locale'] ?? 'en',
                 'return_url' => $successUrl,
-                'notify_url' => route('api.transactions.webhook', ['gateway' => 'monetbill', 'environment_id' => $environmentId]),
+                'notify_url' => $paymentData['webhook_url']
+                    ?? $this->settings->webhook_url
+                    ?? route('api.transactions.webhook', ['gateway' => 'monetbill', 'environment_id' => $callbackEnvironmentId]),
                 'logo' => $this->settings->getSetting('logo_url', ''),
                 'shop_name' => $environment ? $environment->name : 'CSL Certification Platform',
                 'message' => $transaction->description ?? 'Payment for certification services'

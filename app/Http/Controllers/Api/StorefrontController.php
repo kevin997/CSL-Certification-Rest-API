@@ -54,7 +54,19 @@ class StorefrontController extends Controller
      */
     protected function getEnvironmentById(string $environmentId)
     {
-        return Environment::find($environmentId);
+        if (is_numeric($environmentId)) {
+            return Environment::find($environmentId);
+        }
+
+        $domain = strtolower(trim($environmentId));
+
+        return Environment::whereRaw('LOWER(primary_domain) = ?', [$domain])
+            ->orWhereRaw('LOWER(subdomain) = ?', [$domain])
+            ->orWhere(function ($query) use ($domain) {
+                $query->whereNotNull('additional_domains')
+                    ->whereJsonContains('additional_domains', $domain);
+            })
+            ->first();
     }
 
     /**
@@ -2652,8 +2664,8 @@ class StorefrontController extends Controller
                     break;
 
                 case 'payment_url':
-                    // For Lygos redirect-based payments
-                    $responseData['payment_type'] = 'lygos';
+                    // For redirect-based payments
+                    $responseData['payment_type'] = $paymentGatewaySetting->code;
                     $responseData['redirect_url'] = $result['value'];
                     break;
 
