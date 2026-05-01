@@ -8,6 +8,8 @@ use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use RdKafka\Conf;
+use RdKafka\KafkaConsumer;
 
 class ConsumeKafkaEvents extends Command
 {
@@ -34,18 +36,19 @@ class ConsumeKafkaEvents extends Command
         }
 
         $this->warn('php-rdkafka extension not available. Falling back to socket consumer.');
+
         return $this->consumeWithSocket($brokers, $topic, $groupId, $timeout);
     }
 
     private function consumeWithRdKafka(string $brokers, string $topic, string $groupId, int $timeout): int
     {
-        $conf = new \RdKafka\Conf();
+        $conf = new Conf;
         $conf->set('metadata.broker.list', $brokers);
         $conf->set('group.id', $groupId);
         $conf->set('auto.offset.reset', 'earliest');
         $conf->set('enable.auto.commit', 'true');
 
-        $consumer = new \RdKafka\KafkaConsumer($conf);
+        $consumer = new KafkaConsumer($conf);
         $consumer->subscribe([$topic]);
 
         $this->info('Listening for messages... (Ctrl+C to stop)');
@@ -63,12 +66,35 @@ class ConsumeKafkaEvents extends Command
                     break;
                 default:
                     $this->error("Kafka error: {$message->errstr()}");
-                    Log::error('Kafka consumer error', ['error' => $message->errstr()]);
+                    $level = $this->isRecoverableKafkaError($message->err) ? 'warning' : 'error';
+                    Log::log($level, 'Kafka consumer error', [
+                        'error' => $message->errstr(),
+                        'code' => $message->err,
+                        'topic' => $topic,
+                        'group' => $groupId,
+                    ]);
+
+                    if ($this->isRecoverableKafkaError($message->err)) {
+                        $this->warn('Recoverable Kafka error; keeping consumer alive and retrying.');
+                        sleep(5);
+                    }
                     break;
             }
         }
 
         return self::SUCCESS;
+    }
+
+    private function isRecoverableKafkaError(int $errorCode): bool
+    {
+        return in_array($errorCode, [
+            RD_KAFKA_RESP_ERR__TRANSPORT,
+            RD_KAFKA_RESP_ERR__ALL_BROKERS_DOWN,
+            RD_KAFKA_RESP_ERR__UNKNOWN_TOPIC,
+            RD_KAFKA_RESP_ERR_UNKNOWN_TOPIC_OR_PART,
+            RD_KAFKA_RESP_ERR_LEADER_NOT_AVAILABLE,
+            RD_KAFKA_RESP_ERR_NOT_LEADER_FOR_PARTITION,
+        ], true);
     }
 
     private function consumeWithSocket(string $brokers, string $topic, string $groupId, int $timeout): int
@@ -111,13 +137,14 @@ class ConsumeKafkaEvents extends Command
 
     private function processMessage(string $payload): void
     {
-        $this->info('Received message: ' . substr($payload, 0, 200));
+        $this->info('Received message: '.substr($payload, 0, 200));
 
         try {
             $data = json_decode($payload, true);
 
-            if (!$data || !isset($data['event'])) {
+            if (! $data || ! isset($data['event'])) {
                 $this->warn('Invalid message format, skipping.');
+
                 return;
             }
 
@@ -142,14 +169,15 @@ class ConsumeKafkaEvents extends Command
         $items = $orderData['items'] ?? [];
         $orderId = $orderData['order_id'] ?? null;
 
-        if (!$userId || empty($items)) {
+        if (! $userId || empty($items)) {
             $this->warn('Purchase event missing user_id or items.');
+
             return;
         }
 
         // Buyer is a teacher — find them by ID or email
         $user = User::find($userId);
-        if (!$user) {
+        if (! $user) {
             $this->warn("User #{$userId} not found in certification DB, trying by email.");
             $email = $orderData['user_email'] ?? null;
             if ($email) {
@@ -157,9 +185,10 @@ class ConsumeKafkaEvents extends Command
             }
         }
 
-        if (!$user) {
+        if (! $user) {
             $this->error("Cannot find user for purchase fulfillment. user_id={$userId}");
             Log::error('Kafka purchase.completed: user not found', $orderData);
+
             return;
         }
 
@@ -168,14 +197,16 @@ class ConsumeKafkaEvents extends Command
         foreach ($items as $item) {
             $templateId = $item['template_id'] ?? null;
 
-            if (!$templateId) {
+            if (! $templateId) {
                 $this->warn('Item missing template_id, skipping.');
+
                 continue;
             }
 
             $template = Template::find($templateId);
-            if (!$template) {
+            if (! $template) {
                 $this->warn("Template #{$templateId} not found, skipping.");
+
                 continue;
             }
 
@@ -186,6 +217,7 @@ class ConsumeKafkaEvents extends Command
 
             if ($existing) {
                 $this->info("User #{$user->id} already owns template #{$template->id}");
+
                 continue;
             }
 
