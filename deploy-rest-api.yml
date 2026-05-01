@@ -200,8 +200,14 @@
     - name: Build Docker image (attempt 1)
       shell: |
         cd {{ app_dir }}
-        # Build with BuildKit for better caching and performance
-        DOCKER_BUILDKIT=1 docker build --progress=plain -t {{ app_name }}:latest .
+        # Build with buildx and load the result into the local Docker image store.
+        # Without --load, a docker-container builder can report success but leave no
+        # local image for the later compose/push steps to tag.
+        docker buildx build --load --progress=plain \
+          -t {{ app_name }}:latest \
+          -t {{ docker_image }}:{{ docker_tag }} \
+          -t {{ docker_image }}:latest \
+          .
       register: docker_build_result
       ignore_errors: yes
       async: 2400  # 40 minutes timeout
@@ -210,7 +216,11 @@
     - name: Build Docker image (attempt 2 - retry if first failed)
       shell: |
         cd {{ app_dir }}
-        DOCKER_BUILDKIT=1 docker build --no-cache --progress=plain -t {{ app_name }}:latest .
+        docker buildx build --load --no-cache --progress=plain \
+          -t {{ app_name }}:latest \
+          -t {{ docker_image }}:{{ docker_tag }} \
+          -t {{ docker_image }}:latest \
+          .
       register: docker_build_retry
       when: docker_build_result.failed | default(false)
       ignore_errors: no
@@ -229,11 +239,12 @@
         - docker_build_result.failed | default(false)
         - docker_build_retry.failed | default(false)
 
-    - name: Tag and push Docker image to registry
+    - name: Verify Docker image tags exist locally
       shell: |
-        docker tag {{ app_name }}:latest {{ docker_image }}:{{ docker_tag }}
-        docker tag {{ app_name }}:latest {{ docker_image }}:latest
-      register: tag_result
+        docker image inspect {{ app_name }}:latest >/dev/null
+        docker image inspect {{ docker_image }}:{{ docker_tag }} >/dev/null
+        docker image inspect {{ docker_image }}:latest >/dev/null
+      register: image_verify_result
       ignore_errors: no
       async: 300   # 5 minutes timeout
       poll: 10     # Check every 10 seconds

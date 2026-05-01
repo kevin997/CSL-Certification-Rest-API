@@ -142,3 +142,7 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Fail workflow when deployment fails
+        if: steps.status.outputs.status == 'failure'
+        run: exit 1
