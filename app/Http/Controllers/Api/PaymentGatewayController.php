@@ -34,6 +34,41 @@ use Illuminate\Validation\ValidationException;
 
 class PaymentGatewayController extends Controller
 {
+    private const SENSITIVE_SETTING_KEYS = [
+        'api_key',
+        'client_secret',
+        'secret_key',
+        'webhook_secret',
+        'service_secret',
+        'test_secret_key',
+    ];
+
+    private function normalizeSettings($settings): array
+    {
+        if (is_array($settings)) {
+            return $settings;
+        }
+
+        if (is_string($settings)) {
+            return json_decode($settings, true) ?: [];
+        }
+
+        return [];
+    }
+
+    private function maskSettings($settings): array
+    {
+        $settings = $this->normalizeSettings($settings);
+
+        foreach ($settings as $key => $value) {
+            if (in_array($key, self::SENSITIVE_SETTING_KEYS, true) && is_scalar($value)) {
+                $settings[$key] = '••••••••' . substr((string) $value, -4);
+            }
+        }
+
+        return $settings;
+    }
+
     /**
      * Display a listing of payment gateways.
      *
@@ -137,15 +172,7 @@ class PaymentGatewayController extends Controller
 
             // Mask sensitive information
             if (isset($data['settings'])) {
-                $settings = json_decode($data['settings'], true) ?: [];
-
-                foreach ($settings as $key => $value) {
-                    if (in_array($key, ['api_key', 'client_secret', 'secret_key', 'webhook_secret'])) {
-                        $settings[$key] = '••••••••' . substr($value, -4);
-                    }
-                }
-
-                $data['settings'] = $settings;
+                $data['settings'] = $this->maskSettings($data['settings']);
             }
 
             return $data;
@@ -344,15 +371,7 @@ class PaymentGatewayController extends Controller
 
         // Mask sensitive information
         if (isset($responseData['settings'])) {
-            $settings = json_decode($responseData['settings'], true) ?: [];
-
-            foreach ($settings as $key => $value) {
-                if (in_array($key, ['api_key', 'client_secret', 'secret_key', 'webhook_secret'])) {
-                    $settings[$key] = '••••••••' . substr($value, -4);
-                }
-            }
-
-            $responseData['settings'] = $settings;
+            $responseData['settings'] = $this->maskSettings($responseData['settings']);
         }
 
         return response()->json([
@@ -409,15 +428,7 @@ class PaymentGatewayController extends Controller
 
         // Mask sensitive information
         if (isset($responseData['settings'])) {
-            $settings = json_decode($responseData['settings'], true) ?: [];
-
-            foreach ($settings as $key => $value) {
-                if (in_array($key, ['api_key', 'client_secret', 'secret_key', 'webhook_secret'])) {
-                    $settings[$key] = '••••••••' . substr($value, -4);
-                }
-            }
-
-            $responseData['settings'] = $settings;
+            $responseData['settings'] = $this->maskSettings($responseData['settings']);
         }
 
         return response()->json([
@@ -564,10 +575,10 @@ class PaymentGatewayController extends Controller
         // Handle settings update
         if ($request->has('settings')) {
             // Get current settings
-            $currentSettings = json_decode((string)$paymentGateway->settings, true) ?: [];
+            $currentSettings = $this->normalizeSettings($paymentGateway->settings);
 
             $incomingSettings = collect($request->input('settings'))
-                ->reject(fn ($value) => $value === null || $value === '' || (is_string($value) && str_starts_with($value, '••••')))
+                ->reject(fn($value) => $value === null || $value === '' || (is_string($value) && str_starts_with($value, '••••')))
                 ->all();
 
             // Merge with new settings without overwriting existing secrets with
@@ -604,15 +615,7 @@ class PaymentGatewayController extends Controller
 
         // Mask sensitive information
         if (isset($responseData['settings'])) {
-            $settings = json_decode($responseData['settings'], true) ?: [];
-
-            foreach ($settings as $key => $value) {
-                if (in_array($key, ['api_key', 'client_secret', 'secret_key', 'webhook_secret'])) {
-                    $settings[$key] = '••••••••' . substr($value, -4);
-                }
-            }
-
-            $responseData['settings'] = $settings;
+            $responseData['settings'] = $this->maskSettings($responseData['settings']);
         }
 
         return response()->json([
