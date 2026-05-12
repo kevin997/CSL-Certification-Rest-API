@@ -1377,7 +1377,7 @@ class StorefrontController extends Controller
 
         $product = Product::where('environment_id', $environment->id)
             ->where('slug', $slug)
-            ->with(['category', 'courses'])
+            ->with(['category', 'courses.template.blocks.activities'])
             ->first();
 
         if (!$product) {
@@ -1418,7 +1418,7 @@ class StorefrontController extends Controller
 
         $product = Product::where('environment_id', $environment->id)
             ->where('id', $id)
-            ->with(['category', 'courses'])
+            ->with(['category', 'courses.template.blocks.activities'])
             ->first();
 
         if (!$product) {

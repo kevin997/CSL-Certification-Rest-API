@@ -46,6 +46,8 @@ class Product extends Model
         'meta_keywords',
         'requires_fulfillment',
         'product_type',
+        'featured_video_url',
+        'featured_video_type',
     ];
 
     /**

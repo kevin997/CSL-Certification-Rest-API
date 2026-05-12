@@ -265,6 +265,8 @@ class ProductController extends Controller
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
             'meta_keywords' => 'nullable|string|max:255',
+            'featured_video_url' => 'nullable|string|max:2048',
+            'featured_video_type' => 'nullable|string|in:youtube,self_hosted',
         ]);
 
         if ($validator->fails()) {
@@ -295,6 +297,8 @@ class ProductController extends Controller
         $product->meta_title = $request->meta_title;
         $product->meta_description = $request->meta_description;
         $product->meta_keywords = $request->meta_keywords;
+        $product->featured_video_url = $request->featured_video_url;
+        $product->featured_video_type = $request->featured_video_type;
         $product->save();
 
         // Attach courses if provided
@@ -459,6 +463,8 @@ class ProductController extends Controller
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
             'meta_keywords' => 'nullable|string|max:255',
+            'featured_video_url' => 'nullable|string|max:2048',
+            'featured_video_type' => 'nullable|string|in:youtube,self_hosted',
         ]);
 
         if ($validator->fails()) {
@@ -540,7 +546,15 @@ class ProductController extends Controller
         if ($request->has('meta_keywords')) {
             $product->meta_keywords = $request->meta_keywords;
         }
-        
+
+        if ($request->has('featured_video_url')) {
+            $product->featured_video_url = $request->featured_video_url;
+        }
+
+        if ($request->has('featured_video_type')) {
+            $product->featured_video_type = $request->featured_video_type;
+        }
+
         $product->save();
 
         // Update courses if provided
