@@ -20,6 +20,8 @@ class ActivityCompletion extends Model
         'enrollment_id',
         'activity_id',
         'status',
+        'progress_percentage',
+        'completion_data',
         'completed_at',
         'score',
         'time_spent',
@@ -35,6 +37,8 @@ class ActivityCompletion extends Model
     {
         return [
             'completed_at' => 'datetime',
+            'completion_data' => 'array',
+            'progress_percentage' => 'float',
             'score' => 'float',
             'time_spent' => 'integer',
             'attempts' => 'integer',

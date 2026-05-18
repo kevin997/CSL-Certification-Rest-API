@@ -35,6 +35,7 @@ class TemplateController extends Controller
                 $query->orderBy('order');
                 $query->with(['activities' => function($q) {
                     $q->orderBy('order');
+                    $q->with('videoContents');
                 }]);
             }])
             ->orderBy('created_at', 'desc')
@@ -80,6 +81,7 @@ class TemplateController extends Controller
                     $query->orderBy('order');
                     $query->with(['activities' => function($q) {
                         $q->orderBy('order');
+                        $q->with('videoContents');
                     }]);
                 },
             ])

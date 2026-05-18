@@ -7,6 +7,7 @@ use App\Traits\HasCreatedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -88,6 +89,22 @@ class Activity extends Model
     public function quizContent(): HasOne
     {
         return $this->hasOne(QuizContent::class);
+    }
+
+    /**
+     * Get the first video content associated with this activity.
+     */
+    public function videoContent(): HasOne
+    {
+        return $this->hasOne(VideoContent::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    /**
+     * Get all video content rows associated with this activity.
+     */
+    public function videoContents(): HasMany
+    {
+        return $this->hasMany(VideoContent::class)->orderBy('sort_order')->orderBy('id');
     }
 
     /**

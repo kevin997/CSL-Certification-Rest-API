@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Traits\HasCreatedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -25,6 +26,7 @@ class VideoContent extends Model
         'media_asset_id',
         'video_type', // youtube, vimeo, mp4, webm
         'duration',
+        'sort_order',
         'thumbnail_url',
         'transcript',
         'captions_url',
@@ -40,7 +42,16 @@ class VideoContent extends Model
     {
         return [
             'duration' => 'integer',
+            'sort_order' => 'integer',
         ];
+    }
+
+    /**
+     * Get the activity this video belongs to.
+     */
+    public function parentActivity(): BelongsTo
+    {
+        return $this->belongsTo(Activity::class, 'activity_id');
     }
 
     /**

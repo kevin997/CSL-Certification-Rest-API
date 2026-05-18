@@ -444,6 +444,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/activities/{activityId}/video', [VideoContentController::class, 'show']);
     Route::put('/activities/{activityId}/video', [VideoContentController::class, 'update']);
     Route::delete('/activities/{activityId}/video', [VideoContentController::class, 'destroy']);
+    Route::delete('/activities/{activityId}/video/{videoContentId}', [VideoContentController::class, 'destroyVideo']);
 
     // Quiz Content routes
     Route::post('/activities/{activityId}/quiz', [QuizContentController::class, 'store']);

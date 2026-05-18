@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\ActivityCompletion;
 use App\Models\Enrollment;
+use App\Models\VideoContent;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
@@ -375,6 +376,7 @@ class ActivityCompletionController extends Controller
             'time_spent' => 'nullable|integer|min:0',
             'attempts' => 'nullable|integer|min:1',
             'completed_at' => 'nullable|date',
+            'video_content_id' => 'nullable|integer|exists:video_contents,id',
         ]);
 
         if ($validator->fails()) {
@@ -390,8 +392,35 @@ class ActivityCompletionController extends Controller
             'activity_id' => $activityId,
         ]);
 
+        $progressPercentage = $request->status === 'completed' ? 100 : (float) ($activityCompletion->progress_percentage ?? 0);
+        $completionData = $activityCompletion->completion_data ?? [];
+        $isVideoSegmentUpdate = $activity->type->value === 'video' && $request->filled('video_content_id');
+
+        if ($isVideoSegmentUpdate) {
+            $video = VideoContent::where('activity_id', $activity->id)
+                ->findOrFail($request->input('video_content_id'));
+
+            $completedVideoIds = collect($completionData['completed_video_ids'] ?? [])
+                ->push($video->id)
+                ->unique()
+                ->values()
+                ->all();
+
+            $totalVideos = max(VideoContent::where('activity_id', $activity->id)->count(), 1);
+            $progressPercentage = round((count($completedVideoIds) / $totalVideos) * 100, 2);
+            $completionData = [
+                'completed_video_ids' => $completedVideoIds,
+                'total_videos' => $totalVideos,
+                'completed_videos' => count($completedVideoIds),
+            ];
+        }
+
         // Update activity completion fields
-        $activityCompletion->status = $request->status;
+        $activityCompletion->status = $progressPercentage >= 100
+            ? 'completed'
+            : ($isVideoSegmentUpdate ? 'in_progress' : $request->status);
+        $activityCompletion->progress_percentage = $progressPercentage;
+        $activityCompletion->completion_data = $completionData ?: null;
         
         if ($request->has('score')) {
             $activityCompletion->score = $request->score;
@@ -405,7 +434,7 @@ class ActivityCompletionController extends Controller
             $activityCompletion->attempts = $request->attempts;
         }
         
-        if ($request->status === 'completed' && !$activityCompletion->completed_at) {
+        if ($activityCompletion->status === 'completed' && !$activityCompletion->completed_at) {
             $activityCompletion->completed_at = now();
         } elseif ($request->has('completed_at')) {
             $activityCompletion->completed_at = $request->completed_at;
@@ -453,6 +482,7 @@ class ActivityCompletionController extends Controller
         
         $totalActivities = $courseActivities->count();
         $completedActivities = 0;
+        $completedActivityUnits = 0;
         $totalPoints = 0;
         $earnedPoints = 0;
 
@@ -468,12 +498,15 @@ class ActivityCompletionController extends Controller
             
             if ($completion && $completion->status === 'completed') {
                 $completedActivities++;
+                $completedActivityUnits++;
                 $earnedPoints += $activity->points ?? 0;
+            } elseif ($completion) {
+                $completedActivityUnits += min(max((float) $completion->progress_percentage, 0), 100) / 100;
             }
         }
 
         // Calculate progress percentages
-        $overallProgress = $totalActivities > 0 ? ($completedActivities / $totalActivities) * 100 : 0;
+        $overallProgress = $totalActivities > 0 ? ($completedActivityUnits / $totalActivities) * 100 : 0;
         $pointsProgress = $totalPoints > 0 ? ($earnedPoints / $totalPoints) * 100 : 0;
 
         return response()->json([
@@ -517,6 +550,8 @@ class ActivityCompletionController extends Controller
 
         // Reset activity completion
         $activityCompletion->status = 'started';
+        $activityCompletion->progress_percentage = 0;
+        $activityCompletion->completion_data = null;
         $activityCompletion->score = null;
         $activityCompletion->completed_at = null;
         $activityCompletion->save();
@@ -556,6 +591,8 @@ class ActivityCompletionController extends Controller
         ActivityCompletion::where('enrollment_id', $enrollmentId)
             ->update([
                 'status' => 'started',
+                'progress_percentage' => 0,
+                'completion_data' => null,
                 'score' => null,
                 'completed_at' => null,
             ]);

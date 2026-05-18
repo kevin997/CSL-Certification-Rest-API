@@ -30,6 +30,63 @@ use Illuminate\Support\Facades\Validator;
 
 class VideoContentController extends Controller
 {
+    private function getActivityContext($activityId): array
+    {
+        $activity = Activity::findOrFail($activityId);
+        $block = Block::findOrFail($activity->block_id);
+        $template = Template::findOrFail($block->template_id);
+
+        return [$activity, $template];
+    }
+
+    private function normalizeNullableVideoFields(Request $request): void
+    {
+        foreach (['video_url', 'thumbnail_url', 'captions_url'] as $field) {
+            if ($request->has($field) && $request->input($field) === '') {
+                $request->merge([$field => null]);
+            }
+        }
+    }
+
+    private function validateVideoPayload(array $payload, bool $creating = true)
+    {
+        return Validator::make($payload, [
+            'title' => 'nullable|string|max:255',
+            'description' => 'nullable|string',
+            'video_url' => ($creating ? 'nullable|string|url|required_without:media_asset_id' : 'nullable|string|url'),
+            'media_asset_id' => ($creating ? 'nullable|integer|required_without:video_url' : 'nullable|integer'),
+            'video_type' => ($creating ? 'required|string|in:youtube,vimeo,mp4,webm' : 'nullable|string|in:youtube,vimeo,mp4,webm'),
+            'duration' => 'nullable|integer',
+            'sort_order' => 'nullable|integer|min:0',
+            'thumbnail_url' => 'nullable|string|url',
+            'transcript' => 'nullable|string',
+            'captions_url' => 'nullable|string|url',
+        ]);
+    }
+
+    private function videoDataFromPayload(array $payload, Activity $activity, ?VideoContent $existing = null): array
+    {
+        $resolvedTitle = $payload['title'] ?? null;
+        if ($resolvedTitle === null || (is_string($resolvedTitle) && trim($resolvedTitle) === '')) {
+            $resolvedTitle = $activity->title ?? $existing?->title;
+        }
+
+        $data = [
+            'title' => $resolvedTitle,
+            'description' => $payload['description'] ?? null,
+            'video_url' => $payload['video_url'] ?? null,
+            'media_asset_id' => $payload['media_asset_id'] ?? null,
+            'video_type' => $payload['video_type'] ?? null,
+            'duration' => $payload['duration'] ?? null,
+            'sort_order' => $payload['sort_order'] ?? null,
+            'thumbnail_url' => $payload['thumbnail_url'] ?? null,
+            'transcript' => $payload['transcript'] ?? null,
+            'captions_url' => $payload['captions_url'] ?? null,
+        ];
+
+        return array_filter($data, fn($value) => $value !== null);
+    }
+
     /**
      * Store a newly created video content in storage.
      *
@@ -93,15 +150,8 @@ class VideoContentController extends Controller
      */
     public function store(Request $request, $activityId)
     {
-        $activity = Activity::findOrFail($activityId);
-        $block = Block::findOrFail($activity->block_id);
-        $template = Template::findOrFail($block->template_id);
-
-        $request->merge([
-            'video_url' => $request->video_url ?: null,
-            'thumbnail_url' => $request->thumbnail_url ?: null,
-            'captions_url' => $request->captions_url ?: null,
-        ]);
+        [$activity, $template] = $this->getActivityContext($activityId);
+        $this->normalizeNullableVideoFields($request);
 
         // Check if user has permission to add content to this activity
         if ($template->created_by !== Auth::id()) {
@@ -119,56 +169,57 @@ class VideoContentController extends Controller
             ], Response::HTTP_BAD_REQUEST);
         }
 
-        $resolvedTitle = (string) ($request->title ?? '');
-        if (trim($resolvedTitle) === '') {
-            $resolvedTitle = (string) ($activity->title ?? '');
-        }
-
-        $validator = Validator::make($request->all(), [
-            'title' => 'nullable|string|max:255',
-            'description' => 'nullable|string',
-            'video_url' => 'nullable|string|url|required_without:media_asset_id',
-            'media_asset_id' => 'nullable|integer|required_without:video_url',
-            'video_type' => 'required|string|in:youtube,vimeo,mp4,webm',
-            'duration' => 'nullable|integer',
-            'thumbnail_url' => 'nullable|string|url',
-            'transcript' => 'nullable|string',
-            'captions_url' => 'nullable|string|url',
+        $payloads = $request->has('videos') ? $request->input('videos') : [$request->all()];
+        $catalogueValidator = Validator::make($request->all(), [
+            'videos' => 'nullable|array|min:1',
+            'videos.*' => 'array',
         ]);
 
-        if ($validator->fails()) {
+        if ($catalogueValidator->fails()) {
             return response()->json([
                 'status' => 'error',
-                'errors' => $validator->errors(),
+                'errors' => $catalogueValidator->errors(),
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Check if video content already exists for this activity
-        $existingContent = VideoContent::where('activity_id', $activityId)->first();
-        if ($existingContent) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Video content already exists for this activity',
-            ], Response::HTTP_CONFLICT);
+        $createdVideos = [];
+        $nextSortOrder = (int) VideoContent::where('activity_id', $activityId)->max('sort_order');
+        if (VideoContent::where('activity_id', $activityId)->exists()) {
+            $nextSortOrder++;
         }
 
-        $videoContent = VideoContent::create([
-            'activity_id' => $activityId,
-            'title' => $resolvedTitle,
-            'description' => $request->description,
-            'video_url' => $request->video_url,
-            'media_asset_id' => $request->media_asset_id,
-            'video_type' => $request->video_type,
-            'duration' => $request->duration,
-            'thumbnail_url' => $request->thumbnail_url,
-            'transcript' => $request->transcript,
-            'captions_url' => $request->captions_url,
-        ]);
+        foreach ($payloads as $index => $payload) {
+            $payload = array_map(fn($value) => $value === '' ? null : $value, $payload);
+            $validator = $this->validateVideoPayload($payload);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => 'error',
+                    'errors' => [
+                        'videos.' . $index => $validator->errors(),
+                    ],
+                ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            }
+
+            $data = $this->videoDataFromPayload($payload, $activity);
+            $data['activity_id'] = $activityId;
+            $data['sort_order'] = $payload['sort_order'] ?? $nextSortOrder++;
+
+            $createdVideos[] = VideoContent::create($data);
+        }
+
+        $videos = VideoContent::where('activity_id', $activityId)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Video content created successfully',
-            'data' => $videoContent,
+            'message' => count($createdVideos) === 1
+                ? 'Video content created successfully'
+                : 'Video catalogue created successfully',
+            'data' => $createdVideos[0],
+            'videos' => $videos,
         ], Response::HTTP_CREATED);
     }
 
@@ -213,9 +264,7 @@ class VideoContentController extends Controller
      */
     public function show($activityId)
     {
-        $activity = Activity::findOrFail($activityId);
-        $block = Block::findOrFail($activity->block_id);
-        $template = Template::findOrFail($block->template_id);
+        [$activity, $template] = $this->getActivityContext($activityId);
 
         // Check if user has access to this template
         if (!$template->is_public && $template->created_by !== Auth::id()) {
@@ -225,9 +274,12 @@ class VideoContentController extends Controller
             ], Response::HTTP_FORBIDDEN);
         }
 
-        $videoContent = VideoContent::where('activity_id', $activityId)->first();
+        $videos = VideoContent::where('activity_id', $activityId)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
 
-        if (!$videoContent) {
+        if ($videos->isEmpty()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Video content not found for this activity',
@@ -236,7 +288,8 @@ class VideoContentController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data' => $videoContent,
+            'data' => $videos->first(),
+            'videos' => $videos,
         ]);
     }
 
@@ -301,15 +354,8 @@ class VideoContentController extends Controller
      */
     public function update(Request $request, $activityId)
     {
-        $activity = Activity::findOrFail($activityId);
-        $block = Block::findOrFail($activity->block_id);
-        $template = Template::findOrFail($block->template_id);
-
-        $request->merge([
-            'video_url' => $request->video_url ?: null,
-            'thumbnail_url' => $request->thumbnail_url ?: null,
-            'captions_url' => $request->captions_url ?: null,
-        ]);
+        [$activity, $template] = $this->getActivityContext($activityId);
+        $this->normalizeNullableVideoFields($request);
 
         // Check if user has permission to update this content
         if ($template->created_by !== Auth::id()) {
@@ -319,25 +365,72 @@ class VideoContentController extends Controller
             ], Response::HTTP_FORBIDDEN);
         }
 
-        $videoContent = VideoContent::where('activity_id', $activityId)->firstOrFail();
+        if ($request->has('videos')) {
+            $catalogueValidator = Validator::make($request->all(), [
+                'videos' => 'required|array|min:1',
+                'videos.*' => 'array',
+                'videos.*.id' => 'nullable|integer|exists:video_contents,id',
+            ]);
 
-        // Resolve title: use provided title, or fall back to activity title
-        $resolvedTitle = $request->title;
-        if ($resolvedTitle === null || (is_string($resolvedTitle) && trim($resolvedTitle) === '')) {
-            $resolvedTitle = $activity->title ?? $videoContent->title;
+            if ($catalogueValidator->fails()) {
+                return response()->json([
+                    'status' => 'error',
+                    'errors' => $catalogueValidator->errors(),
+                ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            }
+
+            $nextSortOrder = (int) VideoContent::where('activity_id', $activityId)->max('sort_order');
+            if (VideoContent::where('activity_id', $activityId)->exists()) {
+                $nextSortOrder++;
+            }
+
+            foreach ($request->input('videos') as $index => $payload) {
+                $payload = array_map(fn($value) => $value === '' ? null : $value, $payload);
+                $videoContent = isset($payload['id'])
+                    ? VideoContent::where('activity_id', $activityId)->findOrFail($payload['id'])
+                    : null;
+
+                $validator = $this->validateVideoPayload($payload, $videoContent === null);
+
+                if ($validator->fails()) {
+                    return response()->json([
+                        'status' => 'error',
+                        'errors' => [
+                            'videos.' . $index => $validator->errors(),
+                        ],
+                    ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                }
+
+                $data = $this->videoDataFromPayload($payload, $activity, $videoContent);
+
+                if ($videoContent) {
+                    $videoContent->update($data);
+                } else {
+                    $data['activity_id'] = $activityId;
+                    $data['sort_order'] = $payload['sort_order'] ?? $nextSortOrder++;
+                    VideoContent::create($data);
+                }
+            }
+
+            $videos = VideoContent::where('activity_id', $activityId)
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->get();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Video catalogue updated successfully',
+                'data' => $videos->first(),
+                'videos' => $videos,
+            ]);
         }
 
-        $validator = Validator::make($request->all(), [
-            'title' => 'nullable|string|max:255',
-            'description' => 'nullable|string',
-            'video_url' => 'nullable|string|url',
-            'media_asset_id' => 'nullable|integer',
-            'video_type' => 'nullable|string|in:youtube,vimeo,mp4,webm',
-            'duration' => 'nullable|integer',
-            'thumbnail_url' => 'nullable|string|url',
-            'transcript' => 'nullable|string',
-            'captions_url' => 'nullable|string|url',
-        ]);
+        $videoContent = VideoContent::where('activity_id', $activityId)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->firstOrFail();
+
+        $validator = $this->validateVideoPayload($request->all(), false);
 
         if ($validator->fails()) {
             return response()->json([
@@ -346,25 +439,19 @@ class VideoContentController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Build update data with resolved title
-        $updateData = array_filter([
-            'title' => $resolvedTitle,
-            'description' => $request->description,
-            'video_url' => $request->video_url,
-            'media_asset_id' => $request->media_asset_id,
-            'video_type' => $request->video_type,
-            'duration' => $request->duration,
-            'thumbnail_url' => $request->thumbnail_url,
-            'transcript' => $request->transcript,
-            'captions_url' => $request->captions_url,
-        ], fn($value) => $value !== null);
-
+        $updateData = $this->videoDataFromPayload($request->all(), $activity, $videoContent);
         $videoContent->update($updateData);
+
+        $videos = VideoContent::where('activity_id', $activityId)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
 
         return response()->json([
             'status' => 'success',
             'message' => 'Video content updated successfully',
             'data' => $videoContent,
+            'videos' => $videos,
         ]);
     }
 
@@ -409,9 +496,7 @@ class VideoContentController extends Controller
      */
     public function destroy($activityId)
     {
-        $activity = Activity::findOrFail($activityId);
-        $block = Block::findOrFail($activity->block_id);
-        $template = Template::findOrFail($block->template_id);
+        [$activity, $template] = $this->getActivityContext($activityId);
 
         // Check if user has permission to delete this content
         if ($template->created_by !== Auth::id()) {
@@ -421,7 +506,31 @@ class VideoContentController extends Controller
             ], Response::HTTP_FORBIDDEN);
         }
 
-        $videoContent = VideoContent::where('activity_id', $activityId)->firstOrFail();
+        $deleted = VideoContent::where('activity_id', $activityId)->delete();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $deleted === 1
+                ? 'Video content deleted successfully'
+                : 'Video catalogue deleted successfully',
+        ]);
+    }
+
+    /**
+     * Remove one video from an activity catalogue.
+     */
+    public function destroyVideo($activityId, $videoContentId)
+    {
+        [$activity, $template] = $this->getActivityContext($activityId);
+
+        if ($template->created_by !== Auth::id()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You do not have permission to delete this content',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        $videoContent = VideoContent::where('activity_id', $activityId)->findOrFail($videoContentId);
         $videoContent->delete();
 
         return response()->json([

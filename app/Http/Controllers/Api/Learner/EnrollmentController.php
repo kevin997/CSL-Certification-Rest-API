@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\Learner;
 use App\Http\Controllers\Controller;
 use App\Models\Enrollment;
 use App\Models\ActivityCompletion;
+use App\Models\Activity;
+use App\Models\VideoContent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -74,6 +76,7 @@ class EnrollmentController extends Controller
             'completed' => 'required|boolean',
             'score' => 'nullable|numeric|min:0|max:100',
             'time_spent' => 'nullable|numeric|min:0',
+            'video_content_id' => 'nullable|integer|exists:video_contents,id',
             'submission_data' => 'nullable|json',
         ]);
         
@@ -83,6 +86,39 @@ class EnrollmentController extends Controller
             ->where('environment_id', $environmentId)
             ->firstOrFail();
         
+        $activity = Activity::findOrFail($request->input('activity_id'));
+        $progressPercentage = $request->input('completed') ? 100 : 0;
+        $completionData = null;
+        $isVideoSegmentUpdate = $activity->type->value === 'video' && $request->filled('video_content_id');
+
+        if ($isVideoSegmentUpdate) {
+            $video = VideoContent::where('activity_id', $activity->id)
+                ->findOrFail($request->input('video_content_id'));
+
+            $existingCompletion = ActivityCompletion::where('enrollment_id', $enrollment->id)
+                ->where('activity_id', $activity->id)
+                ->first();
+
+            $completionData = $existingCompletion?->completion_data ?? [];
+            $completedVideoIds = collect($completionData['completed_video_ids'] ?? [])
+                ->push($video->id)
+                ->unique()
+                ->values()
+                ->all();
+
+            $totalVideos = max(VideoContent::where('activity_id', $activity->id)->count(), 1);
+            $progressPercentage = round((count($completedVideoIds) / $totalVideos) * 100, 2);
+            $completionData = [
+                'completed_video_ids' => $completedVideoIds,
+                'total_videos' => $totalVideos,
+                'completed_videos' => count($completedVideoIds),
+            ];
+        }
+
+        $isCompleted = $isVideoSegmentUpdate
+            ? $progressPercentage >= 100
+            : $request->input('completed');
+
         // Find or create activity completion record
         $activityCompletion = ActivityCompletion::updateOrCreate(
             [
@@ -90,11 +126,13 @@ class EnrollmentController extends Controller
                 'activity_id' => $request->input('activity_id'),
             ],
             [
-                'status' => $request->input('completed') ? 'completed' : 'in-progress',
+                'status' => $isCompleted ? 'completed' : 'in-progress',
+                'progress_percentage' => $progressPercentage,
+                'completion_data' => $completionData,
                 'score' => $request->input('score'),
                 'time_spent' => $request->input('time_spent'),
                 //'submission_data' => $request->input('submission_data'),
-                'completed_at' => $request->input('completed') ? now() : null,
+                'completed_at' => $isCompleted ? now() : null,
             ]
         );
         
@@ -208,6 +246,8 @@ class EnrollmentController extends Controller
             // Reset the completion status
             $activityCompletion->update([
                 'status' => 'in-progress',
+                'progress_percentage' => 0,
+                'completion_data' => null,
                 'score' => 0,
                 'time_spent' => 0,
                 'completed_at' => null,
@@ -256,8 +296,14 @@ class EnrollmentController extends Controller
         
         // Get completed activities
         $completedCount = ActivityCompletion::where('enrollment_id', $enrollment->id)
-            ->where('status', 'completed')
-            ->count();
+            ->get()
+            ->sum(function (ActivityCompletion $completion) {
+                if ($completion->status === 'completed') {
+                    return 1;
+                }
+
+                return min(max((float) $completion->progress_percentage, 0), 100) / 100;
+            });
         
         // Calculate progress percentage
         $progressPercentage = $activityCount > 0 ? ($completedCount / $activityCount) * 100 : 0;
