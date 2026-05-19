@@ -2,10 +2,14 @@
 
 namespace App\Services\PaymentGateways;
 
-use App\Models\Transaction;
+use App\Models\Environment;
+use App\Models\Invoice;
+use App\Models\Order;
 use App\Models\PaymentGatewaySetting;
-use Illuminate\Support\Facades\Log;
+use App\Models\Transaction;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class TaraMoneyGateway implements PaymentGatewayInterface
@@ -47,9 +51,6 @@ class TaraMoneyGateway implements PaymentGatewayInterface
 
     /**
      * Initialize the payment gateway with settings
-     *
-     * @param PaymentGatewaySetting $settings
-     * @return void
      */
     public function initialize(PaymentGatewaySetting $settings): void
     {
@@ -67,7 +68,7 @@ class TaraMoneyGateway implements PaymentGatewayInterface
             $testApiKey = $settings->getSetting('test_api_key');
             $testBusinessId = $settings->getSetting('test_business_id');
 
-            if (!empty($testApiKey) && !empty($testBusinessId)) {
+            if (! empty($testApiKey) && ! empty($testBusinessId)) {
                 $this->apiKey = $testApiKey;
                 $this->businessId = $testBusinessId;
                 Log::info('[TaraMoneyGateway] Using sandbox API credentials');
@@ -79,10 +80,10 @@ class TaraMoneyGateway implements PaymentGatewayInterface
             'gateway_id' => $settings->id,
             'gateway_code' => $settings->code,
             'environment_id' => $settings->environment_id,
-            'api_key_present' => !empty($this->apiKey),
-            'business_id_present' => !empty($this->businessId),
-            'webhook_secret_present' => !empty($this->webhookSecret),
-            'test_mode' => $isTestMode
+            'api_key_present' => ! empty($this->apiKey),
+            'business_id_present' => ! empty($this->businessId),
+            'webhook_secret_present' => ! empty($this->webhookSecret),
+            'test_mode' => $isTestMode,
         ]);
 
         // Check if API credentials are available before initializing
@@ -90,7 +91,7 @@ class TaraMoneyGateway implements PaymentGatewayInterface
             Log::error('[TaraMoneyGateway] Missing API credentials', [
                 'gateway_id' => $settings->id,
                 'gateway_code' => $settings->code,
-                'environment_id' => $settings->environment_id
+                'environment_id' => $settings->environment_id,
             ]);
             throw new \Exception('TaraMoney API credentials are missing. Please check your payment gateway settings.');
         }
@@ -100,20 +101,16 @@ class TaraMoneyGateway implements PaymentGatewayInterface
      * Create a payment session/intent
      *
      * This method creates a TaraMoney payment link and returns it for redirection
-     *
-     * @param Transaction $transaction
-     * @param array $paymentData
-     * @return array
      */
     public function createPayment(Transaction $transaction, array $paymentData = []): array
     {
         try {
-            $environmentId = $transaction->environment_id ?: session("current_environment_id");
+            $environmentId = $transaction->environment_id ?: session('current_environment_id');
 
             // Get environment details
             $environment = null;
             if ($environmentId) {
-                $environment = \App\Models\Environment::find($environmentId);
+                $environment = Environment::find($environmentId);
             }
 
             // Log before attempting to create payment
@@ -122,10 +119,10 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                 'order_id' => $transaction->order_id,
                 'amount' => $transaction->total_amount,
                 'currency' => $transaction->currency,
-                'api_key_present' => !empty($this->apiKey),
-                'business_id_present' => !empty($this->businessId),
+                'api_key_present' => ! empty($this->apiKey),
+                'business_id_present' => ! empty($this->businessId),
                 'gateway_id' => $this->settings->id ?? null,
-                'gateway_code' => $this->settings->code ?? null
+                'gateway_code' => $this->settings->code ?? null,
             ]);
 
             // Convert amount to XAF since TaraMoney primarily works with XAF currency
@@ -136,7 +133,7 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                 Log::warning('[TaraMoneyGateway] Currency conversion to XAF failed. Using original amount.', [
                     'transaction_id' => $transaction->transaction_id,
                     'original_currency' => $transaction->currency,
-                    'original_amount' => $transaction->total_amount
+                    'original_amount' => $transaction->total_amount,
                 ]);
                 $amountInXAF = $transaction->total_amount;
             }
@@ -146,41 +143,25 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                 'transaction_id' => $transaction->transaction_id,
                 'original_currency' => $transaction->currency,
                 'original_amount' => $transaction->total_amount,
-                'converted_amount_xaf' => $amountInXAF
+                'converted_amount_xaf' => $amountInXAF,
             ]);
 
-            // Create return and webhook URLs
-            // For local development with HTTP, use a placeholder HTTPS URL for TaraMoney
-            $appUrl = config('app.url');
-            $isLocalHttp = str_starts_with($appUrl, 'http://localhost') || str_starts_with($appUrl, 'http://127.0.0.1');
-            
-            if ($isLocalHttp) {
-                // Use production HTTPS URL for local development (TaraMoney requires HTTPS)
-                $baseUrl = 'https://certification.csl-brands.com';
-                Log::warning('[TaraMoneyGateway] Using production HTTPS URL for local development', [
-                    'original_url' => $appUrl,
-                    'production_url' => $baseUrl
-                ]);
-            } else {
-                $baseUrl = $appUrl;
-            }
-            
+            // Create return and webhook URLs — TaraMoney rejects any HTTP link
             $callbackEnvironmentId = $this->settings->environment_id ?: ($environmentId ?: 'platform');
-            $returnUrl = $paymentData['return_url']
-                ?? $paymentData['success_url']
-                ?? $this->settings->success_url
-                ?? route('api.transactions.callback.success', ['environment_id' => $callbackEnvironmentId]);
-            $webhookUrl = $paymentData['webhook_url']
-                ?? $this->settings->webhook_url
-                ?? route('api.transactions.webhook', ['gateway' => 'taramoney', 'environment_id' => $callbackEnvironmentId]);
-
-            if ($isLocalHttp) {
-                $returnUrl = str_replace($appUrl, $baseUrl, $returnUrl);
-                $webhookUrl = str_replace($appUrl, $baseUrl, $webhookUrl);
-            }
+            $returnUrl = $this->ensureHttps(
+                $paymentData['return_url']
+                    ?? $paymentData['success_url']
+                    ?? $this->settings->success_url
+                    ?? route('api.transactions.callback.success', ['environment_id' => $callbackEnvironmentId])
+            );
+            $webhookUrl = $this->ensureHttps(
+                $paymentData['webhook_url']
+                    ?? $this->settings->webhook_url
+                    ?? route('api.transactions.webhook', ['gateway' => 'taramoney', 'environment_id' => $callbackEnvironmentId])
+            );
 
             // Get product information from order
-            $order = \App\Models\Order::find($transaction->order_id);
+            $order = Order::find($transaction->order_id);
             $productName = 'Product';
             $productDescription = $transaction->description ?? 'Payment for certification services';
             $productPictureUrl = '';
@@ -198,16 +179,16 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                 'businessId' => $this->businessId,
                 'productId' => $transaction->transaction_id,
                 'productName' => $productName,
-                'productPrice' => (int)$amountInXAF,
+                'productPrice' => (int) $amountInXAF,
                 'productDescription' => $productDescription,
                 'productPictureUrl' => $productPictureUrl,
                 'returnUrl' => $returnUrl,
-                'webHookUrl' => $webhookUrl
+                'webHookUrl' => $webhookUrl,
             ];
 
             Log::info('[TaraMoneyGateway] Prepared TaraMoney payment link request', [
                 'transaction_id' => $transaction->transaction_id,
-                'business_id_present' => !empty($this->businessId),
+                'business_id_present' => ! empty($this->businessId),
                 'product_id' => $requestData['productId'],
                 'amount_xaf' => $requestData['productPrice'],
                 'return_url' => $returnUrl,
@@ -217,14 +198,14 @@ class TaraMoneyGateway implements PaymentGatewayInterface
             // Generate payment link using TaraMoney Payment Links API
             $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
-                'Accept' => 'application/json'
+                'Accept' => 'application/json',
             ])
-            ->timeout(15)
-            ->retry(3, 1000, function ($exception) {
-                // Only retry on connection/timeout errors, not 4xx client errors
-                return $exception instanceof \Illuminate\Http\Client\ConnectionException;
-            })
-            ->post($this->apiBaseUrl . '/paymentlinks', $requestData);
+                ->timeout(15)
+                ->retry(3, 1000, function ($exception) {
+                    // Only retry on connection/timeout errors, not 4xx client errors
+                    return $exception instanceof ConnectionException;
+                })
+                ->post($this->apiBaseUrl.'/paymentlinks', $requestData);
 
             // Check if the request was successful
             if ($response->successful()) {
@@ -236,7 +217,7 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                 $messageVal = $responseData['message'] ?? $responseData['error'] ?? '';
                 $isSuccess = $statusVal === 'SUCCESS' ||
                              in_array($messageVal, ['API_ORDER_SUCESSFULL', 'API_ORDER_SUCCESSFUL', 'Link successfully generated']);
-                
+
                 if ($isSuccess) {
                     // Generate a unique gateway transaction ID
                     $gatewayId = $transaction->transaction_id;
@@ -251,7 +232,7 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                         'transaction_id' => $transaction->id,
                         'gateway_transaction_id' => $gatewayId,
                         'whatsapp_link' => $responseData['whatsappLink'] ?? null,
-                        'telegram_link' => $responseData['telegramLink'] ?? null
+                        'telegram_link' => $responseData['telegramLink'] ?? null,
                     ]);
 
                     // Return all payment links for user selection
@@ -268,12 +249,12 @@ class TaraMoneyGateway implements PaymentGatewayInterface
 
                     // Check if generalLink is available (new TaraMoney API)
                     $generalLink = $responseData['generalLink'] ?? null;
-                    $hasGeneralLink = !empty($generalLink);
+                    $hasGeneralLink = ! empty($generalLink);
 
                     return [
                         'success' => true,
-                        'message' => $hasGeneralLink 
-                            ? 'Payment link created successfully.' 
+                        'message' => $hasGeneralLink
+                            ? 'Payment link created successfully.'
                             : 'Payment links created successfully. Choose your preferred payment method.',
                         'transaction_id' => $gatewayId,
                         'type' => $hasGeneralLink ? 'redirect_url' : 'payment_links',
@@ -292,43 +273,43 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                         'created' => time(),
                         'response' => $responseData,
                         'gateway_config' => $this->getConfig(),
-                        'status' => 'pending'
+                        'status' => 'pending',
                     ];
                 } else {
                     Log::error('[TaraMoneyGateway] Payment link generation failed', [
                         'transaction_id' => $transaction->id,
-                        'response' => $responseData
+                        'response' => $responseData,
                     ]);
 
                     return [
                         'success' => false,
                         'message' => $responseData['message'] ?? 'Failed to generate payment link',
-                        'error_details' => $responseData['message'] ?? 'Unknown error'
+                        'error_details' => $responseData['message'] ?? 'Unknown error',
                     ];
                 }
             } else {
                 Log::error('[TaraMoneyGateway] Failed to create payment', [
                     'transaction_id' => $transaction->id,
                     'status_code' => $response->status(),
-                    'response' => $response->json() ?? $response->body()
+                    'response' => $response->json() ?? $response->body(),
                 ]);
 
                 return [
                     'success' => false,
                     'message' => 'Failed to create payment with TaraMoney',
-                    'error_details' => $response->json()['message'] ?? 'API request failed with status ' . $response->status()
+                    'error_details' => $response->json()['message'] ?? 'API request failed with status '.$response->status(),
                 ];
             }
         } catch (\Exception $e) {
             Log::error('[TaraMoneyGateway] Exception while creating payment', [
                 'transaction_id' => $transaction->id ?? null,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return [
                 'success' => false,
-                'message' => 'An error occurred while creating payment: ' . $e->getMessage()
+                'message' => 'An error occurred while creating payment: '.$e->getMessage(),
             ];
         }
     }
@@ -336,20 +317,18 @@ class TaraMoneyGateway implements PaymentGatewayInterface
     /**
      * Create mobile money payment (Orange Money & MTN Money)
      *
-     * @param Transaction $transaction
-     * @param array $paymentData Must include 'phoneNumber'
-     * @return array
+     * @param  array  $paymentData  Must include 'phoneNumber'
      */
     public function createMobileMoneyPayment(Transaction $transaction, array $paymentData = []): array
     {
         try {
-            $environmentId = $transaction->environment_id ?: session("current_environment_id");
+            $environmentId = $transaction->environment_id ?: session('current_environment_id');
 
             // Validate phone number
             if (empty($paymentData['phoneNumber'])) {
                 return [
                     'success' => false,
-                    'message' => 'Phone number is required for mobile money payment'
+                    'message' => 'Phone number is required for mobile money payment',
                 ];
             }
 
@@ -358,7 +337,7 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                 'transaction_id' => $transaction->id,
                 'order_id' => $transaction->order_id,
                 'amount' => $transaction->total_amount,
-                'phone_number' => $paymentData['phoneNumber']
+                'phone_number' => $paymentData['phoneNumber'],
             ]);
 
             // Convert amount to XAF
@@ -367,14 +346,16 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                 $amountInXAF = $transaction->total_amount;
             }
 
-            // Create webhook URL
+            // Create webhook URL — TaraMoney rejects any HTTP link
             $callbackEnvironmentId = $this->settings->environment_id ?: ($environmentId ?: 'platform');
-            $webhookUrl = $paymentData['webhook_url']
-                ?? $this->settings->webhook_url
-                ?? route('api.transactions.webhook', ['gateway' => 'taramoney', 'environment_id' => $callbackEnvironmentId]);
+            $webhookUrl = $this->ensureHttps(
+                $paymentData['webhook_url']
+                    ?? $this->settings->webhook_url
+                    ?? route('api.transactions.webhook', ['gateway' => 'taramoney', 'environment_id' => $callbackEnvironmentId])
+            );
 
             // Get product information
-            $order = \App\Models\Order::find($transaction->order_id);
+            $order = Order::find($transaction->order_id);
             $productName = 'Product';
 
             if ($order && $order->orderItems->isNotEmpty()) {
@@ -388,16 +369,16 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                 'businessId' => $this->businessId,
                 'productId' => $transaction->transaction_id,
                 'productName' => $productName,
-                'productPrice' => (int)$amountInXAF,
+                'productPrice' => (int) $amountInXAF,
                 'phoneNumber' => $paymentData['phoneNumber'],
-                'webHookUrl' => $webhookUrl
+                'webHookUrl' => $webhookUrl,
             ];
 
             // Initiate mobile money payment
             $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
-                'Accept' => 'application/json'
-            ])->post($this->apiBaseUrl . '/cmmobile', $requestData);
+                'Accept' => 'application/json',
+            ])->post($this->apiBaseUrl.'/cmmobile', $requestData);
 
             if ($response->successful()) {
                 $responseData = $response->json();
@@ -414,7 +395,7 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                         'transaction_id' => $transaction->id,
                         'gateway_transaction_id' => $gatewayId,
                         'ussd_code' => $responseData['ussdCode'] ?? null,
-                        'vendor' => $responseData['vendor'] ?? null
+                        'vendor' => $responseData['vendor'] ?? null,
                     ]);
 
                     return [
@@ -431,58 +412,54 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                         'created' => time(),
                         'response' => $responseData,
                         'gateway_config' => $this->getConfig(),
-                        'status' => 'pending'
+                        'status' => 'pending',
                     ];
                 } else {
                     Log::error('[TaraMoneyGateway] Mobile money payment initiation failed', [
                         'transaction_id' => $transaction->id,
-                        'response' => $responseData
+                        'response' => $responseData,
                     ]);
 
                     return [
                         'success' => false,
                         'message' => $responseData['message'] ?? 'Failed to initiate mobile money payment',
-                        'error_details' => $responseData
+                        'error_details' => $responseData,
                     ];
                 }
             } else {
                 Log::error('[TaraMoneyGateway] Failed to create mobile money payment', [
                     'transaction_id' => $transaction->id,
                     'status_code' => $response->status(),
-                    'response' => $response->json() ?? $response->body()
+                    'response' => $response->json() ?? $response->body(),
                 ]);
 
                 return [
                     'success' => false,
                     'message' => 'Failed to create mobile money payment with TaraMoney',
-                    'error_details' => $response->json()['message'] ?? 'API request failed'
+                    'error_details' => $response->json()['message'] ?? 'API request failed',
                 ];
             }
         } catch (\Exception $e) {
             Log::error('[TaraMoneyGateway] Exception while creating mobile money payment', [
                 'transaction_id' => $transaction->id ?? null,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return [
                 'success' => false,
-                'message' => 'An error occurred while creating mobile money payment: ' . $e->getMessage()
+                'message' => 'An error occurred while creating mobile money payment: '.$e->getMessage(),
             ];
         }
     }
 
     /**
      * Process a payment
-     *
-     * @param Transaction $transaction
-     * @param array $paymentData
-     * @return array
      */
     public function processPayment(Transaction $transaction, array $paymentData = []): array
     {
         // Check if this is a mobile money payment request
-        if (!empty($paymentData['phoneNumber']) && !empty($paymentData['paymentType']) && $paymentData['paymentType'] === 'mobile_money') {
+        if (! empty($paymentData['phoneNumber']) && ! empty($paymentData['paymentType']) && $paymentData['paymentType'] === 'mobile_money') {
             return $this->createMobileMoneyPayment($transaction, $paymentData);
         }
 
@@ -492,9 +469,6 @@ class TaraMoneyGateway implements PaymentGatewayInterface
 
     /**
      * Verify a payment
-     *
-     * @param string $transactionId
-     * @return array
      */
     public function verifyPayment(string $transactionId): array
     {
@@ -506,11 +480,12 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                 ->orWhere('gateway_transaction_id', $transactionId)
                 ->first();
 
-            if (!$transaction) {
+            if (! $transaction) {
                 Log::error('[TaraMoneyGateway] Transaction not found for verification', ['transaction_id' => $transactionId]);
+
                 return [
                     'success' => false,
-                    'message' => 'Transaction not found'
+                    'message' => 'Transaction not found',
                 ];
             }
 
@@ -521,7 +496,7 @@ class TaraMoneyGateway implements PaymentGatewayInterface
             Log::info('[TaraMoneyGateway] Payment verification from database', [
                 'transaction_id' => $transaction->id,
                 'gateway_transaction_id' => $transaction->gateway_transaction_id,
-                'status' => $status
+                'status' => $status,
             ]);
 
             return [
@@ -530,29 +505,24 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                 'transaction_id' => $transaction->transaction_id,
                 'gateway_transaction_id' => $transaction->gateway_transaction_id,
                 'amount' => $transaction->total_amount,
-                'currency' => $transaction->currency
+                'currency' => $transaction->currency,
             ];
         } catch (\Exception $e) {
             Log::error('[TaraMoneyGateway] Exception while verifying payment', [
                 'transaction_id' => $transactionId,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return [
                 'success' => false,
-                'message' => 'An error occurred while verifying payment: ' . $e->getMessage()
+                'message' => 'An error occurred while verifying payment: '.$e->getMessage(),
             ];
         }
     }
 
     /**
      * Process a refund
-     *
-     * @param Transaction $transaction
-     * @param float|null $amount
-     * @param string $reason
-     * @return array
      */
     public function processRefund(Transaction $transaction, ?float $amount = null, string $reason = ''): array
     {
@@ -562,19 +532,17 @@ class TaraMoneyGateway implements PaymentGatewayInterface
             'transaction_id' => $transaction->id,
             'gateway_transaction_id' => $transaction->gateway_transaction_id,
             'amount' => $amount,
-            'reason' => $reason
+            'reason' => $reason,
         ]);
 
         return [
             'success' => false,
-            'message' => 'Refunds are not supported automatically via TaraMoney API. Please process the refund manually.'
+            'message' => 'Refunds are not supported automatically via TaraMoney API. Please process the refund manually.',
         ];
     }
 
     /**
      * Get payment gateway configuration for the current environment
-     *
-     * @return array
      */
     public function getConfig(): array
     {
@@ -586,17 +554,14 @@ class TaraMoneyGateway implements PaymentGatewayInterface
             'supported_currencies' => explode(',', $this->settings->getSetting('supported_currencies', 'XAF,XOF')),
             'supports_mobile_money' => true,
             'supports_messaging_apps' => true,
-            'redirect_payment' => true
+            'redirect_payment' => true,
         ];
     }
 
     /**
      * Verify webhook signature
      *
-     * @param mixed $payload
-     * @param string $signature
-     * @param string $secret
-     * @return bool
+     * @param  mixed  $payload
      */
     public function verifyWebhookSignature($payload, string $signature, string $secret): bool
     {
@@ -605,9 +570,9 @@ class TaraMoneyGateway implements PaymentGatewayInterface
             // The signature verification logic depends on how TaraMoney signs webhooks
 
             Log::info('[TaraMoneyGateway] Verifying webhook signature', [
-                'payload_present' => !empty($payload),
-                'signature_present' => !empty($signature),
-                'secret_present' => !empty($secret)
+                'payload_present' => ! empty($payload),
+                'signature_present' => ! empty($signature),
+                'secret_present' => ! empty($secret),
             ]);
 
             // For now, we'll use the webhook secret directly
@@ -616,6 +581,7 @@ class TaraMoneyGateway implements PaymentGatewayInterface
 
             if (empty($webhookSecret)) {
                 Log::warning('[TaraMoneyGateway] No webhook secret configured, skipping signature verification');
+
                 return true; // Allow webhook if no secret is configured
             }
 
@@ -624,32 +590,44 @@ class TaraMoneyGateway implements PaymentGatewayInterface
             return true;
         } catch (\Exception $e) {
             Log::error('[TaraMoneyGateway] Exception while verifying webhook signature', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return false;
         }
     }
 
     /**
+     * Ensure a URL uses HTTPS — TaraMoney rejects HTTP links.
+     */
+    private function ensureHttps(string $url): string
+    {
+        if (str_starts_with($url, 'http://')) {
+            return 'https://'.substr($url, 7);
+        }
+
+        return $url;
+    }
+
+    /**
      * Create a payment link for an invoice
      *
-     * @param \App\Models\Invoice $invoice
      * @return string
      */
-    public function createInvoicePaymentLink(\App\Models\Invoice $invoice)
+    public function createInvoicePaymentLink(Invoice $invoice)
     {
         try {
             // Create a transaction for the invoice
-            $transaction = new Transaction();
+            $transaction = new Transaction;
             $transaction->invoice_id = $invoice->id;
             $transaction->environment_id = $invoice->environment_id;
             $transaction->customer_id = $invoice->customer_id;
             $transaction->amount = $invoice->total_amount;
             $transaction->total_amount = $invoice->total_amount;
             $transaction->currency = $invoice->currency ?? 'XAF';
-            $transaction->description = 'Payment for invoice #' . $invoice->invoice_number;
+            $transaction->description = 'Payment for invoice #'.$invoice->invoice_number;
             $transaction->status = Transaction::STATUS_PENDING;
-            $transaction->transaction_id = 'TXN_' . Str::uuid();
+            $transaction->transaction_id = 'TXN_'.Str::uuid();
             $transaction->save();
 
             // Create payment using the transaction
@@ -661,14 +639,14 @@ class TaraMoneyGateway implements PaymentGatewayInterface
 
             Log::error('[TaraMoneyGateway] Failed to create invoice payment link', [
                 'invoice_id' => $invoice->id,
-                'result' => $result
+                'result' => $result,
             ]);
 
             return '';
         } catch (\Exception $e) {
             Log::error('[TaraMoneyGateway] Exception while creating invoice payment link', [
                 'invoice_id' => $invoice->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return '';
