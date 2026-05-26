@@ -220,15 +220,16 @@ class CommissionService
         $baseAmount = $baseAmount ?? $transaction->amount;
         $environmentId = session("current_environment_id");
         
-        // Check if commission has already been applied
-        $commissionAlreadyApplied = 
-            $transaction->fee_amount !== null && 
-            $transaction->tax_amount !== null && 
-            $transaction->total_amount > $transaction->amount;
+        // Commission is already applied when fee_amount is recorded on the transaction.
+        // Removed the total_amount > amount check because with 0% tax, total_amount == amount
+        // (commission is extracted, not added), causing false negatives.
+        $commissionAlreadyApplied =
+            $transaction->fee_amount !== null &&
+            $transaction->tax_amount !== null;
         
         if (!$commissionAlreadyApplied) {
-            // Calculate amounts with commission and tax
-            $amounts = $this->calculateTransactionAmounts($baseAmount, $environmentId);
+            // Commission is included in the product price; extract it rather than adding on top.
+            $amounts = $this->calculateTransactionAmountsWithCommissionIncluded($baseAmount, $environmentId);
             
             // Update transaction with calculated amounts
             $transaction->fee_amount = $amounts['fee_amount'];

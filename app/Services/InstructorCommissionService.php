@@ -56,11 +56,16 @@ class InstructorCommissionService
                 throw new \Exception("Order not found for transaction ID: {$transaction->id}");
             }
 
-            // Calculate platform fee and instructor payout
-            // Platform takes platform_fee_rate (e.g., 17%), instructor receives the rest (83%)
-            $grossAmount = $transaction->total_amount;
+            // Calculate platform fee and instructor payout.
+            // gross_amount is the product price the customer paid (commission-inclusive, tax-exclusive).
+            // The fee was already extracted and stored on the transaction during payment processing,
+            // so we use that directly rather than re-applying the rate to total_amount (which
+            // includes tax and would double-count commission).
+            $grossAmount = $transaction->amount; // product price without tax
             $platformFeeRate = $config->platform_fee_rate;
-            $platformFeeAmount = round($grossAmount * $platformFeeRate, 2);
+            $platformFeeAmount = $transaction->fee_amount !== null
+                ? round((float) $transaction->fee_amount, 2)
+                : round($grossAmount * $platformFeeRate, 2);
             $instructorPayoutAmount = round($grossAmount - $platformFeeAmount, 2);
 
             // Create commission record

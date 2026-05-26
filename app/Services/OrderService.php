@@ -137,7 +137,7 @@ class OrderService
         
         foreach ($items as $item) {
             $product = $this->productService->getProductById($item['product_id']);
-            $price = $product->sale_price ?? $product->price;
+            $price = $product->discount_price ?? $product->price;
             $itemTotal = $price * $item['quantity'];
             $subtotal += $itemTotal;
         }
@@ -179,7 +179,7 @@ class OrderService
             // Create order items
             foreach ($items as $item) {
                 $product = $this->productService->getProductById($item['product_id']);
-                $price = $product->sale_price ?? $product->price;
+                $price = $product->discount_price ?? $product->price;
                 
                 OrderItem::create([
                     'order_id' => $order->id,
@@ -354,7 +354,7 @@ class OrderService
                 ->where('product_id', $productId)
                 ->first();
             
-            $price = $product->sale_price ?? $product->price;
+            $price = $product->discount_price ?? $product->price;
             
             if ($existingItem) {
                 // Update existing item
@@ -608,9 +608,9 @@ class OrderService
         // Calculate subtotal
         $subtotal = OrderItem::where('order_id', $orderId)->sum('total');
         
-        // Calculate tax
+        // Calculate tax — guard against division by zero when all items are free/removed.
         $taxableAmount = $subtotal - $order->discount;
-        $tax = $taxableAmount * ($order->tax / $subtotal);
+        $tax = $subtotal > 0 ? $taxableAmount * ($order->tax / $subtotal) : 0.0;
         
         // Calculate total
         $total = $subtotal - $order->discount + $tax;

@@ -1563,330 +1563,6 @@ class StorefrontController extends Controller
     {
         return $this->checkoutWithExplicitPaymentState($request, $environmentId);
 
-        $environment = $this->getEnvironmentById($environmentId);
-
-        if (!$environment) {
-            return response()->json(['message' => 'Environment not found'], 404);
-        }
-
-        // Validate the request
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|max:255',
-            'phone_number' => 'nullable|string|max:20',
-            'products' => 'required|array|min:1',
-            'products.*.id' => 'required|exists:products,id',
-            'products.*.quantity' => 'required|integer|min:1',
-            'payment_method' => 'required|exists:payment_gateway_settings,id',
-            'billing_address' => 'required|string|max:255',
-            'billing_city' => 'required|string|max:255',
-            'billing_state' => 'required|string|max:255',
-            'billing_zip' => 'nullable|string|max:20',
-            'billing_country' => 'required|string|max:255',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        // Check if authenticated user is the instructor/owner of any of the products
-        $authenticatedUser = $request->user('sanctum');
-        if ($authenticatedUser) {
-            foreach ($request->input('products') as $productData) {
-                $product = Product::find($productData['id']);
-                if ($product && $product->created_by === $authenticatedUser->id) {
-                    return response()->json(['message' => 'Instructors cannot purchase their own courses.'], 403);
-                }
-            }
-        }
-
-        try {
-            DB::beginTransaction();
-
-            // Find or create user by email
-            $userExists = User::where('email', $request->input('email'))->exists();
-
-            $user = User::firstOrCreate(
-                ['email' => $request->input('email')],
-                [
-                    'name' => $request->input('name'),
-                    'password' => bcrypt(Str::random(16)),
-                ]
-            );
-
-            // Dispatch event for user creation/environment association
-            event(new \App\Events\UserCreatedDuringCheckout(
-                $user,
-                $environment,
-                !$userExists // isNewUser flag is true if the user didn't exist before
-            ));
-
-            // Calculate total amount first
-            $totalAmount = 0;
-            $orderItems = [];
-            $order = null;
-            $responseData = [];
-
-            //if order has already been created, use it, nowing that we have many orders with the same user_id and environement_id, we check if the user is making the order for the same product(s) in Order Item
-            $order = Order::where('user_id', $user->id)
-                ->where('environment_id', $environment->id)
-                ->where('status', 'pending')
-                ->whereHas('orderItems', function ($query) use ($request) {
-                    $query->where('product_id', $request->input('products')[0]['id']);
-                })
-                ->first();
-
-            if (!$order) {
-                //if order doesn't exist, create it, this flow avoids creating many orders for the same product(s)
-
-                // Process products and calculate total
-                foreach ($request->input('products') as $item) {
-                    $product = Product::findOrFail($item['id']);
-
-                    // Skip if product doesn't belong to this environment
-                    if ($product->environment_id !== $environment->id) {
-                        continue;
-                    }
-
-                    $price = $product->discount_price ?? $product->price;
-                    $quantity = $item['quantity'];
-                    $total = $price * $quantity;
-
-                    $orderItems[] = [
-                        'product' => $product,
-                        'quantity' => $quantity,
-                        'price' => $price,
-                        'total' => $total
-                    ];
-
-                    $totalAmount += $total;
-                }
-
-                $products = $request->input('products');
-                //fin the first product in the array
-                $firstProduct = $products[0];
-                $product = Product::findOrFail($firstProduct['id']);
-
-                // Create order with total amount already set
-                $order = new Order();
-                $order->user_id = $user->id;
-                $order->environment_id = $environment->id;
-                $order->order_number = 'ORD-' . strtoupper(Str::random(8));
-                $order->status = 'pending';
-                $order->payment_method = $request->input('payment_method');
-                $order->billing_name = $request->input('name');
-                $order->billing_email = $request->input('email');
-                $order->phone_number = $request->input('phone_number');
-                $order->billing_address = $request->input('billing_address');
-                $order->billing_city = $request->input('billing_city');
-                $order->billing_state = $request->input('billing_state');
-                $order->billing_zip = $request->input('billing_zip') ?? '00000';
-                $order->billing_country = $request->input('billing_country');
-                $order->notes = $request->input('notes');
-                $order->referral_id = $request->input('referral_id');
-                $order->total_amount = $totalAmount;
-                $order->currency = $product->currency;
-                $order->save();
-
-                // Save order items to the database
-                foreach ($orderItems as $item) {
-                    $orderItem = new OrderItem();
-                    $orderItem->order_id = $order->id;
-                    $orderItem->product_id = $item['product']->id;
-                    $orderItem->quantity = $item['quantity'];
-                    $orderItem->price = $item['price'];
-                    $orderItem->total = $item['total'];
-                    $orderItem->save();
-                }
-
-                // Check if a referral code was provided
-                if ($request->has('referral_code') && !empty($request->input('referral_code'))) {
-                    $referralCode = $request->input('referral_code');
-
-                    // Find the referral by code and environment
-                    $referral = \App\Models\EnvironmentReferral::where('code', $referralCode)
-                        ->where('environment_id', $environment->id)
-                        ->where('is_active', true)
-                        ->first();
-
-                    if ($referral) {
-                        // Check if referral has expired
-                        if (!$referral->expiration_date || now()->isBefore($referral->expiration_date)) {
-                            // Check if referral has reached max uses
-                            if ($referral->max_uses <= 0 || $referral->uses_count < $referral->max_uses) {
-                                // Set the referral ID on the order
-                                $order->referral_id = $referral->id;
-                                $order->save();
-
-                                // Dispatch the event to process the referral usage
-                                event(new \App\Events\OrderCompletedWithReferral($order, $referral));
-
-                                // Log the referral usage
-                                Log::info('Referral code used in order', [
-                                    'referral_id' => $referral->id,
-                                    'referral_code' => $referral->code,
-                                    'order_id' => $order->id,
-                                    'order_number' => $order->order_number
-                                ]);
-                            }
-                        }
-                    }
-                }
-
-                DB::commit();
-
-                // Dispatch OrderCreated notification
-                try {
-                    $order->load(['user']);
-                    if ($order->user) {
-                        $order->user->notify(new \App\Notifications\OrderCreated($order, app(\App\Services\TelegramService::class)));
-                    }
-                } catch (\Exception $e) {
-                    Log::error('Failed to send OrderCreated notification: ' . $e->getMessage());
-                }
-
-                // Prepare the response data
-                $responseData = [
-                    'order_id' => $order->id,
-                    'order_number' => $order->order_number,
-                    'total_amount' => $totalAmount,
-                    'status' => 'pending'
-                ];
-            } else {
-                $orderItems = $order->orderItems;
-                $totalAmount = $order->total_amount;
-                $responseData = [
-                    'order_id' => $order->id,
-                    'order_number' => $order->order_number,
-                    'total_amount' => $totalAmount,
-                    'status' => 'pending'
-                ];
-            }
-
-            // Get the payment gateway code
-            $gatewayCode = null;
-            if ($request->has('payment_method')) {
-                $gatewaySettings = PaymentGatewaySetting::find($request->input('payment_method'));
-                if ($gatewaySettings) {
-                    $gatewayCode = $gatewaySettings->code;
-                }
-            }
-
-            Log::info('Gateway Code: ' . $gatewayCode);
-
-            // If we have a valid gateway, create a payment session/intent
-            if ($gatewayCode) {
-                try {
-                    // Create the payment using the appropriate gateway with all required dependencies
-                    $orderService = app()->make(\App\Services\OrderService::class);
-                    $gatewayFactory = app()->make(\App\Services\PaymentGateways\PaymentGatewayFactory::class);
-                    $commissionService = app()->make(\App\Services\Commission\CommissionService::class);
-                    $taxZoneService = app()->make(\App\Services\Tax\TaxZoneService::class);
-                    $environmentPaymentConfigService = app()->make(\App\Services\EnvironmentPaymentConfigService::class);
-
-                    // Initialize payment service with proper dependencies
-                    $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService, $taxZoneService, $environmentPaymentConfigService);
-                    $paymentResult = $paymentService->createPayment(
-                        $order->id,
-                        $gatewayCode,
-                        [],
-                        $environment->name
-                    );
-
-                    // Get transaction ID from payment result if available
-                    $transactionId = $paymentResult['transaction_id'] ?? null;
-                    $transaction = $paymentResult['transaction'] ?? null;
-                    $responseData["total_amount"] = $transaction->total_amount;
-                    $responseData["currency"] = $transaction->currency;
-                    $responseData['transaction'] = $transaction;
-                    DB::commit();
-
-                    if ($paymentResult['success']) {
-                        // Add payment-specific data to the response based on the gateway type
-                        switch ($paymentResult['type']) {
-                            case 'client_secret':
-                                // For Stripe inline payments
-                                $responseData['payment_type'] = 'stripe';
-                                $responseData['client_secret'] = $paymentResult['value'];
-                                $responseData['publishable_key'] = $paymentResult['publishable_key'] ?? null;
-                                break;
-
-                            case 'checkout_url':
-                                // For PayPal redirect-based payments
-                                $responseData['payment_type'] = 'paypal';
-                                $responseData['redirect_url'] = $paymentResult['value'];
-                                break;
-
-                            case 'payment_url':
-                                // For redirect-based payments (Lygos, MonetBill)
-                                // Use the actual gateway code instead of hardcoding 'lygos'
-                                $responseData['payment_type'] = $gatewayCode;
-                                $responseData['redirect_url'] = $paymentResult['value'];
-                                break;
-
-                            case 'redirect_url':
-                                // For TaraMoney generalLink and any gateway that returns a direct redirect URL
-                                $responseData['payment_type'] = $gatewayCode === 'taramoney' ? 'taramoney' : $gatewayCode;
-                                $responseData['redirect_url'] = $paymentResult['redirect_url'] ?? $paymentResult['general_link'] ?? $paymentResult['value'] ?? null;
-                                $responseData['general_link'] = $paymentResult['general_link'] ?? null;
-                                break;
-
-                            case 'payment_links':
-                                // For TaraMoney - check if generalLink is available (new API)
-                                $responseData['payment_type'] = 'taramoney';
-                                if (!empty($paymentResult['general_link'])) {
-                                    // Direct redirect using generalLink
-                                    $responseData['redirect_url'] = $paymentResult['general_link'];
-                                    $responseData['general_link'] = $paymentResult['general_link'];
-                                } else {
-                                    // Fallback: multiple payment options (WhatsApp, Telegram, Dikalo, SMS)
-                                    $responseData['payment_links'] = $paymentResult['payment_links'] ?? [];
-                                    $responseData['whatsapp_link'] = $paymentResult['whatsapp_link'] ?? null;
-                                    $responseData['telegram_link'] = $paymentResult['telegram_link'] ?? null;
-                                    $responseData['dikalo_link'] = $paymentResult['dikalo_link'] ?? null;
-                                    $responseData['sms_link'] = $paymentResult['sms_link'] ?? null;
-                                }
-                                break;
-
-                            default:
-                                // Fallback to standard payment type
-                                $responseData['payment_type'] = 'standard';
-                                // No payment_url needed for standard payment type
-                                break;
-                        }
-                    } else {
-                        // If payment creation failed, fall back to standard payment type
-                        $responseData['payment_type'] = 'standard';
-                        // Log the error for debugging
-                        Log::error('Payment creation failed: ' . ($paymentResult['message'] ?? 'Unknown error'));
-                    }
-                } catch (\Exception $e) {
-                    // If an exception occurred, fall back to standard payment type
-                    $responseData['payment_type'] = 'standard';
-                    // Log the error for debugging
-                    Log::error('Payment creation exception: ' . $e->getMessage());
-                }
-            } else {
-                // If no gateway was specified, just confirm the order was placed successfully
-                $responseData['payment_type'] = 'standard';
-                // No payment_url needed - frontend will redirect to success page
-            }
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Order created successfully',
-                'data' => $responseData
-            ]);
-        } catch (\Exception $e) {
-            if (DB::transactionLevel() > 0) {
-                DB::rollBack();
-            }
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to process checkout',
-                'error' => $e->getMessage()
-            ], 500);
-        }
     }
 
     private function checkoutWithExplicitPaymentState(Request $request, string $environmentId)
@@ -2646,45 +2322,30 @@ class StorefrontController extends Controller
 
             $responseData = [];
             $responseData['user'] = $user;
-            $responseData['transaction'] = $result['transaction'];
+            $responseData['transaction'] = $result['transaction'] ?? null;
             $responseData['order'] = $order;
 
-            switch ($result['type']) {
-                case 'client_secret':
-                    // For Stripe inline payments
-                    $responseData['payment_type'] = 'stripe';
-                    $responseData['client_secret'] = $result['value'];
+            // processPayment → processGatewayPayment returns a flat structure keyed by
+            // field name (client_secret, checkout_url, redirect_url, payment_links, etc.)
+            // with payment_type set to the gateway code — not a 'type' key.
+            $paymentType = $result['payment_type'] ?? $paymentGatewaySetting->code;
+            $responseData['payment_type'] = $paymentType;
+
+            switch ($paymentType) {
+                case 'stripe':
+                    $responseData['client_secret'] = $result['client_secret'] ?? null;
                     $responseData['publishable_key'] = $result['publishable_key'] ?? null;
                     break;
 
-                case 'checkout_url':
-                    // For PayPal redirect-based payments
-                    $responseData['payment_type'] = 'paypal';
-                    $responseData['redirect_url'] = $result['value'];
+                case 'paypal':
+                    $responseData['redirect_url'] = $result['checkout_url'] ?? $result['redirect_url'] ?? null;
                     break;
 
-                case 'payment_url':
-                    // For redirect-based payments
-                    $responseData['payment_type'] = $paymentGatewaySetting->code;
-                    $responseData['redirect_url'] = $result['value'];
-                    break;
-
-                case 'redirect_url':
-                    // For TaraMoney with generalLink (new API)
-                    $responseData['payment_type'] = 'taramoney';
-                    $responseData['redirect_url'] = $result['redirect_url'] ?? $result['general_link'] ?? $result['value'];
-                    $responseData['general_link'] = $result['general_link'] ?? null;
-                    break;
-
-                case 'payment_links':
-                    // For TaraMoney - check if generalLink is available
-                    $responseData['payment_type'] = 'taramoney';
+                case 'taramoney':
                     if (!empty($result['general_link'])) {
-                        // Direct redirect using generalLink
                         $responseData['redirect_url'] = $result['general_link'];
                         $responseData['general_link'] = $result['general_link'];
                     } else {
-                        // Fallback: multiple payment options
                         $responseData['payment_links'] = $result['payment_links'] ?? [];
                         $responseData['whatsapp_link'] = $result['whatsapp_link'] ?? null;
                         $responseData['telegram_link'] = $result['telegram_link'] ?? null;
@@ -2694,9 +2355,11 @@ class StorefrontController extends Controller
                     break;
 
                 default:
-                    // Fallback to standard payment type
-                    $responseData['payment_type'] = 'standard';
-                    // No payment_url needed for standard payment type
+                    // Generic gateway — surface whatever redirect/url the gateway returned.
+                    $responseData['redirect_url'] = $result['redirect_url']
+                        ?? $result['checkout_url']
+                        ?? $result['payment_url']
+                        ?? null;
                     break;
             }
 
@@ -2832,17 +2495,16 @@ class StorefrontController extends Controller
             $commission = \App\Models\Commission::getActiveCommission($environmentId);
             $commissionRate = $commission ? ($commission->rate / 100) : 0.17; // Default to 17% if no commission found
 
-            // Calculate commission for base price
-            $baseCommission = $basePrice * $commissionRate;
-            $finalBasePrice = $basePrice + $baseCommission;
+            // Commission is INCLUDED in the entered price (deducted from seller earnings at sale time).
+            // The stored product price equals what the customer pays — nothing is added on top.
+            $baseCommission = round($basePrice * $commissionRate, 2);
+            $sellerPayout = round($basePrice - $baseCommission, 2);
 
-            // Discounts reduce only the seller's base price. The platform still
-            // receives the full commission calculated from the regular price.
-            $finalDiscountPrice = null;
             $discountCommission = null;
+            $discountSellerPayout = null;
             if ($discountPrice !== null) {
-                $discountCommission = $baseCommission;
-                $finalDiscountPrice = $discountPrice + $discountCommission;
+                $discountCommission = round($discountPrice * $commissionRate, 2);
+                $discountSellerPayout = round($discountPrice - $discountCommission, 2);
             }
 
             return response()->json([
@@ -2851,10 +2513,12 @@ class StorefrontController extends Controller
                     'original_base_price' => $basePrice,
                     'commission_rate' => $commissionRate,
                     'base_commission' => $baseCommission,
-                    'final_base_price' => $finalBasePrice,
+                    'final_base_price' => $basePrice,
+                    'seller_payout' => $sellerPayout,
                     'original_discount_price' => $discountPrice,
                     'discount_commission' => $discountCommission,
-                    'final_discount_price' => $finalDiscountPrice,
+                    'final_discount_price' => $discountPrice,
+                    'discount_seller_payout' => $discountSellerPayout,
                 ],
             ]);
         } catch (\Exception $e) {
