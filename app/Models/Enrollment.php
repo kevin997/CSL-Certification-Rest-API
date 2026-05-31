@@ -29,6 +29,8 @@ class Enrollment extends Model
         'progress_percentage',
         'last_activity_at',
         'enrolled_by',
+        'is_provisional',
+        'sales_form_id',
     ];
 
     const STATUS_ENROLLED = 'enrolled';
@@ -48,6 +50,7 @@ class Enrollment extends Model
             'completed_at' => 'datetime',
             'last_activity_at' => 'datetime',
             'progress_percentage' => 'float',
+            'is_provisional' => 'boolean',
         ];
     }
 

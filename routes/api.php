@@ -624,6 +624,21 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/enrollment-codes/export', [EnrollmentCodeController::class, 'export']);
     Route::get('/enrollment-codes/{id}', [EnrollmentCodeController::class, 'show']);
 
+    // Sales Forms routes (Marketing > Sales Forms builder & admin)
+    Route::get('/sales-forms/attachable-products', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'attachableProducts']);
+    Route::get('/sales-forms/course-structure/{courseId}', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'courseStructure']);
+    Route::get('/sales-forms/analytics/summary', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'analyticsSummary']);
+    Route::get('/sales-forms', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'index']);
+    Route::post('/sales-forms', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'store']);
+    Route::get('/sales-forms/{id}', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'show']);
+    Route::put('/sales-forms/{id}', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'update']);
+    Route::delete('/sales-forms/{id}', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'destroy']);
+    Route::post('/sales-forms/{id}/publish', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'publish']);
+    Route::get('/sales-forms/{id}/analytics', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'analytics']);
+    Route::get('/sales-forms/{id}/submissions', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'submissions']);
+    Route::get('/sales-forms/{id}/submissions/export', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'exportSubmissions']);
+    Route::post('/sales-forms/orders/{orderId}/complete', [\App\Http\Controllers\Api\Sales\SalesFormSubmissionController::class, 'completeOrder']);
+
     // Order routes
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders', [OrderController::class, 'store']);

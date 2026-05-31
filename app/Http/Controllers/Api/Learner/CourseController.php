@@ -66,7 +66,7 @@ class CourseController extends Controller
             })
             ->with([
                 'enrollments' => function ($query) use ($user) {
-                    $query->select(['id', 'course_id', 'user_id', 'enrolled_at', 'progress_percentage'])
+                    $query->select(['id', 'course_id', 'user_id', 'enrolled_at', 'progress_percentage', 'is_provisional', 'sales_form_id'])
                         ->where('user_id', $user->id)
                         ->with([
                             'activityCompletions' => function ($q) {
@@ -90,6 +90,15 @@ class CourseController extends Controller
 
         // Optimized progress calculation using collection methods
         $enrollment = $course->enrollments->first();
+
+        // Provisional (Sales Form) access: restrict visible blocks/activities to the
+        // trainer-authorized set until the related order(s) are completed.
+        $course->is_provisional_access = false;
+        if ($enrollment && $enrollment->is_provisional && $enrollment->sales_form_id && $course->template) {
+            $course->is_provisional_access = true;
+            $this->applyProvisionalAccessFilter($course, (int) $enrollment->sales_form_id);
+        }
+
         $activityCount = 0;
         $completedCount = 0;
 
@@ -122,5 +131,38 @@ class CourseController extends Controller
             'status' => 'success',
             'data' => $course,
         ]);
+    }
+
+    /**
+     * Filter a course's loaded template blocks/activities down to the set of
+     * blocks/activities authorized for provisional (pre-payment) access via the
+     * given sales form.
+     */
+    private function applyProvisionalAccessFilter(Course $course, int $salesFormId): void
+    {
+        $rules = \App\Models\SalesFormAccessBlock::where('sales_form_id', $salesFormId)
+            ->where('course_id', $course->id)
+            ->get();
+
+        // Block-level grants (block authorized, no specific activity) vs activity-level grants.
+        $authorizedBlockIds = $rules->whereNull('activity_id')->whereNotNull('block_id')->pluck('block_id')->all();
+        $authorizedActivityIds = $rules->whereNotNull('activity_id')->pluck('activity_id')->all();
+
+        $blocks = $course->template->blocks ?? collect();
+
+        $filtered = $blocks->filter(function ($block) use ($authorizedBlockIds, $authorizedActivityIds) {
+            $blockAuthorized = in_array($block->id, $authorizedBlockIds);
+            $hasAuthorizedActivity = $block->activities
+                && $block->activities->pluck('id')->intersect($authorizedActivityIds)->isNotEmpty();
+            return $blockAuthorized || $hasAuthorizedActivity;
+        })->map(function ($block) use ($authorizedBlockIds, $authorizedActivityIds) {
+            // If the whole block is authorized, keep all activities; otherwise keep only authorized ones.
+            if (!in_array($block->id, $authorizedBlockIds) && $block->activities) {
+                $block->setRelation('activities', $block->activities->whereIn('id', $authorizedActivityIds)->values());
+            }
+            return $block;
+        })->values();
+
+        $course->template->setRelation('blocks', $filtered);
     }
 }

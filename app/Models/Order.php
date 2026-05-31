@@ -38,6 +38,7 @@ class Order extends Model
         'billing_country',
         'notes',
         'referral_id',
+        'sales_form_submission_id',
     ];
 
     /**
@@ -53,6 +54,7 @@ class Order extends Model
     const TYPE_STOREFRONT = 'storefront';
     const TYPE_SUBSCRIPTION_PRODUCT = 'subscription_product';
     const TYPE_ENROLLMENT_CODE = 'enrollment_code';
+    const TYPE_SALES_FORM = 'sales_form';
 
     /**
      * The attributes that should be cast.
@@ -96,6 +98,14 @@ class Order extends Model
     public function referral(): BelongsTo
     {
         return $this->belongsTo(Referral::class);
+    }
+
+    /**
+     * Get the sales form submission that generated this order (if any).
+     */
+    public function salesFormSubmission(): BelongsTo
+    {
+        return $this->belongsTo(SalesFormSubmission::class);
     }
 
     /**

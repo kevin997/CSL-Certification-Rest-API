@@ -95,6 +95,33 @@ class TemplateController extends Controller
             ->with('activityCompletions')
             ->first();
             
+        // Provisional (Sales Form) access: restrict visible blocks/activities to the
+        // trainer-authorized set until the related order(s) are completed.
+        $template->is_provisional_access = false;
+        if ($enrollment && $enrollment->is_provisional && $enrollment->sales_form_id) {
+            $template->is_provisional_access = true;
+
+            $rules = \App\Models\SalesFormAccessBlock::where('sales_form_id', $enrollment->sales_form_id)
+                ->where('course_id', $enrollment->course_id)
+                ->get();
+            $authorizedBlockIds = $rules->whereNull('activity_id')->whereNotNull('block_id')->pluck('block_id')->all();
+            $authorizedActivityIds = $rules->whereNotNull('activity_id')->pluck('activity_id')->all();
+
+            $filtered = $template->blocks->filter(function ($block) use ($authorizedBlockIds, $authorizedActivityIds) {
+                $blockAuthorized = in_array($block->id, $authorizedBlockIds);
+                $hasAuthorizedActivity = $block->activities
+                    && $block->activities->pluck('id')->intersect($authorizedActivityIds)->isNotEmpty();
+                return $blockAuthorized || $hasAuthorizedActivity;
+            })->map(function ($block) use ($authorizedBlockIds, $authorizedActivityIds) {
+                if (!in_array($block->id, $authorizedBlockIds) && $block->activities) {
+                    $block->setRelation('activities', $block->activities->whereIn('id', $authorizedActivityIds)->values());
+                }
+                return $block;
+            })->values();
+
+            $template->setRelation('blocks', $filtered);
+        }
+
         if ($enrollment) {
             // Attach completion status to activities
             $completedActivityIds = $enrollment->activityCompletions

@@ -51,6 +51,10 @@ Route::post('/funders/webhooks/tara', [CampaignFunderController::class, 'handleT
 
 Route::post('/webhooks/media/processing', [MediaAssetController::class, 'processingWebhook']);
 
+// Public Sales Forms (render + submit). No authentication required.
+Route::get('/sales-forms/public/{slug}', [\App\Http\Controllers\Api\Sales\SalesFormSubmissionController::class, 'publicShow']);
+Route::post('/sales-forms/public/{slug}/submit', [\App\Http\Controllers\Api\Sales\SalesFormSubmissionController::class, 'submit']);
+
 // Public WhatsApp config - returns WhatsApp button config based on domain
 Route::get('/integrations/whatsapp/config', [ThirdPartyServiceController::class, 'getWhatsAppConfig']);
 
