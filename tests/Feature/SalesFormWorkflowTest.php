@@ -120,6 +120,51 @@ class SalesFormWorkflowTest extends TestCase
     }
 
     /** @test */
+    public function existing_global_user_is_added_to_form_environment_without_creating_a_second_account(): void
+    {
+        $form = $this->makePublishedForm();
+        $existingUser = User::factory()->create([
+            'email' => 'existing@example.com',
+            'password' => 'existing-password',
+            'role' => 'learner',
+        ]);
+
+        $response = $this->postJson("/api/sales-forms/public/{$form->slug}/submit", [
+            'name' => 'Existing Learner',
+            'email' => 'existing@example.com',
+            'password' => 'different-password',
+            'answers' => ['city' => 'Douala'],
+        ]);
+
+        $response->assertStatus(201)
+            ->assertJson([
+                'success' => true,
+                'user_existed' => true,
+                'email' => 'existing@example.com',
+            ])
+            ->assertJsonPath(
+                'message',
+                'An account with this email already exists. We have added this space to your account. Log in with your existing KURSA password to continue.'
+            );
+
+        $this->assertSame(1, User::where('email', 'existing@example.com')->count());
+        $this->assertDatabaseHas('environment_user', [
+            'environment_id' => $this->environment->id,
+            'user_id' => $existingUser->id,
+            'role' => 'learner',
+            'use_environment_credentials' => false,
+        ]);
+
+        $this->assertNotNull(
+            Enrollment::withoutGlobalScopes()
+                ->where('user_id', $existingUser->id)
+                ->where('course_id', $this->course->id)
+                ->where('environment_id', $this->environment->id)
+                ->first()
+        );
+    }
+
+    /** @test */
     public function completing_order_lifts_provisional_access(): void
     {
         $form = $this->makePublishedForm();
