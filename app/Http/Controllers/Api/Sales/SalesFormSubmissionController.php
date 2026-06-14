@@ -7,6 +7,7 @@ use App\Events\UserCreatedDuringCheckout;
 use App\Http\Controllers\Controller;
 use App\Models\Enrollment;
 use App\Models\Environment;
+use App\Models\EnvironmentUser;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
@@ -135,17 +136,8 @@ class SalesFormSubmissionController extends Controller
                     'role' => 'learner',
                 ]);
             } else {
-                // Existing account: require the correct password so a submitter cannot
-                // enroll/hijack someone else's account.
-                if (!Hash::check($request->password, $user->password)) {
-                    DB::rollBack();
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'An account with this email already exists. Please enter your existing password to continue.',
-                        'errors' => ['password' => ['Incorrect password for the existing account.']],
-                    ], 422);
-                }
                 $userExisted = true;
+                $this->ensureEnvironmentMembership($user, $environment);
             }
 
             // 2. Generate access code + persist submission.
@@ -243,7 +235,7 @@ class SalesFormSubmissionController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => $userExisted
-                    ? 'Your enrollment is ready. Log in to access your course.'
+                    ? 'An account with this email already exists. We have added this space to your account. Log in with your existing KURSA password to continue.'
                     : 'Your account has been created. Log in to access your course.',
                 'user_existed' => $userExisted,
                 'email' => $user->email,
@@ -263,6 +255,23 @@ class SalesFormSubmissionController extends Controller
                 'message' => 'Failed to submit form: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function ensureEnvironmentMembership(User $user, Environment $environment): void
+    {
+        EnvironmentUser::firstOrCreate(
+            [
+                'environment_id' => $environment->id,
+                'user_id' => $user->id,
+            ],
+            [
+                'role' => 'learner',
+                'permissions' => [],
+                'joined_at' => now(),
+                'use_environment_credentials' => false,
+                'is_account_setup' => false,
+            ]
+        );
     }
 
     /**
