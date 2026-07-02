@@ -118,13 +118,16 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 COPY composer.json composer.lock ./
 
 # Install PHP dependencies (change occasionally - separate layer)
-RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
+# Cache mount: resilient/faster dependency installs in CI builds
+RUN --mount=type=cache,target=/root/.composer/cache \
+    composer install --no-dev --optimize-autoloader --no-interaction --no-scripts --prefer-dist
 
 # Copy frontend dependency files
 COPY package*.json ./
 
 # Install Node dependencies (change occasionally - separate layer)
-RUN if [ -f "package.json" ]; then npm ci --silent; fi
+RUN --mount=type=cache,target=/root/.npm \
+    if [ -f "package.json" ]; then npm ci --silent --fetch-retries=5 --fetch-timeout=600000; fi
 
 # Configure PHP-FPM (rarely change - cached layer)
 RUN echo "[www]" > /usr/local/etc/php-fpm.d/www.conf \
