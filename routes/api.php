@@ -643,6 +643,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/marketing-automations', [\App\Http\Controllers\Api\MarketingAutomationController::class, 'index']);
     Route::put('/marketing-automations/{trigger}', [\App\Http\Controllers\Api\MarketingAutomationController::class, 'upsert']);
 
+    // "Notify me" interest in coming-soon integrations
+    Route::get('/integration-interests', [\App\Http\Controllers\Api\IntegrationInterestController::class, 'index']);
+    Route::post('/integration-interests', [\App\Http\Controllers\Api\IntegrationInterestController::class, 'store']);
+
     // Order routes
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders', [OrderController::class, 'store']);
