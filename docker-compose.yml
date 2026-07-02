@@ -25,6 +25,9 @@ services:
       - MARKETPLACE_API_URL=${MARKETPLACE_API_URL:-http://csl-marketplace-api}
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET}
       - CONTAINER_ROLE=app
+      - WACHAP_API_BASE_URL=${WACHAP_API_BASE_URL:-https://api.wachap.com}
+      - WACHAP_API_TOKEN=${WACHAP_API_TOKEN}
+      - WACHAP_ACCOUNT_ID=${WACHAP_ACCOUNT_ID}
     networks:
       - csl-network
       - csl-shared-network
@@ -47,6 +50,9 @@ services:
       - app-storage:/var/www/html/storage
     environment:
       - CONTAINER_ROLE=queue
+      - WACHAP_API_BASE_URL=${WACHAP_API_BASE_URL:-https://api.wachap.com}
+      - WACHAP_API_TOKEN=${WACHAP_API_TOKEN}
+      - WACHAP_ACCOUNT_ID=${WACHAP_ACCOUNT_ID}
       # AWS RDS connection settings
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
@@ -111,6 +117,9 @@ services:
       - app-backups:/var/www/html/storage/app/backups
     environment:
       - CONTAINER_ROLE=scheduler
+      - WACHAP_API_BASE_URL=${WACHAP_API_BASE_URL:-https://api.wachap.com}
+      - WACHAP_API_TOKEN=${WACHAP_API_TOKEN}
+      - WACHAP_ACCOUNT_ID=${WACHAP_ACCOUNT_ID}
       # AWS RDS connection settings
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
