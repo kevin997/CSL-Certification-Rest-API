@@ -1727,6 +1727,11 @@ class StorefrontController extends Controller
                 Log::error('Failed to send OrderCreated notification: ' . $e->getMessage());
             }
 
+            // Marketing automation trigger (pending-payment storefront checkout).
+            // The instant-complete path fires OrderCompleted → payment_confirmed
+            // automation instead, so it is intentionally not wired here.
+            event(new \App\Events\OrderPlaced($order));
+
             $responseData = [
                 'order_id' => $order->id,
                 'order_number' => $order->order_number,

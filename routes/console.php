@@ -132,3 +132,13 @@ Schedule::command(SendLearnerWeeklyDigest::class)
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('Learner weekly digest failed');
     });
+
+// Marketing automations: abandoned-order reminders - hourly
+Schedule::command(\App\Console\Commands\ProcessAbandonedOrdersCommand::class)
+    ->hourly()
+    ->withoutOverlapping(3600)
+    ->onOneServer()
+    ->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('Abandoned-order automation run failed');
+    });
