@@ -639,6 +639,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/sales-forms/{id}/submissions/export', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'exportSubmissions']);
     Route::post('/sales-forms/orders/{orderId}/complete', [\App\Http\Controllers\Api\Sales\SalesFormSubmissionController::class, 'completeOrder']);
 
+    // Marketing automations (Email/WhatsApp triggers — /settings/integrations/automations)
+    Route::get('/marketing-automations', [\App\Http\Controllers\Api\MarketingAutomationController::class, 'index']);
+    Route::put('/marketing-automations/{trigger}', [\App\Http\Controllers\Api\MarketingAutomationController::class, 'upsert']);
+
     // Order routes
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders', [OrderController::class, 'store']);

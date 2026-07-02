@@ -72,4 +72,14 @@ return [
         'purchase_topic' => env('KAFKA_PURCHASE_TOPIC', 'purchase.completed'),
     ],
 
+    // WhatsApp sending via the Wachap API (same platform account as shopikat).
+    'wachap' => [
+        'base_url' => env('WACHAP_API_BASE_URL', 'https://api.wachap.com'),
+        'token' => env('WACHAP_API_TOKEN'),
+        'account_id' => env('WACHAP_ACCOUNT_ID'),
+        // Human-like pacing bounds for bulk sends (see App\Support\WhatsAppThrottle).
+        'min_delay_ms' => env('WACHAP_MIN_DELAY_MS', 4000),
+        'max_delay_ms' => env('WACHAP_MAX_DELAY_MS', 15000),
+    ],
+
 ];

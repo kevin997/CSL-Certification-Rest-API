@@ -212,7 +212,13 @@ class OrderService
             } catch (\Exception $e) {
                 \Illuminate\Support\Facades\Log::error('Failed to send OrderCreated notification in OrderService: ' . $e->getMessage());
             }
-            
+
+            // Marketing automation trigger (not for sales-form orders — the
+            // form_submitted automation already covers that path)
+            if ($order->type !== Order::TYPE_SALES_FORM) {
+                event(new \App\Events\OrderPlaced($order));
+            }
+
             return $this->getOrderById($order->id);
         } catch (\Exception $e) {
             DB::rollBack();

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Sales;
 
 use App\Events\OrderCompleted;
+use App\Events\SalesFormSubmitted;
 use App\Events\UserCreatedDuringCheckout;
 use App\Http\Controllers\Controller;
 use App\Models\Enrollment;
@@ -231,6 +232,9 @@ class SalesFormSubmissionController extends Controller
             if (!$userExisted) {
                 event(new UserCreatedDuringCheckout($user, $environment, true));
             }
+
+            // Marketing automation: notify the instructor of the new lead
+            event(new SalesFormSubmitted($submission));
 
             return response()->json([
                 'success' => true,
