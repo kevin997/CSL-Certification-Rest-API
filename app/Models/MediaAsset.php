@@ -10,8 +10,14 @@ class MediaAsset extends Model
         'environment_id',
         'owner_user_id',
         'media_service_id',
+        'provider',
+        'provider_asset_id',
+        'playback_url',
         'title',
         'type',
+        'mime_type',
+        'size',
+        'duration',
         'status',
         'meta',
     ];
@@ -20,5 +26,7 @@ class MediaAsset extends Model
         'meta' => 'array',
         'owner_user_id' => 'integer',
         'environment_id' => 'integer',
+        'size' => 'integer',
+        'duration' => 'integer',
     ];
 }

@@ -104,11 +104,16 @@ class TemplateActivityQuestionController extends Controller
     }
     
     /**
-     * Import questions to a quiz activity (NEW: Using pivot table approach)
+     * Import questions to a quiz activity (deep copy).
      *
-     * Instead of duplicating questions, this method links existing questions
-     * to the target quiz activity through the activity_quiz_questions pivot table.
-     * This eliminates database bloat and enables true question sharing.
+     * Creates faithful, independent copies of the selected source questions
+     * under the target activity's quiz content, copying every question field
+     * (question_text, question_type, points, options JSON column, blanks,
+     * matrix_*, image_url, explanation, etc.) as well as every related option
+     * row. The copies use the direct `quiz_content_id` relationship, which is
+     * how questions are created and read everywhere else in the system, so the
+     * imported questions immediately load, persist and behave like manually
+     * authored ones.
      *
      * @param Request $request
      * @param int $activityId
@@ -163,57 +168,62 @@ class TemplateActivityQuestionController extends Controller
         DB::beginTransaction();
 
         try {
-            // Get the current max order for questions in this quiz
-            $maxOrder = DB::table('activity_quiz_questions')
-                ->where('quiz_content_id', $quizContent->id)
-                ->max('order') ?? 0;
+            // Continue ordering after any questions already in this quiz
+            $order = (int) QuizQuestion::where('quiz_content_id', $quizContent->id)->max('order');
 
-            // Attach questions to the quiz via pivot table
-            $attachData = [];
-            $order = $maxOrder + 1;
+            // Index sources by id so we can honor the requested selection order
+            $sourceById = $sourceQuestions->keyBy('id');
+
+            $importedQuestions = [];
 
             foreach ($questionIds as $questionId) {
-                // Check if question is already attached to avoid duplicates
-                $exists = DB::table('activity_quiz_questions')
-                    ->where('quiz_content_id', $quizContent->id)
-                    ->where('quiz_question_id', $questionId)
-                    ->exists();
+                $sourceQuestion = $sourceById->get($questionId);
 
-                if (!$exists) {
-                    $attachData[$questionId] = [
-                        'order' => $order++,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ];
+                if (!$sourceQuestion) {
+                    continue;
                 }
-            }
 
-            // Attach all questions at once (no duplication!)
-            if (!empty($attachData)) {
-                $quizContent->questionsViaPivot()->attach($attachData);
-            }
+                $order++;
 
-            // Get the newly attached questions with their options for the response
-            $importedQuestions = QuizQuestion::whereIn('id', $questionIds)
-                ->with('options')
-                ->get();
+                // Faithful deep copy of the question. replicate() copies every
+                // attribute (question_text, question_type, points, the options
+                // JSON column, blanks, matrix_*, image_url, explanation, etc.)
+                // except the primary key and timestamps.
+                $newQuestion = $sourceQuestion->replicate();
+                $newQuestion->quiz_content_id = $quizContent->id;
+                $newQuestion->order = $order;
+                $newQuestion->created_by = Auth::id();
+                $newQuestion->save();
+
+                // Deep copy every related option row, preserving all fields
+                // (option_text, is_correct, feedback, order, points,
+                // subquestion_text, answer_option_id, position, match_text).
+                // These back questionnaire, matching and hotspot question types.
+                foreach ($sourceQuestion->options as $option) {
+                    $newOption = $option->replicate();
+                    $newOption->quiz_question_id = $newQuestion->id;
+                    $newOption->save();
+                }
+
+                // Do NOT eager load the options relation onto the returned model:
+                // for non-questionnaire questions the (empty) relation would
+                // shadow the options JSON column in toArray(). Leaving it unloaded
+                // exposes the real options column to the client.
+                $importedQuestions[] = $newQuestion;
+            }
 
             DB::commit();
 
-            $message = count($attachData) . ' questions imported successfully';
-            if (count($attachData) < count($questionIds)) {
-                $skipped = count($questionIds) - count($attachData);
-                $message .= " ({$skipped} already existed and were skipped)";
-            }
+            $count = count($importedQuestions);
 
             return response()->json([
                 'status' => 'success',
-                'message' => $message,
+                'message' => $count . ' questions imported successfully',
                 'data' => [
                     'imported_questions' => $importedQuestions,
                     'quiz_content' => $quizContent,
-                    'newly_added_count' => count($attachData),
-                    'skipped_count' => count($questionIds) - count($attachData),
+                    'newly_added_count' => $count,
+                    'skipped_count' => 0,
                 ]
             ]);
 

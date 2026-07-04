@@ -55,6 +55,11 @@ jobs:
           scp $SSH_OPTS /tmp/compose-pinned.yml "root@$SERVER:$APP_DIR/docker-compose.yml"
           ssh $SSH_OPTS "root@$SERVER" "cd $APP_DIR && docker compose pull && docker compose up -d --remove-orphans"
 
+      - name: Run database migrations
+        run: |
+          SSH_OPTS="-i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+          ssh $SSH_OPTS "root@$SERVER" "cd $APP_DIR && docker compose exec -T app php artisan migrate --force"
+
       - name: Health check
         run: |
           SSH_OPTS="-i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"

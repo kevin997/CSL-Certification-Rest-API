@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 
 use App\Models\MediaAsset;
+use App\Services\BunnyStreamService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -13,10 +14,13 @@ class MediaAssetController extends Controller
 {
     protected $mediaServiceUrl;
 
-    public function __construct()
+    protected BunnyStreamService $bunny;
+
+    public function __construct(BunnyStreamService $bunny)
     {
         // Ideally from config
         $this->mediaServiceUrl = rtrim((string) config('services.media_service.url', 'http://localhost:8001'), '/');
+        $this->bunny = $bunny;
     }
 
     protected function mediaServiceBaseUrl(): string
@@ -36,6 +40,14 @@ class MediaAssetController extends Controller
             'title' => 'required|string',
             'type' => 'required|in:audio,video',
         ]);
+
+        $environmentId = $request->user()->environment_id ?? 1;
+
+        // Route VIDEO to Bunny Stream when configured. Audio stays on the
+        // self-hosted media service (Bunny Stream is video-only).
+        if ($validated['type'] === 'video' && $this->bunny->enabled()) {
+            return $this->initBunnyUpload($request, $validated, $environmentId);
+        }
 
         // Call Media Service to initialize upload
         $baseUrl = $this->mediaServiceBaseUrl();
@@ -88,6 +100,50 @@ class MediaAssetController extends Controller
     }
 
     /**
+     * Initialize a resumable (tus) upload against Bunny Stream.
+     *
+     * Creates the Bunny video object, records a local MediaAsset, and returns the
+     * tus endpoint + signed headers the browser needs to upload directly.
+     */
+    protected function initBunnyUpload(Request $request, array $validated, int $environmentId)
+    {
+        $videoId = $this->bunny->createVideo($validated['title'] ?? $validated['file_name']);
+
+        if (!$videoId) {
+            return response()->json(['error' => 'Failed to create video on Bunny Stream'], 502);
+        }
+
+        $tus = $this->bunny->tusUploadParams($videoId);
+
+        $mediaAsset = MediaAsset::create([
+            'environment_id' => $environmentId,
+            'owner_user_id' => $request->user()->id,
+            'provider' => 'bunny_stream',
+            'provider_asset_id' => $videoId,
+            'title' => $validated['title'] ?? $validated['file_name'],
+            'type' => 'video',
+            'mime_type' => $validated['mime_type'],
+            'size' => $validated['file_size'],
+            'status' => 'pending',
+            // Keep upload_id mirroring the provider id so existing lookups work.
+            'meta' => ['upload_id' => $videoId, 'provider' => 'bunny_stream'],
+        ]);
+
+        return response()->json([
+            'media_asset' => $mediaAsset,
+            'upload_id' => $videoId,
+            'upload_url' => $tus['upload_url'],
+            'upload_protocol' => 'tus',
+            'headers' => $tus['headers'],
+            'metadata' => [
+                'title' => $mediaAsset->title,
+                'filetype' => $validated['mime_type'],
+            ],
+            'expires_at' => $tus['expires_at'],
+        ]);
+    }
+
+    /**
      * Complete upload (proxy to Media Service)
      */
     public function completeUpload(Request $request, $id)
@@ -110,6 +166,15 @@ class MediaAssetController extends Controller
 
         if (!$uploadId) {
             return response()->json(['error' => 'Invalid asset state'], 400);
+        }
+
+        // Bunny Stream begins encoding automatically once the tus upload finishes.
+        // There is nothing to "complete" — just mark it processing and wait for the
+        // Bunny webhook to flip it to ready.
+        if ($mediaAsset->provider === 'bunny_stream') {
+            $mediaAsset->update(['status' => 'processing']);
+
+            return response()->json(['media_asset' => $mediaAsset->fresh()]);
         }
 
         // Call Media Service
@@ -188,6 +253,17 @@ class MediaAssetController extends Controller
             ->where('environment_id', $environmentId)
             ->firstOrFail();
 
+        // 1a. Bunny-backed assets are deleted from Bunny Stream.
+        if ($mediaAsset->provider === 'bunny_stream') {
+            $videoId = $mediaAsset->provider_asset_id ?: ($mediaAsset->meta['upload_id'] ?? null);
+            if ($videoId) {
+                $this->bunny->deleteVideo($videoId);
+            }
+            $mediaAsset->delete();
+
+            return response()->json(['message' => 'Media asset deleted successfully']);
+        }
+
         // 1. Delete from Media Service (if uploaded)
         $uploadId = $mediaAsset->meta['upload_id'] ?? null;
         if ($uploadId) {
@@ -220,13 +296,29 @@ class MediaAssetController extends Controller
     {
         $mediaAsset = MediaAsset::findOrFail($id);
 
-        // Check access permissions
-        // For now, allow owner
-        // if ($mediaAsset->owner_user_id !== $request->user()->id) { abort(403); }
+        // Restrict playback to the asset's own environment (multi-tenant boundary).
+        $environmentId = $request->user()->environment_id ?? 1;
+        if ((int) $mediaAsset->environment_id !== (int) $environmentId) {
+            return response()->json(['error' => 'Forbidden'], 403);
+        }
 
         $uploadId = $mediaAsset->meta['upload_id'] ?? null;
         if (!$uploadId) {
             return response()->json(['error' => 'Asset not ready'], 400);
+        }
+
+        // Bunny Stream: return a short-lived, token-authenticated HLS URL.
+        if ($mediaAsset->provider === 'bunny_stream') {
+            $videoId = $mediaAsset->provider_asset_id ?: $uploadId;
+            $signed = $this->bunny->signedPlaylistUrl($videoId);
+
+            return response()->json([
+                'token' => $signed['token'],
+                'stream_url' => $signed['stream_url'],
+                'token_path' => $signed['token_path'],
+                'expires' => $signed['expires'],
+                'type' => 'video',
+            ]);
         }
 
         // Call Media Service to get session
@@ -332,6 +424,64 @@ class MediaAssetController extends Controller
             $uploadId,
             $status,
             $processingMeta
+        ));
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Bunny Stream webhook. Bunny POSTs { VideoLibraryId, VideoGuid, Status }
+     * as encoding progresses. We protect the endpoint with a shared secret
+     * (query param `secret` or header X-Bunny-Webhook-Secret) since Bunny does
+     * not sign its webhooks.
+     *
+     * Bunny status codes: 0 Created, 1 Uploaded, 2 Processing, 3 Transcoding,
+     * 4 Finished, 5 Error, 6 UploadFailed.
+     */
+    public function bunnyWebhook(Request $request)
+    {
+        $provided = $request->query('secret', $request->header('X-Bunny-Webhook-Secret'));
+        if (!$this->bunny->verifyWebhookSecret(is_string($provided) ? $provided : null)) {
+            return response()->json(['error' => 'Invalid webhook secret'], 403);
+        }
+
+        $payload = $request->json()->all();
+        $videoGuid = $payload['VideoGuid'] ?? ($payload['videoGuid'] ?? null);
+        $bunnyStatus = $payload['Status'] ?? ($payload['status'] ?? null);
+
+        if (!$videoGuid) {
+            return response()->json(['error' => 'Missing VideoGuid'], 422);
+        }
+
+        $mediaAsset = MediaAsset::where('provider', 'bunny_stream')
+            ->where('provider_asset_id', $videoGuid)
+            ->first();
+
+        if (!$mediaAsset) {
+            // Unknown video — acknowledge so Bunny stops retrying.
+            return response()->json(['ok' => true]);
+        }
+
+        $status = match ((int) $bunnyStatus) {
+            4 => 'ready',
+            5, 6 => 'failed',
+            default => 'processing',
+        };
+
+        $mediaAsset->update(['status' => $status]);
+
+        Log::info('Bunny Stream webhook received', [
+            'media_asset_id' => $mediaAsset->id,
+            'video_guid' => $videoGuid,
+            'bunny_status' => $bunnyStatus,
+            'status' => $status,
+        ]);
+
+        broadcast(new \App\Events\MediaProcessingStatusUpdated(
+            $mediaAsset->id,
+            (string) ($mediaAsset->meta['upload_id'] ?? $videoGuid),
+            $status,
+            []
         ));
 
         return response()->json(['ok' => true]);
