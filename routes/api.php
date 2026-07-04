@@ -837,6 +837,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
 // Webhook routes (Signature verified, no auth:sanctum)
 Route::post('/webhooks/media/processing', [App\Http\Controllers\MediaAssetController::class, 'processingWebhook']);
+// Bunny Stream encoding webhook (protected by shared secret, no auth:sanctum)
+Route::post('/webhooks/bunny/stream', [App\Http\Controllers\MediaAssetController::class, 'bunnyWebhook']);
 
 // Note: Public routes (/branding/public, /environment/status, /subscription/current)
 // are defined in routes/api-public.php to bypass Sanctum's EnsureFrontendRequestsAreStateful middleware

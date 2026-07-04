@@ -50,6 +50,24 @@ return [
         'secret' => env('MEDIA_SERVICE_SECRET'),
     ],
 
+    'bunny_stream' => [
+        // Master switch. When false (or credentials missing), video uploads fall
+        // back to the self-hosted media service.
+        'enabled' => env('BUNNY_STREAM_ENABLED', false),
+        // Numeric Video Library ID from the Bunny dashboard.
+        'library_id' => env('BUNNY_STREAM_LIBRARY_ID'),
+        // Video Library API key (Stream → API).
+        'api_key' => env('BUNNY_STREAM_API_KEY'),
+        // Pull-zone hostname serving the HLS, e.g. "vz-xxxxxxxx.b-cdn.net".
+        'cdn_hostname' => env('BUNNY_STREAM_CDN_HOSTNAME'),
+        // Token Authentication key of the pull zone (used to sign playlist URLs).
+        'token_auth_key' => env('BUNNY_STREAM_TOKEN_AUTH_KEY'),
+        // Shared secret we require on the Bunny → API webhook (Bunny doesn't sign).
+        'webhook_secret' => env('BUNNY_STREAM_WEBHOOK_SECRET'),
+        // Optional collection to file uploads under.
+        'collection_id' => env('BUNNY_STREAM_COLLECTION_ID'),
+    ],
+
     'livekit' => [
         'api_key' => env('LIVEKIT_API_KEY'),
         'api_secret' => env('LIVEKIT_API_SECRET'),
