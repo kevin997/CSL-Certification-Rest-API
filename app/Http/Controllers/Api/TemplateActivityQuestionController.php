@@ -195,11 +195,13 @@ class TemplateActivityQuestionController extends Controller
                 $newQuestion->created_by = Auth::id();
                 $newQuestion->save();
 
-                // Deep copy every related option row, preserving all fields
-                // (option_text, is_correct, feedback, order, points,
-                // subquestion_text, answer_option_id, position, match_text).
-                // These back questionnaire, matching and hotspot question types.
-                foreach ($sourceQuestion->options as $option) {
+                // The `options` JSON column (used by multiple_choice, true_false,
+                // etc.) is already copied by replicate() above. Separately deep
+                // copy any related QuizQuestionOption *rows* (which back
+                // questionnaire/matching/hotspot types). NOTE: `$sourceQuestion->options`
+                // resolves to the JSON cast attribute, so we must call the
+                // relation method `options()` explicitly to get the model rows.
+                foreach ($sourceQuestion->options()->get() as $option) {
                     $newOption = $option->replicate();
                     $newOption->quiz_question_id = $newQuestion->id;
                     $newOption->save();
