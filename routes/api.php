@@ -812,6 +812,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/media', [App\Http\Controllers\MediaAssetController::class, 'index']); // Listing
     Route::post('/media/upload/init', [App\Http\Controllers\MediaAssetController::class, 'initUpload']);
     Route::post('/media/upload/{id}/complete', [App\Http\Controllers\MediaAssetController::class, 'completeUpload']);
+    // Resumable direct-to-MinIO multipart upload (init + complete relay; sign/parts go browser->media-service)
+    Route::post('/media/upload/multipart/init', [App\Http\Controllers\MediaAssetController::class, 'initMultipartUpload']);
+    Route::post('/media/upload/multipart/{id}/complete', [App\Http\Controllers\MediaAssetController::class, 'completeMultipartUpload']);
     Route::get('/media/playback/{id}', [App\Http\Controllers\MediaAssetController::class, 'playbackSession']);
     Route::get('/media/{id}', [App\Http\Controllers\MediaAssetController::class, 'show']);
     Route::delete('/media/{id}', [App\Http\Controllers\MediaAssetController::class, 'destroy']); // Deletion
