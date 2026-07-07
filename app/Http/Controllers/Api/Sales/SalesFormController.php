@@ -236,7 +236,7 @@ class SalesFormController extends Controller
             $query->where('name', 'like', '%' . $request->search . '%');
         }
 
-        $products = $query->orderBy('name')->limit(100)->get(['id', 'name', 'slug', 'price', 'currency', 'thumbnail_path']);
+        $products = $query->orderBy('name')->limit(100)->get(['id', 'name', 'slug', 'price', 'discount_price', 'currency', 'thumbnail_path']);
 
         return response()->json([
             'success' => true,
