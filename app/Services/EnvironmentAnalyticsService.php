@@ -60,6 +60,39 @@ class EnvironmentAnalyticsService
             'payouts'        => $this->safe(fn () => $this->payouts($environmentId)),
             'engagement'     => $this->safe(fn () => $this->engagement($environmentId, $start, $end)),
             'traffic'        => $this->safe(fn () => $this->traffic($environmentId, $start, $end)),
+            'deltas'         => $this->safe(fn () => $this->rangeDeltas($environmentId, $start, $end)),
+        ];
+    }
+
+    /**
+     * Range-based metrics compared against the previous equal-length period.
+     * (Snapshot metrics like MRR / payout owed are excluded — a period delta is
+     * only meaningful for flows, not point-in-time balances.)
+     */
+    private function rangeDeltas(int $e, Carbon $start, Carbon $end): array
+    {
+        $lengthSeconds = $start->diffInSeconds($end);
+        $prevEnd = (clone $start)->subSecond();
+        $prevStart = (clone $prevEnd)->subSeconds($lengthSeconds);
+
+        $revenue = fn ($s, $en) => (float) Order::where('environment_id', $e)
+            ->where('status', self::COMPLETED)->whereBetween('created_at', [$s, $en])->sum('total_amount');
+        $orders = fn ($s, $en) => Order::where('environment_id', $e)
+            ->where('status', self::COMPLETED)->whereBetween('created_at', [$s, $en])->count();
+        $learners = fn ($s, $en) => EnvironmentUser::where('environment_id', $e)
+            ->whereBetween('joined_at', [$s, $en])->count();
+        $visits = fn ($s, $en) => AcademyVisitEvent::where('environment_id', $e)
+            ->whereBetween('occurred_at', [$s, $en])->count();
+
+        $pct = fn ($cur, $prev) => $prev > 0 ? round((($cur - $prev) / $prev) * 100, 1) : ($cur > 0 ? 100.0 : 0.0);
+        $block = fn ($cur, $prev) => ['current' => $cur, 'previous' => $prev, 'pct' => $pct($cur, $prev)];
+
+        return [
+            'previous_range'   => ['start' => $prevStart->toDateString(), 'end' => $prevEnd->toDateString()],
+            'gross_revenue'    => $block(round($revenue($start, $end), 2), round($revenue($prevStart, $prevEnd), 2)),
+            'completed_orders' => $block($orders($start, $end), $orders($prevStart, $prevEnd)),
+            'new_learners'     => $block($learners($start, $end), $learners($prevStart, $prevEnd)),
+            'visits'           => $block($visits($start, $end), $visits($prevStart, $prevEnd)),
         ];
     }
 
