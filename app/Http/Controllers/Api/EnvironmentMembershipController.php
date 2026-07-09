@@ -249,8 +249,13 @@ class EnvironmentMembershipController extends Controller
                 ];
             });
 
-        // Merge and deduplicate (in case owner is also in environment_user)
-        $allEnvironments = $ownedEnvironments->merge($memberEnvironments)
+        // Merge and deduplicate (in case owner is also in environment_user).
+        // Both sides are collections of plain arrays (from ->map()). ->get()
+        // returns an Eloquent collection, whose ::merge() treats each item as a
+        // model and calls getKey() on it — which fatals on an array. toBase()
+        // drops to a plain Support collection whose merge() is a simple concat.
+        $allEnvironments = $ownedEnvironments->toBase()
+            ->merge($memberEnvironments->toBase())
             ->unique(function ($item) {
                 return $item['environment']->id;
             })
