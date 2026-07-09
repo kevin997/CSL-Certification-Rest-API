@@ -799,6 +799,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/analytics/course-analytics', [AnalyticsController::class, 'courseAnalytics']);
     Route::get('/analytics/certificate-analytics', [AnalyticsController::class, 'certificateAnalytics']);
 
+    // Unified environment-scoped analytics (audience, learning, commerce,
+    // subscriptions, payouts, engagement, traffic) — EnvironmentAnalyticsService.
+    Route::get('/analytics/environment/overview', [\App\Http\Controllers\Api\EnvironmentAnalyticsController::class, 'overview']);
+
     // Analytics widgets (financial + traffic)
     Route::get('/analytics/financial-widgets', [AnalyticsWidgetsController::class, 'financialWidgets']);
     Route::get('/analytics/traffic-widgets', [AnalyticsWidgetsController::class, 'trafficWidgets']);
