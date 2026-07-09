@@ -1693,51 +1693,86 @@ class StorefrontController extends Controller
                 $gatewayCode = $gatewaySettings->code;
             }
 
-            $order = new Order();
-            $order->user_id = $user->id;
-            $order->environment_id = $environment->id;
-            $order->order_number = 'ORD-' . strtoupper(Str::random(8));
-            $order->status = 'pending';
-            $order->payment_method = $isFree ? 'free' : $paymentMethod;
-            $order->billing_name = $request->input('name');
-            $order->billing_email = $request->input('email');
-            $order->phone_number = $request->input('phone_number');
-            $order->billing_address = $request->input('billing_address');
-            $order->billing_city = $request->input('billing_city');
-            $order->billing_state = $request->input('billing_state');
-            $order->billing_zip = $request->input('billing_zip') ?? '00000';
-            $order->billing_country = $request->input('billing_country');
-            $order->notes = $request->input('notes');
-            $order->referral_id = $referral?->id;
-            $order->total_amount = $totalAmount;
-            $order->currency = $currency;
-            $order->save();
+            // Idempotency: reuse a very recent identical pending order instead of
+            // creating a duplicate. Checkout has no idempotency key, so a double
+            // submit / retry within a short window would otherwise create duplicate
+            // pending orders for the same user + products + amount.
+            $productKey = collect($orderItems)
+                ->map(fn ($i) => $i['product']->id . 'x' . $i['quantity'])
+                ->sort()
+                ->values()
+                ->implode(',');
 
-            foreach ($orderItems as $item) {
-                $orderItem = new OrderItem();
-                $orderItem->order_id = $order->id;
-                $orderItem->product_id = $item['product']->id;
-                $orderItem->quantity = $item['quantity'];
-                $orderItem->price = $item['price'];
-                $orderItem->total = $item['total'];
-                $orderItem->save();
+            $existingOrder = Order::where('user_id', $user->id)
+                ->where('environment_id', $environment->id)
+                ->where('status', 'pending')
+                ->where('total_amount', $totalAmount)
+                ->where('created_at', '>=', now()->subMinutes(2))
+                ->with('items')
+                ->latest()
+                ->get()
+                ->first(function ($o) use ($productKey) {
+                    $key = $o->items
+                        ->map(fn ($i) => $i->product_id . 'x' . $i->quantity)
+                        ->sort()
+                        ->values()
+                        ->implode(',');
+                    return $key === $productKey;
+                });
+
+            if ($existingOrder) {
+                $order = $existingOrder;
+            } else {
+                $order = new Order();
+                $order->user_id = $user->id;
+                $order->environment_id = $environment->id;
+                $order->order_number = 'ORD-' . strtoupper(Str::random(8));
+                $order->status = 'pending';
+                $order->payment_method = $isFree ? 'free' : $paymentMethod;
+                $order->billing_name = $request->input('name');
+                $order->billing_email = $request->input('email');
+                $order->phone_number = $request->input('phone_number');
+                $order->billing_address = $request->input('billing_address');
+                $order->billing_city = $request->input('billing_city');
+                $order->billing_state = $request->input('billing_state');
+                $order->billing_zip = $request->input('billing_zip') ?? '00000';
+                $order->billing_country = $request->input('billing_country');
+                $order->notes = $request->input('notes');
+                $order->referral_id = $referral?->id;
+                $order->total_amount = $totalAmount;
+                $order->currency = $currency;
+                $order->save();
+
+                foreach ($orderItems as $item) {
+                    $orderItem = new OrderItem();
+                    $orderItem->order_id = $order->id;
+                    $orderItem->product_id = $item['product']->id;
+                    $orderItem->quantity = $item['quantity'];
+                    $orderItem->price = $item['price'];
+                    $orderItem->total = $item['total'];
+                    $orderItem->save();
+                }
             }
 
             DB::commit();
 
-            try {
-                $order->load(['user']);
-                if ($order->user) {
-                    $order->user->notify(new \App\Notifications\OrderCreated($order, app(\App\Services\TelegramService::class)));
+            // Only fire creation side-effects for a genuinely new order — a reused
+            // (deduped) order already sent these when it was first created.
+            if (!$existingOrder) {
+                try {
+                    $order->load(['user']);
+                    if ($order->user) {
+                        $order->user->notify(new \App\Notifications\OrderCreated($order, app(\App\Services\TelegramService::class)));
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Failed to send OrderCreated notification: ' . $e->getMessage());
                 }
-            } catch (\Exception $e) {
-                Log::error('Failed to send OrderCreated notification: ' . $e->getMessage());
-            }
 
-            // Marketing automation trigger (pending-payment storefront checkout).
-            // The instant-complete path fires OrderCompleted → payment_confirmed
-            // automation instead, so it is intentionally not wired here.
-            event(new \App\Events\OrderPlaced($order));
+                // Marketing automation trigger (pending-payment storefront checkout).
+                // The instant-complete path fires OrderCompleted → payment_confirmed
+                // automation instead, so it is intentionally not wired here.
+                event(new \App\Events\OrderPlaced($order));
+            }
 
             $responseData = [
                 'order_id' => $order->id,
