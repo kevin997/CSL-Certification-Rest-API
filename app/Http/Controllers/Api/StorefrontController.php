@@ -78,7 +78,12 @@ class StorefrontController extends Controller
      */
     protected function getOrderById(string $environmentId, string $orderId)
     {
-        return Order::find($orderId);
+        // Scope the lookup to the environment. Previously this was Order::find($orderId)
+        // which ignored the environment entirely on a PUBLIC route — any caller could
+        // fetch ANY order (and its billing PII) by guessing a numeric id (IDOR).
+        return Order::where('id', $orderId)
+            ->where('environment_id', $environmentId)
+            ->first();
     }
 
 
@@ -97,7 +102,9 @@ class StorefrontController extends Controller
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
-        $order = $this->getOrderById($environmentId, $orderId);
+        // Pass the RESOLVED environment id (the route param may be a domain), so the
+        // order is scoped to the store it actually belongs to.
+        $order = $this->getOrderById((string) $environment->id, $orderId);
 
         if (!$order) {
             return response()->json(['message' => 'Order not found'], 404);
