@@ -221,3 +221,15 @@ Schedule::call(function () {
         \Illuminate\Support\Facades\Log::warning('Assistant model keep-warm failed: '.$e->getMessage());
     }
 })->name('assistant-model-keep-warm')->everyTenMinutes()->onOneServer();
+
+// Weekly self-report: pools, sends, retention and assistant usage — emailed
+// to the operator so the fully-automated engine stays observable.
+Schedule::command(\App\Console\Commands\MarketingHealthReportCommand::class)
+    ->weeklyOn(1, '07:30')
+    ->timezone('Africa/Douala')
+    ->withoutOverlapping(3600)
+    ->onOneServer()
+    ->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('Marketing health report failed');
+    });
