@@ -25,12 +25,14 @@ use Stringable;
  * NOTE: This agent deliberately does NOT use
  * App\Ai\Agents\Concerns\FailsOverToFallbackModel — that concern hardcodes its
  * fallback to `llama3.2:1b`, but the course builder needs a larger fallback
- * to reliably produce structured multi-block output; the fast llama3.2:1b
+ * — the shared CPU box (often at load 6-8 from transcoding) cannot run 7B
+ * models inside the job budget, so the fast 1b model is PRIMARY here; qwen is
+ * the quality fallback. Flip the Model attribute when a GPU box arrives. The
  * failover (schema + server-side normalization keep it safe) lives in
  * GenerateCourseDraftJob instead of being generalized into the shared concern.
  */
 #[Provider(Lab::Ollama)]
-#[Model('qwen2.5:7b')]
+#[Model('llama3.2:1b')]
 #[Temperature(0.7)]
 #[Timeout(480)]
 class CourseBuilderAgent implements Agent, Conversational, HasStructuredOutput, HasTools
