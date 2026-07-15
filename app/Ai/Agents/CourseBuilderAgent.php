@@ -25,14 +25,14 @@ use Stringable;
  * NOTE: This agent deliberately does NOT use
  * App\Ai\Agents\Concerns\FailsOverToFallbackModel — that concern hardcodes its
  * fallback to `llama3.2:1b`, but the course builder needs a larger fallback
- * (`llama3.1:8b`) to reliably produce structured multi-block output. The
- * qwen -> llama3.1:8b failover is implemented directly in
+ * to reliably produce structured multi-block output; the fast llama3.2:1b
+ * failover (schema + server-side normalization keep it safe) lives in
  * GenerateCourseDraftJob instead of being generalized into the shared concern.
  */
 #[Provider(Lab::Ollama)]
 #[Model('qwen2.5:7b')]
 #[Temperature(0.7)]
-#[Timeout(600)]
+#[Timeout(480)]
 class CourseBuilderAgent implements Agent, Conversational, HasStructuredOutput, HasTools
 {
     use Promptable;
@@ -47,8 +47,9 @@ You are an expert instructional designer for KURSA, a multi-tenant course
 platform. Given an instructor's description of a course, design a complete,
 pedagogically sound course template, written in the requested language.
 
-Structure the course as 3-6 blocks (modules), in progressive order, with 2-5
-activities per block. Each activity's `type` MUST be one of: text, video,
+Structure the course as 3-5 blocks (modules), in progressive order, with 2-4
+activities per block. Keep ALL descriptions under 20 words — this is a
+skeleton the teacher will flesh out, not course prose. Each activity's `type` MUST be one of: text, video,
 quiz, lesson, assignment, documentation, feedback, certificate. Prefer mostly
 lesson/video/text activities for teaching content, a quiz to check
 understanding, and an assignment for practice. If appropriate, add exactly
