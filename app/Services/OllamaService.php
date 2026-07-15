@@ -16,6 +16,8 @@ class OllamaException extends \RuntimeException
  * Chat completions via a self-hosted Ollama server. Used to generate
  * marketing/retention copy (see App\Support\Marketing\Multilingual and
  * App\Models\MarketingMessage).
+ *
+ * @deprecated Use App\Ai\Agents\* (laravel/ai) instead.
  */
 class OllamaService
 {

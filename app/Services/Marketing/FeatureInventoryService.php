@@ -2,16 +2,17 @@
 
 namespace App\Services\Marketing;
 
-use App\Services\OllamaService;
+use App\Ai\Agents\DocFeatureExtractorAgent;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 /**
  * Builds and caches a compact knowledge base of KURSA's actual features by
- * crawling the platform's own docs with Ollama, then grounds every generated
- * marketing message against it. Falls back to a hardcoded seed list so the
- * content engine still works if doc extraction fails entirely.
+ * crawling the platform's own docs with the DocFeatureExtractorAgent, then
+ * grounds every generated marketing message against it. Falls back to a
+ * hardcoded seed list so the content engine still works if doc extraction
+ * fails entirely.
  */
 class FeatureInventoryService
 {
@@ -24,24 +25,6 @@ class FeatureInventoryService
     private const MAX_DOC_BYTES = 60 * 1024;
 
     private const MAX_FEATURES = 60;
-
-    private const SYSTEM_PROMPT = <<<'PROMPT'
-You are analyzing internal documentation for KURSA, a multi-tenant course and
-certification platform. Instructors build branded academies on KURSA: they
-create courses, quizzes, certificates, storefronts, and sales funnels, accept
-payments (including African mobile money), run live sessions, and chat with
-learners. Learners enroll, learn, and earn certificates.
-
-Read the documentation excerpt and extract between 0 and 5 concrete, sellable
-features that instructors or learners would care about. Ignore internal
-implementation details, infrastructure, and code-only concerns. Respond with
-ONLY a JSON object of the form:
-{"features": [{"name": "short feature name", "summary": "one sentence describing what it does and why it matters", "audience": "instructor|learner|both"}]}
-
-If nothing sellable is present, respond with {"features": []}.
-PROMPT;
-
-    public function __construct(private OllamaService $ollama) {}
 
     /**
      * @return array{generated_at: string, features: array<int, array{name: string, summary: string, audience: string, doc: string}>}
@@ -133,7 +116,7 @@ PROMPT;
             return [];
         }
 
-        $result = $this->ollama->chatJson(self::SYSTEM_PROMPT, $excerpt);
+        $result = (new DocFeatureExtractorAgent)->promptWithFailover($excerpt);
 
         $features = [];
 

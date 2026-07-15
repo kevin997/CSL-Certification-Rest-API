@@ -2,10 +2,12 @@
 
 namespace App\Console\Commands;
 
+use App\Ai\Agents\EmailCampaignAgent;
+use App\Ai\Agents\MarketingTipAgent;
+use App\Ai\Agents\StatusTeaserAgent;
 use App\Models\MarketingMessage;
 use App\Services\Marketing\BlogContentService;
 use App\Services\Marketing\FeatureInventoryService;
-use App\Services\OllamaService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -25,20 +27,9 @@ class GenerateMarketingContentCommand extends Command
 
     private const LOOKBACK_ROWS = 20;
 
-    private const SYSTEM_PROMPT = <<<'PROMPT'
-You are KURSA's marketing copywriter. KURSA is a multi-tenant course and
-certification platform: instructors build branded academies — courses,
-quizzes, certificates, storefronts, sales funnels, payments (including
-African mobile money), live sessions, and chat — and learners enroll, learn,
-and earn certificates. Your audience is mostly Cameroonian and African
-instructors and learners. Write warm, concrete copy — no hype, no more than
-2 emojis total. ALWAYS produce BOTH a French and an English version, French
-first. Respond with ONLY the requested JSON object, no commentary.
-PROMPT;
-
-    public function handle(FeatureInventoryService $inventory, BlogContentService $blog, OllamaService $ollama): int
+    public function handle(FeatureInventoryService $inventory, BlogContentService $blog): int
     {
-        if (! OllamaService::isConfigured()) {
+        if (blank(config('ai.providers.ollama.url'))) {
             $this->warn('Ollama is not configured — skipping marketing content generation.');
 
             return self::SUCCESS;
@@ -93,10 +84,10 @@ PROMPT;
                         // Mark as used for the rest of this run regardless of
                         // outcome, so a failure doesn't retry the same post.
                         $usedBlogPostIds[] = $post['id'];
-                        $result = $this->generateOneFromBlog($channel, $post, $ollama);
+                        $result = $this->generateOneFromBlog($channel, $post);
                     } else {
                         $feature = $this->pickFeature($loadFeatures(), $channel);
-                        $result = $this->generateOne($channel, $feature, $ollama);
+                        $result = $this->generateOne($channel, $feature);
                     }
 
                     if ($result === 'duplicate') {
@@ -222,12 +213,12 @@ PROMPT;
      * @param  array{name: string, summary: string, audience: string, doc: string}  $feature
      * @return string 'generated'|'duplicate'|'failed'
      */
-    private function generateOne(string $channel, array $feature, OllamaService $ollama): string
+    private function generateOne(string $channel, array $feature): string
     {
         return match ($channel) {
-            MarketingMessage::CHANNEL_GROUP_TIP => $this->generateGroupTip($feature, $ollama),
-            MarketingMessage::CHANNEL_STATUS => $this->generateStatus($feature, $ollama),
-            MarketingMessage::CHANNEL_EMAIL => $this->generateEmailCampaign($feature, $ollama),
+            MarketingMessage::CHANNEL_GROUP_TIP => $this->generateGroupTip($feature),
+            MarketingMessage::CHANNEL_STATUS => $this->generateStatus($feature),
+            MarketingMessage::CHANNEL_EMAIL => $this->generateEmailCampaign($feature),
             default => 'failed',
         };
     }
@@ -236,23 +227,21 @@ PROMPT;
      * @param  array{id:int, title:string, link:string, excerpt:string, date:string}  $post
      * @return string 'generated'|'duplicate'|'failed'
      */
-    private function generateOneFromBlog(string $channel, array $post, OllamaService $ollama): string
+    private function generateOneFromBlog(string $channel, array $post): string
     {
         return match ($channel) {
-            MarketingMessage::CHANNEL_GROUP_TIP => $this->generateBlogGroupTip($post, $ollama),
-            MarketingMessage::CHANNEL_STATUS => $this->generateBlogStatus($post, $ollama),
-            MarketingMessage::CHANNEL_EMAIL => $this->generateBlogEmailCampaign($post, $ollama),
+            MarketingMessage::CHANNEL_GROUP_TIP => $this->generateBlogGroupTip($post),
+            MarketingMessage::CHANNEL_STATUS => $this->generateBlogStatus($post),
+            MarketingMessage::CHANNEL_EMAIL => $this->generateBlogEmailCampaign($post),
             default => 'failed',
         };
     }
 
-    private function generateGroupTip(array $feature, OllamaService $ollama): string
+    private function generateGroupTip(array $feature): string
     {
-        $prompt = "Feature: {$feature['name']}\nWhat it does: {$feature['summary']}\n\n".
-            'Write a practical tip / mini-guide (2-4 sentences per language) teaching how and why to use this '.
-            'feature, ending with one actionable step. Respond with JSON: {"topic","fr","en"}.';
+        $prompt = "Feature: {$feature['name']}\nWhat it does: {$feature['summary']}";
 
-        $result = $ollama->chatJson(self::SYSTEM_PROMPT, $prompt);
+        $result = (new MarketingTipAgent)->promptWithFailover($prompt);
 
         $topic = trim((string) ($result['topic'] ?? $feature['name']));
         $fr = trim((string) ($result['fr'] ?? ''));
@@ -271,13 +260,11 @@ PROMPT;
         ]);
     }
 
-    private function generateStatus(array $feature, OllamaService $ollama): string
+    private function generateStatus(array $feature): string
     {
-        $prompt = "Feature: {$feature['name']}\nWhat it does: {$feature['summary']}\n\n".
-            'Write ONE punchy WhatsApp-Status line per language (max ~140 characters each) that makes '.
-            'instructors/learners curious about this feature. Respond with JSON: {"topic","fr","en"}.';
+        $prompt = "Feature: {$feature['name']}\nWhat it does: {$feature['summary']}";
 
-        $result = $ollama->chatJson(self::SYSTEM_PROMPT, $prompt);
+        $result = (new StatusTeaserAgent)->promptWithFailover($prompt);
 
         $topic = trim((string) ($result['topic'] ?? $feature['name']));
         $fr = trim((string) ($result['fr'] ?? ''));
@@ -295,15 +282,11 @@ PROMPT;
         ]);
     }
 
-    private function generateEmailCampaign(array $feature, OllamaService $ollama): string
+    private function generateEmailCampaign(array $feature): string
     {
-        $prompt = "Feature: {$feature['name']}\nWhat it does: {$feature['summary']}\n\n".
-            'Write a marketing email campaign for this feature. For each language provide 2-4 short paragraphs '.
-            'of HTML (no <html>/<head> tags, inline styles only) plus one button-styled <a href="{{cta_url}}"> '.
-            'link — use the literal placeholder {{cta_url}} for the link target. Respond with JSON: '.
-            '{"topic","subject_fr","subject_en","html_fr","html_en"}.';
+        $prompt = "Feature: {$feature['name']}\nWhat it does: {$feature['summary']}";
 
-        $result = $ollama->chatJson(self::SYSTEM_PROMPT, $prompt);
+        $result = (new EmailCampaignAgent)->promptWithFailover($prompt);
 
         $topic = trim((string) ($result['topic'] ?? $feature['name']));
         $subjectFr = trim((string) ($result['subject_fr'] ?? ''));
@@ -332,13 +315,11 @@ PROMPT;
      * @param  array{id:int, title:string, link:string, excerpt:string, date:string}  $post
      * @return string 'generated'|'duplicate'|'failed'
      */
-    private function generateBlogGroupTip(array $post, OllamaService $ollama): string
+    private function generateBlogGroupTip(array $post): string
     {
-        $prompt = "Blog article: {$post['title']}\nExcerpt: {$post['excerpt']}\n\n".
-            'Write a 2-4 sentence practical takeaway tip per language that teaches the reader something '.
-            'actionable from this article, then invite them to read more. Respond with JSON: {"topic","fr","en"}.';
+        $prompt = "Blog article: {$post['title']}\nExcerpt: {$post['excerpt']}";
 
-        $result = $ollama->chatJson(self::SYSTEM_PROMPT, $prompt);
+        $result = (new MarketingTipAgent)->promptWithFailover($prompt);
 
         $topic = mb_substr(trim((string) ($result['topic'] ?? $post['title'])), 0, 160);
         $fr = trim((string) ($result['fr'] ?? ''));
@@ -360,13 +341,11 @@ PROMPT;
      * @param  array{id:int, title:string, link:string, excerpt:string, date:string}  $post
      * @return string 'generated'|'duplicate'|'failed'
      */
-    private function generateBlogStatus(array $post, OllamaService $ollama): string
+    private function generateBlogStatus(array $post): string
     {
-        $prompt = "Blog article: {$post['title']}\nExcerpt: {$post['excerpt']}\n\n".
-            'Write ONE punchy curiosity-driving WhatsApp-Status line per language (max ~140 characters each) '.
-            'about this article. Respond with JSON: {"topic","fr","en"}.';
+        $prompt = "Blog article: {$post['title']}\nExcerpt: {$post['excerpt']}";
 
-        $result = $ollama->chatJson(self::SYSTEM_PROMPT, $prompt);
+        $result = (new StatusTeaserAgent)->promptWithFailover($prompt);
 
         $topic = mb_substr(trim((string) ($result['topic'] ?? $post['title'])), 0, 160);
         $fr = trim((string) ($result['fr'] ?? ''));
@@ -388,15 +367,11 @@ PROMPT;
      * @param  array{id:int, title:string, link:string, excerpt:string, date:string}  $post
      * @return string 'generated'|'duplicate'|'failed'
      */
-    private function generateBlogEmailCampaign(array $post, OllamaService $ollama): string
+    private function generateBlogEmailCampaign(array $post): string
     {
-        $prompt = "Blog article: {$post['title']}\nExcerpt: {$post['excerpt']}\n\n".
-            'Write a short newsletter (2-3 paragraphs of HTML per language, no <html>/<head> tags, inline styles '.
-            'only) featuring this article, plus one button-styled <a href="{{cta_url}}"> link — use the literal '.
-            'placeholder {{cta_url}} for the link target. Respond with JSON: '.
-            '{"topic","subject_fr","subject_en","html_fr","html_en"}.';
+        $prompt = "Blog article: {$post['title']}\nExcerpt: {$post['excerpt']}";
 
-        $result = $ollama->chatJson(self::SYSTEM_PROMPT, $prompt);
+        $result = (new EmailCampaignAgent)->promptWithFailover($prompt);
 
         $topic = mb_substr(trim((string) ($result['topic'] ?? $post['title'])), 0, 160);
         $subjectFr = trim((string) ($result['subject_fr'] ?? ''));
