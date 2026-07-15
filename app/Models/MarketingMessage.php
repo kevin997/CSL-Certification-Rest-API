@@ -55,12 +55,12 @@ class MarketingMessage extends Model
     ];
 
     /**
-     * Scope: pending messages for a channel, oldest first.
+     * Scope: pending messages, oldest first — optionally narrowed to a channel.
      */
-    public function scopePending(Builder $query, string $channel): Builder
+    public function scopePending(Builder $query, ?string $channel = null): Builder
     {
         return $query
-            ->where('channel', $channel)
+            ->when($channel !== null, fn (Builder $q) => $q->where('channel', $channel))
             ->where('status', self::STATUS_PENDING)
             ->orderBy('created_at');
     }
