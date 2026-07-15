@@ -215,7 +215,7 @@ Schedule::call(function () {
     try {
         \Illuminate\Support\Facades\Http::timeout(20)->post(
             rtrim((string) config('ai.providers.ollama.url'), '/').'/api/generate',
-            ['model' => 'llama3.2:1b', 'keep_alive' => '30m'],
+            ['model' => 'qwen2.5:7b', 'keep_alive' => '30m'],
         );
     } catch (\Throwable $e) {
         \Illuminate\Support\Facades\Log::warning('Assistant model keep-warm failed: '.$e->getMessage());

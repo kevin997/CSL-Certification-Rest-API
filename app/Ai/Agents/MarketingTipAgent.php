@@ -14,7 +14,6 @@ use Laravel\Ai\Contracts\Conversational;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Tool;
-use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Messages\Message;
 use Laravel\Ai\Promptable;
 use Stringable;
@@ -23,8 +22,7 @@ use Stringable;
  * Generates a practical "group tip" (2-4 sentences per language) about a
  * KURSA feature or blog article — see GenerateMarketingContentCommand.
  */
-#[Provider(Lab::Ollama)]
-#[Model('qwen2.5:7b')]
+#[Provider(['ollama' => 'qwen2.5:7b', 'ollama_cpu' => 'llama3.2:1b'])]
 #[Temperature(0.8)]
 #[Timeout(300)]
 class MarketingTipAgent implements Agent, Conversational, HasStructuredOutput, HasTools

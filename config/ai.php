@@ -112,12 +112,21 @@ return [
             'key' => env('MISTRAL_API_KEY'),
         ],
 
+        // PRIMARY: the RTX A4000 GPU box (~60 tok/s on qwen2.5:7b). May be
+        // powered off to save cost — agents declare ollama_cpu as failover,
+        // so the stack degrades gracefully to the media box's CPU ollama.
         'ollama' => [
             'driver' => 'ollama',
             'key' => env('OLLAMA_API_KEY', ''),
-            // The CSL media box hosts ollama (qwen2.5:7b, llama3.2:1b,
-            // nomic-embed-text, ...) — reachable from the KURSA VPS only.
-            'url' => env('OLLAMA_URL', 'http://31.97.75.62:11434'),
+            'url' => env('OLLAMA_URL', 'http://108.181.152.248:11434'),
+        ],
+
+        // FALLBACK: CPU ollama on the CSL media box (slow under load — pair
+        // with small models only).
+        'ollama_cpu' => [
+            'driver' => 'ollama',
+            'key' => env('OLLAMA_API_KEY', ''),
+            'url' => env('OLLAMA_CPU_URL', 'http://31.97.75.62:11434'),
         ],
 
         'openai' => [
