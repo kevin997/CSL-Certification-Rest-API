@@ -21,7 +21,7 @@ use Stringable;
  * Extracts concrete, sellable KURSA features from a documentation excerpt —
  * see FeatureInventoryService.
  */
-#[Provider(['ollama' => 'qwen2.5:7b', 'ollama_cpu' => 'llama3.2:1b'])]
+#[Provider(['ollama' => 'qwen2.5:14b', 'ollama_cpu' => 'llama3.2:1b'])]
 #[Temperature(0.3)]
 #[Timeout(300)]
 class DocFeatureExtractorAgent implements Agent, Conversational, HasStructuredOutput, HasTools

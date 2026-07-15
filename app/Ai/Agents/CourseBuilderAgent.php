@@ -30,7 +30,7 @@ use Stringable;
  * failover (schema + server-side normalization keep it safe) lives in
  * GenerateCourseDraftJob instead of being generalized into the shared concern.
  */
-#[Provider(['ollama' => 'qwen2.5:7b', 'ollama_cpu' => 'llama3.2:1b'])]
+#[Provider(['ollama' => 'qwen2.5:14b', 'ollama_cpu' => 'llama3.2:1b'])]
 #[Temperature(0.7)]
 #[Timeout(480)]
 class CourseBuilderAgent implements Agent, Conversational, HasStructuredOutput, HasTools

@@ -49,6 +49,6 @@ ufw allow from "$MEDIA_SERVER_IP" to any port 11434 proto tcp
 ufw --force enable
 
 # Models used by the KURSA stack.
-for m in qwen2.5:7b llama3.2:1b nomic-embed-text; do ollama pull "$m"; done
+for m in qwen2.5:14b qwen2.5:7b llama3.2:1b nomic-embed-text; do ollama pull "$m"; done
 
 echo "GPU ollama ready: $(hostname -I | awk '{print $1}'):11434"
