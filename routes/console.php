@@ -194,3 +194,16 @@ Schedule::command(\App\Console\Commands\RunRetentionCampaignsCommand::class)
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('Retention campaign run failed');
     });
+
+// Weekly: (re)index the marketing knowledge base — blog articles + docs are
+// chunked and embedded (nomic-embed-text) for grounded generation and
+// semantic dedupe. Generation also lazily indexes single posts it needs.
+Schedule::command(\App\Console\Commands\IndexKnowledgeCommand::class)
+    ->weeklyOn(7, '02:00')
+    ->timezone('Africa/Douala')
+    ->withoutOverlapping(7200)
+    ->onOneServer()
+    ->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('Marketing knowledge indexing failed');
+    });

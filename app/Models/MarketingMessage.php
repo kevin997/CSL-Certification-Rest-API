@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $email_subject
  * @property string|null $email_html
  * @property array|null $source
+ * @property array|null $embedding
  * @property string|null $model
  * @property string $hash
  * @property string $status
@@ -43,6 +44,7 @@ class MarketingMessage extends Model
         'email_subject',
         'email_html',
         'source',
+        'embedding',
         'model',
         'hash',
         'status',
@@ -51,6 +53,7 @@ class MarketingMessage extends Model
 
     protected $casts = [
         'source' => 'array',
+        'embedding' => 'array',
         'sent_at' => 'datetime',
     ];
 
