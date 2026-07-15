@@ -48,9 +48,16 @@ PROMPT;
         // The feature inventory only fills gaps once every recent post has
         // already been used for a given channel.
         $posts = $blog->recentPosts();
-        $features = $inventory->build((bool) $this->option('fresh-inventory'))['features'] ?? [];
 
-        if (empty($posts) && empty($features)) {
+        // The inventory's first build crawls docs/ through Ollama and can take
+        // a very long time on a busy box — resolve it LAZILY, only when a
+        // channel has exhausted the blog posts and needs the feature fallback.
+        $features = null;
+        $loadFeatures = function () use (&$features, $inventory): array {
+            return $features ??= $inventory->build((bool) $this->option('fresh-inventory'))['features'] ?? [];
+        };
+
+        if (empty($posts) && empty($loadFeatures())) {
             $this->warn('No blog posts or feature inventory available — nothing to generate content about.');
 
             return self::SUCCESS;
@@ -76,7 +83,7 @@ PROMPT;
             for ($i = 0; $i < $target; $i++) {
                 $post = $this->pickUnusedPost($posts, $usedBlogPostIds);
 
-                if ($post === null && empty($features)) {
+                if ($post === null && empty($loadFeatures())) {
                     // Nothing left to source content from for this channel.
                     break;
                 }
@@ -88,7 +95,7 @@ PROMPT;
                         $usedBlogPostIds[] = $post['id'];
                         $result = $this->generateOneFromBlog($channel, $post, $ollama);
                     } else {
-                        $feature = $this->pickFeature($features, $channel);
+                        $feature = $this->pickFeature($loadFeatures(), $channel);
                         $result = $this->generateOne($channel, $feature, $ollama);
                     }
 
