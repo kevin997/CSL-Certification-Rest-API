@@ -55,6 +55,11 @@ immutable. You may propose:
 - New activities added to existing blocks (max 4 additional activities per
   existing block), referencing the block by its given id.
 
+In `block_additions`, reference existing modules by their NUMBER exactly as
+shown in the provided structure (`block_number`: 1 for "Module 1", 2 for
+"Module 2", and so on).
+
+Unless the request is impossible, you MUST propose at least one addition.
 Only propose additions that fulfil the instructor's request and complement
 what already exists in the template — do not repeat existing activities.
 
@@ -111,7 +116,7 @@ PROMPT;
             ),
             'block_additions' => $schema->array()->required()->items(
                 $schema->object([
-                    'block_id' => $schema->integer()->required(),
+                    'block_number' => $schema->integer()->required(),
                     'activities' => $schema->array()->required()->items(
                         $schema->object([
                             'title' => $schema->string()->required(),
