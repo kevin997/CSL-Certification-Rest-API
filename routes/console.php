@@ -142,3 +142,63 @@ Schedule::command(\App\Console\Commands\ProcessAbandonedOrdersCommand::class)
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('Abandoned-order automation run failed');
     });
+
+// ---------------------------------------------------------------------------
+// KURSA Marketing & Retention engine (AI-generated content pool + broadcasts)
+// Times are Africa/Douala — the platform's primary audience timezone.
+// ---------------------------------------------------------------------------
+
+// Nightly: top the AI content pool up to 10 pending messages per channel
+// (group tips, WhatsApp statuses, email campaigns) via Ollama.
+Schedule::command(\App\Console\Commands\GenerateMarketingContentCommand::class)
+    ->dailyAt('03:30')
+    ->timezone('Africa/Douala')
+    ->withoutOverlapping(7200)
+    ->onOneServer()
+    ->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('Marketing content generation failed');
+    });
+
+// Daily WhatsApp Status post (10:00) and support-group tip (13:00).
+Schedule::command(\App\Console\Commands\PostDailyStatusCommand::class)
+    ->dailyAt('10:00')
+    ->timezone('Africa/Douala')
+    ->withoutOverlapping(3600)
+    ->onOneServer()
+    ->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('Daily WhatsApp status post failed');
+    });
+
+Schedule::command(\App\Console\Commands\BroadcastGroupTipCommand::class)
+    ->dailyAt('13:00')
+    ->timezone('Africa/Douala')
+    ->withoutOverlapping(3600)
+    ->onOneServer()
+    ->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('WhatsApp group tip broadcast failed');
+    });
+
+// Weekly email campaign to opted-in instructors — Tuesday 09:00.
+Schedule::command(\App\Console\Commands\SendEmailCampaignCommand::class)
+    ->weeklyOn(2, '09:00')
+    ->timezone('Africa/Douala')
+    ->withoutOverlapping(3600)
+    ->onOneServer()
+    ->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('Email marketing campaign failed');
+    });
+
+// Daily behaviour-driven retention nudges (WhatsApp + email fallback) — 12:00.
+Schedule::command(\App\Console\Commands\RunRetentionCampaignsCommand::class)
+    ->dailyAt('12:00')
+    ->timezone('Africa/Douala')
+    ->withoutOverlapping(3600)
+    ->onOneServer()
+    ->runInBackground()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('Retention campaign run failed');
+    });

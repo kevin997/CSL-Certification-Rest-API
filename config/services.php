@@ -98,6 +98,37 @@ return [
         // Human-like pacing bounds for bulk sends (see App\Support\WhatsAppThrottle).
         'min_delay_ms' => env('WACHAP_MIN_DELAY_MS', 4000),
         'max_delay_ms' => env('WACHAP_MAX_DELAY_MS', 15000),
+        // Defaults for postStatus() broadcasts.
+        'status_bg' => env('WACHAP_STATUS_BG', '#4F46E5'),
+        'status_font' => (int) env('WACHAP_STATUS_FONT', 1),
+        'validate_numbers' => (bool) env('WACHAP_VALIDATE_NUMBERS', false),
+        'groups' => [
+            'support' => env('WACHAP_GROUP_SUPPORT'),
+        ],
+    ],
+
+    // Self-hosted Ollama server used for AI-generated marketing/retention copy.
+    'ollama' => [
+        'url' => env('OLLAMA_URL', 'http://31.97.75.62:11434'),
+        'model' => env('OLLAMA_MODEL', 'qwen2.5:7b'),
+        'fallback_model' => env('OLLAMA_FALLBACK_MODEL', 'llama3.1:8b'),
+        'timeout' => (int) env('OLLAMA_TIMEOUT', 180),
+        'num_ctx' => (int) env('OLLAMA_NUM_CTX', 8192),
+    ],
+
+    // Retention engine — locales for bilingual messages and default links.
+    'retention' => [
+        'locales' => env('RETENTION_LOCALES', 'fr,en'),
+        'links' => [
+            // No global FRONTEND_URL constant exists in this codebase — the app
+            // is multi-tenant and mailables link to each tenant's own
+            // Environment::primary_domain (see App\Mail\WelcomeToEnvironment).
+            // getkursa.space is the live platform domain (verified against
+            // config/cors.php + production), env-overridable per deployment.
+            'panel' => env('RETENTION_LINK_PANEL', 'https://www.getkursa.space/dashboard'),
+            'site' => env('RETENTION_LINK_SITE', 'https://www.getkursa.space'),
+            'support_whatsapp' => env('RETENTION_SUPPORT_WHATSAPP'),
+        ],
     ],
 
 ];

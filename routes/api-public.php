@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AnalyticsWidgetsController;
 use App\Http\Controllers\Api\EnvironmentController;
 use App\Http\Controllers\Api\LandingPagePopupController;
 use App\Http\Controllers\Api\LegalPageController;
+use App\Http\Controllers\Api\MarketingUnsubscribeController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\ThirdPartyServiceController;
 use App\Http\Controllers\Api\TokenController;
@@ -62,3 +63,6 @@ Route::get('/integrations/whatsapp/config', [ThirdPartyServiceController::class,
 // cannot use cookie-based Sanctum auth since they are on a different root domain than the API).
 // This endpoint authenticates and returns a Sanctum API token for Bearer auth.
 Route::post('/admin/token-login', [TokenController::class, 'createToken']);
+
+// Marketing campaign one-click unsubscribe (signed link emailed with every campaign)
+Route::get('/marketing/unsubscribe/{user}', [MarketingUnsubscribeController::class, '__invoke'])->name('marketing.unsubscribe')->middleware('signed');
