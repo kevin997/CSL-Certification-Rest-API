@@ -175,6 +175,13 @@ class GenerateCourseDraftJob implements ShouldQueue
 
             $additions = $this->normalizeAdditions($response->toArray(), $template);
 
+            if (empty($additions['new_blocks']) && empty($additions['block_additions'])) {
+                // Everything the model proposed was normalized away (or it
+                // proposed nothing) — surface a retryable failure instead of
+                // an empty preview.
+                throw new \RuntimeException('Model proposed no usable additions.');
+            }
+
             Cache::put("course_builder:{$this->jobId}", [
                 'user_id' => $this->userId,
                 'status' => 'done',
@@ -211,12 +218,12 @@ class GenerateCourseDraftJob implements ShouldQueue
         $lines[] = 'Description: '.($template->description ?? '');
         $lines[] = '';
 
-        foreach ($template->blocks as $block) {
+        foreach ($template->blocks->values() as $index => $block) {
             $activities = $block->activities
                 ->map(fn ($activity) => '['.$activity->type->value.'] '.$activity->title)
                 ->implode('; ');
 
-            $lines[] = "Block #{$block->id}: {$block->title} — activities: {$activities}";
+            $lines[] = 'Module '.($index + 1).": {$block->title} — activities: {$activities}";
         }
 
         $structure = implode("\n", $lines);
@@ -268,6 +275,8 @@ class GenerateCourseDraftJob implements ShouldQueue
 
         $realBlocks = $template->blocks->keyBy('id');
 
+        $orderedBlocks = $template->blocks->values();
+
         $blockAdditions = [];
 
         foreach ((array) ($raw['block_additions'] ?? []) as $addition) {
@@ -275,11 +284,15 @@ class GenerateCourseDraftJob implements ShouldQueue
                 continue;
             }
 
-            $blockId = (int) ($addition['block_id'] ?? 0);
-            $block = $realBlocks->get($blockId);
+            // The model references modules by their 1-based NUMBER (small
+            // local models handle sequential numbers far better than raw DB
+            // ids); map it back to the real block. Accept legacy block_id too.
+            $number = (int) ($addition['block_number'] ?? 0);
+            $block = $number >= 1 ? $orderedBlocks->get($number - 1) : null;
+            if (! $block && isset($addition['block_id'])) {
+                $block = $realBlocks->get((int) $addition['block_id']);
+            }
 
-            // Drop additions targeting a block id that isn't really on this
-            // template.
             if (! $block) {
                 continue;
             }
