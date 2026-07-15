@@ -207,3 +207,17 @@ Schedule::command(\App\Console\Commands\IndexKnowledgeCommand::class)
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('Marketing knowledge indexing failed');
     });
+
+// Keep the assistant's model resident on the Ollama box (default keep_alive
+// evicts after ~5 idle minutes; a cold load pushed chat replies past nginx's
+// timeout). A no-op load request every ten minutes pins it for 30 minutes.
+Schedule::call(function () {
+    try {
+        \Illuminate\Support\Facades\Http::timeout(20)->post(
+            rtrim((string) config('ai.providers.ollama.url'), '/').'/api/generate',
+            ['model' => 'llama3.2:1b', 'keep_alive' => '30m'],
+        );
+    } catch (\Throwable $e) {
+        \Illuminate\Support\Facades\Log::warning('Assistant model keep-warm failed: '.$e->getMessage());
+    }
+})->name('assistant-model-keep-warm')->everyTenMinutes()->onOneServer();
