@@ -12,7 +12,6 @@ use Laravel\Ai\Contracts\Conversational;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Tool;
-use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Messages\Message;
 use Laravel\Ai\Promptable;
 use Stringable;
@@ -31,8 +30,7 @@ use Stringable;
  * failover (schema + server-side normalization keep it safe) lives in
  * GenerateCourseDraftJob instead of being generalized into the shared concern.
  */
-#[Provider(Lab::Ollama)]
-#[Model('llama3.2:1b')]
+#[Provider(['ollama' => 'qwen2.5:7b', 'ollama_cpu' => 'llama3.2:1b'])]
 #[Temperature(0.7)]
 #[Timeout(480)]
 class CourseBuilderAgent implements Agent, Conversational, HasStructuredOutput, HasTools

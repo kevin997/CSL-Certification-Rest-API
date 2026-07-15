@@ -13,7 +13,6 @@ use Laravel\Ai\Contracts\Conversational;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Tool;
-use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Messages\Message;
 use Laravel\Ai\Promptable;
 use Stringable;
@@ -22,8 +21,7 @@ use Stringable;
  * Extracts concrete, sellable KURSA features from a documentation excerpt —
  * see FeatureInventoryService.
  */
-#[Provider(Lab::Ollama)]
-#[Model('qwen2.5:7b')]
+#[Provider(['ollama' => 'qwen2.5:7b', 'ollama_cpu' => 'llama3.2:1b'])]
 #[Temperature(0.3)]
 #[Timeout(300)]
 class DocFeatureExtractorAgent implements Agent, Conversational, HasStructuredOutput, HasTools

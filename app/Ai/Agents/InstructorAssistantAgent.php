@@ -9,7 +9,6 @@ use Laravel\Ai\Attributes\Timeout;
 use Laravel\Ai\Concerns\RemembersConversations;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Conversational;
-use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Promptable;
 use Stringable;
 
@@ -20,8 +19,7 @@ use Stringable;
  * certificates, sales forms, payments and subscriptions. See
  * InstructorAssistantController.
  */
-#[Provider(Lab::Ollama)]
-#[Model('llama3.2:1b')]
+#[Provider(['ollama' => 'qwen2.5:7b', 'ollama_cpu' => 'llama3.2:1b'])]
 #[Temperature(0.4)]
 #[Timeout(120)]
 class InstructorAssistantAgent implements Agent, Conversational
