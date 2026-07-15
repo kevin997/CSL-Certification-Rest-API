@@ -136,7 +136,7 @@ class DocumentationContentController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'content' => 'required|string',
+            'content' => 'nullable|string',
             'format' => 'required|string|in:plain,markdown,html',
             'version' => 'nullable|string|max:50',
             'tags' => 'nullable|array',

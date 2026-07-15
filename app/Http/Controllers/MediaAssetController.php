@@ -100,6 +100,95 @@ class MediaAssetController extends Controller
     }
 
     /**
+     * Initialize a resumable direct-to-MinIO multipart upload (proxy to Media Service).
+     *
+     * Creates the local MediaAsset and returns the media-service base URL so the
+     * browser can call /sign and /parts directly, uploading each part straight to
+     * MinIO via presigned URLs. Bytes never pass through this API or PHP.
+     */
+    public function initMultipartUpload(Request $request)
+    {
+        $validated = $request->validate([
+            'file_name' => 'required|string',
+            'file_size' => 'required|integer',
+            'mime_type' => 'required|string',
+            'title' => 'required|string',
+            'type' => 'required|in:audio,video',
+        ]);
+
+        $environmentId = $request->user()->environment_id ?? 1;
+        $baseUrl = $this->mediaServiceBaseUrl();
+
+        $response = Http::acceptJson()->post("{$baseUrl}/api/media/multipart/init", [
+            'environment_id' => $environmentId,
+            'file_name' => $validated['file_name'],
+            'file_size' => $validated['file_size'],
+            'mime_type' => $validated['mime_type'],
+        ]);
+
+        if (!$response->successful()) {
+            return response()->json(['error' => 'Media Service multipart init failed', 'details' => $response->json()], $response->status());
+        }
+
+        $data = $response->json();
+
+        $mediaAsset = MediaAsset::create([
+            'environment_id' => $environmentId,
+            'owner_user_id' => $request->user()->id,
+            'title' => $validated['title'] ?? $validated['file_name'],
+            'type' => $validated['type'],
+            'mime_type' => $validated['mime_type'],
+            'size' => $validated['file_size'],
+            'status' => 'pending',
+            'meta' => ['upload_id' => $data['upload_id'] ?? null, 'multipart' => true],
+        ]);
+
+        return response()->json(array_merge(
+            ['media_asset' => $mediaAsset, 'media_service_url' => $baseUrl],
+            $data // upload_id, key, s3_upload_id, part_size, part_count, bucket
+        ));
+    }
+
+    /**
+     * Complete a multipart upload (proxy to Media Service) and update the asset.
+     */
+    public function completeMultipartUpload(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'parts' => 'required|array|min:1',
+            'parts.*.part_number' => 'required|integer|min:1',
+            'parts.*.etag' => 'required|string',
+        ]);
+
+        $mediaAsset = is_numeric($id) ? MediaAsset::find($id) : null;
+        if (!$mediaAsset) {
+            $mediaAsset = MediaAsset::where('meta->upload_id', (string) $id)->first();
+        }
+        if (!$mediaAsset) {
+            return response()->json(['error' => 'Media asset not found'], 404);
+        }
+
+        $uploadId = $mediaAsset->meta['upload_id'] ?? null;
+        if (!$uploadId) {
+            return response()->json(['error' => 'Invalid asset state'], 400);
+        }
+
+        $baseUrl = $this->mediaServiceBaseUrl();
+        $response = Http::acceptJson()->post("{$baseUrl}/api/media/multipart/{$uploadId}/complete", [
+            'parts' => $validated['parts'],
+        ]);
+
+        if (!$response->successful()) {
+            return response()->json(['error' => 'Media Service multipart complete failed', 'details' => $response->json()], 500);
+        }
+
+        $status = $response->json()['status'] ?? 'processing';
+        $mediaAsset->update(['status' => $status]);
+
+        return response()->json(['media_asset' => $mediaAsset->fresh()]);
+    }
+
+    /**
      * Initialize a resumable (tus) upload against Bunny Stream.
      *
      * Creates the Bunny video object, records a local MediaAsset, and returns the

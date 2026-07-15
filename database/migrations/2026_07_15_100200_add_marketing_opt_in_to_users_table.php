@@ -1,0 +1,38 @@
+<?php
+
+use App\Helpers\MigrationHelper;
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        if (! MigrationHelper::tableExists('users')) {
+            // Table doesn't exist, skip this migration
+            return;
+        }
+
+        if (! MigrationHelper::columnExists('users', 'marketing_opt_in')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->boolean('marketing_opt_in')->default(true)->after('whatsapp_number');
+            });
+        }
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        if (MigrationHelper::columnExists('users', 'marketing_opt_in')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->dropColumn('marketing_opt_in');
+            });
+        }
+    }
+};

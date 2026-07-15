@@ -714,31 +714,49 @@ class SubscriptionManager
                     ->orderBy('created_at', 'desc')
                     ->first();
                 
+                // Charge the plan price for the billing cycle, plus the one-time
+                // setup fee only when it hasn't been paid yet. Previously the amount
+                // was $plan->setup_fee ONLY, so upgrades/retries charged the setup fee
+                // and never collected the plan price. Computed authoritatively from the
+                // plan (callers pass an inconsistent $paymentData['amount']).
+                $billingCycle = $subscription->billing_cycle ?? 'monthly';
+                $planPrice = (float) ($billingCycle === 'annual'
+                    ? ($plan->price_annual ?? 0)
+                    : ($plan->price_monthly ?? 0));
+                $setupFee = $subscription->setup_fee_paid ? 0.0 : (float) ($plan->setup_fee ?? 0);
+                $baseAmount = $planPrice + $setupFee;
+
+                $taxInfo = $this->taxZoneService->calculateTaxByEnvironment(
+                    $baseAmount,
+                    $subscription->environment_id
+                );
+
                 if (!$existingPayment) {
                     // No existing payment found, create a new one
-                    $taxInfo = $this->taxZoneService->calculateTaxByEnvironment(
-                        $plan->setup_fee ?? 0,
-                        $subscription->environment_id
-                    );
-                    
                     $existingPayment = Payment::create([
                         'user_id' => $subscription->user_id,
                         'subscription_id' => $subscription->id,
-                        'amount' => $plan->setup_fee ?? 0,
+                        'amount' => $baseAmount,
                         'fee_amount' => 0,
                         'tax_amount' => $taxInfo['tax_amount'],
                         'tax_rate' => $taxInfo['tax_rate'],
                         'tax_zone' => $taxInfo['zone_name'],
-                        'total_amount' => ($plan->setup_fee ?? 0) + $taxInfo['tax_amount'],
+                        'total_amount' => $baseAmount + $taxInfo['tax_amount'],
                         'currency' => $paymentData['currency'] ?? 'USD',
                         'payment_method' => $paymentData['payment_method'],
                         'status' => Payment::STATUS_PENDING,
-                        'description' => 'Setup fee retry for ' . $plan->name . ' plan',
+                        'description' => 'Payment for ' . $plan->name . ' plan',
                     ]);
                 } else {
-                    // Update existing payment with new payment method and reset status
+                    // Re-attempt: reset gateway state AND recompute the amount so a
+                    // previously under-priced payment is corrected on retry.
                     $existingPayment->update([
                         'payment_method' => $paymentData['payment_method'],
+                        'amount' => $baseAmount,
+                        'tax_amount' => $taxInfo['tax_amount'],
+                        'tax_rate' => $taxInfo['tax_rate'],
+                        'tax_zone' => $taxInfo['zone_name'],
+                        'total_amount' => $baseAmount + $taxInfo['tax_amount'],
                         'status' => Payment::STATUS_PENDING,
                         'gateway_transaction_id' => null,
                         'gateway_status' => null,
