@@ -99,7 +99,7 @@ class GenerateCourseDraftJob implements ShouldQueue
                     'error' => $e->getMessage(),
                 ]);
 
-                $response = (new CourseBuilderAgent)->prompt($prompt, model: 'llama3.2:1b');
+                $response = (new CourseBuilderAgent)->prompt($prompt, provider: 'ollama_cpu', model: 'llama3.2:1b');
             }
 
             $draft = $this->normalize($response->toArray());
@@ -119,6 +119,7 @@ class GenerateCourseDraftJob implements ShouldQueue
             Cache::put("course_builder:{$this->jobId}", [
                 'user_id' => $this->userId,
                 'status' => 'failed',
+                'kind' => $this->templateId ? 'enhance' : 'new',
                 'message' => 'The course draft could not be generated. Please try again.',
             ], now()->addMinutes(45));
         }
@@ -169,7 +170,7 @@ class GenerateCourseDraftJob implements ShouldQueue
                     'error' => $e->getMessage(),
                 ]);
 
-                $response = (new TemplateEnhancerAgent)->prompt($prompt, model: 'llama3.2:1b');
+                $response = (new TemplateEnhancerAgent)->prompt($prompt, provider: 'ollama_cpu', model: 'llama3.2:1b');
             }
 
             $additions = $this->normalizeAdditions($response->toArray(), $template);
@@ -191,6 +192,7 @@ class GenerateCourseDraftJob implements ShouldQueue
             Cache::put("course_builder:{$this->jobId}", [
                 'user_id' => $this->userId,
                 'status' => 'failed',
+                'kind' => $this->templateId ? 'enhance' : 'new',
                 'message' => 'The course draft could not be generated. Please try again.',
             ], now()->addMinutes(45));
         }
