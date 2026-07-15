@@ -69,7 +69,14 @@ class InstructorAssistantController extends Controller
                 ."\n\n### Question de l'instructeur :\n"
                 .$data['message'];
 
-            $response = $agent->prompt($prompt);
+            try {
+                $response = $agent->prompt($prompt);
+            } catch (\Throwable $primaryFailure) {
+                // Dead-primary-host (e.g. GPU box powered off) is not
+                // failoverable in SDK v0.7.2 — retry explicitly on the CPU box.
+                \Log::warning('Assistant: primary provider failed, retrying on CPU fallback', ['error' => $primaryFailure->getMessage()]);
+                $response = $agent->prompt($prompt, provider: 'ollama_cpu', model: 'llama3.2:1b');
+            }
 
             return response()->json([
                 'success' => true,

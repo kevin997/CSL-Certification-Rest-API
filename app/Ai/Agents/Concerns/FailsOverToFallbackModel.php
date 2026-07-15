@@ -20,6 +20,8 @@ trait FailsOverToFallbackModel
      * The smaller/faster model to retry against when the primary model
      * throws (both are hosted on the same Ollama box).
      */
+    private const FALLBACK_PROVIDER = 'ollama_cpu';
+
     private const FALLBACK_MODEL = 'llama3.2:1b';
 
     /**
@@ -31,12 +33,13 @@ trait FailsOverToFallbackModel
         try {
             return $this->prompt($prompt);
         } catch (\Throwable $e) {
-            Log::warning(static::class.': primary model failed, retrying with fallback model', [
+            Log::warning(static::class.': primary provider/model failed, retrying on the CPU fallback', [
+                'fallback_provider' => self::FALLBACK_PROVIDER,
                 'fallback_model' => self::FALLBACK_MODEL,
                 'error' => $e->getMessage(),
             ]);
 
-            return $this->prompt($prompt, model: self::FALLBACK_MODEL);
+            return $this->prompt($prompt, provider: self::FALLBACK_PROVIDER, model: self::FALLBACK_MODEL);
         }
     }
 }

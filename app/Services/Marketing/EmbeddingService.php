@@ -40,13 +40,21 @@ class EmbeddingService
             $response = Embeddings::for($texts)
                 ->timeout(self::TIMEOUT)
                 ->generate('ollama', self::MODEL);
+        } catch (\Throwable $primaryFailure) {
+            // Dead-primary-host (GPU box off) isn't failoverable in SDK
+            // v0.7.2 — retry explicitly on the CPU box, then fail open.
+            try {
+                $response = Embeddings::for($texts)
+                    ->timeout(self::TIMEOUT)
+                    ->generate('ollama_cpu', self::MODEL);
+            } catch (\Throwable $e) {
+                Log::warning('EmbeddingService: failed generating embeddings: '.$e->getMessage());
 
-            return $response->embeddings;
-        } catch (\Throwable $e) {
-            Log::warning('EmbeddingService: failed generating embeddings: '.$e->getMessage());
-
-            return null;
+                return null;
+            }
         }
+
+        return $response->embeddings;
     }
 
     /**
