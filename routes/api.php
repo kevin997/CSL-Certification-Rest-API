@@ -1216,6 +1216,13 @@ Route::middleware(['auth:sanctum'])->prefix('instructor')->group(function () {
         Route::post('/message', [\App\Http\Controllers\Api\InstructorAssistantController::class, 'message'])
             ->middleware('throttle:20,1');
     });
+
+    // AI Course Builder (queued draft generation — see CourseBuilderAgent / GenerateCourseDraftJob)
+    Route::prefix('course-builder')->group(function () {
+        Route::post('/generate', [\App\Http\Controllers\Api\CourseBuilderController::class, 'generate'])
+            ->middleware('throttle:10,1');
+        Route::get('/result/{jobId}', [\App\Http\Controllers\Api\CourseBuilderController::class, 'result']);
+    });
 });
 
 // Live Sessions Routes
