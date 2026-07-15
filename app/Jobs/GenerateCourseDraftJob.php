@@ -67,11 +67,11 @@ class GenerateCourseDraftJob implements ShouldQueue
             } catch (Throwable $e) {
                 Log::warning('GenerateCourseDraftJob: primary model failed, retrying with fallback model', [
                     'job_id' => $this->jobId,
-                    'fallback_model' => 'qwen2.5:7b',
+                    'fallback_model' => 'llama3.2:1b',
                     'error' => $e->getMessage(),
                 ]);
 
-                $response = (new CourseBuilderAgent)->prompt($prompt, model: 'qwen2.5:7b');
+                $response = (new CourseBuilderAgent)->prompt($prompt, model: 'llama3.2:1b');
             }
 
             $draft = $this->normalize($response->toArray());

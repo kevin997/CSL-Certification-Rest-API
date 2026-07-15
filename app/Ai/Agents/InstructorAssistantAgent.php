@@ -19,7 +19,7 @@ use Stringable;
  * certificates, sales forms, payments and subscriptions. See
  * InstructorAssistantController.
  */
-#[Provider(['ollama' => 'qwen2.5:7b', 'ollama_cpu' => 'llama3.2:1b'])]
+#[Provider(['ollama' => 'qwen2.5:14b', 'ollama_cpu' => 'llama3.2:1b'])]
 #[Temperature(0.4)]
 #[Timeout(120)]
 class InstructorAssistantAgent implements Agent, Conversational
