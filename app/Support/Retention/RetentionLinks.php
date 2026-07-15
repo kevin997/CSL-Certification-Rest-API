@@ -30,11 +30,25 @@ class RetentionLinks
             // "Let's talk visibility" → chat a human if a support number is configured.
             'instructor_no_sales' => $support
                 ? $this->wa((string) $support, 'Bonjour, je veux en savoir plus sur la visibilité de ma boutique de formation sur KURSA')
-                : $panel,
-            'instructor_trial_expiring', 'instructor_no_course', 'instructor_no_product', 'instructor_inactive' => $panel,
+                : $this->instructorLink($context, $panel),
+            'instructor_trial_expiring', 'instructor_no_course', 'instructor_no_product', 'instructor_inactive' => $this->instructorLink($context, $panel),
             // Learner scenarios: deep-link to the learner's own environment when known.
             default => $this->learnerLink($context, $site),
         };
+    }
+
+    /**
+     * Instructors land on THEIR OWN academy's dashboard (multi-tenant — each
+     * environment has its own domain); the marketing landing page is only a
+     * fallback when no domain is on record.
+     *
+     * @param  array<string, string|int|float|null>  $context
+     */
+    private function instructorLink(array $context, string $default): string
+    {
+        $domain = $context['environment_domain'] ?? null;
+
+        return $domain ? 'https://'.$domain.'/dashboard' : $default;
     }
 
     /**
