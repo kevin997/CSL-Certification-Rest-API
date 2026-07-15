@@ -1210,6 +1210,12 @@ Route::middleware(['auth:sanctum'])->prefix('instructor')->group(function () {
         Route::get('/centralized', [\App\Http\Controllers\Api\Instructor\PaymentConfigController::class, 'getCentralizedConfig']);
         Route::post('/centralized/toggle', [\App\Http\Controllers\Api\Instructor\PaymentConfigController::class, 'toggleCentralized']);
     });
+
+    // KURSA Assistant (conversational RAG agent — see InstructorAssistantAgent)
+    Route::prefix('assistant')->group(function () {
+        Route::post('/message', [\App\Http\Controllers\Api\InstructorAssistantController::class, 'message'])
+            ->middleware('throttle:20,1');
+    });
 });
 
 // Live Sessions Routes
