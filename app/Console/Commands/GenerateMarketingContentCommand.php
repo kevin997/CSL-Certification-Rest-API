@@ -5,10 +5,13 @@ namespace App\Console\Commands;
 use App\Ai\Agents\EmailCampaignAgent;
 use App\Ai\Agents\MarketingTipAgent;
 use App\Ai\Agents\StatusTeaserAgent;
+use App\Models\ContentChunk;
 use App\Models\MarketingMessage;
 use App\Services\Marketing\BlogContentService;
+use App\Services\Marketing\EmbeddingService;
 use App\Services\Marketing\FeatureInventoryService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -27,13 +30,28 @@ class GenerateMarketingContentCommand extends Command
 
     private const LOOKBACK_ROWS = 20;
 
-    public function handle(FeatureInventoryService $inventory, BlogContentService $blog): int
+    /** How many same-channel prior messages to compare a new candidate against for semantic dedupe. */
+    private const DEDUPE_LOOKBACK = 60;
+
+    /** Chunking parameters mirrored from IndexKnowledgeCommand, kept in sync for the lazy-index self-heal path. */
+    private const MAX_CHUNK_CHARS = 1200;
+
+    private const MAX_CHUNKS_PER_SOURCE = 4;
+
+    /** Max chars of grounding content injected into the generation prompt. */
+    private const MAX_GROUNDING_CHARS = 2500;
+
+    private EmbeddingService $embeddings;
+
+    public function handle(FeatureInventoryService $inventory, BlogContentService $blog, EmbeddingService $embeddings): int
     {
         if (blank(config('ai.providers.ollama.url'))) {
             $this->warn('Ollama is not configured — skipping marketing content generation.');
 
             return self::SUCCESS;
         }
+
+        $this->embeddings = $embeddings;
 
         // The company blog is the primary source for tips/tutorials/campaigns.
         // The feature inventory only fills gaps once every recent post has
@@ -84,7 +102,7 @@ class GenerateMarketingContentCommand extends Command
                         // Mark as used for the rest of this run regardless of
                         // outcome, so a failure doesn't retry the same post.
                         $usedBlogPostIds[] = $post['id'];
-                        $result = $this->generateOneFromBlog($channel, $post);
+                        $result = $this->generateOneFromBlog($channel, $post, $blog);
                     } else {
                         $feature = $this->pickFeature($loadFeatures(), $channel);
                         $result = $this->generateOne($channel, $feature);
@@ -227,12 +245,12 @@ class GenerateMarketingContentCommand extends Command
      * @param  array{id:int, title:string, link:string, excerpt:string, date:string}  $post
      * @return string 'generated'|'duplicate'|'failed'
      */
-    private function generateOneFromBlog(string $channel, array $post): string
+    private function generateOneFromBlog(string $channel, array $post, BlogContentService $blog): string
     {
         return match ($channel) {
-            MarketingMessage::CHANNEL_GROUP_TIP => $this->generateBlogGroupTip($post),
-            MarketingMessage::CHANNEL_STATUS => $this->generateBlogStatus($post),
-            MarketingMessage::CHANNEL_EMAIL => $this->generateBlogEmailCampaign($post),
+            MarketingMessage::CHANNEL_GROUP_TIP => $this->generateBlogGroupTip($post, $blog),
+            MarketingMessage::CHANNEL_STATUS => $this->generateBlogStatus($post, $blog),
+            MarketingMessage::CHANNEL_EMAIL => $this->generateBlogEmailCampaign($post, $blog),
             default => 'failed',
         };
     }
@@ -315,9 +333,10 @@ class GenerateMarketingContentCommand extends Command
      * @param  array{id:int, title:string, link:string, excerpt:string, date:string}  $post
      * @return string 'generated'|'duplicate'|'failed'
      */
-    private function generateBlogGroupTip(array $post): string
+    private function generateBlogGroupTip(array $post, BlogContentService $blog): string
     {
         $prompt = "Blog article: {$post['title']}\nExcerpt: {$post['excerpt']}";
+        $prompt .= $this->groundingSuffix($post, $blog);
 
         $result = (new MarketingTipAgent)->promptWithFailover($prompt);
 
@@ -341,9 +360,10 @@ class GenerateMarketingContentCommand extends Command
      * @param  array{id:int, title:string, link:string, excerpt:string, date:string}  $post
      * @return string 'generated'|'duplicate'|'failed'
      */
-    private function generateBlogStatus(array $post): string
+    private function generateBlogStatus(array $post, BlogContentService $blog): string
     {
         $prompt = "Blog article: {$post['title']}\nExcerpt: {$post['excerpt']}";
+        $prompt .= $this->groundingSuffix($post, $blog);
 
         $result = (new StatusTeaserAgent)->promptWithFailover($prompt);
 
@@ -367,9 +387,10 @@ class GenerateMarketingContentCommand extends Command
      * @param  array{id:int, title:string, link:string, excerpt:string, date:string}  $post
      * @return string 'generated'|'duplicate'|'failed'
      */
-    private function generateBlogEmailCampaign(array $post): string
+    private function generateBlogEmailCampaign(array $post, BlogContentService $blog): string
     {
         $prompt = "Blog article: {$post['title']}\nExcerpt: {$post['excerpt']}";
+        $prompt .= $this->groundingSuffix($post, $blog);
 
         $result = (new EmailCampaignAgent)->promptWithFailover($prompt);
 
@@ -402,6 +423,137 @@ class GenerateMarketingContentCommand extends Command
     }
 
     /**
+     * Build the "Contenu de l'article:" grounding suffix for a blog-sourced
+     * prompt from the post's indexed chunks — self-healing (lazily indexes
+     * the post if it has no chunks yet) so generation never has to wait for
+     * the weekly kursa:index-knowledge run. Returns '' (no-op) if grounding
+     * is unavailable for any reason, leaving the excerpt-only prompt intact.
+     *
+     * @param  array{id:int, title:string, link:string, excerpt:string, date:string}  $post
+     */
+    private function groundingSuffix(array $post, BlogContentService $blog): string
+    {
+        $chunks = ContentChunk::query()
+            ->where('source_type', 'blog')
+            ->where('source_id', (string) $post['id'])
+            ->orderBy('chunk_index')
+            ->limit(3)
+            ->get();
+
+        if ($chunks->isEmpty()) {
+            $chunks = $this->lazyIndexBlogPost($post, $blog);
+        }
+
+        if ($chunks->isEmpty()) {
+            return '';
+        }
+
+        $content = mb_substr($chunks->pluck('content')->implode("\n\n"), 0, self::MAX_GROUNDING_CHARS);
+
+        if (trim($content) === '') {
+            return '';
+        }
+
+        return "\n\nContenu de l'article:\n{$content}";
+    }
+
+    /**
+     * Fetch the post's full content, chunk it, embed fail-open, and store
+     * the chunks — so a post that hasn't been through kursa:index-knowledge
+     * yet still gets grounding on this very generation run.
+     *
+     * @param  array{id:int, title:string, link:string, excerpt:string, date:string}  $post
+     * @return Collection<int, ContentChunk>
+     */
+    private function lazyIndexBlogPost(array $post, BlogContentService $blog): Collection
+    {
+        try {
+            $full = $blog->fetchPostWithContent((int) $post['id']);
+
+            if ($full === null || trim($full['content']) === '') {
+                return collect();
+            }
+
+            $pieces = $this->chunkText($full['content']);
+
+            if (empty($pieces)) {
+                return collect();
+            }
+
+            $vectors = $this->embeddings->embed($pieces);
+
+            return collect($pieces)->map(function (string $content, int $index) use ($post, $full, $vectors) {
+                $hash = hash('sha256', "blog|{$post['id']}|{$index}|{$content}");
+
+                return ContentChunk::query()->firstOrCreate(
+                    ['hash' => $hash],
+                    [
+                        'source_type' => 'blog',
+                        'source_id' => (string) $post['id'],
+                        'url' => $full['link'],
+                        'title' => $full['title'],
+                        'chunk_index' => $index,
+                        'content' => $content,
+                        'embedding' => $vectors[$index] ?? null,
+                    ]
+                );
+            })->values();
+        } catch (\Throwable $e) {
+            Log::warning("GenerateMarketingContentCommand: lazy-index failed for post {$post['id']}: {$e->getMessage()}");
+
+            return collect();
+        }
+    }
+
+    /**
+     * Split text on paragraph boundaries into ~MAX_CHUNK_CHARS chunks,
+     * capped at MAX_CHUNKS_PER_SOURCE — mirrors IndexKnowledgeCommand's
+     * chunking so lazily-indexed chunks are consistent with the weekly job.
+     *
+     * @return array<int, string>
+     */
+    private function chunkText(string $text): array
+    {
+        $paragraphs = preg_split('/\n\s*\n/', trim($text)) ?: [];
+        $chunks = [];
+        $current = '';
+
+        foreach ($paragraphs as $paragraph) {
+            $paragraph = trim($paragraph);
+
+            if ($paragraph === '') {
+                continue;
+            }
+
+            if ($current !== '' && mb_strlen($current) + mb_strlen($paragraph) + 2 > self::MAX_CHUNK_CHARS) {
+                $chunks[] = $current;
+                $current = '';
+
+                if (count($chunks) >= self::MAX_CHUNKS_PER_SOURCE) {
+                    return $chunks;
+                }
+            }
+
+            $current = $current === '' ? $paragraph : $current."\n\n".$paragraph;
+
+            while (mb_strlen($current) > self::MAX_CHUNK_CHARS) {
+                $chunks[] = trim(mb_substr($current, 0, self::MAX_CHUNK_CHARS));
+                $current = mb_substr($current, self::MAX_CHUNK_CHARS);
+
+                if (count($chunks) >= self::MAX_CHUNKS_PER_SOURCE) {
+                    return $chunks;
+                }
+            }
+        }
+
+        if ($current !== '' && count($chunks) < self::MAX_CHUNKS_PER_SOURCE) {
+            $chunks[] = $current;
+        }
+
+        return array_slice($chunks, 0, self::MAX_CHUNKS_PER_SOURCE);
+    }
+
+    /**
      * @param  array{id:int, title:string, link:string, excerpt:string, date:string}  $post
      * @return array{kind: string, blog_post_id: int, blog_link: string, model: string}
      */
@@ -426,6 +578,49 @@ class GenerateMarketingContentCommand extends Command
     }
 
     /**
+     * Embed the candidate's dedupe text and compare it against recent
+     * same-channel messages that have embeddings. Returns the embedding to
+     * store (null if embedding failed — fail-open, hash dedupe still
+     * applies), or the string 'duplicate' when the candidate is a
+     * near-semantic-duplicate of a recent message (cosine similarity >=
+     * MARKETING_DEDUPE_THRESHOLD).
+     *
+     * @return array<float>|string|null
+     */
+    private function embeddingForDedupe(string $channel, ?string $body, ?string $emailHtml): array|string|null
+    {
+        $text = $body ?? strip_tags((string) $emailHtml);
+
+        if (trim($text) === '') {
+            return null;
+        }
+
+        $vectors = $this->embeddings->embed([$text]);
+        $embedding = $vectors[0] ?? null;
+
+        if ($embedding === null) {
+            return null;
+        }
+
+        $threshold = (float) env('MARKETING_DEDUPE_THRESHOLD', 0.92);
+
+        $recentEmbeddings = MarketingMessage::query()
+            ->where('channel', $channel)
+            ->whereNotNull('embedding')
+            ->orderByDesc('id')
+            ->limit(self::DEDUPE_LOOKBACK)
+            ->pluck('embedding');
+
+        foreach ($recentEmbeddings as $recent) {
+            if (is_array($recent) && EmbeddingService::cosine($embedding, $recent) >= $threshold) {
+                return 'duplicate';
+            }
+        }
+
+        return $embedding;
+    }
+
+    /**
      * @param  array{title: string, source: array<string, mixed>, email_subject?: string, email_html?: string}  $extra
      * @return string 'generated'|'duplicate'
      */
@@ -439,6 +634,12 @@ class GenerateMarketingContentCommand extends Command
             return 'duplicate';
         }
 
+        $embedding = $this->embeddingForDedupe($channel, $body, $extra['email_html'] ?? null);
+
+        if ($embedding === 'duplicate') {
+            return 'duplicate';
+        }
+
         try {
             MarketingMessage::query()->create([
                 'channel' => $channel,
@@ -448,6 +649,7 @@ class GenerateMarketingContentCommand extends Command
                 'email_subject' => $extra['email_subject'] ?? null,
                 'email_html' => $extra['email_html'] ?? null,
                 'source' => $extra['source'],
+                'embedding' => $embedding,
                 'model' => config('services.ollama.model'),
                 'hash' => $hash,
                 'status' => MarketingMessage::STATUS_PENDING,
