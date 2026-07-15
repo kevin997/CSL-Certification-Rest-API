@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Ai\Agents\InstructorAssistantAgent;
+use App\Ai\Tools\SearchKnowledgeBase;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -58,7 +59,17 @@ class InstructorAssistantController extends Controller
                 $agent->forUser($user);
             }
 
-            $response = $agent->prompt($data['message']);
+            // Pre-retrieval RAG: fetch the relevant knowledge-base passages
+            // ourselves and hand them to the model as context. The small local
+            // model answers well from context but cannot do agentic tool calls.
+            $context = SearchKnowledgeBase::search($data['message']);
+
+            $prompt = "### Contexte (extraits de la base de connaissances KURSA) :\n"
+                .$context
+                ."\n\n### Question de l'instructeur :\n"
+                .$data['message'];
+
+            $response = $agent->prompt($prompt);
 
             return response()->json([
                 'success' => true,

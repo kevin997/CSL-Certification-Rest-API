@@ -32,8 +32,18 @@ class SearchKnowledgeBase implements Tool
      */
     public function handle(Request $request): Stringable|string
     {
-        $query = $request->string('query')->toString();
+        return static::search($request->string('query')->toString());
+    }
 
+    /**
+     * Retrieve the top matching knowledge-base passages for a query.
+     *
+     * Static so the assistant controller can PRE-retrieve context (classic
+     * RAG) instead of relying on agentic tool-calling — small local models
+     * (llama3.2:1b) hallucinate tool-call JSON instead of invoking tools.
+     */
+    public static function search(string $query, int $top = 4): string
+    {
         $embeddings = app(EmbeddingService::class)->embed([$query]);
 
         if (! $embeddings) {
@@ -55,7 +65,7 @@ class SearchKnowledgeBase implements Tool
                 'score' => EmbeddingService::cosine($queryEmbedding, $chunk->embedding),
             ])
             ->sortByDesc('score')
-            ->take(4);
+            ->take($top);
 
         return $ranked
             ->map(function (array $entry) {
