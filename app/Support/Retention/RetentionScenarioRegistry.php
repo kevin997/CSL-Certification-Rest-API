@@ -158,18 +158,28 @@ class RetentionScenarioRegistry
                 $u->email,
                 (string) $u->name,
                 pushUserId: $u->id,
-                context: ['environment_id' => $this->firstOwnedEnvironmentId($u->id)],
+                context: $this->instructorContext($u->id),
             ))
             ->values();
     }
 
-    /** First active environment id owned by this user — used for push/email branding context. */
-    private function firstOwnedEnvironmentId(int $userId): ?int
+    /**
+     * First active environment owned by this user — id feeds push/email
+     * branding, primary_domain lets RetentionLinks deep-link the instructor
+     * to THEIR own academy's /dashboard (multi-tenant: there is no global
+     * dashboard URL; www.getkursa.space is only the marketing landing page).
+     */
+    private function instructorContext(int $userId): array
     {
-        return Environment::query()
+        $env = Environment::query()
             ->where('owner_id', $userId)
             ->where('is_active', true)
-            ->value('id');
+            ->first(['id', 'primary_domain']);
+
+        return [
+            'environment_id' => $env?->id,
+            'environment_domain' => $env?->primary_domain,
+        ];
     }
 
     /** A user has at least one course across any environment they own. */

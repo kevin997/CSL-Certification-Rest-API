@@ -123,9 +123,13 @@ return [
             // No global FRONTEND_URL constant exists in this codebase — the app
             // is multi-tenant and mailables link to each tenant's own
             // Environment::primary_domain (see App\Mail\WelcomeToEnvironment).
-            // getkursa.space is the live platform domain (verified against
-            // config/cors.php + production), env-overridable per deployment.
-            'panel' => env('RETENTION_LINK_PANEL', 'https://www.getkursa.space/dashboard'),
+            // www.getkursa.space is the PRODUCT LANDING PAGE (CSL-Sales-Website)
+            // — it has no /dashboard. KURSA is multi-tenant: instructors and
+            // learners each live on their own environment domain, resolved
+            // per-target by RetentionLinks. These globals are the fallback and
+            // the CTA for broadcast content (group tips / statuses / email
+            // campaigns), which address users across ALL tenants at once.
+            'panel' => env('RETENTION_LINK_PANEL', 'https://www.getkursa.space'),
             'site' => env('RETENTION_LINK_SITE', 'https://www.getkursa.space'),
             'support_whatsapp' => env('RETENTION_SUPPORT_WHATSAPP'),
         ],

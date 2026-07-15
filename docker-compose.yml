@@ -42,7 +42,7 @@ services:
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
       - OLLAMA_FALLBACK_MODEL=${OLLAMA_FALLBACK_MODEL:-llama3.1:8b}
       - RETENTION_LOCALES=${RETENTION_LOCALES:-fr,en}
-      - RETENTION_LINK_PANEL=${RETENTION_LINK_PANEL:-https://www.getkursa.space/dashboard}
+      - RETENTION_LINK_PANEL=${RETENTION_LINK_PANEL:-https://www.getkursa.space}
       - RETENTION_LINK_SITE=${RETENTION_LINK_SITE:-https://www.getkursa.space}
       - RETENTION_SUPPORT_WHATSAPP=${RETENTION_SUPPORT_WHATSAPP}
     networks:
@@ -77,7 +77,7 @@ services:
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
       - OLLAMA_FALLBACK_MODEL=${OLLAMA_FALLBACK_MODEL:-llama3.1:8b}
       - RETENTION_LOCALES=${RETENTION_LOCALES:-fr,en}
-      - RETENTION_LINK_PANEL=${RETENTION_LINK_PANEL:-https://www.getkursa.space/dashboard}
+      - RETENTION_LINK_PANEL=${RETENTION_LINK_PANEL:-https://www.getkursa.space}
       - RETENTION_LINK_SITE=${RETENTION_LINK_SITE:-https://www.getkursa.space}
       - RETENTION_SUPPORT_WHATSAPP=${RETENTION_SUPPORT_WHATSAPP}
       # AWS RDS connection settings
@@ -154,7 +154,7 @@ services:
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
       - OLLAMA_FALLBACK_MODEL=${OLLAMA_FALLBACK_MODEL:-llama3.1:8b}
       - RETENTION_LOCALES=${RETENTION_LOCALES:-fr,en}
-      - RETENTION_LINK_PANEL=${RETENTION_LINK_PANEL:-https://www.getkursa.space/dashboard}
+      - RETENTION_LINK_PANEL=${RETENTION_LINK_PANEL:-https://www.getkursa.space}
       - RETENTION_LINK_SITE=${RETENTION_LINK_SITE:-https://www.getkursa.space}
       - RETENTION_SUPPORT_WHATSAPP=${RETENTION_SUPPORT_WHATSAPP}
       # AWS RDS connection settings
