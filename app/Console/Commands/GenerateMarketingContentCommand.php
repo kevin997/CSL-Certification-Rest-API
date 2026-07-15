@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\MarketingMessage;
+use App\Services\Marketing\BlogContentService;
 use App\Services\Marketing\FeatureInventoryService;
 use App\Services\OllamaService;
 use Illuminate\Console\Command;
@@ -35,7 +36,7 @@ instructors and learners. Write warm, concrete copy — no hype, no more than
 first. Respond with ONLY the requested JSON object, no commentary.
 PROMPT;
 
-    public function handle(FeatureInventoryService $inventory, OllamaService $ollama): int
+    public function handle(FeatureInventoryService $inventory, BlogContentService $blog, OllamaService $ollama): int
     {
         if (! OllamaService::isConfigured()) {
             $this->warn('Ollama is not configured — skipping marketing content generation.');
@@ -43,10 +44,14 @@ PROMPT;
             return self::SUCCESS;
         }
 
+        // The company blog is the primary source for tips/tutorials/campaigns.
+        // The feature inventory only fills gaps once every recent post has
+        // already been used for a given channel.
+        $posts = $blog->recentPosts();
         $features = $inventory->build((bool) $this->option('fresh-inventory'))['features'] ?? [];
 
-        if (empty($features)) {
-            $this->warn('Feature inventory is empty — nothing to generate content about.');
+        if (empty($posts) && empty($features)) {
+            $this->warn('No blog posts or feature inventory available — nothing to generate content about.');
 
             return self::SUCCESS;
         }
@@ -60,20 +65,38 @@ PROMPT;
             $pending = MarketingMessage::query()->pending()->where('channel', $channel)->count();
             $target = $countOverride ?? max(0, self::TARGET_POOL - $pending);
 
+            $usedBlogPostIds = $this->usedBlogPostIds($channel);
+
             $generated = 0;
             $skippedDupes = 0;
             $failures = 0;
+            $blogSourced = 0;
+            $featureSourced = 0;
 
             for ($i = 0; $i < $target; $i++) {
-                $feature = $this->pickFeature($features, $channel);
+                $post = $this->pickUnusedPost($posts, $usedBlogPostIds);
+
+                if ($post === null && empty($features)) {
+                    // Nothing left to source content from for this channel.
+                    break;
+                }
 
                 try {
-                    $result = $this->generateOne($channel, $feature, $ollama);
+                    if ($post !== null) {
+                        // Mark as used for the rest of this run regardless of
+                        // outcome, so a failure doesn't retry the same post.
+                        $usedBlogPostIds[] = $post['id'];
+                        $result = $this->generateOneFromBlog($channel, $post, $ollama);
+                    } else {
+                        $feature = $this->pickFeature($features, $channel);
+                        $result = $this->generateOne($channel, $feature, $ollama);
+                    }
 
                     if ($result === 'duplicate') {
                         $skippedDupes++;
                     } elseif ($result === 'generated') {
                         $generated++;
+                        $post !== null ? $blogSourced++ : $featureSourced++;
                     } else {
                         $failures++;
                     }
@@ -89,12 +112,55 @@ PROMPT;
                 $generated,
                 $skippedDupes,
                 $failures,
+                "{$blogSourced} blog / {$featureSourced} feature",
             ];
         }
 
-        $this->table(['channel', 'pending', 'generated', 'skipped-dupes', 'failures'], $rows);
+        $this->table(['channel', 'pending', 'generated', 'skipped-dupes', 'failures', 'source'], $rows);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Ids of blog posts already used to generate content for this channel,
+     * across all previously generated messages (any status).
+     *
+     * @return array<int, int>
+     */
+    private function usedBlogPostIds(string $channel): array
+    {
+        return MarketingMessage::query()
+            ->where('channel', $channel)
+            ->whereNotNull('source')
+            ->pluck('source')
+            ->map(function ($source) {
+                $decoded = is_string($source) ? json_decode($source, true) : $source;
+
+                return is_array($decoded) ? ($decoded['blog_post_id'] ?? null) : null;
+            })
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * The newest blog post not yet used for this channel, or null when every
+     * fetched post has already been used (or there are no posts at all).
+     *
+     * @param  array<int, array{id:int, title:string, link:string, excerpt:string, date:string}>  $posts
+     * @param  array<int, int>  $usedIds
+     * @return array{id:int, title:string, link:string, excerpt:string, date:string}|null
+     */
+    private function pickUnusedPost(array $posts, array $usedIds): ?array
+    {
+        foreach ($posts as $post) {
+            if (! in_array($post['id'], $usedIds, true)) {
+                return $post;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -159,6 +225,20 @@ PROMPT;
         };
     }
 
+    /**
+     * @param  array{id:int, title:string, link:string, excerpt:string, date:string}  $post
+     * @return string 'generated'|'duplicate'|'failed'
+     */
+    private function generateOneFromBlog(string $channel, array $post, OllamaService $ollama): string
+    {
+        return match ($channel) {
+            MarketingMessage::CHANNEL_GROUP_TIP => $this->generateBlogGroupTip($post, $ollama),
+            MarketingMessage::CHANNEL_STATUS => $this->generateBlogStatus($post, $ollama),
+            MarketingMessage::CHANNEL_EMAIL => $this->generateBlogEmailCampaign($post, $ollama),
+            default => 'failed',
+        };
+    }
+
     private function generateGroupTip(array $feature, OllamaService $ollama): string
     {
         $prompt = "Feature: {$feature['name']}\nWhat it does: {$feature['summary']}\n\n".
@@ -180,7 +260,7 @@ PROMPT;
 
         return $this->store(MarketingMessage::CHANNEL_GROUP_TIP, $topic, $body, [
             'title' => $topic,
-            'source' => ['feature' => $feature],
+            'source' => ['kind' => 'feature', 'feature' => $feature],
         ]);
     }
 
@@ -204,7 +284,7 @@ PROMPT;
 
         return $this->store(MarketingMessage::CHANNEL_STATUS, $topic, $body, [
             'title' => $topic,
-            'source' => ['feature' => $feature],
+            'source' => ['kind' => 'feature', 'feature' => $feature],
         ]);
     }
 
@@ -237,8 +317,120 @@ PROMPT;
             'title' => $topic,
             'email_subject' => $subject,
             'email_html' => $emailHtml,
-            'source' => ['feature' => $feature],
+            'source' => ['kind' => 'feature', 'feature' => $feature],
         ]);
+    }
+
+    /**
+     * @param  array{id:int, title:string, link:string, excerpt:string, date:string}  $post
+     * @return string 'generated'|'duplicate'|'failed'
+     */
+    private function generateBlogGroupTip(array $post, OllamaService $ollama): string
+    {
+        $prompt = "Blog article: {$post['title']}\nExcerpt: {$post['excerpt']}\n\n".
+            'Write a 2-4 sentence practical takeaway tip per language that teaches the reader something '.
+            'actionable from this article, then invite them to read more. Respond with JSON: {"topic","fr","en"}.';
+
+        $result = $ollama->chatJson(self::SYSTEM_PROMPT, $prompt);
+
+        $topic = mb_substr(trim((string) ($result['topic'] ?? $post['title'])), 0, 160);
+        $fr = trim((string) ($result['fr'] ?? ''));
+        $en = trim((string) ($result['en'] ?? ''));
+
+        if ($fr === '' || $en === '' || $fr === $en) {
+            return 'failed';
+        }
+
+        $body = $fr."\n\n".$en."\n\n👉 ".$post['link'];
+
+        return $this->store(MarketingMessage::CHANNEL_GROUP_TIP, $topic, $body, [
+            'title' => $topic,
+            'source' => $this->blogSource($post),
+        ]);
+    }
+
+    /**
+     * @param  array{id:int, title:string, link:string, excerpt:string, date:string}  $post
+     * @return string 'generated'|'duplicate'|'failed'
+     */
+    private function generateBlogStatus(array $post, OllamaService $ollama): string
+    {
+        $prompt = "Blog article: {$post['title']}\nExcerpt: {$post['excerpt']}\n\n".
+            'Write ONE punchy curiosity-driving WhatsApp-Status line per language (max ~140 characters each) '.
+            'about this article. Respond with JSON: {"topic","fr","en"}.';
+
+        $result = $ollama->chatJson(self::SYSTEM_PROMPT, $prompt);
+
+        $topic = mb_substr(trim((string) ($result['topic'] ?? $post['title'])), 0, 160);
+        $fr = trim((string) ($result['fr'] ?? ''));
+        $en = trim((string) ($result['en'] ?? ''));
+
+        if ($fr === '' || $en === '' || $fr === $en) {
+            return 'failed';
+        }
+
+        $body = $fr."\n\n".$en."\n\n".$post['link'];
+
+        return $this->store(MarketingMessage::CHANNEL_STATUS, $topic, $body, [
+            'title' => $topic,
+            'source' => $this->blogSource($post),
+        ]);
+    }
+
+    /**
+     * @param  array{id:int, title:string, link:string, excerpt:string, date:string}  $post
+     * @return string 'generated'|'duplicate'|'failed'
+     */
+    private function generateBlogEmailCampaign(array $post, OllamaService $ollama): string
+    {
+        $prompt = "Blog article: {$post['title']}\nExcerpt: {$post['excerpt']}\n\n".
+            'Write a short newsletter (2-3 paragraphs of HTML per language, no <html>/<head> tags, inline styles '.
+            'only) featuring this article, plus one button-styled <a href="{{cta_url}}"> link — use the literal '.
+            'placeholder {{cta_url}} for the link target. Respond with JSON: '.
+            '{"topic","subject_fr","subject_en","html_fr","html_en"}.';
+
+        $result = $ollama->chatJson(self::SYSTEM_PROMPT, $prompt);
+
+        $topic = mb_substr(trim((string) ($result['topic'] ?? $post['title'])), 0, 160);
+        $subjectFr = trim((string) ($result['subject_fr'] ?? ''));
+        $subjectEn = trim((string) ($result['subject_en'] ?? ''));
+        $htmlFr = trim((string) ($result['html_fr'] ?? ''));
+        $htmlEn = trim((string) ($result['html_en'] ?? ''));
+
+        if ($subjectFr === '' || $subjectEn === '' || $htmlFr === '' || $htmlEn === '' || $htmlFr === $htmlEn) {
+            return 'failed';
+        }
+
+        $subject = mb_substr($subjectFr.' / '.$subjectEn, 0, 150);
+        $emailHtml = $this->sanitizeEmailHtml(
+            $htmlFr.'<hr style="border:none;border-top:1px solid #eee;margin:24px 0">'.$htmlEn
+        );
+
+        // Blog-sourced campaigns link to the article itself, not the panel —
+        // resolve {{cta_url}} now so SendEmailCampaignCommand's later
+        // str_replace (which targets the panel link) is a harmless no-op.
+        $emailHtml = str_replace('{{cta_url}}', $post['link'], $emailHtml);
+
+        return $this->store(MarketingMessage::CHANNEL_EMAIL, $topic, null, [
+            'title' => $topic,
+            'email_subject' => $subject,
+            'email_html' => $emailHtml,
+            'source' => $this->blogSource($post),
+        ]);
+    }
+
+    /**
+     * @param  array{id:int, title:string, link:string, excerpt:string, date:string}  $post
+     * @return array{kind: string, blog_post_id: int, blog_link: string, model: string}
+     */
+    private function blogSource(array $post): array
+    {
+        return [
+            'kind' => 'blog',
+            'blog_post_id' => $post['id'],
+            'blog_link' => $post['link'],
+            'model' => (string) config('services.ollama.model'),
+        ];
     }
 
     private function sanitizeEmailHtml(string $html): string

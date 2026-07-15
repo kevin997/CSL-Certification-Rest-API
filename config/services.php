@@ -112,8 +112,16 @@ return [
         'url' => env('OLLAMA_URL', 'http://31.97.75.62:11434'),
         'model' => env('OLLAMA_MODEL', 'qwen2.5:7b'),
         'fallback_model' => env('OLLAMA_FALLBACK_MODEL', 'llama3.1:8b'),
-        'timeout' => (int) env('OLLAMA_TIMEOUT', 180),
+        'timeout' => (int) env('OLLAMA_TIMEOUT', 300),
         'num_ctx' => (int) env('OLLAMA_NUM_CTX', 8192),
+    ],
+
+    // Company blog (WordPress REST) — primary source for marketing tips/tutorials.
+    'blog' => [
+        'url' => env('BLOG_URL', 'https://blog.csl-brands.com'),
+        // WordPress application password — stored here per operator instruction.
+        'username' => env('BLOG_USERNAME'),
+        'app_password' => env('BLOG_APP_PASSWORD', 'Sh5e Dbbs knC4 DAUz k9Uo BeJO'),
     ],
 
     // Retention engine — locales for bilingual messages and default links.
