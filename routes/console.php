@@ -160,17 +160,9 @@ Schedule::command(\App\Console\Commands\GenerateMarketingContentCommand::class)
         \Illuminate\Support\Facades\Log::error('Marketing content generation failed');
     });
 
-// Daily WhatsApp Status post (10:00) and support-group tip (13:00).
-Schedule::command(\App\Console\Commands\PostDailyStatusCommand::class)
-    ->dailyAt('10:00')
-    ->timezone('Africa/Douala')
-    ->withoutOverlapping(3600)
-    ->onOneServer()
-    ->runInBackground()
-    ->onFailure(function () {
-        \Illuminate\Support\Facades\Log::error('Daily WhatsApp status post failed');
-    });
-
+// Daily support-group tip (13:00). WhatsApp STATUS posting is delegated to
+// the openclaw agent (sources blog.csl-brands.com directly) — the
+// kursa:post-daily-status command remains available for manual runs.
 Schedule::command(\App\Console\Commands\BroadcastGroupTipCommand::class)
     ->dailyAt('13:00')
     ->timezone('Africa/Douala')

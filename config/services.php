@@ -117,11 +117,22 @@ return [
     ],
 
     // Company blog (WordPress REST) — primary source for marketing tips/tutorials.
+    // Primary source for KURSA tips/guides/email campaigns: the KURSA
+    // resources site (product tutorials). WordPress application passwords are
+    // stored here per operator instruction.
     'blog' => [
-        'url' => env('BLOG_URL', 'https://blog.csl-brands.com'),
-        // WordPress application password — stored here per operator instruction.
+        'url' => env('BLOG_URL', 'https://resources.csl-brands.com'),
         'username' => env('BLOG_USERNAME'),
-        'app_password' => env('BLOG_APP_PASSWORD', 'Sh5e Dbbs knC4 DAUz k9Uo BeJO'),
+        'app_password' => env('BLOG_APP_PASSWORD', 'FWzV LNpQ 6M6n pVdu qCNe tf1V'),
+    ],
+
+    // The general CSL blog — source for WhatsApp STATUS posts, which are
+    // published by the openclaw agent (VPS 31.97.179.151), NOT by this app's
+    // scheduler (kursa:post-daily-status stays available for manual use).
+    'status_blog' => [
+        'url' => env('STATUS_BLOG_URL', 'https://blog.csl-brands.com'),
+        'username' => env('STATUS_BLOG_USERNAME'),
+        'app_password' => env('STATUS_BLOG_APP_PASSWORD', 'Sh5e Dbbs knC4 DAUz k9Uo BeJO'),
     ],
 
     // Retention engine — locales for bilingual messages and default links.
