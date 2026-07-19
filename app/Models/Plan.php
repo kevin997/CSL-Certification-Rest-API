@@ -11,6 +11,17 @@ class Plan extends Model
     use HasFactory;
 
     /**
+     * The KURSA licence plan type codes (doc §4.1-4.4).
+     *
+     * @var array<int, string>
+     */
+    public const LICENCE_TYPES = [
+        'free_forever',
+        'creator_monthly',
+        'white_label_annual',
+    ];
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var array<int, string>
@@ -48,5 +59,47 @@ class Plan extends Model
     public function subscriptions(): HasMany
     {
         return $this->hasMany(Subscription::class);
+    }
+
+    /**
+     * Get a numeric limit for this plan.
+     *
+     * Returns null when the limit is absent/unlimited (e.g. `null` in the
+     * stored `limits` json, or the key is missing entirely).
+     */
+    public function getLimit(string $key): ?int
+    {
+        $value = $this->limits[$key] ?? null;
+
+        return $value === null ? null : (int) $value;
+    }
+
+    /**
+     * Determine whether this plan has a truthy feature flag.
+     */
+    public function hasFeature(string $key): bool
+    {
+        return (bool) ($this->features[$key] ?? false);
+    }
+
+    /**
+     * Get a string-level feature value (e.g. 'basic', 'advanced', 'full').
+     *
+     * Returns null when the feature is absent or not a string level.
+     */
+    public function featureLevel(string $key): ?string
+    {
+        $value = $this->features[$key] ?? null;
+
+        return is_string($value) ? $value : null;
+    }
+
+    /**
+     * Determine whether this plan is one of the KURSA licence plans
+     * (as opposed to a legacy plan).
+     */
+    public function isLicencePlan(): bool
+    {
+        return in_array($this->type, self::LICENCE_TYPES, true);
     }
 }
