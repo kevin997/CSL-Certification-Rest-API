@@ -1491,28 +1491,11 @@ class PaymentService
 
     protected function createCommissionRecordIfNeeded(Transaction $transaction): void
     {
-        if (!$transaction->order_id) {
-            return;
-        }
-
-        try {
-            $config = app(EnvironmentPaymentConfigService::class)->getConfig($transaction->environment_id);
-
-            if (!$config || !$config->use_centralized_gateways) {
-                return;
-            }
-
-            if (InstructorCommission::where('transaction_id', $transaction->id)->exists()) {
-                return;
-            }
-
-            app(InstructorCommissionService::class)->createCommissionRecord($transaction);
-        } catch (\Throwable $e) {
-            Log::error('Failed to create commission record from callback', [
-                'transaction_id' => $transaction->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        // KURSA licensing transition (Phase 2): course sales carry 0% platform commission,
+        // so no InstructorCommission (payout liability) records are created for course
+        // transactions anymore. This is intentionally a no-op; the call site is preserved
+        // so historical InstructorCommission read/approval/withdrawal paths keep working.
+        return;
     }
 
     /**

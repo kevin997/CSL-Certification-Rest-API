@@ -36,8 +36,13 @@ Artisan::command('inspire', function () {
 |
 */
 
-Schedule::command(GenerateMonthlyInvoices::class)
-    ->lastDayOfMonth('23:59');
+// KURSA licensing transition (Phase 2): monthly platform-fee (commission) invoices are
+// retired — course sales carry 0% commission, so there is nothing to invoice. The
+// GenerateMonthlyInvoices command class and InvoiceService are intentionally KEPT (not
+// deleted) so historical invoices stay readable and the command can still be run manually
+// if ever needed, but it is no longer scheduled.
+// Schedule::command(GenerateMonthlyInvoices::class)
+//     ->lastDayOfMonth('23:59');
 
 // Regularize orders with completed transactions every 5 minutes
 Schedule::command(RegularizeCompletedOrders::class)

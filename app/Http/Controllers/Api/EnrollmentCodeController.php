@@ -357,28 +357,9 @@ class EnrollmentCodeController extends Controller
                 'paid_at' => now(),
             ]);
 
-            // Create commission record if product has value
-            if ($productPrice > 0) {
-                try {
-                    $commissionService = app(\App\Services\InstructorCommissionService::class);
-                    $commissionService->createCommissionRecord($transaction);
-
-                    Log::info('Commission created for enrollment code redemption', [
-                        'order_id' => $order->id,
-                        'transaction_id' => $transaction->id,
-                        'product_id' => $product->id,
-                        'product_price' => $productPrice,
-                        'code' => $enrollmentCode->code,
-                    ]);
-                } catch (\Exception $e) {
-                    Log::error('Failed to create commission for enrollment code', [
-                        'order_id' => $order->id,
-                        'transaction_id' => $transaction->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                    // Don't fail the redemption if commission creation fails
-                }
-            }
+            // KURSA licensing transition (Phase 2): enrollment-code redemptions carry 0%
+            // platform commission, so no InstructorCommission (payout liability) record is
+            // created. Enrollment codes must not create cash payout liabilities (doc §9.1).
 
             // Mark code as used
             $enrollmentCode->markAsUsed($user->id);
@@ -642,29 +623,9 @@ class EnrollmentCodeController extends Controller
                 'paid_at' => now(),
             ]);
 
-            // Create commission record if product has value
-            if ($productPrice > 0) {
-                try {
-                    $commissionService = app(\App\Services\InstructorCommissionService::class);
-                    $commissionService->createCommissionRecord($transaction);
-
-                    Log::info('Commission created for enrollment code redemption with registration', [
-                        'order_id' => $order->id,
-                        'transaction_id' => $transaction->id,
-                        'product_id' => $product->id,
-                        'product_price' => $productPrice,
-                        'code' => $enrollmentCode->code,
-                        'user_id' => $user->id,
-                    ]);
-                } catch (\Exception $e) {
-                    Log::error('Failed to create commission for enrollment code with registration', [
-                        'order_id' => $order->id,
-                        'transaction_id' => $transaction->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                    // Don't fail the redemption if commission creation fails
-                }
-            }
+            // KURSA licensing transition (Phase 2): enrollment-code redemptions carry 0%
+            // platform commission, so no InstructorCommission (payout liability) record is
+            // created. Enrollment codes must not create cash payout liabilities (doc §9.1).
 
             // Mark code as used
             $enrollmentCode->markAsUsed($user->id);

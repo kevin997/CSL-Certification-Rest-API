@@ -321,16 +321,9 @@ class SalesFormSubmissionController extends Controller
                 'paid_at' => now(),
             ]);
 
-            if ($order->total_amount > 0) {
-                try {
-                    app(\App\Services\InstructorCommissionService::class)->createCommissionRecord($transaction);
-                } catch (\Exception $e) {
-                    Log::error('Failed to create commission for sales form order', [
-                        'order_id' => $order->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-            }
+            // KURSA licensing transition (Phase 2): sales-form manual completions carry 0%
+            // platform commission, so no InstructorCommission (payout liability) record is
+            // created for the course sale (doc §9.1).
 
             // Lift provisional access on enrollments for the courses in this order.
             $courseIds = $order->items

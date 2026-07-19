@@ -174,7 +174,7 @@ class EnvironmentPaymentConfigService
     {
         return [
             'use_centralized_gateways' => false,
-            'commission_rate' => 0.1700, // 17% for instructors
+            'commission_rate' => 0, // Phase 2: 0% platform commission on course sales
             'payment_terms' => 'NET_30',
             'withdrawal_method' => null,
             'withdrawal_details' => null,

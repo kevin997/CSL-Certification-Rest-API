@@ -210,8 +210,8 @@ class PaymentConfigController extends Controller
                 'success' => true,
                 'data' => [
                     'use_centralized_gateways' => false,
-                    'platform_fee_rate' => 0.17, // 17% platform fee (instructor receives 83%)
-                    'instructor_payout_rate' => 0.83, // Instructor receives 83%
+                    'platform_fee_rate' => 0, // Phase 2: 0% platform fee (creator receives 100%)
+                    'instructor_payout_rate' => 1, // Creator receives 100% of course sales
                     'minimum_withdrawal_amount' => 82.00, // $82 USD (≈50,000 XAF)
                     'payment_terms' => 'NET_30',
                 ]
@@ -263,7 +263,7 @@ class PaymentConfigController extends Controller
             $config = EnvironmentPaymentConfig::create([
                 'environment_id' => $environmentId,
                 'use_centralized_gateways' => true, // Enable on first toggle
-                'platform_fee_rate' => 0.17, // Platform takes 17% (instructor receives 83%)
+                'platform_fee_rate' => 0, // Phase 2: 0% platform fee (creator receives 100%)
                 'payment_terms' => 'NET_30', // Default payment terms
                 'minimum_withdrawal_amount' => 82.00, // Minimum withdrawal: $82 USD (≈50,000 XAF)
             ]);

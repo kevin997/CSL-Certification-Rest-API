@@ -9,31 +9,31 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * CHARACTERISATION: locks in today's 17% commission fallback and its
- * commission-inclusive reverse calculation. CommissionService::
- * extractCommissionFromProductPrice (~:82-98) falls back to a hardcoded 17%
- * rate whenever no active Commission record exists, and treats the input
- * price as ALREADY including commission (reverse-dividing by 1 + rate).
- * Phase 2 of the KURSA licensing transition plan deletes the 17% fallback
- * entirely and stops charging course commissions.
+ * PHASE 2 (flipped): this test used to characterise the OLD 17% commission
+ * fallback and its commission-inclusive reverse calculation. As of the KURSA
+ * licensing transition Phase 2, that behaviour is GONE:
+ * CommissionService::extractCommissionFromProductPrice no longer falls back to
+ * a hardcoded 17% rate and no longer reverse-divides by (1 + rate). Course
+ * sales carry 0% platform commission and the price is the creator's selling
+ * price, used as-is. The expectation below has been flipped accordingly.
  */
 class CommissionFallbackTest extends TestCase
 {
     use RefreshDatabase;
 
     /** @test */
-    public function with_no_commission_record_it_falls_back_to_17_percent_inclusive_reverse_calculation()
+    public function with_no_commission_record_it_returns_zero_commission_and_the_price_unchanged()
     {
         // No Commission rows exist in the database at all.
         $service = app(CommissionService::class);
 
         $result = $service->extractCommissionFromProductPrice(117.0, null);
 
-        // CHARACTERISATION: current behavior — Phase N will flip this expectation.
-        // 117 is treated as (originalPrice * 1.17), so originalPrice = 100
-        // and commission = 17, using the hardcoded 17% default rate.
-        $this->assertEquals(17.0, $result['commission_rate']);
-        $this->assertEqualsWithDelta(100.0, $result['original_price'], 0.001);
-        $this->assertEqualsWithDelta(17.0, $result['commission_amount'], 0.001);
+        // PHASE 2 behavior: 0% commission, no reverse calculation. 117 stays 117,
+        // the commission amount is 0 and the rate is 0 — the creator keeps the
+        // full selling price.
+        $this->assertEquals(0.0, $result['commission_rate']);
+        $this->assertEqualsWithDelta(117.0, $result['original_price'], 0.001);
+        $this->assertEqualsWithDelta(0.0, $result['commission_amount'], 0.001);
     }
 }
