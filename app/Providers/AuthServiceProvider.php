@@ -13,7 +13,7 @@ class AuthServiceProvider extends ServiceProvider
      * @var array<class-string, class-string>
      */
     protected $policies = [
-        // Define your model to policy mappings here
+        \App\Models\Transaction::class => \App\Policies\TransactionPolicy::class,
     ];
 
     /**

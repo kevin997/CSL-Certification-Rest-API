@@ -1,6 +1,6 @@
 <?php
 
-namespace Tests\Feature\Characterisation;
+namespace Tests\Feature\Payments;
 
 use App\Models\Environment;
 use App\Models\PaymentGatewaySetting;
@@ -11,14 +11,10 @@ use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
- * CHARACTERISATION: locks in today's (buggy) behavior of the public,
- * unauthenticated GET /payments/transactions/callback/success/{environment_id}
- * route. Phase 3 of the KURSA licensing transition plan turns browser
- * callbacks into display-only redirects and moves settlement authority to
- * server-to-server webhooks (see TransactionController::callbackSuccess
- * ~line 110 and PaymentService::processSuccessCallback).
+ * Phase 3: browser callbacks are display-only (plan §9.2), and a public,
+ * minimal status endpoint lets checkouts poll asynchronous settlement.
  */
-class CallbackAuthorityTest extends TestCase
+class CallbackDisplayOnlyTest extends TestCase
 {
     use RefreshDatabase;
 
@@ -48,16 +44,8 @@ class CallbackAuthorityTest extends TestCase
         ]);
     }
 
-    /**
-     * PHASE 3 FLIP: a forged browser callback NO LONGER settles anything.
-     * Browser callbacks became display-only (plan §9.2) — settlement authority
-     * moved to signed webhooks / server-to-server verification. A bare GET an
-     * attacker sends against the public callback URL now only renders a status
-     * page and leaves the transaction exactly as it was (pending, unpaid).
-     *
-     * @test
-     */
-    public function a_forged_get_callback_does_not_settle_a_pending_transaction()
+    /** @test */
+    public function a_success_callback_leaves_transaction_state_untouched()
     {
         $transactionId = (string) Str::uuid();
 
@@ -76,15 +64,38 @@ class CallbackAuthorityTest extends TestCase
             . "?status=success&transaction_id={$transactionId}"
         );
 
-        // The display-only page still renders (200) …
         $response->assertOk();
 
-        // … but the transaction is untouched: NOT completed, NOT paid.
-        $this->assertDatabaseHas('transactions', [
-            'id' => $transaction->id,
+        $fresh = $transaction->fresh();
+        $this->assertSame(Transaction::STATUS_PENDING, $fresh->status);
+        $this->assertNull($fresh->paid_at);
+    }
+
+    /** @test */
+    public function the_public_status_endpoint_returns_only_status_purpose_order()
+    {
+        $transactionId = (string) Str::uuid();
+
+        Transaction::create([
+            'transaction_id' => $transactionId,
+            'environment_id' => $this->environment->id,
+            'payment_gateway_setting_id' => $this->gatewaySetting->id,
+            'amount' => 100,
+            'total_amount' => 100,
+            'currency' => 'USD',
             'status' => Transaction::STATUS_PENDING,
+            'purpose' => Transaction::PURPOSE_COURSE_SALE,
         ]);
 
-        $this->assertNull($transaction->fresh()->paid_at);
+        $response = $this->getJson("/api/payments/transactions/{$transactionId}/status");
+
+        $response->assertOk();
+        $response->assertJson([
+            'status' => Transaction::STATUS_PENDING,
+            'purpose' => Transaction::PURPOSE_COURSE_SALE,
+        ]);
+        // No financial detail is exposed.
+        $response->assertJsonMissing(['amount' => 100]);
+        $response->assertJsonStructure(['status', 'purpose', 'order_id']);
     }
 }

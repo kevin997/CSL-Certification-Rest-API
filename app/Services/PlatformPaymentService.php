@@ -58,6 +58,13 @@ class PlatformPaymentService
             'country_code' => $environment->country_code,
             'state_code' => $environment->state_code,
             'created_by' => $data['created_by'] ?? null,
+            'purpose' => $data['purpose'] ?? $this->licencePurposeForPlanType($data['plan_type'] ?? null),
+            'source_type' => $data['source_type'] ?? null,
+            'source_id' => $data['source_id'] ?? null,
+            'expected_amount' => $data['total_amount'] ?? $data['amount'],
+            'expected_currency' => $data['currency'] ?? 'USD',
+            'platform_fee_amount' => 0,
+            'merchant_environment_id' => $environment->id,
         ]);
 
         $paymentData = [
@@ -113,5 +120,19 @@ class PlatformPaymentService
             ],
             'gateway_response' => $response,
         ];
+    }
+
+    /**
+     * Map a plan type to its environment-licence transaction purpose (KURSA §9.7).
+     */
+    private function licencePurposeForPlanType(?string $planType): string
+    {
+        return match ($planType) {
+            'creator', 'creator_monthly' => Transaction::PURPOSE_ENVIRONMENT_CREATOR_LICENSE,
+            'white_label', 'white_label_annual' => Transaction::PURPOSE_ENVIRONMENT_WHITE_LABEL_LICENSE,
+            'renewal', 'license_renewal' => Transaction::PURPOSE_ENVIRONMENT_LICENSE_RENEWAL,
+            'change', 'license_change' => Transaction::PURPOSE_ENVIRONMENT_LICENSE_CHANGE,
+            default => Transaction::PURPOSE_ENVIRONMENT_WHITE_LABEL_LICENSE,
+        };
     }
 }

@@ -66,6 +66,19 @@ class Transaction extends Model
         'refund_reason',
         'created_by',
         'updated_by',
+        'purpose',
+        'source_type',
+        'source_id',
+        'parent_transaction_id',
+        'provider_event_id',
+        'idempotency_key',
+        'expected_amount',
+        'expected_currency',
+        'platform_fee_amount',
+        'processor_fee_amount',
+        'verified_at',
+        'merchant_environment_id',
+        'gateway_account_environment_id',
     ];
 
     /**
@@ -82,6 +95,10 @@ class Transaction extends Model
         'gateway_response' => 'json',
         'paid_at' => 'datetime',
         'refunded_at' => 'datetime',
+        'expected_amount' => 'decimal:2',
+        'platform_fee_amount' => 'decimal:2',
+        'processor_fee_amount' => 'decimal:2',
+        'verified_at' => 'datetime',
     ];
 
     /**
@@ -94,6 +111,34 @@ class Transaction extends Model
     const STATUS_REFUNDED = 'refunded';
     const STATUS_PARTIALLY_REFUNDED = 'partially_refunded';
     const STATUS_CANCELLED = 'cancelled';
+
+    /**
+     * Transaction purposes
+     */
+    const PURPOSE_COURSE_SALE = 'course_sale';
+    const PURPOSE_COURSE_SUBSCRIPTION_INITIAL = 'course_subscription_initial';
+    const PURPOSE_COURSE_SUBSCRIPTION_RENEWAL = 'course_subscription_renewal';
+    const PURPOSE_ENVIRONMENT_CREATOR_LICENSE = 'environment_creator_license';
+    const PURPOSE_ENVIRONMENT_WHITE_LABEL_LICENSE = 'environment_white_label_license';
+    const PURPOSE_ENVIRONMENT_LICENSE_RENEWAL = 'environment_license_renewal';
+    const PURPOSE_ENVIRONMENT_LICENSE_CHANGE = 'environment_license_change';
+    const PURPOSE_LEGACY_COMMISSION_INVOICE = 'legacy_commission_invoice';
+    const PURPOSE_REFUND = 'refund';
+    const PURPOSE_MANUAL_RECEIPT = 'manual_receipt';
+    const PURPOSE_FREE_ENROLLMENT = 'free_enrollment';
+
+    /**
+     * Purposes that represent an environment licence transaction.
+     *
+     * @var array<int, string>
+     */
+    const LICENCE_PURPOSES = [
+        self::PURPOSE_ENVIRONMENT_CREATOR_LICENSE,
+        self::PURPOSE_ENVIRONMENT_WHITE_LABEL_LICENSE,
+        self::PURPOSE_ENVIRONMENT_LICENSE_RENEWAL,
+        self::PURPOSE_ENVIRONMENT_LICENSE_CHANGE,
+        self::PURPOSE_LEGACY_COMMISSION_INVOICE,
+    ];
 
     /**
      * Boot the model.

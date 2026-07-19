@@ -39,15 +39,12 @@ class WebhookSignatureTest extends TestCase
     }
 
     /**
-     * CHARACTERISATION: current behavior — Phase N will flip this expectation.
-     *
-     * A Stripe webhook with NO webhook_secret configured on the gateway
-     * settings is accepted (payload just json_decode'd, no signature check)
-     * instead of being rejected outright.
+     * PHASE 3 FLIP: fail-closed. A Stripe webhook with NO webhook_secret
+     * configured is now REJECTED (401) instead of accepting unsigned JSON.
      *
      * @test
      */
-    public function stripe_webhook_with_no_secret_configured_accepts_unsigned_json()
+    public function stripe_webhook_with_no_secret_configured_is_rejected()
     {
         PaymentGatewaySetting::create([
             'environment_id' => $this->environment->id,
@@ -76,22 +73,18 @@ class WebhookSignatureTest extends TestCase
             $payload
         );
 
-        // No 'stripe-signature' header was sent and no webhook_secret is
-        // configured, yet the webhook is still processed successfully.
-        $response->assertOk();
-        $response->assertJson(['status' => 'success']);
+        // No 'stripe-signature' header and no webhook_secret configured:
+        // the webhook is now rejected fail-closed with 401.
+        $response->assertStatus(401);
     }
 
     /**
-     * CHARACTERISATION: current behavior — Phase N will flip this expectation.
-     *
-     * verifyMonerooWebhookSignature() returns true (accepts the webhook)
-     * whenever the gateway has no webhook_secret configured, regardless of
-     * headers or payload.
+     * PHASE 3 FLIP: fail-closed. verifyMonerooWebhookSignature() now returns
+     * FALSE when no webhook_secret is configured (cannot authenticate → reject).
      *
      * @test
      */
-    public function moneroo_signature_verification_returns_true_when_secret_is_empty()
+    public function moneroo_signature_verification_returns_false_when_secret_is_empty()
     {
         $gatewaySetting = PaymentGatewaySetting::create([
             'environment_id' => $this->environment->id,
@@ -115,18 +108,16 @@ class WebhookSignatureTest extends TestCase
             $gatewaySetting
         );
 
-        $this->assertTrue($result);
+        $this->assertFalse($result);
     }
 
     /**
-     * CHARACTERISATION: current behavior — Phase N will flip this expectation.
-     *
-     * verifyTaraMoneyWebhookSignature() returns true (accepts the webhook)
-     * whenever the gateway has no webhook_secret configured.
+     * PHASE 3 FLIP: fail-closed. verifyTaraMoneyWebhookSignature() now returns
+     * FALSE when no webhook_secret is configured.
      *
      * @test
      */
-    public function taramoney_signature_verification_returns_true_when_secret_is_empty()
+    public function taramoney_signature_verification_returns_false_when_secret_is_empty()
     {
         $gatewaySetting = PaymentGatewaySetting::create([
             'environment_id' => $this->environment->id,
@@ -151,20 +142,17 @@ class WebhookSignatureTest extends TestCase
             ['paymentId' => 'pay_fake']
         );
 
-        $this->assertTrue($result);
+        $this->assertFalse($result);
     }
 
     /**
-     * CHARACTERISATION: current behavior — Phase N will flip this expectation.
-     *
-     * When a webhook_secret IS configured but no signature is present,
-     * verifyTaraMoneyWebhookSignature() still accepts the webhook purely on
-     * the strength of the payload's businessId matching the gateway's
-     * configured business_id — a bypass with no cryptographic verification.
+     * PHASE 3 FLIP: the businessId "match" bypass is REMOVED. A configured secret
+     * with NO signature is now rejected regardless of businessId equality —
+     * businessId is not cryptographic authenticity.
      *
      * @test
      */
-    public function taramoney_signature_verification_bypasses_via_matching_business_id()
+    public function taramoney_signature_verification_no_longer_bypasses_via_matching_business_id()
     {
         $gatewaySetting = PaymentGatewaySetting::create([
             'environment_id' => $this->environment->id,
@@ -192,6 +180,6 @@ class WebhookSignatureTest extends TestCase
             ['paymentId' => 'pay_fake', 'businessId' => 'biz_123']
         );
 
-        $this->assertTrue($result);
+        $this->assertFalse($result);
     }
 }

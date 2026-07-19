@@ -319,6 +319,12 @@ class SalesFormSubmissionController extends Controller
                 'payment_method' => 'sales_form_manual',
                 'description' => 'Sales form order manual completion: ' . $order->order_number,
                 'paid_at' => now(),
+                'purpose' => Transaction::PURPOSE_MANUAL_RECEIPT,
+                'source_type' => 'order',
+                'source_id' => $order->id,
+                'expected_amount' => $order->total_amount,
+                'expected_currency' => $order->currency ?? 'USD',
+                'platform_fee_amount' => 0,
             ]);
 
             // KURSA licensing transition (Phase 2): sales-form manual completions carry 0%

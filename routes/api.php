@@ -946,6 +946,12 @@ Route::group(['prefix' => 'payments'], function () {
     Route::match(['get', 'post'], '/transactions/webhook/{gateway}/{environment_id}', [TransactionController::class, 'webhook'])->name('api.transactions.webhook');
     Route::get('/paypal/return', [TransactionController::class, 'paypalReturn'])->name('api.paypal.return');
     Route::get('/paypal/cancel', [TransactionController::class, 'paypalCancel'])->name('api.paypal.cancel');
+
+    // Public payment-status poll endpoint (KURSA plan §9.2). Display-only:
+    // browser checkouts poll this to observe asynchronous settlement.
+    Route::get('/transactions/{transaction_uuid}/status', [TransactionController::class, 'pollStatus'])
+        ->middleware('throttle:60,1')
+        ->name('api.transactions.status');
 });
 
 // Team Management Routes

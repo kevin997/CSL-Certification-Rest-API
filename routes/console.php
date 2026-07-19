@@ -10,6 +10,7 @@ use App\Console\Commands\RegularizeCompletedOrders;
 use App\Console\Commands\SendProductSubscriptionReminders;
 use App\Console\Commands\SendInstructorWeeklyDigest;
 use App\Console\Commands\SendLearnerWeeklyDigest;
+use App\Console\Commands\VerifyPendingPayments;
 
 /*
 |--------------------------------------------------------------------------
@@ -238,3 +239,10 @@ Schedule::command(\App\Console\Commands\MarketingHealthReportCommand::class)
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('Marketing health report failed');
     });
+
+// KURSA licensing transition (Phase 3): server-to-server verify pending payments
+// for gateways with a trusted status API; confirmations route through WebhookProcessor.
+Schedule::command(VerifyPendingPayments::class)
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();

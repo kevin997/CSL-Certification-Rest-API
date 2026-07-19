@@ -189,6 +189,12 @@ class PaymentService
                 'state_code' => $stateCode,
                 'customer_name' => $order->billing_name,
                 'customer_email' => $order->billing_email,
+                'purpose' => (($order->total_amount ?? 0) == 0 ? Transaction::PURPOSE_FREE_ENROLLMENT : Transaction::PURPOSE_COURSE_SALE),
+                'source_type' => 'order',
+                'source_id' => $order->id,
+                'expected_amount' => $order->total_amount,
+                'expected_currency' => $order->currency ?? 'USD',
+                'platform_fee_amount' => 0,
             ];
 
             // Create the transaction record
@@ -578,6 +584,13 @@ class PaymentService
                     'tax_amount' => $transactionAmounts['tax_amount'],
                     'total_amount' => $transactionAmounts['total_amount']
                 ]);
+
+                $transaction->purpose = (($order->total_amount ?? 0) == 0 ? Transaction::PURPOSE_FREE_ENROLLMENT : Transaction::PURPOSE_COURSE_SALE);
+                $transaction->source_type = 'order';
+                $transaction->source_id = $order->id;
+                $transaction->expected_amount = $order->total_amount;
+                $transaction->expected_currency = $order->currency ?? 'USD';
+                $transaction->platform_fee_amount = 0;
 
                 $transaction->save();
             } else {
@@ -1277,16 +1290,7 @@ class PaymentService
                     ->lockForUpdate()
                     ->firstOrFail();
 
-                $alreadyCompleted = $transaction->status === Transaction::STATUS_COMPLETED;
-
-                $transaction->status = Transaction::STATUS_COMPLETED;
-                $transaction->gateway_status = 'completed';
-                $transaction->gateway_response = $callbackData;
-                $transaction->notes = 'Payment completed via ' . $gateway;
-                $transaction->paid_at = $transaction->paid_at ?: now();
-                $transaction->save();
-
-                $this->processRelatedRecords($transaction, !$alreadyCompleted);
+                $this->applySettlement($transaction, 'completed', $callbackData);
             });
 
             return true;
@@ -1330,28 +1334,7 @@ class PaymentService
                     ->lockForUpdate()
                     ->firstOrFail();
 
-                if ($transaction->status === Transaction::STATUS_COMPLETED) {
-                    Log::warning('Ignoring failure callback for already completed transaction', [
-                        'transaction_id' => $transaction->transaction_id,
-                        'gateway' => $gateway,
-                    ]);
-                    return;
-                }
-
-                $transaction->status = Transaction::STATUS_FAILED;
-                $transaction->gateway_status = 'failed';
-                $transaction->gateway_response = $callbackData;
-                $transaction->notes = 'Payment failed via ' . $gateway;
-                $transaction->save();
-
-                $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
-                if ($payment && $payment->status !== Payment::STATUS_COMPLETED) {
-                    $payment->markAsFailed(
-                        $transaction->gateway_transaction_id,
-                        'failed',
-                        $callbackData
-                    );
-                }
+                $this->applyFailure($transaction, 'failed', $callbackData, 'Payment failed via ' . $gateway);
             });
 
             return true;
@@ -1421,6 +1404,72 @@ class PaymentService
         }
     }
 
+
+    /**
+     * Reusable settlement core (KURSA plan §11 step 8). Marks a transaction
+     * completed and fulfils related records (order/subscription/invoice/payment).
+     *
+     * IMPORTANT: the caller MUST already hold a FOR UPDATE lock on the row and be
+     * inside a DB transaction. This is the single fulfilment path shared by the
+     * legacy callback service methods and the new WebhookProcessor — do NOT
+     * duplicate this logic elsewhere.
+     *
+     * @param Transaction $transaction Locked transaction row.
+     * @param string $gatewayStatus Raw gateway status for auditing.
+     * @param array $payload Verified gateway payload.
+     * @return void
+     */
+    public function applySettlement(Transaction $transaction, string $gatewayStatus, array $payload): void
+    {
+        $alreadyCompleted = $transaction->status === Transaction::STATUS_COMPLETED;
+
+        $transaction->status = Transaction::STATUS_COMPLETED;
+        $transaction->gateway_status = $gatewayStatus;
+        $transaction->gateway_response = $payload;
+        $transaction->paid_at = $transaction->paid_at ?: now();
+        $transaction->verified_at = $transaction->verified_at ?: now();
+        $transaction->save();
+        $transaction->refresh();
+
+        $this->processRelatedRecords($transaction, !$alreadyCompleted);
+    }
+
+    /**
+     * Reusable failure core. Marks a transaction failed without regressing an
+     * already-completed one. Caller MUST hold the row lock inside a DB transaction.
+     *
+     * @param Transaction $transaction Locked transaction row.
+     * @param string $gatewayStatus Raw gateway status for auditing.
+     * @param array $payload Verified gateway payload.
+     * @param string|null $notes Optional note.
+     * @return void
+     */
+    public function applyFailure(Transaction $transaction, string $gatewayStatus, array $payload, ?string $notes = null): void
+    {
+        if ($transaction->status === Transaction::STATUS_COMPLETED) {
+            Log::warning('Ignoring failure for already completed transaction', [
+                'transaction_id' => $transaction->transaction_id,
+            ]);
+            return;
+        }
+
+        $transaction->status = Transaction::STATUS_FAILED;
+        $transaction->gateway_status = $gatewayStatus;
+        $transaction->gateway_response = $payload;
+        if ($notes !== null) {
+            $transaction->notes = $notes;
+        }
+        $transaction->save();
+
+        $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
+        if ($payment && $payment->status !== Payment::STATUS_COMPLETED) {
+            $payment->markAsFailed(
+                $transaction->gateway_transaction_id,
+                $gatewayStatus,
+                $payload
+            );
+        }
+    }
 
     /**
      * Process any records related to a transaction (orders, subscriptions, etc.)
@@ -1532,58 +1581,21 @@ class PaymentService
             ->first();
 
         if ($globalTransaction) {
-            // Check if this is a supported plan transaction using basic detection
-            $isLikelySupportedPlan = $this->isLikelySupportedPlanTransaction($globalTransaction);
-
-            if ($isLikelySupportedPlan) {
-                Log::info('PaymentService: Supported plan transaction found with global lookup', [
+            // KURSA licensing transition (Phase 3): cross-environment lookup is now
+            // driven by the explicit transaction purpose (environment licences are
+            // billed centrally and can therefore be resolved outside their own
+            // environment scope), replacing the old amount/description heuristics.
+            if (in_array($globalTransaction->purpose, Transaction::LICENCE_PURPOSES, true)) {
+                Log::info('PaymentService: Environment-licence transaction found with global lookup', [
                     'transaction_id' => $transactionId,
                     'callback_environment_id' => $environment_id,
-                    'transaction_environment_id' => $globalTransaction->environment_id
+                    'transaction_environment_id' => $globalTransaction->environment_id,
+                    'purpose' => $globalTransaction->purpose,
                 ]);
                 return $globalTransaction;
             }
         }
 
         return null;
-    }
-
-    /**
-     * Basic check to identify likely supported plan transactions
-     * Used by PaymentService to avoid circular dependency
-     * 
-     * @param Transaction $transaction
-     * @return bool
-     */
-    private function isLikelySupportedPlanTransaction($transaction): bool
-    {
-        if (!$transaction) {
-            return false;
-        }
-
-        // Check transaction description for supported plan keywords
-        if ($transaction->description && stripos($transaction->description, 'supported plan') !== false) {
-            return true;
-        }
-
-        // Check if transaction amount matches supported plan pricing ($177.00)
-        if ($transaction->total_amount == 177.00) {
-            return true;
-        }
-
-        // Check transaction notes for supported plan indicators
-        if ($transaction->notes && stripos($transaction->notes, 'supported') !== false) {
-            return true;
-        }
-
-        $details = is_array($transaction->payment_method_details)
-            ? $transaction->payment_method_details
-            : json_decode($transaction->payment_method_details ?: '[]', true);
-
-        if (($details['scope'] ?? null) === 'platform') {
-            return true;
-        }
-
-        return false;
     }
 }

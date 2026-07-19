@@ -355,6 +355,12 @@ class EnrollmentCodeController extends Controller
                 'payment_method' => 'enrollment_code',
                 'description' => 'Enrollment code redemption: ' . $enrollmentCode->code,
                 'paid_at' => now(),
+                'purpose' => (($productPrice ?? 0) == 0 ? Transaction::PURPOSE_FREE_ENROLLMENT : Transaction::PURPOSE_COURSE_SALE),
+                'source_type' => 'order',
+                'source_id' => $order->id,
+                'expected_amount' => $productPrice,
+                'expected_currency' => $product->currency ?? 'USD',
+                'platform_fee_amount' => 0,
             ]);
 
             // KURSA licensing transition (Phase 2): enrollment-code redemptions carry 0%
@@ -621,6 +627,12 @@ class EnrollmentCodeController extends Controller
                 'payment_method' => 'enrollment_code',
                 'description' => 'Enrollment code redemption: ' . $enrollmentCode->code,
                 'paid_at' => now(),
+                'purpose' => (($productPrice ?? 0) == 0 ? Transaction::PURPOSE_FREE_ENROLLMENT : Transaction::PURPOSE_COURSE_SALE),
+                'source_type' => 'order',
+                'source_id' => $order->id,
+                'expected_amount' => $productPrice,
+                'expected_currency' => $product->currency ?? 'USD',
+                'platform_fee_amount' => 0,
             ]);
 
             // KURSA licensing transition (Phase 2): enrollment-code redemptions carry 0%
