@@ -17,6 +17,7 @@ use App\Models\IssuedCertificate;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 class DashboardController extends Controller
 {
@@ -62,40 +63,87 @@ class DashboardController extends Controller
         // Get the environment ID from the authenticated user
         $environmentId = session()->get('current_environment_id');
 
+        // Optional date-range filtering for windowed stats. Both start_date and
+        // end_date must be provided (as YYYY-MM-DD) and valid for the range to
+        // apply. If either is missing or invalid, we silently fall back to the
+        // existing hardcoded windows (no error response) to preserve backward
+        // compatibility.
+        [$startDate, $endDate] = $this->resolveDateRange($request);
+
         return response()->json([
             'success' => true,
             'data' => [
-                'learnerStats' => $this->getLearnerStats($environmentId),
-                'courseStats' => $this->getCourseStats($environmentId),
-                'certificateStats' => $this->getCertificateStats($environmentId),
-                'feedbackStats' => $this->getFeedbackStats($environmentId),
-                'enrollmentTrends' => $this->getEnrollmentTrends($environmentId),
-                'coursePerformance' => $this->getCoursePerformance($environmentId),
-                'activityDistribution' => $this->getActivityDistribution($environmentId),
-                'recentActivity' => $this->getRecentActivity($environmentId),
+                'learnerStats' => $this->getLearnerStats($environmentId, $startDate, $endDate),
+                'courseStats' => $this->getCourseStats($environmentId, $startDate, $endDate),
+                'certificateStats' => $this->getCertificateStats($environmentId, $startDate, $endDate),
+                'feedbackStats' => $this->getFeedbackStats($environmentId, $startDate, $endDate),
+                'enrollmentTrends' => $this->getEnrollmentTrends($environmentId, $startDate, $endDate),
+                'coursePerformance' => $this->getCoursePerformance($environmentId, $startDate, $endDate),
+                'activityDistribution' => $this->getActivityDistribution($environmentId, $startDate, $endDate),
+                'recentActivity' => $this->getRecentActivity($environmentId, $startDate, $endDate),
                 'upcomingEvents' => $this->getUpcomingEvents($environmentId),
             ]
         ]);
     }
 
     /**
+     * Resolve the optional start_date/end_date request params into a validated
+     * [Carbon|null $startDate, Carbon|null $endDate] pair. Both dates must be
+     * provided as YYYY-MM-DD and start_date must be before/equal to end_date,
+     * otherwise the range is ignored and [null, null] is returned so callers
+     * fall back to their default hardcoded windows.
+     */
+    private function resolveDateRange(Request $request): array
+    {
+        $validator = Validator::make($request->all(), [
+            'start_date' => 'nullable|date_format:Y-m-d',
+            'end_date' => 'nullable|date_format:Y-m-d|after_or_equal:start_date',
+        ]);
+
+        if ($validator->fails() || !$request->filled('start_date') || !$request->filled('end_date')) {
+            return [null, null];
+        }
+
+        $startDate = Carbon::createFromFormat('Y-m-d', $request->input('start_date'))->startOfDay();
+        $endDate = Carbon::createFromFormat('Y-m-d', $request->input('end_date'))->endOfDay();
+
+        return [$startDate, $endDate];
+    }
+
+    /**
      * Get learner statistics
      */
-    private function getLearnerStats($environmentId)
+    private function getLearnerStats($environmentId, $startDate = null, $endDate = null)
     {
-        // Get total number of learners
+        // Get total number of learners (all-time total, not date-ranged)
         $totalLearners = EnvironmentUser::where('environment_id', $environmentId)->count();
 
-        // Get new learners in the last 30 days
-        $newLearners = EnvironmentUser::where('environment_id', $environmentId)
-            ->where('joined_at', '>=', Carbon::now()->subDays(30))
-            ->count();
+        if ($startDate && $endDate) {
+            // New learners within the requested range
+            $newLearners = EnvironmentUser::where('environment_id', $environmentId)
+                ->whereBetween('joined_at', [$startDate, $endDate])
+                ->count();
 
-        // Calculate percentage increase
-        $previousPeriodLearners = EnvironmentUser::where('environment_id', $environmentId)
-            ->where('joined_at', '>=', Carbon::now()->subDays(60))
-            ->where('joined_at', '<', Carbon::now()->subDays(30))
-            ->count();
+            // Compare against the equal-length period immediately preceding the range
+            $periodLengthInSeconds = $startDate->diffInSeconds($endDate);
+            $previousPeriodEnd = (clone $startDate)->subSecond();
+            $previousPeriodStart = (clone $previousPeriodEnd)->subSeconds($periodLengthInSeconds);
+
+            $previousPeriodLearners = EnvironmentUser::where('environment_id', $environmentId)
+                ->whereBetween('joined_at', [$previousPeriodStart, $previousPeriodEnd])
+                ->count();
+        } else {
+            // Get new learners in the last 30 days
+            $newLearners = EnvironmentUser::where('environment_id', $environmentId)
+                ->where('joined_at', '>=', Carbon::now()->subDays(30))
+                ->count();
+
+            // Calculate percentage increase
+            $previousPeriodLearners = EnvironmentUser::where('environment_id', $environmentId)
+                ->where('joined_at', '>=', Carbon::now()->subDays(60))
+                ->where('joined_at', '<', Carbon::now()->subDays(30))
+                ->count();
+        }
 
         $percentageIncrease = $previousPeriodLearners > 0
             ? round((($newLearners - $previousPeriodLearners) / $previousPeriodLearners) * 100, 2)
@@ -111,17 +159,24 @@ class DashboardController extends Controller
     /**
      * Get course statistics
      */
-    private function getCourseStats($environmentId)
+    private function getCourseStats($environmentId, $startDate = null, $endDate = null)
     {
-        // Get total active courses
+        // Get total active courses (all-time total, not date-ranged)
         $activeCourses = Course::where('environment_id', $environmentId)
             ->where('status', 'published')
             ->count();
 
-        // Get new courses in the last 30 days
-        $newCourses = Course::where('environment_id', $environmentId)
-            ->where('published_at', '>=', Carbon::now()->subDays(30))
-            ->count();
+        if ($startDate && $endDate) {
+            // New courses published within the requested range
+            $newCourses = Course::where('environment_id', $environmentId)
+                ->whereBetween('published_at', [$startDate, $endDate])
+                ->count();
+        } else {
+            // Get new courses in the last 30 days
+            $newCourses = Course::where('environment_id', $environmentId)
+                ->where('published_at', '>=', Carbon::now()->subDays(30))
+                ->count();
+        }
 
         // Calculate average completion rate
         $completionRate = Enrollment::where('environment_id', $environmentId)
@@ -138,17 +193,24 @@ class DashboardController extends Controller
     /**
      * Get certificate statistics
      */
-    private function getCertificateStats($environmentId)
+    private function getCertificateStats($environmentId, $startDate = null, $endDate = null)
     {
-        // Get total certificates issued
+        // Get total certificates issued (all-time total, not date-ranged)
         $totalCertificates = IssuedCertificate::where('environment_id', $environmentId)
             ->where('status', 'active')
             ->count();
 
-        // Get certificates issued in the last 7 days
-        $recentCertificates = IssuedCertificate::where('environment_id', $environmentId)
-            ->where('issued_date', '>=', Carbon::now()->subDays(7))
-            ->count();
+        if ($startDate && $endDate) {
+            // Certificates issued within the requested range
+            $recentCertificates = IssuedCertificate::where('environment_id', $environmentId)
+                ->whereBetween('issued_date', [$startDate, $endDate])
+                ->count();
+        } else {
+            // Get certificates issued in the last 7 days
+            $recentCertificates = IssuedCertificate::where('environment_id', $environmentId)
+                ->where('issued_date', '>=', Carbon::now()->subDays(7))
+                ->count();
+        }
 
         return [
             'totalCertificates' => $totalCertificates,
@@ -159,19 +221,28 @@ class DashboardController extends Controller
     /**
      * Get feedback statistics
      */
-    private function getFeedbackStats($environmentId)
+    private function getFeedbackStats($environmentId, $startDate = null, $endDate = null)
     {
-        // Get total feedback submissions for this environment
+        // Get total feedback submissions for this environment (all-time total, not date-ranged)
         $totalFeedback = FeedbackSubmission::whereHas('feedbackContent.activity.block.template', function ($query) use ($environmentId) {
             $query->where('environment_id', $environmentId);
         })->where('status', 'submitted')->count();
 
-        // Get feedback in the last 30 days
-        $recentFeedback = FeedbackSubmission::whereHas('feedbackContent.activity.block.template', function ($query) use ($environmentId) {
-            $query->where('environment_id', $environmentId);
-        })->where('status', 'submitted')
-            ->where('created_at', '>=', Carbon::now()->subDays(30))
-            ->count();
+        if ($startDate && $endDate) {
+            // Feedback submitted within the requested range
+            $recentFeedback = FeedbackSubmission::whereHas('feedbackContent.activity.block.template', function ($query) use ($environmentId) {
+                $query->where('environment_id', $environmentId);
+            })->where('status', 'submitted')
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->count();
+        } else {
+            // Get feedback in the last 30 days
+            $recentFeedback = FeedbackSubmission::whereHas('feedbackContent.activity.block.template', function ($query) use ($environmentId) {
+                $query->where('environment_id', $environmentId);
+            })->where('status', 'submitted')
+                ->where('created_at', '>=', Carbon::now()->subDays(30))
+                ->count();
+        }
 
         // Get feedback distribution by template (course)
         $feedbackByTemplate = FeedbackSubmission::whereHas('feedbackContent.activity.block.template', function ($query) use ($environmentId) {
@@ -244,11 +315,24 @@ class DashboardController extends Controller
     /**
      * Get enrollment trends (monthly)
      */
-    private function getEnrollmentTrends($environmentId)
+    private function getEnrollmentTrends($environmentId, $startDate = null, $endDate = null)
     {
-        // Get enrollments for the last 6 months
+        if ($startDate && $endDate) {
+            // Cover the full calendar months spanned by the requested range
+            $rangeStart = (clone $startDate)->startOfMonth();
+            $rangeEnd = (clone $endDate)->startOfMonth();
+        } else {
+            // Default: cover the last 6 calendar months
+            $rangeEnd = Carbon::now()->startOfMonth();
+            $rangeStart = (clone $rangeEnd)->subMonths(5);
+        }
+
+        $queryStart = (clone $rangeStart)->startOfMonth();
+        $queryEnd = (clone $rangeEnd)->endOfMonth();
+
+        // Get enrollments grouped by month/year within the window
         $enrollments = Enrollment::where('environment_id', $environmentId)
-            ->where('enrolled_at', '>=', Carbon::now()->subMonths(6))
+            ->whereBetween('enrolled_at', [$queryStart, $queryEnd])
             ->select(
                 DB::raw('MONTH(enrolled_at) as month'),
                 DB::raw('YEAR(enrolled_at) as year'),
@@ -259,27 +343,26 @@ class DashboardController extends Controller
             ->orderBy('month')
             ->get();
 
-        $monthNames = [
-            1 => 'Jan',
-            2 => 'Feb',
-            3 => 'Mar',
-            4 => 'Apr',
-            5 => 'May',
-            6 => 'Jun',
-            7 => 'Jul',
-            8 => 'Aug',
-            9 => 'Sep',
-            10 => 'Oct',
-            11 => 'Nov',
-            12 => 'Dec'
-        ];
-
-        $formattedData = [];
+        // Index counts by "Y-m" for easy zero-filled lookups
+        $countsByMonth = [];
         foreach ($enrollments as $enrollment) {
+            $key = sprintf('%04d-%02d', $enrollment->year, $enrollment->month);
+            $countsByMonth[$key] = (int) $enrollment->enrollments;
+        }
+
+        // Build a continuous, zero-filled sequence of months across the window
+        $formattedData = [];
+        $cursor = (clone $rangeStart);
+        while ($cursor->lte($rangeEnd)) {
+            $key = $cursor->format('Y-m');
+
             $formattedData[] = [
-                'name' => $monthNames[$enrollment->month],
-                'enrollments' => $enrollment->enrollments,
+                'name' => $cursor->format('M Y'),
+                'date' => $key,
+                'enrollments' => $countsByMonth[$key] ?? 0,
             ];
+
+            $cursor->addMonth();
         }
 
         return $formattedData;
@@ -288,13 +371,16 @@ class DashboardController extends Controller
     /**
      * Get course performance data
      */
-    private function getCoursePerformance($environmentId)
+    private function getCoursePerformance($environmentId, $startDate = null, $endDate = null)
     {
         // Get top 5 courses by enrollment
         $topCourses = Course::where('environment_id', $environmentId)
             ->where('status', 'published')
-            ->withCount(['enrollments' => function ($query) {
+            ->withCount(['enrollments' => function ($query) use ($startDate, $endDate) {
                 $query->where('status', '!=', 'dropped');
+                if ($startDate && $endDate) {
+                    $query->whereBetween('enrolled_at', [$startDate, $endDate]);
+                }
             }])
             ->orderBy('enrollments_count', 'desc')
             ->limit(5)
@@ -303,20 +389,30 @@ class DashboardController extends Controller
         $coursePerformance = [];
         foreach ($topCourses as $course) {
             // Get average score for this course
-            $avgScore = ActivityCompletion::whereHas('enrollment', function ($query) use ($course, $environmentId) {
+            $avgScoreQuery = ActivityCompletion::whereHas('enrollment', function ($query) use ($course, $environmentId) {
                 $query->where('course_id', $course->id)
                     ->where('environment_id', $environmentId);
-            })->avg('score');
+            });
+            if ($startDate && $endDate) {
+                $avgScoreQuery->whereBetween('completed_at', [$startDate, $endDate]);
+            }
+            $avgScore = $avgScoreQuery->avg('score');
 
             // Get completion rate for this course
-            $totalEnrollments = Enrollment::where('course_id', $course->id)
-                ->where('environment_id', $environmentId)
-                ->count();
+            $totalEnrollmentsQuery = Enrollment::where('course_id', $course->id)
+                ->where('environment_id', $environmentId);
 
-            $completedEnrollments = Enrollment::where('course_id', $course->id)
+            $completedEnrollmentsQuery = Enrollment::where('course_id', $course->id)
                 ->where('environment_id', $environmentId)
-                ->where('status', 'completed')
-                ->count();
+                ->where('status', 'completed');
+
+            if ($startDate && $endDate) {
+                $totalEnrollmentsQuery->whereBetween('enrolled_at', [$startDate, $endDate]);
+                $completedEnrollmentsQuery->whereBetween('enrolled_at', [$startDate, $endDate]);
+            }
+
+            $totalEnrollments = $totalEnrollmentsQuery->count();
+            $completedEnrollments = $completedEnrollmentsQuery->count();
 
             $completionRate = $totalEnrollments > 0
                 ? round(($completedEnrollments / $totalEnrollments) * 100, 2)
@@ -335,7 +431,7 @@ class DashboardController extends Controller
     /**
      * Get activity distribution data
      */
-    private function getActivityDistribution($environmentId)
+    private function getActivityDistribution($environmentId, $startDate = null, $endDate = null)
     {
         // Count activities by type
         $activityTypes = [
@@ -346,46 +442,27 @@ class DashboardController extends Controller
             'certificate' => ['color' => '#f59e0b', 'count' => 0],
         ];
 
-        // Count lesson completions
-        $activityTypes['lesson']['count'] = ActivityCompletion::whereHas('activity', function ($query) {
-            $query->where('type', 'lesson');
-        })->whereHas('enrollment', function ($query) use ($environmentId) {
-            $query->where('environment_id', $environmentId);
-        })->count();
+        foreach (array_keys($activityTypes) as $type) {
+            $query = ActivityCompletion::whereHas('activity', function ($query) use ($type) {
+                $query->where('type', $type);
+            })->whereHas('enrollment', function ($query) use ($environmentId) {
+                $query->where('environment_id', $environmentId);
+            });
 
-        // Count quiz completions
-        $activityTypes['quiz']['count'] = ActivityCompletion::whereHas('activity', function ($query) {
-            $query->where('type', 'quiz');
-        })->whereHas('enrollment', function ($query) use ($environmentId) {
-            $query->where('environment_id', $environmentId);
-        })->count();
+            if ($startDate && $endDate) {
+                $query->whereBetween('completed_at', [$startDate, $endDate]);
+            }
 
-        // Count assignment completions
-        $activityTypes['assignment']['count'] = ActivityCompletion::whereHas('activity', function ($query) {
-            $query->where('type', 'assignment');
-        })->whereHas('enrollment', function ($query) use ($environmentId) {
-            $query->where('environment_id', $environmentId);
-        })->count();
-
-        // Count event registrations
-        $activityTypes['event']['count'] = ActivityCompletion::whereHas('activity', function ($query) {
-            $query->where('type', 'event');
-        })->whereHas('enrollment', function ($query) use ($environmentId) {
-            $query->where('environment_id', $environmentId);
-        })->count();
-
-        // Count certificates issued
-        $activityTypes['certificate']['count'] = ActivityCompletion::whereHas('activity', function ($query) {
-            $query->where('type', 'certificate');
-        })->whereHas('enrollment', function ($query) use ($environmentId) {
-            $query->where('environment_id', $environmentId);
-        })->count();
+            $activityTypes[$type]['count'] = $query->count();
+        }
 
         // Format data for frontend
         $formattedData = [];
         foreach ($activityTypes as $type => $data) {
+            $label = $type === 'quiz' ? 'Quizzes' : (ucfirst($type) . 's');
+
             $formattedData[] = [
-                'name' => ucfirst($type) . 's',
+                'name' => $label,
                 'value' => $data['count'],
                 'color' => $data['color'],
             ];
@@ -397,15 +474,22 @@ class DashboardController extends Controller
     /**
      * Get recent activity data
      */
-    private function getRecentActivity($environmentId)
+    private function getRecentActivity($environmentId, $startDate = null, $endDate = null)
     {
         $recentActivity = [];
 
         // Get recent course completions
-        $completions = Enrollment::with('user', 'course')
+        $completionsQuery = Enrollment::with('user', 'course')
             ->where('environment_id', $environmentId)
-            ->where('status', 'completed')
-            ->where('completed_at', '>=', Carbon::now()->subDays(7))
+            ->where('status', 'completed');
+
+        if ($startDate && $endDate) {
+            $completionsQuery->whereBetween('completed_at', [$startDate, $endDate]);
+        } else {
+            $completionsQuery->where('completed_at', '>=', Carbon::now()->subDays(7));
+        }
+
+        $completions = $completionsQuery
             ->orderBy('completed_at', 'desc')
             ->limit(4)
             ->get();
@@ -422,9 +506,16 @@ class DashboardController extends Controller
         }
 
         // Get recent enrollments
-        $enrollments = Enrollment::with('user', 'course')
-            ->where('environment_id', $environmentId)
-            ->where('enrolled_at', '>=', Carbon::now()->subDays(7))
+        $enrollmentsQuery = Enrollment::with('user', 'course')
+            ->where('environment_id', $environmentId);
+
+        if ($startDate && $endDate) {
+            $enrollmentsQuery->whereBetween('enrolled_at', [$startDate, $endDate]);
+        } else {
+            $enrollmentsQuery->where('enrolled_at', '>=', Carbon::now()->subDays(7));
+        }
+
+        $enrollments = $enrollmentsQuery
             ->orderBy('enrolled_at', 'desc')
             ->limit(4)
             ->get();
@@ -441,9 +532,16 @@ class DashboardController extends Controller
         }
 
         // Get recent certificates
-        $certificates = IssuedCertificate::with('user', 'course')
-            ->where('environment_id', $environmentId)
-            ->where('issued_date', '>=', Carbon::now()->subDays(7))
+        $certificatesQuery = IssuedCertificate::with('user', 'course')
+            ->where('environment_id', $environmentId);
+
+        if ($startDate && $endDate) {
+            $certificatesQuery->whereBetween('issued_date', [$startDate, $endDate]);
+        } else {
+            $certificatesQuery->where('issued_date', '>=', Carbon::now()->subDays(7));
+        }
+
+        $certificates = $certificatesQuery
             ->orderBy('issued_date', 'desc')
             ->limit(4)
             ->get();
