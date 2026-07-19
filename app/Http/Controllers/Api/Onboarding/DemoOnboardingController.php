@@ -154,13 +154,16 @@ class DemoOnboardingController extends Controller
                     'plan_id' => $plan->id,
                     'environment_id' => $environment->id,
                     'billing_cycle' => 'monthly',
-                    'start_date' => now(),
-                    'end_date' => $expiresAt, // Demo expires after 14 days
+                    'starts_at' => now(),
+                    'ends_at' => $expiresAt,
+                    'trial_ends_at' => $expiresAt,
                     'status' => Subscription::STATUS_TRIAL,
-                    'is_trial' => true,
-                    'referral_code' => $request->referral_code,
                 ]);
-                
+
+                // KURSA licensing (Phase 4): dual-write the authoritative environment
+                // licence — a 14-day White Label trial (doc §5).
+                app(\App\Services\Licensing\LicenceService::class)->startWhiteLabelTrial($environment);
+
                 // Generate admin credentials for the environment
                 $adminEmail = $user->email;
                 $adminPassword = $request->password;

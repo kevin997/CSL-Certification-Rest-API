@@ -241,6 +241,15 @@ class Environment extends Model
     }
 
     /**
+     * Get the current environment licence (KURSA licensing, doc §11).
+     * Exactly one per environment; Free Forever is a valid licence (§4.1).
+     */
+    public function licence(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(EnvironmentLicence::class);
+    }
+
+    /**
      * Check if the environment has an active subscription.
      */
     public function hasActiveSubscription(): bool

@@ -237,7 +237,7 @@ class SubscriptionController extends Controller
                 'payment_method' => $request->payment_method,
                 'payment_token' => $request->payment_token,
                 'currency' => 'USD', // Default currency
-                'amount' => $subscription->plan->setup_fee ?? 177.00,
+                'amount' => (float) ($subscription->plan->price_monthly ?? $subscription->plan->price_annual ?? 0),
             ];
 
             // Use SubscriptionManager to retry payment
@@ -432,11 +432,13 @@ class SubscriptionController extends Controller
             // This should be replaced with proper subscription creation logic
             $subscription = new Subscription([
                 'user_id' => $user->id,
+                'environment_id' => optional($request->get('environment'))->id,
                 'plan_id' => $plan->id,
                 'status' => 'pending',
                 'billing_cycle' => $request->billing_cycle,
-                'start_date' => now(),
-                'next_billing_date' => $request->billing_cycle === 'annual' ? now()->addYear() : now()->addMonth(),
+                'starts_at' => now(),
+                'ends_at' => $request->billing_cycle === 'annual' ? now()->addYear() : now()->addMonth(),
+                'next_payment_at' => $request->billing_cycle === 'annual' ? now()->addYear() : now()->addMonth(),
             ]);
             $subscription->save();
 
@@ -796,19 +798,19 @@ class SubscriptionController extends Controller
 
             // Reactivate subscription
             $subscription->status = 'active';
-            $subscription->cancel_at_period_end = false;
+            $subscription->canceled_at = null;
 
             // Extend billing period if expired
-            if ($subscription->current_period_end < now()) {
+            if ($subscription->ends_at && $subscription->ends_at->isPast()) {
                 $billingCycle = $subscription->billing_cycle ?? 'monthly';
                 if ($billingCycle === 'annual') {
-                    $subscription->current_period_start = now();
-                    $subscription->current_period_end = now()->addYear();
-                    $subscription->next_billing_date = now()->addYear();
+                    $subscription->starts_at = now();
+                    $subscription->ends_at = now()->addYear();
+                    $subscription->next_payment_at = now()->addYear();
                 } else {
-                    $subscription->current_period_start = now();
-                    $subscription->current_period_end = now()->addMonth();
-                    $subscription->next_billing_date = now()->addMonth();
+                    $subscription->starts_at = now();
+                    $subscription->ends_at = now()->addMonth();
+                    $subscription->next_payment_at = now()->addMonth();
                 }
             }
 
@@ -859,12 +861,12 @@ class SubscriptionController extends Controller
             $cancelAtPeriodEnd = $request->get('cancel_at_period_end', true);
 
             if ($cancelAtPeriodEnd) {
-                $subscription->cancel_at_period_end = true;
-                $subscription->status = 'active'; // Keep active until period end
+                $subscription->status = Subscription::STATUS_ACTIVE; // Keep access until period end
+                $subscription->canceled_at = $subscription->ends_at;
             } else {
-                $subscription->status = 'cancelled';
-                $subscription->cancel_at_period_end = false;
-                $subscription->current_period_end = now();
+                $subscription->status = Subscription::STATUS_CANCELED;
+                $subscription->canceled_at = now();
+                $subscription->ends_at = now();
             }
 
             $subscription->updated_at = now();
@@ -971,12 +973,9 @@ class SubscriptionController extends Controller
                 'plan_id' => $request->plan_id,
                 'status' => $request->status,
                 'billing_cycle' => $request->billing_cycle,
-                'start_date' => $startDate,
-                'next_billing_date' => $nextBillingDate,
-                'trial_days' => $request->trial_days,
-                'notes' => $request->notes,
-                'current_period_start' => $startDate,
-                'current_period_end' => $nextBillingDate,
+                'starts_at' => $startDate,
+                'ends_at' => $nextBillingDate,
+                'next_payment_at' => $nextBillingDate,
             ]);
 
             $subscription->load(['user', 'plan']);

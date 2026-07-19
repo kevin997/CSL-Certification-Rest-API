@@ -13,19 +13,18 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * CHARACTERISATION: locks in today's incorrect licence charge amount.
- * SubscriptionManager::createSubscriptionWithPayment (~:91) always charges
- * $plan->setup_fee, never $plan->price_monthly / $plan->price_annual — so a
- * paid plan with a real monthly/annual price but setup_fee = 0 is
- * provisioned for free. Phase 4 fixes this via LicenceService's canonical
- * checkout quote ($20/$500 USD, no setup fee).
+ * PHASE 4 FLIP: SubscriptionManager::createSubscriptionWithPayment now charges
+ * the PLAN PRICE for the billing cycle (price_monthly / price_annual), not the
+ * setup fee (doc §9.4). The White Label shape (price_annual = 500, setup_fee = 0)
+ * is therefore charged $500, not $0. This test previously characterised the bug
+ * (charged the setup fee only); it now asserts the corrected behaviour.
  */
 class LicenceChargeAmountTest extends TestCase
 {
     use RefreshDatabase;
 
     /** @test */
-    public function subscription_manager_charges_only_the_plan_setup_fee_not_its_monthly_or_annual_price()
+    public function subscription_manager_charges_the_plan_price_for_the_billing_cycle()
     {
         $user = User::factory()->create();
 
@@ -82,20 +81,18 @@ class LicenceChargeAmountTest extends TestCase
 
         $this->assertTrue($result['success']);
 
-        // CHARACTERISATION: current behavior — Phase N will flip this expectation.
-        // The payment amount charged is the plan's setup_fee (0), NOT its
-        // price_annual (500) — the customer is charged nothing for a plan
-        // priced at $500/year.
-        $this->assertEquals(0, (float) $result['payment']->amount);
+        // PHASE 4 FLIP: the annual plan price ($500) is now charged, not the
+        // setup fee ($0).
+        $this->assertEquals(500, (float) $result['payment']->amount);
 
         $this->assertDatabaseHas('payments', [
             'id' => $result['payment']->id,
-            'amount' => 0,
+            'amount' => 500,
         ]);
 
         $this->assertDatabaseMissing('payments', [
             'id' => $result['payment']->id,
-            'amount' => 500,
+            'amount' => 0,
         ]);
     }
 }

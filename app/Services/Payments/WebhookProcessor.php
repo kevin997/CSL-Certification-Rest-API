@@ -153,6 +153,17 @@ class WebhookProcessor
                     // Step 8: settle + fulfil (reuses PaymentService internals).
                     $this->paymentService->applySettlement($locked, $gatewayStatus, $payload);
 
+                    // Phase 4: environment-licence transactions activate/extend the
+                    // licence here — this is the ONLY paid-activation entry point
+                    // (doc §9.5). The legacy subscription-activation branch inside
+                    // PaymentService::processRelatedRecords still runs for old
+                    // in-flight subscription payments (they carry no LicenceCheckout,
+                    // so activateFromPaidEvent is a safe no-op for them).
+                    if (in_array($locked->purpose, Transaction::LICENCE_PURPOSES, true)) {
+                        app(\App\Services\Licensing\LicenceService::class)
+                            ->activateFromPaidEvent($locked);
+                    }
+
                     return 'processed';
                 }
 

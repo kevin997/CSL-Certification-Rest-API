@@ -3,29 +3,28 @@
 namespace Tests\Feature\Characterisation;
 
 use App\Models\Environment;
+use App\Models\EnvironmentLicence;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Services\Licensing\LicenceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * CHARACTERISATION: locks in today's phantom-column bug in demo/supported
- * onboarding. DemoOnboardingController::store (~:152) and
- * SupportedOnboardingController (~:184) create a Subscription passing
- * start_date/end_date/is_trial — but Subscription::$fillable only knows
- * starts_at/ends_at/trial_ends_at, so Eloquent mass assignment silently
- * drops the unknown keys. The result: a "14-day trial" subscription is
- * persisted with no expiry at all. Phase 4 replaces this with a dedicated
- * environment_licences table and LicenceService that writes the correct
- * columns.
+ * PHASE 4 FLIP: the demo/supported onboarding controllers previously wrote
+ * phantom columns (start_date / end_date / is_trial) that Eloquent silently
+ * dropped, so "14-day trials" never expired. They now write the REAL columns
+ * (starts_at / ends_at / trial_ends_at) AND dual-write an authoritative
+ * EnvironmentLicence. This test asserts the corrected behaviour: a trial period
+ * actually persists, and the environment licence carries a real 14-day expiry.
  */
 class SubscriptionPhantomColumnTest extends TestCase
 {
     use RefreshDatabase;
 
     /** @test */
-    public function creating_a_subscription_with_start_date_end_date_and_is_trial_silently_drops_them()
+    public function trial_subscription_and_licence_persist_a_real_14_day_expiry()
     {
         $owner = User::factory()->create();
 
@@ -47,37 +46,41 @@ class SubscriptionPhantomColumnTest extends TestCase
 
         $expiresAt = now()->addDays(14);
 
-        // CHARACTERISATION: current behavior — Phase N will flip this expectation.
-        // This mirrors exactly what DemoOnboardingController::store does today:
-        // it passes start_date/end_date/is_trial, none of which are fillable
-        // on Subscription.
+        // PHASE 4 FLIP: this mirrors what the FIXED DemoOnboardingController now
+        // writes — the real columns, which persist.
         $subscription = Subscription::create([
             'plan_id' => $plan->id,
             'environment_id' => $environment->id,
             'billing_cycle' => 'monthly',
-            'start_date' => now(),
-            'end_date' => $expiresAt,
+            'starts_at' => now(),
+            'ends_at' => $expiresAt,
+            'trial_ends_at' => $expiresAt,
             'status' => Subscription::STATUS_TRIAL,
-            'is_trial' => true,
         ]);
 
         $subscription->refresh();
 
-        // The phantom columns were never persisted at all (they aren't even
-        // real database columns).
-        $this->assertArrayNotHasKey('start_date', $subscription->getAttributes());
-        $this->assertArrayNotHasKey('end_date', $subscription->getAttributes());
-        $this->assertArrayNotHasKey('is_trial', $subscription->getAttributes());
+        // The real expiry columns are now persisted — the trial actually expires.
+        $this->assertNotNull($subscription->ends_at);
+        $this->assertNotNull($subscription->trial_ends_at);
+        $this->assertEqualsWithDelta($expiresAt->timestamp, $subscription->trial_ends_at->timestamp, 2);
 
-        // And the real columns that WOULD express a trial expiry were never
-        // set either — the "14-day trial" never actually expires.
-        $this->assertNull($subscription->ends_at);
-        $this->assertNull($subscription->trial_ends_at);
+        $this->assertDatabaseHas('subscriptions', ['id' => $subscription->id]);
+        $this->assertNotNull(
+            \DB::table('subscriptions')->where('id', $subscription->id)->value('trial_ends_at')
+        );
 
-        $this->assertDatabaseHas('subscriptions', [
-            'id' => $subscription->id,
-            'ends_at' => null,
-            'trial_ends_at' => null,
-        ]);
+        // And the authoritative dual-write: a White Label trial EnvironmentLicence
+        // with a real 14-day trial_ends_at and a recorded trial consumption.
+        $licence = app(LicenceService::class)->startWhiteLabelTrial($environment);
+
+        $this->assertSame(EnvironmentLicence::STATUS_TRIALING, $licence->status);
+        $this->assertNotNull($licence->trial_ends_at);
+        $this->assertNotNull($licence->trial_used_at);
+        $this->assertEqualsWithDelta(
+            $licence->starts_at->copy()->addDays(14)->timestamp,
+            $licence->trial_ends_at->timestamp,
+            2
+        );
     }
 }

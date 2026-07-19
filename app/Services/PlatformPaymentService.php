@@ -117,6 +117,10 @@ class PlatformPaymentService
                 'sms_link' => $response['sms_link'] ?? null,
                 'card_link' => $response['card_link'] ?? null,
                 'checkout_url' => $response['checkout_url'] ?? null,
+                // Stripe intent fields (Phase 4 licence checkouts consume these).
+                'client_secret' => $response['client_secret'] ?? null,
+                'publishable_key' => $response['publishable_key'] ?? null,
+                'payment_intent_id' => $response['payment_intent_id'] ?? null,
             ],
             'gateway_response' => $response,
         ];

@@ -114,6 +114,32 @@ Route::prefix('onboarding')->group(function () {
     Route::post('/validate-email', [OnboardingController::class, 'validateEmail']);
     Route::post('/validate-domain', [OnboardingController::class, 'validateDomain']);
     Route::post('/validate', [OnboardingController::class, 'validate']);
+
+    // KURSA licensing (Phase 4): no-card public onboarding — provisions the
+    // environment + Free/Trial licence and emails a password-set link.
+    Route::post('/free', [\App\Http\Controllers\Api\LicenceController::class, 'onboardFree'])
+        ->middleware('throttle:20,1');
+    Route::post('/trial', [\App\Http\Controllers\Api\LicenceController::class, 'onboardTrial'])
+        ->middleware('throttle:20,1');
+});
+
+// KURSA licensing (Phase 4): public, throttled licence checkout lifecycle.
+// createCheckout works both authenticated (existing-env upgrade) and public
+// (anonymous new-env onboarding); pay & status are always public.
+Route::prefix('licence-checkouts')->group(function () {
+    Route::post('/', [\App\Http\Controllers\Api\LicenceController::class, 'createCheckout'])
+        ->middleware('throttle:30,1');
+    Route::post('/{uuid}/pay', [\App\Http\Controllers\Api\LicenceController::class, 'pay'])
+        ->middleware('throttle:30,1');
+    Route::get('/{uuid}/status', [\App\Http\Controllers\Api\LicenceController::class, 'checkoutStatus'])
+        ->middleware('throttle:60,1');
+});
+
+// KURSA licensing (Phase 4): owner/admin-gated environment licence management.
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/environment-licences/current', [\App\Http\Controllers\Api\LicenceController::class, 'current']);
+    Route::post('/environment-licences/trial', [\App\Http\Controllers\Api\LicenceController::class, 'startTrial']);
+    Route::post('/environment-licences/cancel', [\App\Http\Controllers\Api\LicenceController::class, 'cancel']);
 });
 
 // Queue status endpoint
