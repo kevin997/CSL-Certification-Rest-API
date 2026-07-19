@@ -51,6 +51,11 @@ class AuditedPaymentGateway implements PaymentGatewayInterface
         );
     }
 
+    public function supportsRefunds(): bool
+    {
+        return $this->gateway->supportsRefunds();
+    }
+
     public function getConfig(): array
     {
         return $this->gateway->getConfig();

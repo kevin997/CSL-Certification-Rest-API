@@ -378,6 +378,11 @@ class PayPalGateway implements PaymentGatewayInterface
      * @param string $reason
      * @return array
      */
+    public function supportsRefunds(): bool
+    {
+        return true;
+    }
+
     public function processRefund(Transaction $transaction, ?float $amount = null, string $reason = ''): array
     {
         // If no gateway transaction ID, we can't process a refund
@@ -433,6 +438,9 @@ class PayPalGateway implements PaymentGatewayInterface
                     'reason' => $reason,
                     'created' => time(),
                     'status' => $refundResult->status,
+                    // PayPal's Refund Captured Payment returns COMPLETED
+                    // synchronously; treat that as the confirmation (doc §9.9).
+                    'confirmed' => strtoupper((string) $refundResult->status) === 'COMPLETED',
                     'response' => json_decode(json_encode($refundResult), true)
                 ];
             } else {

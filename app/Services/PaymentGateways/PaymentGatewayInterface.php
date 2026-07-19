@@ -56,7 +56,19 @@ interface PaymentGatewayInterface
      * @return array
      */
     public function processRefund(Transaction $transaction, ?float $amount = null, string $reason = ''): array;
-    
+
+    /**
+     * Whether this gateway can process refunds programmatically via its API.
+     *
+     * KURSA licensing transition (Phase 5, doc §9.9): gateways that return false
+     * are handled through the manual out-of-band refund path instead of an
+     * automatic gateway refund. When false, processRefund() must return
+     * ['success' => false, 'unsupported' => true, 'message' => ...].
+     *
+     * @return bool
+     */
+    public function supportsRefunds(): bool;
+
     /**
      * Get payment gateway configuration for the current environment
      *

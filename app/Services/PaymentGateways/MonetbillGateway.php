@@ -412,20 +412,26 @@ class MonetbillGateway implements PaymentGatewayInterface
      * @param string $reason
      * @return array
      */
+    public function supportsRefunds(): bool
+    {
+        return false;
+    }
+
     public function processRefund(Transaction $transaction, ?float $amount = null, string $reason = ''): array
     {
-        // Monetbill may not support automatic refunds via API
-        // This is a placeholder implementation
+        // Monetbil does not support automatic refunds via API — handled through
+        // the manual refund path (KURSA Phase 5, doc §9.9).
         Log::warning('[MonetbillGateway] Refund requested but not supported via API', [
             'transaction_id' => $transaction->id,
             'gateway_transaction_id' => $transaction->gateway_transaction_id,
             'amount' => $amount,
             'reason' => $reason
         ]);
-        
+
         return [
             'success' => false,
-            'message' => 'Refunds are not supported automatically via Monetbill API. Please process the refund manually.'
+            'unsupported' => true,
+            'message' => 'Refunds are not supported automatically via Monetbil. Please process the refund manually.'
         ];
     }
     

@@ -2,6 +2,7 @@
 
 namespace App\Services\Payments;
 
+use App\Models\InstructorCommission;
 use App\Models\PaymentAttempt;
 use App\Models\ProviderEvent;
 use App\Models\Transaction;
@@ -38,8 +39,10 @@ use Throwable;
  */
 class WebhookProcessor
 {
-    public function __construct(private PaymentService $paymentService)
-    {
+    public function __construct(
+        private PaymentService $paymentService,
+        private RefundService $refundService
+    ) {
     }
 
     /**
@@ -124,6 +127,7 @@ class WebhookProcessor
                     Transaction::STATUS_REFUNDED,
                     Transaction::STATUS_PARTIALLY_REFUNDED,
                     Transaction::STATUS_FAILED,
+                    Transaction::STATUS_DISPUTED,
                 ];
 
                 if ($outcome === 'completed') {
@@ -132,12 +136,14 @@ class WebhookProcessor
                         return 'skipped';
                     }
 
-                    // Monotonic — a failed/refunded transaction never regresses
-                    // to completed from a stale event.
+                    // Monotonic — a failed/refunded/disputed transaction never
+                    // regresses to completed from a stale event. Phase 5 (doc §9.9):
+                    // `disputed` is added so a stale success cannot undo a chargeback.
                     if (in_array($current, [
                         Transaction::STATUS_FAILED,
                         Transaction::STATUS_REFUNDED,
                         Transaction::STATUS_PARTIALLY_REFUNDED,
+                        Transaction::STATUS_DISPUTED,
                     ], true)) {
                         Log::warning('[WebhookProcessor] Refusing to regress terminal transaction to completed', [
                             'transaction_id' => $locked->transaction_id,
@@ -217,6 +223,199 @@ class WebhookProcessor
                 'error' => $e->getMessage(),
             ]);
 
+            throw $e;
+        }
+    }
+
+    /**
+     * Confirm a refund from a verified gateway event (e.g. Stripe
+     * charge.refunded). Locates a pending `processing` child refund of the parent
+     * and confirms it; if none exists (refund issued directly in the gateway
+     * dashboard) a child refund is created for the event amount and confirmed.
+     *
+     * @param  Transaction  $parent  The original (settled) parent transaction.
+     * @param  float|null  $amount  Refunded amount from the event (null = remainder).
+     * @return string processed | duplicate | skipped
+     */
+    public function confirmRefundEvent(
+        Transaction $parent,
+        ?float $amount,
+        array $payload,
+        array $options = []
+    ): string {
+        $gateway = $options['gateway'] ?? optional($parent->paymentGatewaySetting)->code ?? 'unknown';
+        $providerEventId = $options['provider_event_id']
+            ?? $this->extractProviderEventId($payload)
+            ?? ($parent->gateway_transaction_id ?: $parent->transaction_id);
+
+        $event = $this->persistProviderEvent(
+            $gateway,
+            (string) $providerEventId,
+            $options['event_type'] ?? 'refund',
+            $options['signature_valid'] ?? true,
+            $payload,
+            $parent->environment_id
+        );
+
+        if ($event === null) {
+            return 'duplicate';
+        }
+
+        try {
+            $child = Transaction::withoutGlobalScopes()
+                ->where('parent_transaction_id', $parent->transaction_id)
+                ->where('purpose', Transaction::PURPOSE_REFUND)
+                ->where('status', Transaction::STATUS_PROCESSING)
+                ->orderByDesc('id')
+                ->first();
+
+            if ($child) {
+                $this->refundService->confirmRefund($child);
+            } else {
+                // Refund originated outside our flow — record + confirm it.
+                $result = $this->refundService->recordManualRefund(
+                    $parent,
+                    $amount,
+                    'Gateway-initiated refund',
+                    'Recorded from gateway refund event ' . $providerEventId
+                );
+                if ($result['status'] !== 'ok') {
+                    $event->status = ProviderEvent::STATUS_SKIPPED;
+                    $event->processed_at = now();
+                    $event->save();
+
+                    return 'skipped';
+                }
+            }
+
+            $event->status = ProviderEvent::STATUS_PROCESSED;
+            $event->processed_at = now();
+            $event->save();
+
+            return 'processed';
+        } catch (Throwable $e) {
+            $event->status = ProviderEvent::STATUS_FAILED;
+            $event->save();
+            throw $e;
+        }
+    }
+
+    /**
+     * Apply a chargeback / dispute lifecycle event (doc §9.9).
+     *
+     * @param  string  $outcome  opened | won | lost
+     *   - opened: mark the transaction `disputed` (monotonic — overrides completed,
+     *     never regressed by a stale success) and put any related instructor
+     *     commission `on_hold`.
+     *   - won: restore `completed` and release the commission hold.
+     *   - lost: treat as a full refund confirmation (reverse settlement, apply the
+     *     documented access consequence).
+     * @return string processed | duplicate | skipped
+     */
+    public function dispute(
+        Transaction $transaction,
+        string $outcome,
+        array $payload,
+        array $options = []
+    ): string {
+        $gateway = $options['gateway'] ?? optional($transaction->paymentGatewaySetting)->code ?? 'unknown';
+        $providerEventId = $options['provider_event_id']
+            ?? $this->extractProviderEventId($payload)
+            ?? ($transaction->gateway_transaction_id ?: $transaction->transaction_id);
+
+        $event = $this->persistProviderEvent(
+            $gateway,
+            (string) $providerEventId,
+            $options['event_type'] ?? ('dispute.' . $outcome),
+            $options['signature_valid'] ?? true,
+            $payload,
+            $transaction->environment_id
+        );
+
+        if ($event === null) {
+            return 'duplicate';
+        }
+
+        try {
+            $result = DB::transaction(function () use ($transaction, $outcome) {
+                /** @var Transaction $locked */
+                $locked = Transaction::withoutGlobalScopes()
+                    ->whereKey($transaction->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                if ($outcome === 'opened') {
+                    if ($locked->status === Transaction::STATUS_DISPUTED) {
+                        return 'skipped';
+                    }
+                    // A refunded transaction is already terminal money-wise.
+                    if (in_array($locked->status, [
+                        Transaction::STATUS_REFUNDED,
+                        Transaction::STATUS_PARTIALLY_REFUNDED,
+                    ], true)) {
+                        return 'skipped';
+                    }
+
+                    $locked->status = Transaction::STATUS_DISPUTED;
+                    $locked->save();
+
+                    // Settlement hold: freeze any outstanding commission.
+                    InstructorCommission::where('transaction_id', $locked->id)
+                        ->whereIn('status', [
+                            InstructorCommission::STATUS_PENDING,
+                            InstructorCommission::STATUS_APPROVED,
+                        ])
+                        ->update(['status' => InstructorCommission::STATUS_ON_HOLD]);
+
+                    return 'processed';
+                }
+
+                if ($outcome === 'won') {
+                    // Only a currently-disputed transaction can be restored.
+                    if ($locked->status !== Transaction::STATUS_DISPUTED) {
+                        return 'skipped';
+                    }
+                    $locked->status = Transaction::STATUS_COMPLETED;
+                    $locked->save();
+
+                    // Release the settlement hold.
+                    InstructorCommission::where('transaction_id', $locked->id)
+                        ->where('status', InstructorCommission::STATUS_ON_HOLD)
+                        ->update(['status' => InstructorCommission::STATUS_PENDING]);
+
+                    return 'processed';
+                }
+
+                // outcome === 'lost' handled outside the lock (delegates to refund).
+                return 'lost';
+            });
+
+            if ($result === 'lost') {
+                // Chargeback lost = money left the account: confirm a full refund.
+                $remaining = (float) $transaction->total_amount - $transaction->refundedAmount([Transaction::STATUS_COMPLETED]);
+                if ($remaining > 0) {
+                    $refund = $this->refundService->recordManualRefund(
+                        $transaction,
+                        $remaining,
+                        'Chargeback lost',
+                        'Settlement reversed by lost dispute ' . $providerEventId
+                    );
+                    $result = $refund['status'] === 'ok' ? 'processed' : 'skipped';
+                } else {
+                    $result = 'skipped';
+                }
+            }
+
+            $event->status = $result === 'processed'
+                ? ProviderEvent::STATUS_PROCESSED
+                : ProviderEvent::STATUS_SKIPPED;
+            $event->processed_at = now();
+            $event->save();
+
+            return $result;
+        } catch (Throwable $e) {
+            $event->status = ProviderEvent::STATUS_FAILED;
+            $event->save();
             throw $e;
         }
     }

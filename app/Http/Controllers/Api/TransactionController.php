@@ -560,6 +560,17 @@ class TransactionController extends Controller
                 case 'customer.subscription.updated':
                     return $this->handleStripeSubscriptionUpdated($event->data->object ?? $event['data']['object'], $gatewaySettings);
 
+                // KURSA Phase 5 (doc §9.9): refund confirmation + chargebacks.
+                case 'charge.refunded':
+                case 'refund.updated':
+                    return $this->handleStripeRefund($event->data->object ?? $event['data']['object'], $gatewaySettings, $eventType);
+
+                case 'charge.dispute.created':
+                    return $this->handleStripeDispute($event->data->object ?? $event['data']['object'], $gatewaySettings, 'opened');
+
+                case 'charge.dispute.closed':
+                    return $this->handleStripeDispute($event->data->object ?? $event['data']['object'], $gatewaySettings, 'closed');
+
                 default:
                     // For unhandled events, just acknowledge receipt
                     return response()->json(['status' => 'success', 'message' => 'Unhandled event acknowledged']);
@@ -644,6 +655,123 @@ class TransactionController extends Controller
         ]);
 
         return response()->json(['status' => 'success', 'message' => 'Payment success processed']);
+    }
+
+    /**
+     * Locate the original (parent) transaction referenced by a Stripe refund or
+     * dispute object. Matches the stored gateway_transaction_id against the event's
+     * payment_intent then charge id, environment-scoped with a global fallback for
+     * environment-licence transactions (mirrors the payment-success handler).
+     */
+    private function findStripeParentTransaction($object, $gatewaySettings): ?Transaction
+    {
+        $arr = is_array($object) ? $object : json_decode(json_encode($object), true);
+
+        $candidates = array_values(array_filter([
+            $arr['payment_intent'] ?? null,
+            $arr['charge'] ?? null,
+            $arr['id'] ?? null,
+        ]));
+
+        foreach ($candidates as $ref) {
+            $tx = Transaction::where('gateway_transaction_id', $ref)
+                ->where('environment_id', $gatewaySettings->environment_id)
+                ->first();
+
+            if (!$tx) {
+                $global = Transaction::where('gateway_transaction_id', $ref)->first();
+                if ($global && $this->isEnvironmentLicenceTransaction($global)) {
+                    $tx = $global;
+                }
+            }
+
+            if ($tx) {
+                return $tx;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Handle a Stripe refund confirmation (charge.refunded / refund.updated).
+     * Routes through the authoritative WebhookProcessor so the child refund is
+     * confirmed, the parent cumulative state advances, and ledger/access effects
+     * are applied (KURSA Phase 5, doc §9.9).
+     */
+    private function handleStripeRefund($object, $gatewaySettings, ?string $eventType)
+    {
+        $arr = is_array($object) ? $object : json_decode(json_encode($object), true);
+
+        $parent = $this->findStripeParentTransaction($object, $gatewaySettings);
+        if (!$parent) {
+            Log::warning('[StripeWebhook] Refund event: no matching parent transaction', [
+                'event_type' => $eventType,
+            ]);
+            return response()->json(['status' => 'success', 'message' => 'No matching transaction']);
+        }
+
+        // Determine the refunded amount (Stripe amounts are in the smallest unit).
+        $amount = null;
+        if (($arr['object'] ?? null) === 'refund' && isset($arr['amount'])) {
+            $amount = ((float) $arr['amount']) / 100;
+        } elseif (isset($arr['amount_refunded'])) {
+            $amount = ((float) $arr['amount_refunded']) / 100;
+        }
+
+        app(\App\Services\Payments\WebhookProcessor::class)->confirmRefundEvent(
+            $parent,
+            $amount,
+            $arr ?: [],
+            [
+                'gateway' => optional($parent->paymentGatewaySetting)->code ?? 'stripe',
+                'signature_valid' => true,
+                'event_type' => $eventType,
+                'provider_event_id' => $arr['id'] ?? null,
+            ]
+        );
+
+        return response()->json(['status' => 'success', 'message' => 'Refund event processed']);
+    }
+
+    /**
+     * Handle a Stripe dispute lifecycle event (charge.dispute.created / closed).
+     * created → disputed + settlement hold; closed(won) → restore completed;
+     * closed(lost) → treated as a full refund confirmation (KURSA Phase 5).
+     */
+    private function handleStripeDispute($object, $gatewaySettings, string $phase)
+    {
+        $arr = is_array($object) ? $object : json_decode(json_encode($object), true);
+
+        $parent = $this->findStripeParentTransaction($object, $gatewaySettings);
+        if (!$parent) {
+            Log::warning('[StripeWebhook] Dispute event: no matching parent transaction', [
+                'phase' => $phase,
+            ]);
+            return response()->json(['status' => 'success', 'message' => 'No matching transaction']);
+        }
+
+        if ($phase === 'opened') {
+            $outcome = 'opened';
+        } else {
+            // closed — resolve won/lost from the dispute status.
+            $status = strtolower((string) ($arr['status'] ?? ''));
+            $outcome = $status === 'won' ? 'won' : 'lost';
+        }
+
+        app(\App\Services\Payments\WebhookProcessor::class)->dispute(
+            $parent,
+            $outcome,
+            $arr ?: [],
+            [
+                'gateway' => optional($parent->paymentGatewaySetting)->code ?? 'stripe',
+                'signature_valid' => true,
+                'event_type' => 'charge.dispute.' . $phase,
+                'provider_event_id' => $arr['id'] ?? null,
+            ]
+        );
+
+        return response()->json(['status' => 'success', 'message' => 'Dispute event processed']);
     }
 
     /**
@@ -2371,7 +2499,125 @@ class TransactionController extends Controller
         ], Response::HTTP_OK);
     }
 
+    /**
+     * Initiate a refund against a settled transaction (KURSA Phase 5, doc §9.9).
+     *
+     * Admin/finance only (TransactionPolicy `refund`). For a gateway that supports
+     * automatic refunds the money moves at the gateway FIRST, then an immutable
+     * child refund transaction is created (`processing`, or `completed` when the
+     * gateway confirms synchronously). For an unsupported gateway a 409 is returned
+     * with manual instructions — the caller then uses refundManual().
+     *
+     * POST /transactions/{id}/refund  { amount?, reason }
+     */
+    public function refund(Request $request, $id)
+    {
+        $transaction = Transaction::findOrFail($id);
+        $this->authorize('refund', $transaction);
 
+        $validator = Validator::make($request->all(), [
+            'amount' => 'nullable|numeric|gt:0',
+            'reason' => 'nullable|string|max:1000',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $data = $validator->validated();
+
+        $result = app(\App\Services\Payments\RefundService::class)->initiateRefund(
+            $transaction,
+            isset($data['amount']) ? (float) $data['amount'] : null,
+            $data['reason'] ?? ''
+        );
+
+        switch ($result['status']) {
+            case 'ok':
+                return response()->json([
+                    'status' => 'success',
+                    'message' => $result['confirmed']
+                        ? 'Refund processed and confirmed'
+                        : 'Refund initiated; awaiting gateway confirmation',
+                    'confirmed' => $result['confirmed'],
+                    'data' => [
+                        'refund_transaction' => $result['transaction'],
+                        'parent_transaction' => $result['parent'],
+                        'effects' => $result['effects'],
+                    ],
+                ], Response::HTTP_OK);
+
+            case 'unsupported':
+                return response()->json([
+                    'status' => 'error',
+                    'unsupported' => true,
+                    'message' => $result['message'],
+                    'manual_instructions' => $result['manual_instructions'] ?? null,
+                ], Response::HTTP_CONFLICT);
+
+            default: // invalid | gateway_error
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $result['message'] ?? 'Refund failed',
+                ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    /**
+     * Record an out-of-band (manual) refund for a gateway that cannot refund via
+     * API (KURSA Phase 5, doc §9.9). Admin only. Notes are required.
+     *
+     * POST /transactions/{id}/refund/manual  { amount?, reason, notes }
+     */
+    public function refundManual(Request $request, $id)
+    {
+        $transaction = Transaction::findOrFail($id);
+        $this->authorize('refund', $transaction);
+
+        $validator = Validator::make($request->all(), [
+            'amount' => 'nullable|numeric|gt:0',
+            'reason' => 'nullable|string|max:1000',
+            'notes' => 'required|string|max:2000',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $data = $validator->validated();
+
+        $result = app(\App\Services\Payments\RefundService::class)->recordManualRefund(
+            $transaction,
+            isset($data['amount']) ? (float) $data['amount'] : null,
+            $data['reason'] ?? '',
+            $data['notes']
+        );
+
+        if ($result['status'] !== 'ok') {
+            return response()->json([
+                'status' => 'error',
+                'message' => $result['message'] ?? 'Manual refund failed',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Manual refund recorded',
+            'data' => [
+                'refund_transaction' => $result['transaction'],
+                'parent_transaction' => $result['parent'],
+                'effects' => $result['effects'],
+            ],
+        ], Response::HTTP_OK);
+    }
 
     /**
      * Verify a signature from Monetbill webhook

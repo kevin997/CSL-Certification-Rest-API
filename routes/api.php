@@ -725,6 +725,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/transactions', [TransactionController::class, 'store']);
     Route::get('/transactions/{id}', [TransactionController::class, 'show']);
     Route::put('/transactions/{id}/status', [TransactionController::class, 'updateStatus']);
+    // KURSA Phase 5 (doc §9.9): admin/finance refund flow. Gateway-supported →
+    // /refund; unsupported gateways return 409 and are recorded via /refund/manual.
+    Route::post('/transactions/{id}/refund', [TransactionController::class, 'refund']);
+    Route::post('/transactions/{id}/refund/manual', [TransactionController::class, 'refundManual']);
     // Marketing routes
     // Referral routes
     Route::get('/marketing/referrals', [ReferralEnvironmentController::class, 'index']);

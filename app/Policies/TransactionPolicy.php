@@ -57,4 +57,15 @@ class TransactionPolicy
     {
         return false;
     }
+
+    /**
+     * Issue a refund (gateway or manual). KURSA Phase 5 (doc §9.9): refunds are an
+     * admin/finance action only. Admins pass via before(); everyone else is denied
+     * here. There is no dedicated finance role in this codebase today, so finance
+     * capability is exercised through the admin role.
+     */
+    public function refund(User $user, Transaction $transaction): bool
+    {
+        return false;
+    }
 }
