@@ -276,6 +276,15 @@ class ProductController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+        // KURSA Phase 9: course-product subscriptions are a Creator+ feature
+        // (doc §4.4). Enforced here (not in route middleware) because it is
+        // conditional on the request's is_subscription flag.
+        if ($request->boolean('is_subscription')) {
+            if ($deny = $this->denySubscriptionIfUnavailable($request)) {
+                return $deny;
+            }
+        }
+
         // Create product
         $product = new Product();
         $product->name = $request->name;
@@ -472,6 +481,14 @@ class ProductController extends Controller
                 'status' => 'error',
                 'errors' => $validator->errors(),
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // KURSA Phase 9: enabling a course-product subscription requires the
+        // Creator+ feature (doc §4.4).
+        if ($request->boolean('is_subscription')) {
+            if ($deny = $this->denySubscriptionIfUnavailable($request)) {
+                return $deny;
+            }
         }
 
         // Update product fields
@@ -782,5 +799,36 @@ class ProductController extends Controller
             'message' => 'Product deactivated successfully',
             'data' => $product,
         ]);
+    }
+
+    /**
+     * KURSA Phase 9: returns a 403 JsonResponse when the current environment's
+     * plan does not include course-product subscriptions, or null to proceed.
+     * Mirrors the licence.feature middleware contract but is applied here
+     * because the gate is conditional on the is_subscription request flag.
+     */
+    private function denySubscriptionIfUnavailable(Request $request): ?\Illuminate\Http\JsonResponse
+    {
+        if (! config('licensing.enforcement_enabled')) {
+            return null;
+        }
+
+        $environment = $request->get('environment');
+        if (! $environment instanceof \App\Models\Environment) {
+            return null; // no tenant context — fail open
+        }
+
+        $entitlement = \App\Services\Licensing\EntitlementService::for($environment);
+
+        if (! $entitlement->hasFeature('course_product_subscriptions')) {
+            return response()->json([
+                'error' => 'plan_feature_unavailable',
+                'feature' => 'course_product_subscriptions',
+                'plan' => $entitlement->planType(),
+                'upgrade_url' => '/billing',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        return null;
     }
 }

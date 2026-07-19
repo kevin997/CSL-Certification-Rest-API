@@ -2,10 +2,14 @@
 
 namespace App\Services\Licensing;
 
+use App\Models\CertificateTemplate;
+use App\Models\Course;
 use App\Models\Environment;
 use App\Models\EnvironmentLicence;
+use App\Models\PaymentGatewaySetting;
 use App\Models\Plan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Resolves the effective entitlements (plan, limits, features) for an
@@ -21,9 +25,12 @@ class EntitlementService
 {
     private array $resolved;
 
-    private function __construct(array $resolved)
+    private ?Environment $environment;
+
+    private function __construct(array $resolved, ?Environment $environment = null)
     {
         $this->resolved = $resolved;
+        $this->environment = $environment;
     }
 
     /**
@@ -39,7 +46,7 @@ class EntitlementService
             fn () => self::resolve($environment)
         );
 
-        return new self($resolved);
+        return new self($resolved, $environment);
     }
 
     public static function cacheKey(int $environmentId): string
@@ -126,5 +133,128 @@ class EntitlementService
         $value = $this->resolved['features'][$key] ?? null;
 
         return is_string($value) ? $value : null;
+    }
+
+    // ---------------------------------------------------------------------
+    // Usage counters (Phase 9). Each is current usage for the resolved
+    // environment, cached briefly (usage_cache_ttl, default 60s) so that a
+    // limit gate on a hot write path stays a single cheap lookup. Counts are
+    // deliberately "current state", never historical totals — over-limit
+    // migrated data is only ever READ, never deleted (doc §5 / §12).
+    // ---------------------------------------------------------------------
+
+    /**
+     * Map a limits[] key to its current usage count for this environment.
+     */
+    public function usage(string $limitKey): int
+    {
+        return match ($limitKey) {
+            'published_courses' => $this->publishedCoursesCount(),
+            'active_learners' => $this->activeLearnersCount(),
+            'admin_seats' => $this->adminSeatsCount(),
+            'payment_gateways' => $this->paymentGatewaysCount(),
+            'certificate_templates' => $this->certificateTemplatesCount(),
+            default => 0,
+        };
+    }
+
+    public function publishedCoursesCount(): int
+    {
+        return $this->countCached('published_courses', fn (int $envId) => Course::query()
+            ->where('environment_id', $envId)
+            ->where('status', 'published')
+            ->count());
+    }
+
+    /**
+     * Active learners = distinct environment members who are NOT staff (do not
+     * hold an admin-seat role) and have a last_active_at within the measurement
+     * window (doc §4.4 — accessed during the current period).
+     *
+     * Fallback note: on a fresh deploy last_active_at is all-null, so this
+     * returns 0 and UNDER-counts. That is safe — it can only fail-open (never
+     * over-block a learner enrolment) while heartbeat data accumulates.
+     */
+    public function activeLearnersCount(): int
+    {
+        return $this->countCached('active_learners', function (int $envId) {
+            $seatRoles = (array) config('licensing.admin_seat_roles', []);
+            $windowDays = (int) config('licensing.active_learner_window_days', 30);
+
+            return (int) DB::table('environment_user')
+                ->where('environment_id', $envId)
+                ->whereNotIn('role', $seatRoles)
+                ->whereNotNull('last_active_at')
+                ->where('last_active_at', '>=', now()->subDays($windowDays))
+                ->distinct()
+                ->count('user_id');
+        });
+    }
+
+    /**
+     * Admin/instructor seats = distinct environment members holding a
+     * seat-consuming role (config licensing.admin_seat_roles).
+     */
+    public function adminSeatsCount(): int
+    {
+        return $this->countCached('admin_seats', function (int $envId) {
+            $seatRoles = (array) config('licensing.admin_seat_roles', []);
+
+            return (int) DB::table('environment_user')
+                ->where('environment_id', $envId)
+                ->whereIn('role', $seatRoles)
+                ->distinct()
+                ->count('user_id');
+        });
+    }
+
+    public function paymentGatewaysCount(): int
+    {
+        return $this->countCached('payment_gateways', fn (int $envId) => PaymentGatewaySetting::query()
+            ->where('environment_id', $envId)
+            ->where('status', true)
+            ->count());
+    }
+
+    /**
+     * Certificate templates are NOT environment-scoped in the schema (no
+     * environment_id column). Best available proxy: templates created by users
+     * who belong to this environment. See report — a true per-environment
+     * template scope is a schema gap to be closed later.
+     */
+    public function certificateTemplatesCount(): int
+    {
+        return $this->countCached('certificate_templates', function (int $envId) {
+            $userIds = DB::table('environment_user')
+                ->where('environment_id', $envId)
+                ->pluck('user_id');
+
+            if ($userIds->isEmpty()) {
+                return 0;
+            }
+
+            return CertificateTemplate::query()
+                ->whereIn('created_by', $userIds)
+                ->count();
+        });
+    }
+
+    /**
+     * @param callable(int):int $counter
+     */
+    private function countCached(string $metric, callable $counter): int
+    {
+        if (! $this->environment) {
+            return 0;
+        }
+
+        $envId = (int) $this->environment->id;
+        $ttl = (int) config('licensing.usage_cache_ttl', 60);
+
+        return (int) Cache::remember(
+            "usage:{$metric}:env:{$envId}",
+            $ttl,
+            fn () => $counter($envId)
+        );
     }
 }

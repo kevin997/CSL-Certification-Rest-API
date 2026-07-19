@@ -6,7 +6,9 @@ use App\Models\Environment;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Symfony\Component\HttpFoundation\Response;
 
 class DetectEnvironment
@@ -128,6 +130,12 @@ class DetectEnvironment
                     // ]);
                 }
                 
+                // KURSA Phase 9: throttled active-learner heartbeat. Updates the
+                // pivot's last_active_at at most once/hour per user+env so
+                // EntitlementService::activeLearnersCount() can measure learners
+                // who accessed the academy during the current window (doc §4.4).
+                $this->touchLastActive((int) $environment->id, (int) $request->user()->id);
+
                 // Store the environment credentials context for the auth provider
                 $environmentCredentials = $request->user()->getEnvironmentCredentials($environment->id);
                 if ($environmentCredentials) {
@@ -170,5 +178,36 @@ class DetectEnvironment
         }
         
         return $response;
+    }
+
+    /**
+     * Throttled heartbeat for the active-learner metric (KURSA Phase 9).
+     * At most one write per user+environment per throttle window. Guarded by a
+     * cache lock so hot request paths don't hammer the pivot.
+     */
+    private function touchLastActive(int $environmentId, int $userId): void
+    {
+        $ttl = (int) config('licensing.last_active_throttle_seconds', 3600);
+        $lockKey = "last_active:{$environmentId}:{$userId}";
+
+        // Cache::add is atomic — returns true only for the first caller in the
+        // window, so exactly one heartbeat write happens per window.
+        if (! Cache::add($lockKey, true, $ttl)) {
+            return;
+        }
+
+        try {
+            if (! Schema::hasColumn('environment_user', 'last_active_at')) {
+                return;
+            }
+
+            DB::table('environment_user')
+                ->where('environment_id', $environmentId)
+                ->where('user_id', $userId)
+                ->update(['last_active_at' => now()]);
+        } catch (\Throwable $e) {
+            // Never let a metrics write break the request pipeline.
+            Cache::forget($lockKey);
+        }
     }
 }

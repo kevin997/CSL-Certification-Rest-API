@@ -686,6 +686,12 @@ class BrandingController extends Controller
                     'custom_css' => $branding->custom_css,
                     'custom_js' => $branding->custom_js,
                     'environment_id' => $environment->id,
+                    // KURSA Phase 9: server-authoritative branding level so the
+                    // frontends render the correct "Powered by KURSA" treatment
+                    // (visible / small / removed — doc §4.4). Server stays the
+                    // source of truth; the UI must not decide this itself.
+                    'licence_branding' => \App\Services\Licensing\EntitlementService::for($environment)
+                        ->featureLevel('kursa_branding') ?? 'visible',
                 ];
 
                 return response()->json([
