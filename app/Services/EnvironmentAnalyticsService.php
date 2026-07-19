@@ -6,6 +6,7 @@ use App\Models\AcademyVisitEvent;
 use App\Models\AcademyVisitor;
 use App\Models\Course;
 use App\Models\Enrollment;
+use App\Models\EnvironmentPaymentConfig;
 use App\Models\EnvironmentUser;
 use App\Models\FeedbackAnswer;
 use App\Models\InstructorCommission;
@@ -244,6 +245,17 @@ class EnvironmentAnalyticsService
     // ── Instructor payouts ledger ────────────────────────────────────────────
     private function payouts(int $e): array
     {
+        // KURSA only holds funds — and therefore only owes a settlement/payout — for
+        // environments that route sales through the centralized gateways. For
+        // tenant-gateway (direct/offline) envs the instructor already collected the
+        // money on their own gateway, so KURSA has no payout liability. Enrollment
+        // codes and offline/manual sales create commission rows for reporting, but
+        // they must NOT present a KURSA-owed balance (transition plan §9.1, §7/§13).
+        $config = EnvironmentPaymentConfig::where('environment_id', $e)
+            ->where('is_active', true)
+            ->first();
+        $centralized = $config ? (bool) $config->use_centralized_gateways : false;
+
         $comm = InstructorCommission::where('environment_id', $e);
         $owed = (float) (clone $comm)->whereNull('paid_at')->sum('instructor_payout_amount');
         $paid = (float) (clone $comm)->whereNotNull('paid_at')->sum('instructor_payout_amount');
@@ -253,10 +265,17 @@ class EnvironmentAnalyticsService
             ->where('status', 'pending')->sum('amount');
 
         return [
-            'payout_owed'         => round($owed, 2),
-            'payout_paid'         => round($paid, 2),
+            // Data-driven signal the frontend reads to decide whether to present a
+            // withdrawable settlement flow at all. Absent/false ⇒ no KURSA liability.
+            'centralized'         => $centralized,
+            // Zeroed for tenant-gateway envs: KURSA holds nothing to pay out.
+            'payout_owed'         => $centralized ? round($owed, 2) : 0.0,
+            'payout_paid'         => $centralized ? round($paid, 2) : 0.0,
+            'pending_withdrawals' => $centralized ? round($pendingWithdrawals, 2) : 0.0,
             'platform_fees'       => round($platformFees, 2),
-            'pending_withdrawals' => round($pendingWithdrawals, 2),
+            // Direct (non-centralized) collected earnings — informational only, NOT a
+            // KURSA liability. Zero for centralized envs (their money is in payout_owed).
+            'direct_sales_amount' => $centralized ? 0.0 : round($owed, 2),
         ];
     }
 
