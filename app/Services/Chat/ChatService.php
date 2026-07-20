@@ -349,6 +349,10 @@ class ChatService
         $instructorCourses = $this->getInstructorCourses($userId);
 
         $summaries = [];
+        // Collects distinct student user ids across ALL of the instructor's course
+        // discussions so we can return one de-duplicated total (a learner enrolled in
+        // several courses is only counted once).
+        $globalStudentIds = collect();
         foreach ($instructorCourses as $course) {
             if (!is_array($course) || !isset($course['id'])) {
                 continue;
@@ -386,8 +390,21 @@ class ChatService
                     $messageCount = DiscussionMessage::where('discussion_id', $discussion->id)->count();
                     $totalMessages += $messageCount;
 
-                    // Count unread messages (simplified - would need proper read tracking)
-                    $totalUnreadMessages += 0; // Placeholder for now
+                    // Real unread for the instructor: messages authored by someone else
+                    // that are newer than the instructor's last_read_at marker on this
+                    // discussion. If the instructor has no participant record yet, or has
+                    // never read it (null marker), every message by others is unread.
+                    $instructorParticipant = $discussion->participants
+                        ? $discussion->participants->firstWhere('user_id', $userId)
+                        : null;
+                    $lastReadAt = $instructorParticipant?->last_read_at;
+
+                    $unreadQuery = DiscussionMessage::where('discussion_id', $discussion->id)
+                        ->where('user_id', '!=', $userId);
+                    if ($lastReadAt) {
+                        $unreadQuery->where('created_at', '>', $lastReadAt);
+                    }
+                    $totalUnreadMessages += $unreadQuery->count();
 
                     // Collect participants (deduplicate later)
                     if ($discussion->participants) {
@@ -409,20 +426,30 @@ class ChatService
                     }
                 }
 
-                // Deduplicate participants by user_id (online only)
-                $uniqueParticipants = $allParticipants
-                    ->where('is_online', true)
-                    ->unique('user_id');
+                // Distinct enrolled learners (students) participating in this course's
+                // discussions — excluding the instructor themselves. Participants can only
+                // be enrolled users or the instructor (see verifyCanJoin), so filtering out
+                // the instructor id yields the student set. This replaces the previous
+                // "online right now" count, which was both mislabeled and (once summed on
+                // the frontend) double-counted students enrolled in multiple courses.
+                $courseStudentIds = $allParticipants
+                    ->pluck('user_id')
+                    ->reject(fn ($id) => (string) $id === (string) $userId)
+                    ->unique()
+                    ->values();
+
+                // Feed the across-all-courses distinct total.
+                $globalStudentIds = $globalStudentIds->merge($courseStudentIds);
 
                 $summaries[] = [
                     'courseId' => $course['id'],
                     'courseTitle' => $course['title'] ?? 'Untitled Course',
                     'totalMessages' => $totalMessages,
                     'unreadMessages' => $totalUnreadMessages,
-                    'activeParticipants' => $uniqueParticipants->count(),
+                    'activeParticipants' => $courseStudentIds->count(),
                     'lastActivity' => $latestMessage ? $latestMessage->created_at->toISOString() : $latestActivityTime->toISOString(),
                     'lastMessage' => $latestMessage ? [
-                        'content' => $latestMessage->content,
+                        'content' => $latestMessage->message_content,
                         'user' => $latestMessage->user->name ?? 'Unknown User',
                         'timestamp' => $latestMessage->created_at->toISOString()
                     ] : null
@@ -446,6 +473,16 @@ class ChatService
                 ];
             }
         }
+
+        // Single, de-duplicated count of distinct students across every one of the
+        // instructor's course discussions. Exposed on each summary so the frontend can
+        // show one accurate figure without summing per-course counts (which would
+        // double-count a learner enrolled in more than one course).
+        $totalActiveStudents = $globalStudentIds->unique()->count();
+        foreach ($summaries as &$summary) {
+            $summary['totalActiveStudents'] = $totalActiveStudents;
+        }
+        unset($summary);
 
         return $summaries;
     }
