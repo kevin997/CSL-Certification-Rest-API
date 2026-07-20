@@ -138,8 +138,14 @@ class ProductController extends Controller
      */
     public function index(Request $request)
     {
+        // Validate only the optional category filter; other params are left
+        // untouched so existing search/status/price filtering is unchanged.
+        $request->validate([
+            'category_id' => 'sometimes|nullable|integer|exists:product_categories,id',
+        ]);
+
         $query = Product::query()->with(['category', 'courses']);
-        
+
         // Apply filters
         if ($request->has('search')) {
             $search = $request->search;
@@ -164,7 +170,13 @@ class ProductController extends Controller
         if ($request->has('max_price')) {
             $query->where('price', '<=', $request->max_price);
         }
-        
+
+        // Filter by category. Products link to a single category via the
+        // products.category_id column (belongsTo ProductCategory).
+        if ($request->filled('category_id')) {
+            $query->where('category_id', $request->integer('category_id'));
+        }
+
         // Apply sorting
         $sortField = $request->input('sort_field', 'created_at');
         $sortDirection = $request->input('sort_direction', 'desc');
