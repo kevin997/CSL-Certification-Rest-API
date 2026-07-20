@@ -92,6 +92,7 @@ class TemplateController extends Controller
             'search' => 'nullable|string|max:255',
             'per_page' => 'nullable|integer|min:1|max:100',
             'include_blocks' => 'nullable|boolean',
+            'status' => 'nullable|string|in:draft,published,archived',
         ]);
 
         if ($validator->fails()) {
@@ -112,6 +113,15 @@ class TemplateController extends Controller
                     ->orWhere('is_public', true)
                     ->orWhereIn('id', $purchasedTemplateIds);
             });
+
+        // Optional status filter. Course creation (the template picker in the
+        // course form) opts in with status=published so that ONLY published
+        // templates are selectable — a draft/archived template cannot be used
+        // to build a course. Other consumers (template management page,
+        // AI-builder) omit the param and keep seeing their own drafts.
+        if ($request->filled('status')) {
+            $query->where('status', $request->input('status'));
+        }
 
         // Always include blocks_count for list views without loading blocks payload
         $query->withCount('blocks');
