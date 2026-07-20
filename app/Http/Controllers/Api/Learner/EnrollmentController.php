@@ -314,10 +314,10 @@ class EnrollmentController extends Controller
         
         // If all activities are completed, mark the course as completed
         if ($progressPercentage >= 100) {
-            $enrollment->status = 'completed';
+            $enrollment->status = Enrollment::STATUS_COMPLETED;
             $enrollment->completed_at = now();
         } else {
-            $enrollment->status = 'in-progress';
+            $enrollment->status = Enrollment::STATUS_IN_PROGRESS;
         }
         
         $enrollment->save();
