@@ -18,7 +18,8 @@ class OrderController extends Controller
     {
         if (!$this->guard($request)) return response()->json(['message' => 'Unauthorized'], 403);
 
-        $query = Order::with(['user:id,name,email', 'items.product:id,title,price', 'environment:id,name']);
+        // products has no `title` column (it's `name`); alias so the admin UI (which reads product.title) keeps working.
+        $query = Order::with(['user:id,name,email', 'items.product:id,name as title,price', 'environment:id,name']);
 
         if ($request->has('environment_id')) $query->where('environment_id', $request->environment_id);
         if ($request->has('status'))         $query->where('status', $request->status);

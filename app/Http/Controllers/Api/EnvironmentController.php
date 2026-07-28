@@ -436,7 +436,9 @@ class EnvironmentController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
-        return $environment->users()->with('profile')->get();
+        // NOTE: User has no `profile` relationship — eager-loading it 500s
+        // (RelationNotFoundException). Return users with their pivot role only.
+        return $environment->users()->get();
     }
 
     /**
