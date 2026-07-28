@@ -338,6 +338,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('environments/{id}/users/{userId}', [EnvironmentController::class, 'removeUser']);
     Route::put('environments/{id}/demo-status', [EnvironmentController::class, 'updateDemoStatus']);
     Route::put('environments/{id}/owner-password', [EnvironmentController::class, 'updateOwnerPassword']);
+    Route::put('environments/{id}/users/{userId}/password', [EnvironmentController::class, 'updateUserPassword']);
 
     // Environment credentials routes
     Route::get('environment-credentials/{environmentId}', [EnvironmentCredentialsController::class, 'show']);
