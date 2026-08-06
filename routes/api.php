@@ -110,9 +110,15 @@ Route::prefix('onboarding')->group(function () {
     Route::get('/plans', [PlanController::class, 'getOnboardingPlans']);
     Route::post('/referral/validate', [ReferralController::class, 'validate']);
 
-    // Validation routes
+    // Validation routes.
+    //
+    // NOTE: none of these carry a licence gate. They are anonymous, pre-signup
+    // availability checks — there is no environment yet to scope an entitlement
+    // against, so CheckPlanFeature would always fail open here anyway (see
+    // CheckPlanFeature::handle()). The real custom_domain entitlement is
+    // enforced on the authenticated /api/domains/validate route below.
     Route::post('/validate-email', [OnboardingController::class, 'validateEmail']);
-    Route::post('/validate-domain', [OnboardingController::class, 'validateDomain'])->middleware('licence.feature:custom_domain');
+    Route::post('/validate-domain', [OnboardingController::class, 'validateDomain']);
     Route::post('/validate', [OnboardingController::class, 'validate']);
 
     // KURSA licensing (Phase 4): no-card public onboarding — provisions the
