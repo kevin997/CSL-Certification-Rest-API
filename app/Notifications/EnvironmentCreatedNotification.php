@@ -135,7 +135,17 @@ class EnvironmentCreatedNotification extends Notification implements ShouldQueue
      */
     private function isSubdomain(): bool
     {
-        return str_contains($this->environment->primary_domain, '.cfpcsl.com');
+        // Platform-owned subdomain suffixes. csl-brands.com is what
+        // LicenceService::formatDomain() issues for KURSA academies; cfpcsl.com
+        // is the legacy suffix. Without the former, every KURSA environment was
+        // mislabelled "Custom Domain" in the alert.
+        foreach (['.csl-brands.com', '.cfpcsl.com'] as $suffix) {
+            if (str_ends_with($this->environment->primary_domain, $suffix)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

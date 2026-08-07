@@ -10,7 +10,9 @@ use App\Models\PaymentAttempt;
 use App\Models\Plan;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Notifications\EnvironmentCreatedNotification;
 use App\Services\PlatformPaymentService;
+use App\Services\TelegramService;
 use App\Services\Tax\TaxZoneService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -498,7 +500,43 @@ class LicenceService
 
         $this->sendPasswordSetLink($user, $environment);
 
+        $this->notifyEnvironmentCreated($environment, $user);
+
         return $environment;
+    }
+
+    /**
+     * Ops alert for a newly provisioned environment.
+     *
+     * The three legacy onboarding controllers (Standalone/Supported/Demo) each
+     * fire this by hand right after creating the environment. KURSA onboarding
+     * (free, trial, and paid checkout) all funnel through
+     * provisionEnvironmentFromPayload() instead, which never did — so those
+     * environments were created silently. Firing it here covers all three.
+     *
+     * Never allowed to break provisioning: the environment already exists and
+     * the owner has been emailed by the time we get here.
+     */
+    private function notifyEnvironmentCreated(Environment $environment, User $user): void
+    {
+        try {
+            $notification = new EnvironmentCreatedNotification(
+                $environment,
+                $user,
+                $user->email,
+                // KURSA-provisioned owners never get a plaintext password; they
+                // set their own via the link emailed by sendPasswordSetLink().
+                'set via emailed link',
+                app(TelegramService::class)
+            );
+
+            $notification->toTelegram($notification);
+        } catch (\Throwable $e) {
+            Log::error('Failed to send Telegram notification for provisioned environment: ' . $e->getMessage(), [
+                'environment_id' => $environment->id,
+                'user_id' => $user->id,
+            ]);
+        }
     }
 
     /**
