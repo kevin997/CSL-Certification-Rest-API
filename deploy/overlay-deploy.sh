@@ -40,7 +40,12 @@ set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/csl-certification-rest-api}"
 IMAGE_REPO="${IMAGE_REPO:-registry.olkoo.com/csl/csl-certification-rest-api}"
-SERVICES="${SERVICES:-app scheduler queue}"
+# ALL services, deliberately. The override rewrite below touches every image
+# line in the file, so anything left out of this list would keep running an
+# older image while the file claims otherwise -- exactly the drift that left
+# four containers two weeks behind. Reverb is included: rolling it drops live
+# WebSocket connections for a moment, and clients reconnect.
+SERVICES="${SERVICES:-app scheduler queue reverb outbox-processor kafka-consumer nightwatch}"
 HEALTH_URL="${HEALTH_URL:-https://certification.csl-brands.com/api/onboarding/validate-domain}"
 # Kept well under Docker's 127 so a failure is a loud bug, not a cliff edge.
 MAX_LAYERS="${MAX_LAYERS:-20}"
