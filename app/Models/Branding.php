@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Scopes\EnvironmentScope;
 use App\Traits\BelongsToEnvironment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,25 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Branding extends Model
 {
-    use HasFactory, SoftDeletes, BelongsToEnvironment;
+    use BelongsToEnvironment, HasFactory, SoftDeletes;
+
+    /**
+     * Resolve the single authoritative active branding row for an environment.
+     *
+     * Historical races in the upsert endpoint produced duplicate rows per
+     * environment; until data is fully converged the most recently saved row
+     * must deterministically win (the previous unordered first() returned the
+     * oldest row, which is how stale default branding leaked to visitors).
+     */
+    public static function currentForEnvironment(int $environmentId): ?self
+    {
+        return static::withoutGlobalScope(EnvironmentScope::class)
+            ->where('environment_id', $environmentId)
+            ->where('is_active', true)
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->first();
+    }
 
     /**
      * The attributes that are mass assignable.
