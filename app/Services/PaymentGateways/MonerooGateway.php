@@ -176,11 +176,19 @@ class MonerooGateway implements PaymentGatewayInterface
         }
     }
 
+    public function supportsRefunds(): bool
+    {
+        return false;
+    }
+
     public function processRefund(Transaction $transaction, ?float $amount = null, string $reason = ''): array
     {
+        // KURSA licensing transition (Phase 5, doc §9.9): no Moneroo refund API is
+        // wired here, so this is handled through the manual refund path.
         return [
             'success' => false,
-            'message' => 'Moneroo refunds are not implemented in this gateway yet.',
+            'unsupported' => true,
+            'message' => 'Refunds are not supported automatically via Moneroo. Please process the refund manually.',
         ];
     }
 

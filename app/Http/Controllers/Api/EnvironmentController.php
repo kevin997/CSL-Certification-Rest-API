@@ -436,7 +436,9 @@ class EnvironmentController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
-        return $environment->users()->with('profile')->get();
+        // NOTE: User has no `profile` relationship — eager-loading it 500s
+        // (RelationNotFoundException). Return users with their pivot role only.
+        return $environment->users()->get();
     }
 
     /**
@@ -991,6 +993,88 @@ class EnvironmentController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to update owner password'
+            ], 500);
+        }
+    }
+
+    /**
+     * Update the password of a specific user within an environment (admin only).
+     * The target user must be the environment owner or a member of the environment.
+     * Mirrors updateOwnerPassword() but targets an arbitrary environment user.
+     */
+    public function updateUserPassword($id, $userId, Request $request)
+    {
+        try {
+            $environment = Environment::findOrFail($id);
+
+            // Only platform admins may reset arbitrary user passwords.
+            if (!$this->userHasAdminPrivileges($request->user())) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unauthorized. Admin access required.'
+                ], 403);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'password' => 'required|string|min:6',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => 'error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // The target user must belong to this environment (owner or member).
+            $isOwner = (int) $environment->owner_id === (int) $userId;
+            $isMember = $environment->users()->where('users.id', $userId)->exists();
+
+            if (!$isOwner && !$isMember) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'User is not part of this environment'
+                ], 404);
+            }
+
+            $user = User::find($userId);
+
+            if (!$user) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            $user->password = Hash::make($request->password);
+            $user->save();
+
+            Log::info('Environment user password updated by admin', [
+                'environment_id' => $environment->id,
+                'user_id' => $user->id,
+                'is_owner' => $isOwner,
+                'admin_id' => $request->user()->id,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'User password updated successfully'
+            ], 200);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Environment not found'
+            ], 404);
+        } catch (\Exception $e) {
+            Log::error('Failed to update environment user password', [
+                'environment_id' => $id,
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to update user password'
             ], 500);
         }
     }

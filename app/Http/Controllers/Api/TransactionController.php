@@ -28,6 +28,7 @@ use App\Mail\OrderConfirmation;
 use Illuminate\Support\Str;
 use App\Models\AuditLog;
 use App\Models\Branding;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 /**
  * @OA\Schema(
@@ -63,6 +64,8 @@ use App\Models\Branding;
 
 class TransactionController extends Controller
 {
+    use AuthorizesRequests;
+
     /**
      * Handle successful payment callback
      *
@@ -107,530 +110,141 @@ class TransactionController extends Controller
      *     )
      * )
      */
+    /**
+     * KURSA licensing transition (Phase 3): browser payment callbacks are now
+     * DISPLAY-ONLY. They never settle transactions, activate licences, mark
+     * invoices paid or fulfil orders — settlement authority lives exclusively in
+     * signed webhooks and server-to-server verification (WebhookProcessor /
+     * VerifyPendingPayments). This handler only LOOKS UP the transaction and
+     * renders a status view (see plan §9.2). The success/failed/cancelled Blade
+     * views preserve the exact frontend redirect contract they had before; a
+     * still-pending transaction renders a page that polls the public status
+     * endpoint and then redirects (fixes §9.11 "renders success on failure").
+     */
     public function callbackSuccess(Request $request, $environment_id)
     {
-        $auditEnvironmentId = is_numeric($environment_id) ? (int) $environment_id : null;
+        return $this->renderDisplayOnlyCallback($request, $environment_id, 'success');
+    }
 
-        Log::error('Received Success CallBack ', [
+    /**
+     * Shared display-only callback renderer for the success and failure routes.
+     * NEVER mutates payment state.
+     */
+    private function renderDisplayOnlyCallback(Request $request, $environment_id, string $intent)
+    {
+        $auditEnvironmentId = is_numeric($environment_id) ? (int) $environment_id : null;
+        $protocol = app()->environment('production') ? 'https' : 'http';
+
+        Log::info('Received display-only payment callback', [
             'environment_id' => $environment_id,
-            "data" => $request->all(),
-            "headers" => $request->headers->all(),
-            "content" => $request->getContent()
+            'intent' => $intent,
+            'data' => $request->all(),
         ]);
 
-        // we have monetbil and lygos who are active now for callbacks
-        //we shall focus on these two
-        //we can't determine the gateway from the request, but from the $transasction->transaction_id,
-        //we can get the gateway from the $transasction->gateway
-
-        /**
-         * Monetbill callback success/cancelled
-         * http://localhost:8000/api/payments/transactions/callback/success/1?email=kevinliboire%40gmail.com&first_name=Kevin&item_ref=8&last_name=Li&payment_ref=TXN_b9b2a180-74e4-495e-90ac-7c8180324721&status=cancelled&transaction_id=25062714073048724384&user=7&sign=cb81483ce5868d04e31ff15cc0996091
-         */
-
-        /**
-         * Lygos CallBack
-         * Not yet implemented, will do when we get one 
-         * call back from Lygos
-         */
-
-        $environment = null;
-        $protocol = app()->environment('production') ? 'https' : 'http';
         $transactionId = $request->get('payment_ref')
             ?? $request->get('transaction_id')
             ?? $request->get('reference')
             ?? $request->get('id')
-            ?? $request->get("order_id")
+            ?? $request->get('order_id')
             ?? null;
 
-        Log::info('Looking for transaction', [
-            'gateway_transaction_id' => $transactionId,
-            'environment_id' => $environment_id
-        ]);
+        $environment = $auditEnvironmentId ? Environment::find($auditEnvironmentId) : null;
+        $branding = $auditEnvironmentId ? Branding::where('environment_id', $auditEnvironmentId)->first() : null;
 
-        // Check if transaction ID exists first
         if (!$transactionId) {
-            Log::error('Transaction ID not provided in success callback', [
-                'environment_id' => $environment_id
-            ]);
+            Log::error('Transaction ID not provided in callback', ['environment_id' => $environment_id]);
             return response()->json(['error' => 'Transaction ID is required'], 400);
         }
 
-        // Use smart transaction lookup that handles cross-environment supported plan transactions
+        // Look up ONLY — this must never settle. findTransactionForCallback
+        // resolves pending and already-settled transactions (incl. cross-env
+        // environment-licence payments).
         $transaction = $this->findTransactionForCallback($transactionId, $environment_id);
-        
-        // Handle completed transaction case (kept for backward compatibility)
-        $completedTransaction = null;
+
         if (!$transaction) {
-            // This shouldn't happen with the new lookup, but kept as fallback
-            $completedTransaction = Transaction::where("transaction_id", $transactionId)
-                ->where("status", Transaction::STATUS_COMPLETED)
-                ->whereHas("paymentGatewaySetting")
-                ->first();
-            
-            if ($completedTransaction && ($completedTransaction->environment_id == $environment_id || $this->isSupportedPlanPayment($completedTransaction))) {
-                $transaction = $completedTransaction;
-                $completedTransaction = $transaction; // For consistency with existing logic
-            }
-        }
-
-        //Get The Environment with relationship to Branding
-        $environment = $auditEnvironmentId ? Environment::where("id", $auditEnvironmentId)->first() : null;
-        $branding = $auditEnvironmentId ? Branding::where("environment_id", $auditEnvironmentId)->first() : null;
-
-        // Check if transaction exists (either pending or completed)
-        if (!$transaction && !$completedTransaction) {
-            Log::error('Transaction not found for callback', [
+            Log::error('Transaction not found for display-only callback', [
                 'transaction_id' => $transactionId,
-                'environment_id' => $environment_id
+                'environment_id' => $environment_id,
             ]);
             return view('payment.error', [
                 'transaction' => null,
                 'environment' => $environment,
-                "branding" => $branding,
-                "protocol" => $protocol
-            ]);
-        }
-        
-        // Handle completed transaction with pending order
-        if ($completedTransaction) {
-            Log::info('Transaction already completed, checking order status', [
-                'transaction_id' => $transactionId,
-                'environment_id' => $environment_id
-            ]);
-            
-            // Check if the order is still pending
-            $order = Order::where('id', $completedTransaction->order_id)->first();
-            if ($order && $order->status === Order::STATUS_PENDING) {
-                Log::info('Order is pending for completed transaction, regularizing', [
-                    'transaction_id' => $transactionId,
-                    'order_id' => $order->id,
-                    'order_number' => $order->order_number
-                ]);
-                
-                // Process the success callback for the completed transaction
-                $status = $request->get("status", "");
-                $successStatuses = ["success", "successful", "1", 1];
-                
-                if (in_array($status, $successStatuses, true)) {
-                    $paymentService = app(PaymentService::class);
-                    $gateway = $completedTransaction->paymentGatewaySetting->code;
-                    
-                    try {
-                        $result = $paymentService->processSuccessCallback($gateway, $transactionId, $environment_id, $request->all());
-                        
-                        Log::info('Order regularized successfully for completed transaction', [
-                            'transaction_id' => $transactionId,
-                            'order_id' => $order->id
-                        ]);
-                    } catch (\Exception $e) {
-                        Log::error('Error regularizing order for completed transaction', [
-                            'transaction_id' => $transactionId,
-                            'order_id' => $order->id,
-                            'error' => $e->getMessage()
-                        ]);
-                    }
-                }
-            }
-            
-            // Return success view for completed transaction
-            return view('payment.success', [
-                'transaction' => $completedTransaction,
-                'environment' => $environment,
-                "branding" => $branding,
-                "protocol" => $protocol
+                'branding' => $branding,
+                'protocol' => $protocol,
             ]);
         }
 
-
-        // Get gateway settings from transaction
-        $gatewaySettings = $transaction->paymentGatewaySetting;
-
-        // Check if gateway settings exist
-        if (!$gatewaySettings) {
-            Log::error('Payment gateway settings not found for transaction', [
-                'transaction_id' => $transactionId,
-                'environment_id' => $environment_id
-            ]);
-            return response()->json(['error' => 'Payment gateway settings not found'], 404);
-        }
-
-        $gateway = $gatewaySettings->code;
-
-
-
-        // Log the callback to AuditLog
-        $auditLog = AuditLog::logCallback(
-            $gateway,
-            'success',
+        // Record the (non-authoritative) browser callback for audit only.
+        AuditLog::logCallback(
+            optional($transaction->paymentGatewaySetting)->code ?? 'unknown',
+            $intent,
             $request->all(),
             'Transaction',
             $transactionId,
             $auditEnvironmentId,
-            'Payment success callback received',
+            'Display-only payment callback received (no state change)',
             AuditLog::STATUS_SUCCESS
         );
 
-        try {
-            // Process payment only if status indicates success
-            $result = null;
-            $status = strtolower((string) $request->get("status", ""));
-            $successStatuses = ["success", "successful", "1", 1];
-            $failedStatuses = ["failed", "failure", "0", 0, "error"];
-            $cancelledStatuses = ["cancelled", "cancelled_by_user", "cancel"];
-
-
-            $paymentService = app(PaymentService::class);
-
-            if (in_array($status, $successStatuses, true)) {
-                // Update transaction status through PaymentService
-
-                $result = $paymentService->processSuccessCallback($gateway, $transactionId, $environment_id, $request->all());
-            }
-
-            if (in_array($status, $failedStatuses, true)) {
-                $result = $paymentService->processFailureCallback($gateway, $transactionId, $environment_id, $request->all());
-                return view('payment.callback-failed', [
-                    'transaction' => $transaction,
-                    'environment' => $environment,
-                    "branding" => $branding,
-                    "protocol" => $protocol
-                ]);
-            }
-
-            if (in_array($status, $cancelledStatuses, true)) {
-                $result = $paymentService->processCancelledCallback($gateway, $transactionId, $environment_id, $request->all());
-                return view('payment.callback-cancelled', [
-                    'transaction' => $transaction,
-                    'environment' => $environment,
-                    "branding" => $branding,
-                    "protocol" => $protocol
-                ]);
-            }
-
-            if (!$result) {
-                Log::error('Failed to process payment success callback', [
-                    'gateway' => $gateway,
-                    'environment_id' => $environment,
-                    'transaction_id' => $transactionId
-                ]);
-
-                // Update audit log with failure
-                $auditLog->update([
-                    'status' => AuditLog::STATUS_FAILURE,
-                    'notes' => 'Failed to process payment success callback'
-                ]);
-
-                // Check if this is a supported plan payment (environment setup)
-                $isSupportedPlan = $this->isSupportedPlanPayment($transaction);
-                $viewPath = $isSupportedPlan ? 'payment.environment-setup.error' : 'payment.error';
-
-                return view($viewPath, [
-                    'transaction' => $transaction,
-                    'environment' => $environment,
-                    "branding" => $branding,
-                    "protocol" => $protocol
-                ]);
-            }
-
-            $transaction->refresh();
-
-            // Check if this is a supported plan payment (environment setup)
-            $isSupportedPlan = $this->isSupportedPlanPayment($transaction);
-            
-            $viewPath = $isSupportedPlan ? 'payment.environment-setup.callback-success' : 'payment.callback-success';
-            
-            return view($viewPath, [
-                'transaction' => $transaction,
-                'environment' => $environment,
-                "branding" => $branding,
-                "protocol" => $protocol
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Error in payment success callback', [
-                'error' => $e->getMessage(),
-                'gateway' => $gateway,
-                'environment_id' => $environment,
-                'transaction_id' => $transactionId
-            ]);
-
-            // Update audit log with error
-            $auditLog->update([
-                'status' => AuditLog::STATUS_ERROR,
-                'notes' => 'Exception: ' . $e->getMessage()
-            ]);
-
-            // Fallback redirect to dashboard with error
-            return view('payment.error', [
-                'transaction' => $transaction,
-                'environment' => $environment,
-                "branding" => $branding,
-                "protocol" => $protocol
-            ]);
-        }
+        return $this->renderTransactionStatusView($transaction, $environment, $branding, $protocol);
     }
+
+    /**
+     * Render the appropriate Blade view for a transaction's CURRENT status,
+     * without any mutation. Environment-licence transactions use the
+     * environment-setup view variants; a pending transaction polls to completion.
+     */
+    private function renderTransactionStatusView(Transaction $transaction, $environment, $branding, string $protocol)
+    {
+        $isLicence = $this->isEnvironmentLicenceTransaction($transaction);
+        $prefix = $isLicence ? 'payment.environment-setup.' : 'payment.';
+
+        $view = match ($transaction->status) {
+            Transaction::STATUS_COMPLETED => $prefix . 'callback-success',
+            Transaction::STATUS_FAILED => $prefix . 'callback-failed',
+            Transaction::STATUS_CANCELLED => $prefix . 'callback-cancelled',
+            // pending / processing → poll the public status endpoint, then redirect
+            default => 'payment.callback-pending',
+        };
+
+        return view($view, [
+            'transaction' => $transaction,
+            'environment' => $environment,
+            'branding' => $branding,
+            'protocol' => $protocol,
+        ]);
+    }
+
 
     public function callbackFailure(Request $request, $environment_id)
     {
-        $auditEnvironmentId = is_numeric($environment_id) ? (int) $environment_id : null;
-
-        Log::error('Received Failure CallBack ', [
-            'environment_id' => $environment_id,
-            "data" => $request->all(),
-            "headers" => $request->headers->all(),
-            "content" => $request->getContent()
-        ]);
-
-        $environment = null;
-        $transactionId = $request->get('payment_ref')
-            ?? $request->get('transaction_id')
-            ?? $request->get('reference')
-            ?? $request->get('id')
-            ?? $request->get("order_id")
-            ?? null;
-        $protocol = app()->environment('production') ? 'https' : 'http';
-
-        Log::info('Looking for transaction', [
-            'gateway_transaction_id' => $transactionId,
-            'environment_id' => $environment_id
-        ]);
-
-        // Check if transaction ID exists first
-        if (!$transactionId) {
-            Log::error('Transaction ID not provided in success callback', [
-                'environment_id' => $environment_id
-            ]);
-            return response()->json(['error' => 'Transaction ID is required'], 400);
-        }
-
-        // Use smart transaction lookup that handles cross-environment supported plan transactions
-        $transaction = $this->findTransactionForCallback($transactionId, $environment_id);
-        $environment = $auditEnvironmentId ? Environment::find($auditEnvironmentId) : null;
-        $branding = $auditEnvironmentId ? Branding::where("environment_id", $auditEnvironmentId)->first() : null;
-
-        // Check if transaction exists
-        if (!$transaction) {
-            Log::error('Transaction not found for callback', [
-                'transaction_id' => $transactionId,
-                'environment_id' => $environment_id
-            ]);
-            return view('payment.error', [
-                'transaction' => $transaction,
-                'environment' => $environment,
-                "branding" => $branding,
-                "protocol" => $protocol
-            ]);
-        }
-
-
-        // Get gateway settings from transaction
-        $gatewaySettings = $transaction->paymentGatewaySetting;
-
-        // Check if gateway settings exist
-        if (!$gatewaySettings) {
-            Log::error('Payment gateway settings not found for transaction', [
-                'transaction_id' => $transactionId,
-                'environment_id' => $environment_id
-            ]);
-            return response()->json(['error' => 'Payment gateway settings not found'], 404);
-        }
-
-        $gateway = $gatewaySettings->code;
-
-        // Log the callback to AuditLog
-        $auditLog = AuditLog::logCallback(
-            $gateway,
-            'failure',
-            $request->all(),
-            'Transaction',
-            $transactionId,
-            $auditEnvironmentId,
-            'Payment failure callback received',
-            AuditLog::STATUS_SUCCESS
-        );
-
-        Log::info('Payment failure callback received', [
-            'gateway' => $gateway,
-            'environment_id' => $environment_id,
-            'transaction_id' => $transactionId,
-            'audit_log_id' => $auditLog->id
-        ]);
-
-        try {
-            // Process payment only if status indicates success
-            $result = null;
-            $status = strtolower((string) $request->get("status", ""));
-            $failed = ["failed", "failure", "0", 0, "error"];
-            $cancelledStatuses = ["cancelled", "cancelled_by_user", "cancel"];
-
-
-            $paymentService = app(PaymentService::class);
-
-            if (in_array($status, $failed, true)) {
-                // Update transaction status through PaymentService
-
-                $result = $paymentService->processFailureCallback($gateway, $transactionId, $environment_id, $request->all());
-            } elseif (in_array($status, $cancelledStatuses, true)) {
-                $result = $paymentService->processCancelledCallback($gateway, $transactionId, $environment_id, $request->all());
-                
-                // Check if this is a supported plan payment (environment setup)
-                $isSupportedPlan = $this->isSupportedPlanPayment($transaction);
-                $viewPath = $isSupportedPlan ? 'payment.environment-setup.callback-cancelled' : 'payment.callback-cancelled';
-                
-                return view($viewPath, [
-                    'transaction' => $transaction,
-                    'environment' => $environment,
-                    "branding" => $branding,
-                    "protocol" => $protocol
-                ]);
-            }
-
-            if (!$result) {
-                Log::error('Failed to process payment failure callback', [
-                    'gateway' => $gateway,
-                    'environment_id' => $environment,
-                    'transaction_id' => $transactionId
-                ]);
-
-                // Update audit log with failure
-                $auditLog->update([
-                    'status' => AuditLog::STATUS_FAILURE,
-                    'notes' => 'Failed to process payment failure callback'
-                ]);
-
-                // Check if this is a supported plan payment (environment setup)
-                $isSupportedPlan = $this->isSupportedPlanPayment($transaction);
-                $viewPath = $isSupportedPlan ? 'payment.environment-setup.error' : 'payment.error';
-
-                return view($viewPath, [
-                    'transaction' => $transaction,
-                    'environment' => $environment,
-                    "branding" => $branding,
-                    "protocol" => $protocol
-                ]);
-            }
-
-            $transaction->refresh();
-
-            // Check if this is a supported plan payment (environment setup)
-            $isSupportedPlan = $this->isSupportedPlanPayment($transaction);
-            $viewPath = $isSupportedPlan ? 'payment.environment-setup.callback-failed' : 'payment.callback-failed';
-
-            return view($viewPath, [
-                'transaction' => $transaction,
-                'environment' => $environment,
-                "branding" => $branding,
-                "protocol" => $protocol
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Error in payment failure callback', [
-                'error' => $e->getMessage(),
-                'gateway' => $gateway,
-                'environment_id' => $environment,
-                'transaction_id' => $transactionId
-            ]);
-
-            // Update audit log with error
-            $auditLog->update([
-                'status' => AuditLog::STATUS_ERROR,
-                'notes' => 'Exception: ' . $e->getMessage()
-            ]);
-
-            // Fallback redirect to dashboard with error
-            return view('payment.error', [
-                'transaction' => $transaction,
-                'environment' => $environment,
-                "branding" => $branding,
-                "protocol" => $protocol
-            ]);
-        }
-
-
+        // Display-only (Phase 3): never mutates state. See callbackSuccess().
+        return $this->renderDisplayOnlyCallback($request, $environment_id, 'failure');
     }
 
     public function paypalReturn(Request $request)
     {
-        $transaction = null;
+        // Display-only (Phase 3): the PayPal browser return no longer captures or
+        // settles the transaction. Settlement authority lives in the signed PayPal
+        // webhook and server-to-server verification (VerifyPendingPayments).
+        $transactionId = $request->query('transaction_id');
+        $transaction = $transactionId ? Transaction::withoutGlobalScopes()->find($transactionId) : null;
 
-        try {
-            $transactionId = $request->query('transaction_id');
-            $paypalOrderId = $request->query('token') ?? $request->query('order_id');
-
-            if (!$transactionId || !$paypalOrderId) {
-                Log::error('PayPal return missing required identifiers', [
-                    'transaction_id' => $transactionId,
-                    'token_present' => !empty($paypalOrderId),
-                    'payload' => $request->all(),
-                ]);
-
-                return response()->json(['error' => 'Missing PayPal transaction identifiers'], 400);
-            }
-
-            $transaction = Transaction::withoutGlobalScopes()->find($transactionId);
-            if (!$transaction) {
-                Log::error('PayPal return transaction not found', [
-                    'transaction_id' => $transactionId,
-                    'payload' => $request->all(),
-                ]);
-
-                return response()->json(['error' => 'Transaction not found'], 404);
-            }
-
-            $gatewaySettings = $transaction->payment_gateway_setting_id
-                ? PaymentGatewaySetting::withoutGlobalScopes()->find($transaction->payment_gateway_setting_id)
-                : PaymentGatewaySetting::withoutGlobalScopes()
-                    ->where('code', 'paypal')
-                    ->where('status', true)
-                    ->where(function ($query) use ($transaction) {
-                        $query->where('environment_id', $transaction->environment_id)
-                            ->orWhereNull('environment_id');
-                    })
-                    ->orderByRaw('environment_id IS NULL')
-                    ->first();
-
-            if (!$gatewaySettings) {
-                Log::error('PayPal gateway settings not found for return callback', [
-                    'transaction_id' => $transaction->transaction_id,
-                    'payment_gateway_setting_id' => $transaction->payment_gateway_setting_id,
-                ]);
-
-                return response()->json(['error' => 'PayPal gateway settings not found'], 404);
-            }
-
-            $gateway = \App\Services\PaymentGateways\PaymentGatewayFactory::create('paypal', $gatewaySettings);
-            if (!$gateway) {
-                return response()->json(['error' => 'PayPal gateway unavailable'], 500);
-            }
-
-            $result = $gateway->processPayment($transaction, ['order_id' => $paypalOrderId]);
-            $payload = array_merge($request->all(), ['paypal_capture' => $result]);
-
-            if (($result['success'] ?? false) && strtoupper((string) ($result['status'] ?? 'COMPLETED')) === 'COMPLETED') {
-                $this->processCompletedWebhookTransaction($transaction, $result['status'] ?? 'COMPLETED', $payload);
-                $transaction->refresh();
-
-                return $this->renderPayPalCallbackView($transaction, 'success');
-            }
-
-            $this->processFailedWebhookTransaction($transaction, $result['status'] ?? 'failed', $payload, 'PayPal capture failed during return callback');
-            $transaction->refresh();
-
-            return $this->renderPayPalCallbackView($transaction, 'failed');
-        } catch (\Exception $e) {
-            Log::error('Error processing PayPal return callback', [
-                'error' => $e->getMessage(),
+        if (!$transaction) {
+            Log::error('PayPal return transaction not found', [
+                'transaction_id' => $transactionId,
                 'payload' => $request->all(),
-                'transaction_id' => $transaction?->transaction_id,
             ]);
 
-            return $transaction
-                ? $this->renderPayPalCallbackView($transaction, 'failed')
-                : response()->json(['error' => 'Error processing PayPal return callback'], 500);
+            return response()->json(['error' => 'Transaction not found'], 404);
         }
+
+        return $this->renderPayPalStatusView($transaction);
     }
 
     public function paypalCancel(Request $request)
     {
+        // Display-only (Phase 3): never mutates state.
         $transactionId = $request->query('transaction_id');
         $transaction = $transactionId ? Transaction::withoutGlobalScopes()->find($transactionId) : null;
 
@@ -643,31 +257,16 @@ class TransactionController extends Controller
             return response()->json(['error' => 'Transaction not found'], 404);
         }
 
-        $this->processFailedWebhookTransaction($transaction, 'cancelled', $request->all(), 'PayPal payment cancelled by customer');
-        $transaction->refresh();
-
-        return $this->renderPayPalCallbackView($transaction, 'cancelled');
+        return $this->renderPayPalStatusView($transaction);
     }
 
-    private function renderPayPalCallbackView(Transaction $transaction, string $state)
+    private function renderPayPalStatusView(Transaction $transaction)
     {
         $environment = $transaction->environment_id ? Environment::find($transaction->environment_id) : null;
         $branding = $transaction->environment_id ? Branding::where('environment_id', $transaction->environment_id)->first() : null;
         $protocol = app()->environment('production') ? 'https' : 'http';
-        $isSupportedPlan = $this->isSupportedPlanPayment($transaction);
 
-        $viewPath = match ($state) {
-            'success' => $isSupportedPlan ? 'payment.environment-setup.callback-success' : 'payment.callback-success',
-            'cancelled' => $isSupportedPlan ? 'payment.environment-setup.callback-cancelled' : 'payment.callback-cancelled',
-            default => $isSupportedPlan ? 'payment.environment-setup.callback-failed' : 'payment.callback-failed',
-        };
-
-        return view($viewPath, [
-            'transaction' => $transaction,
-            'environment' => $environment,
-            'branding' => $branding,
-            'protocol' => $protocol,
-        ]);
+        return $this->renderTransactionStatusView($transaction, $environment, $branding, $protocol);
     }
 
 
@@ -878,9 +477,15 @@ class TransactionController extends Controller
                 ]);
             }
 
-            // Always return 200 to the gateway to prevent retries
-            // This is a common practice with webhooks to avoid duplicate processing
-            return response()->json(['status' => 'error', 'message' => 'Error processing webhook']);
+            // KURSA licensing transition (Phase 3): transient/unexpected errors
+            // must return a retryable 5xx so the provider re-delivers the event
+            // (a signed event is never permanently lost). We only return 200 for
+            // processed / duplicate / irrelevant outcomes; signature failures and
+            // bad payloads return 4xx from the individual gateway handlers above.
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Error processing webhook; please retry',
+            ], 500);
         }
     }
 
@@ -903,12 +508,30 @@ class TransactionController extends Controller
         $sigHeader = $headers['stripe-signature'][0] ?? '';
         $webhookSecret = $gatewaySettings->getSetting('webhook_secret') ?? null;
 
+        // KURSA licensing transition (Phase 3): FAIL CLOSED. A Stripe webhook can
+        // only be trusted when a webhook secret is configured AND the signature
+        // verifies. Missing secret or missing signature is rejected outright — we
+        // never fall back to decoding unsigned JSON.
+        if (!$webhookSecret) {
+            Log::error('[StripeWebhook] Rejected: no webhook_secret configured (fail-closed)', [
+                'environment_id' => $gatewaySettings->environment_id,
+            ]);
+            return response()->json(['error' => 'Webhook signature required'], 401);
+        }
+
+        if (empty($sigHeader)) {
+            Log::error('[StripeWebhook] Rejected: missing Stripe-Signature header (fail-closed)', [
+                'environment_id' => $gatewaySettings->environment_id,
+            ]);
+            return response()->json(['error' => 'Missing signature'], 401);
+        }
+
         try {
-            // Verify the event
+            // Verify the event (secret + signature guaranteed present above)
             if ($webhookSecret) {
                 $event = \Stripe\Webhook::constructEvent($payload, $sigHeader, $webhookSecret);
             } else {
-                // If no webhook secret, just decode the payload
+                // Unreachable — retained for structural clarity.
                 $event = json_decode($payload, true);
             }
 
@@ -937,6 +560,17 @@ class TransactionController extends Controller
                 case 'customer.subscription.updated':
                     return $this->handleStripeSubscriptionUpdated($event->data->object ?? $event['data']['object'], $gatewaySettings);
 
+                // KURSA Phase 5 (doc §9.9): refund confirmation + chargebacks.
+                case 'charge.refunded':
+                case 'refund.updated':
+                    return $this->handleStripeRefund($event->data->object ?? $event['data']['object'], $gatewaySettings, $eventType);
+
+                case 'charge.dispute.created':
+                    return $this->handleStripeDispute($event->data->object ?? $event['data']['object'], $gatewaySettings, 'opened');
+
+                case 'charge.dispute.closed':
+                    return $this->handleStripeDispute($event->data->object ?? $event['data']['object'], $gatewaySettings, 'closed');
+
                 default:
                     // For unhandled events, just acknowledge receipt
                     return response()->json(['status' => 'success', 'message' => 'Unhandled event acknowledged']);
@@ -948,7 +582,7 @@ class TransactionController extends Controller
         } catch (\Stripe\Exception\SignatureVerificationException $e) {
             // Invalid signature
             Log::error('Invalid Stripe signature', ['error' => $e->getMessage()]);
-            return response()->json(['error' => 'Invalid signature'], 400);
+            return response()->json(['error' => 'Invalid signature'], 401);
         } catch (\Exception $e) {
             // Other exceptions
             Log::error('Error processing Stripe webhook', ['error' => $e->getMessage()]);
@@ -986,7 +620,7 @@ class TransactionController extends Controller
             // If not found and this might be a supported plan, try global lookup
             if (!$transaction) {
                 $globalTransaction = Transaction::where('id', $transactionId)->first();
-                if ($globalTransaction && $this->isSupportedPlanPayment($globalTransaction)) {
+                if ($globalTransaction && $this->isEnvironmentLicenceTransaction($globalTransaction)) {
                     $transaction = $globalTransaction;
                     Log::info('Stripe webhook: Supported plan transaction found with global lookup by ID', [
                         'transaction_id' => $transactionId,
@@ -1024,6 +658,123 @@ class TransactionController extends Controller
     }
 
     /**
+     * Locate the original (parent) transaction referenced by a Stripe refund or
+     * dispute object. Matches the stored gateway_transaction_id against the event's
+     * payment_intent then charge id, environment-scoped with a global fallback for
+     * environment-licence transactions (mirrors the payment-success handler).
+     */
+    private function findStripeParentTransaction($object, $gatewaySettings): ?Transaction
+    {
+        $arr = is_array($object) ? $object : json_decode(json_encode($object), true);
+
+        $candidates = array_values(array_filter([
+            $arr['payment_intent'] ?? null,
+            $arr['charge'] ?? null,
+            $arr['id'] ?? null,
+        ]));
+
+        foreach ($candidates as $ref) {
+            $tx = Transaction::where('gateway_transaction_id', $ref)
+                ->where('environment_id', $gatewaySettings->environment_id)
+                ->first();
+
+            if (!$tx) {
+                $global = Transaction::where('gateway_transaction_id', $ref)->first();
+                if ($global && $this->isEnvironmentLicenceTransaction($global)) {
+                    $tx = $global;
+                }
+            }
+
+            if ($tx) {
+                return $tx;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Handle a Stripe refund confirmation (charge.refunded / refund.updated).
+     * Routes through the authoritative WebhookProcessor so the child refund is
+     * confirmed, the parent cumulative state advances, and ledger/access effects
+     * are applied (KURSA Phase 5, doc §9.9).
+     */
+    private function handleStripeRefund($object, $gatewaySettings, ?string $eventType)
+    {
+        $arr = is_array($object) ? $object : json_decode(json_encode($object), true);
+
+        $parent = $this->findStripeParentTransaction($object, $gatewaySettings);
+        if (!$parent) {
+            Log::warning('[StripeWebhook] Refund event: no matching parent transaction', [
+                'event_type' => $eventType,
+            ]);
+            return response()->json(['status' => 'success', 'message' => 'No matching transaction']);
+        }
+
+        // Determine the refunded amount (Stripe amounts are in the smallest unit).
+        $amount = null;
+        if (($arr['object'] ?? null) === 'refund' && isset($arr['amount'])) {
+            $amount = ((float) $arr['amount']) / 100;
+        } elseif (isset($arr['amount_refunded'])) {
+            $amount = ((float) $arr['amount_refunded']) / 100;
+        }
+
+        app(\App\Services\Payments\WebhookProcessor::class)->confirmRefundEvent(
+            $parent,
+            $amount,
+            $arr ?: [],
+            [
+                'gateway' => optional($parent->paymentGatewaySetting)->code ?? 'stripe',
+                'signature_valid' => true,
+                'event_type' => $eventType,
+                'provider_event_id' => $arr['id'] ?? null,
+            ]
+        );
+
+        return response()->json(['status' => 'success', 'message' => 'Refund event processed']);
+    }
+
+    /**
+     * Handle a Stripe dispute lifecycle event (charge.dispute.created / closed).
+     * created → disputed + settlement hold; closed(won) → restore completed;
+     * closed(lost) → treated as a full refund confirmation (KURSA Phase 5).
+     */
+    private function handleStripeDispute($object, $gatewaySettings, string $phase)
+    {
+        $arr = is_array($object) ? $object : json_decode(json_encode($object), true);
+
+        $parent = $this->findStripeParentTransaction($object, $gatewaySettings);
+        if (!$parent) {
+            Log::warning('[StripeWebhook] Dispute event: no matching parent transaction', [
+                'phase' => $phase,
+            ]);
+            return response()->json(['status' => 'success', 'message' => 'No matching transaction']);
+        }
+
+        if ($phase === 'opened') {
+            $outcome = 'opened';
+        } else {
+            // closed — resolve won/lost from the dispute status.
+            $status = strtolower((string) ($arr['status'] ?? ''));
+            $outcome = $status === 'won' ? 'won' : 'lost';
+        }
+
+        app(\App\Services\Payments\WebhookProcessor::class)->dispute(
+            $parent,
+            $outcome,
+            $arr ?: [],
+            [
+                'gateway' => optional($parent->paymentGatewaySetting)->code ?? 'stripe',
+                'signature_valid' => true,
+                'event_type' => 'charge.dispute.' . $phase,
+                'provider_event_id' => $arr['id'] ?? null,
+            ]
+        );
+
+        return response()->json(['status' => 'success', 'message' => 'Dispute event processed']);
+    }
+
+    /**
      * Handle Stripe payment failure event
      *
      * @param mixed $paymentIntent Payment intent object from Stripe webhook
@@ -1053,7 +804,7 @@ class TransactionController extends Controller
             // If not found and this might be a supported plan, try global lookup
             if (!$transaction) {
                 $globalTransaction = Transaction::where('id', $transactionId)->first();
-                if ($globalTransaction && $this->isSupportedPlanPayment($globalTransaction)) {
+                if ($globalTransaction && $this->isEnvironmentLicenceTransaction($globalTransaction)) {
                     $transaction = $globalTransaction;
                     Log::info('Stripe webhook: Supported plan transaction found with global lookup by ID (failure)', [
                         'transaction_id' => $transactionId,
@@ -1796,7 +1547,7 @@ class TransactionController extends Controller
                 'reference' => $event['payment_ref'] ?? null,
             ]);
 
-            return response()->json(['error' => 'Invalid signature'], 400);
+            return response()->json(['error' => 'Invalid signature'], 401);
         }
 
         // Get the transaction reference
@@ -1880,7 +1631,7 @@ class TransactionController extends Controller
                 'payment_id' => $event['paymentId'] ?? null,
             ]);
 
-            return response()->json(['error' => 'Invalid signature'], 400);
+            return response()->json(['error' => 'Invalid signature'], 401);
         }
 
         // Get the transaction reference (paymentId from webhook)
@@ -1951,7 +1702,7 @@ class TransactionController extends Controller
                 'reference' => $event['id'] ?? $event['transaction_id'] ?? null,
             ]);
 
-            return response()->json(['error' => 'Invalid signature'], 400);
+            return response()->json(['error' => 'Invalid signature'], 401);
         }
 
         $reference = $event['metadata']['transaction_id']
@@ -2000,9 +1751,11 @@ class TransactionController extends Controller
     {
         $secret = $gatewaySettings->getSetting('webhook_secret');
 
+        // KURSA licensing transition (Phase 3): FAIL CLOSED. No secret means we
+        // cannot authenticate the event, so we reject rather than trust it.
         if (empty($secret)) {
-            Log::warning('[MonerooWebhook] No webhook secret configured; accepting webhook without signature verification');
-            return true;
+            Log::error('[MonerooWebhook] Rejected: no webhook secret configured (fail-closed)');
+            return false;
         }
 
         $signature = $headers['x-moneroo-signature'][0]
@@ -2026,9 +1779,10 @@ class TransactionController extends Controller
     {
         $secret = $gatewaySettings->getSetting('webhook_secret');
 
+        // KURSA licensing transition (Phase 3): FAIL CLOSED. No secret => reject.
         if (empty($secret)) {
-            Log::warning('[TaraMoneyWebhook] No webhook secret configured; accepting webhook without signature verification');
-            return true;
+            Log::error('[TaraMoneyWebhook] Rejected: no webhook secret configured (fail-closed)');
+            return false;
         }
 
         $signature = $headers['x-taramoney-signature'][0]
@@ -2039,19 +1793,10 @@ class TransactionController extends Controller
             ?? $event['sign']
             ?? null;
 
+        // Phase 3: the businessId "match" bypass is REMOVED — businessId equality
+        // is not cryptographic authenticity. A missing signature is a rejection.
         if (!$signature) {
-            $businessId = $gatewaySettings->getSetting('business_id');
-            $payloadBusinessId = $event['businessId'] ?? null;
-
-            if ($businessId && $payloadBusinessId && hash_equals((string) $businessId, (string) $payloadBusinessId)) {
-                Log::info('[TaraMoneyWebhook] No signature provided by Tara; businessId matched configured gateway');
-                return true;
-            }
-
-            Log::error('[TaraMoneyWebhook] Missing signature and businessId did not match configured gateway', [
-                'business_id_present' => !empty($businessId),
-                'payload_business_id_present' => !empty($payloadBusinessId),
-            ]);
+            Log::error('[TaraMoneyWebhook] Rejected: missing signature (no businessId bypass)');
             return false;
         }
 
@@ -2070,94 +1815,54 @@ class TransactionController extends Controller
         return false;
     }
 
+    /**
+     * KURSA licensing transition (Phase 3): all webhook settlement now flows
+     * through the authoritative WebhookProcessor (doc §11 10-step algorithm):
+     * durable provider-event ledger, unique-insert de-duplication, amount/currency/
+     * merchant validation, row lock, idempotent + monotonic completion. The six
+     * gateway handlers call these two shim methods unchanged, so every gateway
+     * inherits the full authority pipeline from a single place. A caller reaching
+     * here has ALREADY verified the webhook signature (fail-closed above).
+     */
     private function processCompletedWebhookTransaction(Transaction $transaction, string $gatewayStatus, array $payload): void
     {
-        DB::transaction(function () use ($transaction, $gatewayStatus, $payload) {
-            $transaction = Transaction::withoutGlobalScopes()
-                ->whereKey($transaction->id)
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            $alreadyCompleted = $transaction->status === Transaction::STATUS_COMPLETED;
-
-            $transaction->status = Transaction::STATUS_COMPLETED;
-            $transaction->gateway_status = $gatewayStatus;
-            $transaction->gateway_response = $payload;
-            $transaction->paid_at = $transaction->paid_at ?: now();
-            $transaction->save();
-            $transaction->refresh();
-
-            $this->createCommissionRecordIfNeeded($transaction);
-            $this->completeRelatedPaymentIfNeeded($transaction, $payload);
-            $this->markInvoicePaidIfNeeded($transaction);
-
-            if (!$alreadyCompleted) {
-                $this->completeOrderIfNeeded($transaction);
-            }
-        });
+        app(\App\Services\Payments\WebhookProcessor::class)->settle(
+            $transaction,
+            'completed',
+            $gatewayStatus,
+            $payload,
+            null,
+            [
+                'gateway' => optional($transaction->paymentGatewaySetting)->code,
+                'signature_valid' => true,
+                'gateway_environment_id' => optional($transaction->paymentGatewaySetting)->environment_id,
+            ]
+        );
     }
 
     private function processFailedWebhookTransaction(Transaction $transaction, string $gatewayStatus, array $payload, string $notes): void
     {
-        DB::transaction(function () use ($transaction, $gatewayStatus, $payload, $notes) {
-            $transaction = Transaction::withoutGlobalScopes()
-                ->whereKey($transaction->id)
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            if ($transaction->status === Transaction::STATUS_COMPLETED) {
-                Log::warning('Ignoring failure webhook for already completed transaction', [
-                    'transaction_id' => $transaction->transaction_id,
-                    'gateway_status' => $gatewayStatus,
-                ]);
-                return;
-            }
-
-            $transaction->status = Transaction::STATUS_FAILED;
-            $transaction->gateway_status = $gatewayStatus;
-            $transaction->gateway_response = $payload;
-            $transaction->notes = $notes;
-            $transaction->save();
-
-            $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
-            if ($payment && $payment->status !== Payment::STATUS_COMPLETED) {
-                $payment->markAsFailed(
-                    $transaction->gateway_transaction_id,
-                    $gatewayStatus,
-                    $payload
-                );
-            }
-        });
+        app(\App\Services\Payments\WebhookProcessor::class)->settle(
+            $transaction,
+            'failed',
+            $gatewayStatus,
+            $payload,
+            $notes,
+            [
+                'gateway' => optional($transaction->paymentGatewaySetting)->code,
+                'signature_valid' => true,
+                'gateway_environment_id' => optional($transaction->paymentGatewaySetting)->environment_id,
+            ]
+        );
     }
 
     private function createCommissionRecordIfNeeded(Transaction $transaction): void
     {
-        if (!$transaction->order_id) {
-            return;
-        }
-
-        try {
-            $config = app(\App\Services\EnvironmentPaymentConfigService::class)->getConfig($transaction->environment_id);
-
-            if (!$config || !$config->use_centralized_gateways) {
-                return;
-            }
-
-            if (InstructorCommission::where('transaction_id', $transaction->id)->exists()) {
-                return;
-            }
-
-            app(\App\Services\InstructorCommissionService::class)->createCommissionRecord($transaction);
-            Log::info('Commission record created for centralized payment', [
-                'transaction_id' => $transaction->id,
-                'environment_id' => $transaction->environment_id,
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Failed to create commission record', [
-                'transaction_id' => $transaction->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        // KURSA licensing transition (Phase 2): course sales carry 0% platform commission,
+        // so no InstructorCommission (payout liability) records are created for course
+        // transactions anymore. This is intentionally a no-op; the call site is preserved
+        // so historical InstructorCommission read/approval/withdrawal paths keep working.
+        return;
     }
 
     private function completeRelatedPaymentIfNeeded(Transaction $transaction, array $payload): void
@@ -2343,6 +2048,9 @@ class TransactionController extends Controller
      */
     public function index(Request $request)
     {
+        // Policy: only environment owners / admins may list transactions.
+        $this->authorize('viewAny', Transaction::class);
+
         // Validate request parameters
         $validator = Validator::make($request->all(), [
             'environment_id' => 'nullable|integer|exists:environments,id',
@@ -2589,9 +2297,37 @@ class TransactionController extends Controller
     {
         $transaction = Transaction::with('paymentGatewaySetting')->findOrFail($id);
 
+        // Policy: only the environment owner / admin may read a transaction.
+        $this->authorize('view', $transaction);
+
         return response()->json([
             'status' => 'success',
             'data' => $transaction
+        ], Response::HTTP_OK);
+    }
+
+    /**
+     * Public, minimal payment-status poll endpoint (KURSA plan §9.2). Browser
+     * checkout flows poll this to observe asynchronous settlement instead of
+     * inferring success from a callback URL. Returns ONLY status/purpose/order_id
+     * — no financial detail — and is rate limited at the route.
+     *
+     * @param string $transactionUuid The public transaction UUID (transaction_id).
+     */
+    public function pollStatus($transactionUuid)
+    {
+        $transaction = Transaction::withoutGlobalScopes()
+            ->where('transaction_id', $transactionUuid)
+            ->first();
+
+        if (!$transaction) {
+            return response()->json(['error' => 'Transaction not found'], 404);
+        }
+
+        return response()->json([
+            'status' => $transaction->status,
+            'purpose' => $transaction->purpose,
+            'order_id' => $transaction->order_id,
         ], Response::HTTP_OK);
     }
 
@@ -2662,9 +2398,12 @@ class TransactionController extends Controller
     {
         $transaction = Transaction::findOrFail($id);
 
+        // Policy: only admins may mutate transaction status at all.
+        $this->authorize('update', $transaction);
+
         // Validate request data
         $validator = Validator::make($request->all(), [
-            'status' => 'required|in:pending,processing,completed,failed,refunded,partially_refunded',
+            'status' => 'required|in:pending,processing,completed,failed,refunded,partially_refunded,cancelled',
             'gateway_transaction_id' => 'nullable|string|max:255',
             'gateway_status' => 'nullable|string|max:255',
             'gateway_response' => 'nullable|json',
@@ -2682,6 +2421,24 @@ class TransactionController extends Controller
 
         $data = $validator->validated();
         $newStatus = $data['status'];
+
+        // KURSA licensing transition (Phase 3): settlement is SYSTEM-OWNED. A
+        // client can never drive a transaction into a settled/refunded state — those
+        // transitions are produced only by verified gateway events (WebhookProcessor)
+        // and the dedicated refund flow. Benign transitions (e.g. pending→cancelled)
+        // remain allowed.
+        $systemOwnedStatuses = [
+            Transaction::STATUS_COMPLETED,
+            Transaction::STATUS_REFUNDED,
+            Transaction::STATUS_PARTIALLY_REFUNDED,
+        ];
+
+        if (in_array($newStatus, $systemOwnedStatuses, true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'settlement is system-owned',
+            ], Response::HTTP_GONE);
+        }
 
         // Add updated_by field
         $data['updated_by'] = Auth::id();
@@ -2742,7 +2499,125 @@ class TransactionController extends Controller
         ], Response::HTTP_OK);
     }
 
+    /**
+     * Initiate a refund against a settled transaction (KURSA Phase 5, doc §9.9).
+     *
+     * Admin/finance only (TransactionPolicy `refund`). For a gateway that supports
+     * automatic refunds the money moves at the gateway FIRST, then an immutable
+     * child refund transaction is created (`processing`, or `completed` when the
+     * gateway confirms synchronously). For an unsupported gateway a 409 is returned
+     * with manual instructions — the caller then uses refundManual().
+     *
+     * POST /transactions/{id}/refund  { amount?, reason }
+     */
+    public function refund(Request $request, $id)
+    {
+        $transaction = Transaction::findOrFail($id);
+        $this->authorize('refund', $transaction);
 
+        $validator = Validator::make($request->all(), [
+            'amount' => 'nullable|numeric|gt:0',
+            'reason' => 'nullable|string|max:1000',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $data = $validator->validated();
+
+        $result = app(\App\Services\Payments\RefundService::class)->initiateRefund(
+            $transaction,
+            isset($data['amount']) ? (float) $data['amount'] : null,
+            $data['reason'] ?? ''
+        );
+
+        switch ($result['status']) {
+            case 'ok':
+                return response()->json([
+                    'status' => 'success',
+                    'message' => $result['confirmed']
+                        ? 'Refund processed and confirmed'
+                        : 'Refund initiated; awaiting gateway confirmation',
+                    'confirmed' => $result['confirmed'],
+                    'data' => [
+                        'refund_transaction' => $result['transaction'],
+                        'parent_transaction' => $result['parent'],
+                        'effects' => $result['effects'],
+                    ],
+                ], Response::HTTP_OK);
+
+            case 'unsupported':
+                return response()->json([
+                    'status' => 'error',
+                    'unsupported' => true,
+                    'message' => $result['message'],
+                    'manual_instructions' => $result['manual_instructions'] ?? null,
+                ], Response::HTTP_CONFLICT);
+
+            default: // invalid | gateway_error
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $result['message'] ?? 'Refund failed',
+                ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    /**
+     * Record an out-of-band (manual) refund for a gateway that cannot refund via
+     * API (KURSA Phase 5, doc §9.9). Admin only. Notes are required.
+     *
+     * POST /transactions/{id}/refund/manual  { amount?, reason, notes }
+     */
+    public function refundManual(Request $request, $id)
+    {
+        $transaction = Transaction::findOrFail($id);
+        $this->authorize('refund', $transaction);
+
+        $validator = Validator::make($request->all(), [
+            'amount' => 'nullable|numeric|gt:0',
+            'reason' => 'nullable|string|max:1000',
+            'notes' => 'required|string|max:2000',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $data = $validator->validated();
+
+        $result = app(\App\Services\Payments\RefundService::class)->recordManualRefund(
+            $transaction,
+            isset($data['amount']) ? (float) $data['amount'] : null,
+            $data['reason'] ?? '',
+            $data['notes']
+        );
+
+        if ($result['status'] !== 'ok') {
+            return response()->json([
+                'status' => 'error',
+                'message' => $result['message'] ?? 'Manual refund failed',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Manual refund recorded',
+            'data' => [
+                'refund_transaction' => $result['transaction'],
+                'parent_transaction' => $result['parent'],
+                'effects' => $result['effects'],
+            ],
+        ], Response::HTTP_OK);
+    }
 
     /**
      * Verify a signature from Monetbill webhook
@@ -2753,12 +2628,9 @@ class TransactionController extends Controller
      */
     private function monetbill_check_sign(array $params, $gatewaySettings): bool
     {
-        // For development/testing environments, we can bypass signature verification
-        // if the environment variable is set
-        if (config('app.env') === 'local' && config('app.monetbill_bypass_signature', false)) {
-            Log::info('[MonetbillWebhook] Bypassing signature verification in local environment');
-            return true;
-        }
+        // KURSA licensing transition (Phase 3): the local "bypass signature"
+        // escape hatch is REMOVED — the sign is always verified so no environment
+        // can accept an unauthenticated Monetbill webhook.
 
         // Check if sign parameter exists
         if (!array_key_exists('sign', $params)) {
@@ -2895,7 +2767,7 @@ class TransactionController extends Controller
 
         if ($globalTransaction) {
             // Check if this is a supported plan transaction using basic detection
-            $isLikelySupportedPlan = $this->isLikelySupportedPlanTransaction($globalTransaction);
+            $isLikelySupportedPlan = $this->isEnvironmentLicenceTransaction($globalTransaction);
             
             Log::info('Supported plan detection result', [
                 'transaction_id' => $transactionId,
@@ -2931,12 +2803,12 @@ class TransactionController extends Controller
             ->first();
 
         if ($completedTransaction) {
-            if ($completedTransaction->environment_id == $environment_id || $this->isLikelySupportedPlanTransaction($completedTransaction)) {
+            if ($completedTransaction->environment_id == $environment_id || $this->isEnvironmentLicenceTransaction($completedTransaction)) {
                 Log::info('Completed transaction found', [
                     'transaction_id' => $transactionId,
                     'environment_id' => $environment_id,
                     'found_environment_id' => $completedTransaction->environment_id,
-                    'is_supported_plan' => $this->isLikelySupportedPlanTransaction($completedTransaction)
+                    'is_supported_plan' => $this->isEnvironmentLicenceTransaction($completedTransaction)
                 ]);
                 return $completedTransaction;
             }
@@ -2988,7 +2860,7 @@ class TransactionController extends Controller
 
         if ($globalTransaction) {
             // Check if this is a supported plan transaction using basic detection
-            if ($this->isLikelySupportedPlanTransaction($globalTransaction)) {
+            if ($this->isEnvironmentLicenceTransaction($globalTransaction)) {
                 Log::info('Supported plan transaction found with global webhook lookup', [
                     'reference' => $reference,
                     'gateway_environment_id' => $gatewaySettings->environment_id,
@@ -3013,93 +2885,18 @@ class TransactionController extends Controller
     }
 
     /**
-     * Basic check to identify likely supported plan transactions
-     * Used by helper methods to avoid circular dependency with isSupportedPlanPayment
-     * 
-     * @param Transaction $transaction
+     * KURSA licensing transition (Phase 3): the amount/description "supported
+     * plan" heuristics (isSupportedPlanPayment / isLikelySupportedPlanTransaction,
+     * incl. the magic $177.00 discriminator) are REPLACED by an explicit
+     * transaction purpose. Environment-licence payments are billed centrally and
+     * may therefore be resolved and rendered across environment scopes.
+     *
+     * @param Transaction|null $transaction
      * @return bool
      */
-    private function isLikelySupportedPlanTransaction($transaction): bool
+    private function isEnvironmentLicenceTransaction($transaction): bool
     {
-        if (!$transaction) {
-            return false;
-        }
-
-        // Check transaction description for supported plan keywords
-        if ($transaction->description && stripos($transaction->description, 'supported plan') !== false) {
-            return true;
-        }
-
-        // Check if transaction amount matches supported plan pricing ($177.00)
-        if ($transaction->total_amount == 177.00) {
-            return true;
-        }
-
-        // Check transaction notes for supported plan indicators
-        if ($transaction->notes && stripos($transaction->notes, 'supported') !== false) {
-            return true;
-        }
-
-        $details = is_array($transaction->payment_method_details)
-            ? $transaction->payment_method_details
-            : json_decode($transaction->payment_method_details ?: '[]', true);
-
-        if (($details['scope'] ?? null) === 'platform') {
-            return true;
-        }
-
-        // Check product name if it contains supported plan keywords
-        if (isset($transaction->product_name) && $transaction->product_name && stripos($transaction->product_name, 'supported') !== false) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Check if the transaction is for a supported plan payment (environment setup)
-     * 
-     * @param Transaction $transaction
-     * @return bool
-     */
-    private function isSupportedPlanPayment($transaction): bool
-    {
-        if (!$transaction) {
-            return false;
-        }
-
-        // Check if transaction has a subscription associated with it
-        $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
-        
-        if ($payment && $payment->subscription_id) {
-            $subscription = Subscription::where('id', $payment->subscription_id)->first();
-            
-            if ($subscription && $subscription->plan_id) {
-                $plan = Plan::where('id', $subscription->plan_id)->first();
-                
-                // Check if the plan is a supported plan (you can adjust this logic based on your plan naming/type)
-                // For now, we'll check if the plan name contains "supported" or has a specific type
-                if ($plan && (
-                    stripos($plan->name, 'supported') !== false || 
-                    $plan->type === 'supported_plan' ||
-                    $plan->type === 'business_teacher'  // Assuming business teacher plan is the supported plan
-                )) {
-                    return true;
-                }
-            }
-        }
-
-        // Alternative check: look for specific transaction description patterns
-        if ($transaction->description && stripos($transaction->description, 'supported plan') !== false) {
-            return true;
-        }
-
-        // Check if transaction amount matches supported plan pricing (fallback)
-        // Assuming supported plan costs $177.00 as mentioned in SupportedCompletion.tsx
-        if ($transaction->total_amount == 177.00) {
-            return true;
-        }
-
-        return false;
+        return $transaction
+            && in_array($transaction->purpose, Transaction::LICENCE_PURPOSES, true);
     }
 }

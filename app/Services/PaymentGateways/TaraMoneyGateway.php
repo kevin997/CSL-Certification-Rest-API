@@ -524,10 +524,15 @@ class TaraMoneyGateway implements PaymentGatewayInterface
     /**
      * Process a refund
      */
+    public function supportsRefunds(): bool
+    {
+        return false;
+    }
+
     public function processRefund(Transaction $transaction, ?float $amount = null, string $reason = ''): array
     {
-        // TaraMoney may not support automatic refunds via API
-        // This is a placeholder implementation
+        // TaraMoney does not support automatic refunds via API — handled through
+        // the manual refund path (KURSA Phase 5, doc §9.9).
         Log::warning('[TaraMoneyGateway] Refund requested but not supported via API', [
             'transaction_id' => $transaction->id,
             'gateway_transaction_id' => $transaction->gateway_transaction_id,
@@ -537,7 +542,8 @@ class TaraMoneyGateway implements PaymentGatewayInterface
 
         return [
             'success' => false,
-            'message' => 'Refunds are not supported automatically via TaraMoney API. Please process the refund manually.',
+            'unsupported' => true,
+            'message' => 'Refunds are not supported automatically via TaraMoney. Please process the refund manually.',
         ];
     }
 

@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\Course;
+use App\Models\Environment;
+use App\Models\EnvironmentLicence;
 use App\Models\Template;
+use App\Services\Licensing\EntitlementService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
@@ -501,6 +504,62 @@ class CourseController extends Controller
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
      */
+    /**
+     * Inline mirror of the CheckPlanLimit:published_courses middleware.
+     *
+     * The dedicated /courses/{id}/publish route carries that middleware, but a
+     * course can also reach the published state through store()/update(). This
+     * helper enforces the same environment-scoped published_courses cap on
+     * those paths so the limit can't be bypassed at create/update time.
+     *
+     * Returns a 403 JsonResponse when the gate blocks, or null to allow.
+     * Guarded by licensing.enforcement_enabled so it is a no-op while the
+     * feature is dark-launched (mirrors the middleware exactly).
+     */
+    private function enforcePublishedCourseLimit(Request $request): ?\Illuminate\Http\JsonResponse
+    {
+        if (! config('licensing.enforcement_enabled')) {
+            return null;
+        }
+
+        $environment = $request->get('environment');
+        if (! $environment instanceof Environment) {
+            return null; // fail-open with no tenant context (mirrors CheckPlanLimit)
+        }
+
+        $entitlement = EntitlementService::for($environment);
+
+        // Grace / past_due: no new over-provisioning during a lapsing licence.
+        if (in_array($entitlement->status(), [
+            EnvironmentLicence::STATUS_GRACE,
+            EnvironmentLicence::STATUS_PAST_DUE,
+        ], true)) {
+            return response()->json([
+                'error' => 'licence_in_grace',
+                'plan' => $entitlement->planType(),
+                'upgrade_url' => '/billing',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        $limit = $entitlement->limit('published_courses');
+        if ($limit === null) {
+            return null; // unlimited
+        }
+
+        $current = $entitlement->usage('published_courses');
+        if ($current + 1 > $limit) {
+            return response()->json([
+                'error' => 'plan_limit_reached',
+                'limit' => $limit,
+                'current' => $current,
+                'plan' => $entitlement->planType(),
+                'upgrade_url' => '/billing',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        return null;
+    }
+
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -538,6 +597,27 @@ class CourseController extends Controller
                 'status' => 'error',
                 'message' => 'Template not found or you do not have permission to use this template',
             ], Response::HTTP_FORBIDDEN);
+        }
+
+        // Only PUBLISHED templates may be used to build a course. This is the
+        // server-authoritative half of the template-selection rule (the picker
+        // only offers published templates; this guard rejects a draft/archived
+        // template even if a stale id is submitted directly).
+        if ($template->status !== 'published') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Only published templates can be used to create a course.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // KURSA Phase 9 correlation: creating a course straight into the
+        // "published" state bypasses the /courses/{id}/publish route (which is
+        // gated by licence.limit:published_courses). Enforce the same limit
+        // inline so the published-course cap can't be circumvented at creation.
+        if ($request->status === 'published') {
+            if ($gate = $this->enforcePublishedCourseLimit($request)) {
+                return $gate;
+            }
         }
 
         // Generate slug if not provided
@@ -679,8 +759,28 @@ class CourseController extends Controller
             $course->slug = $request->slug;
         }
         
+        // If the course is being switched to a DIFFERENT template, that new
+        // template must be published (mirrors the store() rule). Editing a
+        // course that already points at a legacy draft template is left
+        // untouched — only re-selecting a draft/archived template is blocked.
+        if ($request->has('template_id') && (int) $request->template_id !== (int) $course->template_id) {
+            $selectedTemplate = Template::find($request->template_id);
+            if ($selectedTemplate && $selectedTemplate->status !== 'published') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Only published templates can be used for a course.',
+                ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            }
+        }
+
         // Update published_at if status changes to published
         if ($request->has('status') && $request->status === 'published' && $course->status !== 'published') {
+            // KURSA Phase 9 correlation: transitioning a course to published via
+            // update() would otherwise bypass the licence.limit:published_courses
+            // gate on the dedicated publish route. Enforce it inline here too.
+            if ($gate = $this->enforcePublishedCourseLimit($request)) {
+                return $gate;
+            }
             $course->published_at = now();
         }
 

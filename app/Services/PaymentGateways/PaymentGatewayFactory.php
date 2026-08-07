@@ -20,7 +20,32 @@ class PaymentGatewayFactory
         'taramoney' => TaraMoneyGateway::class,
         'moneroo' => MonerooGateway::class,
     ];
-    
+
+    /**
+     * Test seam: gateway instances registered here are returned by create()
+     * verbatim (no initialize / no network). Used only by the test suite to
+     * exercise gateway-dependent flows without hitting a real provider.
+     *
+     * @var array<string, PaymentGatewayInterface>
+     */
+    protected static array $fakes = [];
+
+    /**
+     * Register a fake gateway instance for a gateway code (tests only).
+     */
+    public static function fake(string $gateway, PaymentGatewayInterface $instance): void
+    {
+        self::$fakes[$gateway] = $instance;
+    }
+
+    /**
+     * Clear all registered fakes (tests only).
+     */
+    public static function clearFakes(): void
+    {
+        self::$fakes = [];
+    }
+
     /**
      * Create a payment gateway instance
      *
@@ -30,6 +55,10 @@ class PaymentGatewayFactory
      */
     public static function create(string $gateway, PaymentGatewaySetting $settings): ?PaymentGatewayInterface
     {
+        if (isset(self::$fakes[$gateway])) {
+            return self::$fakes[$gateway];
+        }
+
         if (!isset(self::$gateways[$gateway])) {
             Log::error("Payment gateway not supported: {$gateway}");
             return null;

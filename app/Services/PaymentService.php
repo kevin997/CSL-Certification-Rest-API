@@ -189,6 +189,12 @@ class PaymentService
                 'state_code' => $stateCode,
                 'customer_name' => $order->billing_name,
                 'customer_email' => $order->billing_email,
+                'purpose' => (($order->total_amount ?? 0) == 0 ? Transaction::PURPOSE_FREE_ENROLLMENT : Transaction::PURPOSE_COURSE_SALE),
+                'source_type' => 'order',
+                'source_id' => $order->id,
+                'expected_amount' => $order->total_amount,
+                'expected_currency' => $order->currency ?? 'USD',
+                'platform_fee_amount' => 0,
             ];
 
             // Create the transaction record
@@ -579,6 +585,13 @@ class PaymentService
                     'total_amount' => $transactionAmounts['total_amount']
                 ]);
 
+                $transaction->purpose = (($order->total_amount ?? 0) == 0 ? Transaction::PURPOSE_FREE_ENROLLMENT : Transaction::PURPOSE_COURSE_SALE);
+                $transaction->source_type = 'order';
+                $transaction->source_id = $order->id;
+                $transaction->expected_amount = $order->total_amount;
+                $transaction->expected_currency = $order->currency ?? 'USD';
+                $transaction->platform_fee_amount = 0;
+
                 $transaction->save();
             } else {
                 // Use the existing transaction
@@ -900,7 +913,16 @@ class PaymentService
     }
 
     /**
-     * Process refund
+     * Process a refund for an order.
+     *
+     * KURSA licensing transition (Phase 5, doc §9.9): this now delegates to the
+     * authoritative {@see \App\Services\Payments\RefundService}, which writes the
+     * Phase 3 transaction schema (child refund transaction with purpose=refund,
+     * parent_transaction_id, negative amounts, verified_at on gateway
+     * confirmation) and applies the ledger effects. The previous implementation
+     * wrote non-existent columns (`type`, `metadata`) and simulated success — both
+     * are removed. The legacy simulated fallback is gone; unsupported gateways are
+     * handled through the manual refund path (RefundService::recordManualRefund).
      *
      * @param int $orderId
      * @param float|null $amount
@@ -912,255 +934,50 @@ class PaymentService
         $order = $this->orderService->getOrderById($orderId);
 
         if (!$order) {
-            return [
-                'success' => false,
-                'message' => 'Order not found'
-            ];
+            return ['success' => false, 'message' => 'Order not found'];
         }
 
-        // Check if order is paid
-        if ($order->payment_status !== 'paid') {
-            return [
-                'success' => false,
-                'message' => 'Order is not paid, cannot process refund'
-            ];
-        }
-
-        // Check if order is already refunded
-        if ($order->payment_status === 'refunded') {
-            return [
-                'success' => false,
-                'message' => 'Order is already refunded'
-            ];
-        }
-
-        // If amount is not specified, refund the full amount
-        if ($amount === null) {
-            $amount = $order->total;
-        }
-
-        // Check if refund amount is valid
-        if ($amount <= 0 || $amount > $order->total) {
-            return [
-                'success' => false,
-                'message' => 'Invalid refund amount'
-            ];
-        }
-
-        // Find the transaction for this order
+        // Resolve the settled parent transaction for this order.
         $transaction = Transaction::where('order_id', $order->id)
-            ->where('status', 'completed')
+            ->whereIn('status', [Transaction::STATUS_COMPLETED, Transaction::STATUS_PARTIALLY_REFUNDED])
+            ->where(function ($q) {
+                $q->whereNull('purpose')->orWhere('purpose', '!=', Transaction::PURPOSE_REFUND);
+            })
+            ->orderByDesc('id')
             ->first();
 
-        if ($transaction && $transaction->gateway_transaction_id) {
-            // Process refund through the payment gateway
-            return $this->processGatewayRefund($transaction, $amount, $reason);
-        } else {
-            // Fall back to legacy refund method
-            return $this->processLegacyRefund($order, $amount, $reason);
+        if (!$transaction) {
+            return ['success' => false, 'message' => 'No settled transaction found for this order to refund'];
         }
-    }
 
-    /**
-     * Process refund through a payment gateway
-     *
-     * @param Transaction $transaction
-     * @param float $amount
-     * @param string $reason
-     * @return array
-     */
-    protected function processGatewayRefund(Transaction $transaction, float $amount, string $reason): array
-    {
-        try {
-            // Get the payment gateway settings
-            $gatewaySettings = PaymentGatewaySetting::where('id', $transaction->payment_gateway_setting_id)->first();
+        $result = app(\App\Services\Payments\RefundService::class)
+            ->initiateRefund($transaction, $amount, $reason);
 
-            if (!$gatewaySettings) {
-                return [
-                    'success' => false,
-                    'message' => 'Payment gateway settings not found'
-                ];
-            }
-
-            // Process the refund using the gateway
-            $gateway = PaymentGatewayFactory::create($transaction->payment_method, $gatewaySettings);
-
-            if (!$gateway) {
-                return [
-                    'success' => false,
-                    'message' => 'Failed to initialize payment gateway'
-                ];
-            }
-
-            $refundResponse = $gateway->processRefund($transaction, $amount, $reason);
-
-            if ($refundResponse['success']) {
-                // Create a refund transaction
-                $refundTransaction = new Transaction();
-                $refundTransaction->order_id = $transaction->order_id;
-                $refundTransaction->environment_id = $transaction->environment_id;
-                $refundTransaction->payment_gateway_setting_id = $transaction->payment_gateway_setting_id;
-                $refundTransaction->payment_method = $transaction->payment_method;
-                $refundTransaction->transaction_id = 'REF-' . Str::random(16);
-                $refundTransaction->parent_transaction_id = $transaction->transaction_id;
-                $refundTransaction->gateway_transaction_id = $refundResponse['refund_id'];
-                $refundTransaction->customer_name = $transaction->customer_name;
-                $refundTransaction->customer_email = $transaction->customer_email;
-                $refundTransaction->currency = $transaction->currency;
-                $refundTransaction->description = 'Refund for transaction ' . $transaction->transaction_id . ($reason ? ': ' . $reason : '');
-                $refundTransaction->status = 'completed';
-                $refundTransaction->type = 'refund';
-
-                // For refunds, we need to calculate the proportional fee and tax amounts
-                // based on the original transaction's commission rate
-                $refundTransaction->amount = -$amount; // Base amount as negative for refunds
-
-                // If the original transaction had commission applied, apply proportional commission to the refund
-                if ($transaction->fee_amount && $transaction->tax_amount && $transaction->amount > 0) {
-                    // Calculate the proportion of the refund to the original transaction
-                    $proportion = $amount / $transaction->amount;
-
-                    // Apply the same proportion to the fee and tax
-                    $refundTransaction->fee_amount = - ($transaction->fee_amount * $proportion);
-                    $refundTransaction->tax_amount = - ($transaction->tax_amount * $proportion);
-                    $refundTransaction->total_amount = $refundTransaction->amount + $refundTransaction->fee_amount + $refundTransaction->tax_amount;
-
-                    Log::info('Applied proportional commission to refund transaction', [
-                        'original_transaction_id' => $transaction->transaction_id,
-                        'refund_transaction_id' => $refundTransaction->transaction_id,
-                        'refund_amount' => $amount,
-                        'proportion' => $proportion,
-                        'refund_fee' => $refundTransaction->fee_amount,
-                        'refund_tax' => $refundTransaction->tax_amount,
-                        'refund_total' => $refundTransaction->total_amount
-                    ]);
-                } else {
-                    // If no commission on original, just set total amount equal to refund amount
-                    $refundTransaction->total_amount = $refundTransaction->amount;
-
-                    Log::info('No commission applied to refund transaction', [
-                        'original_transaction_id' => $transaction->transaction_id,
-                        'refund_transaction_id' => $refundTransaction->transaction_id,
-                        'refund_amount' => $amount
-                    ]);
-                }
-                $refundTransaction->metadata = json_encode([
-                    'original_transaction_id' => $transaction->transaction_id,
-                    'reason' => $reason,
-                    'refund_data' => $refundResponse
-                ]);
-                $refundTransaction->refunded_at = now();
-                $refundTransaction->verified_at = now();
-                $refundTransaction->save();
-
-                // Update the order
-                $order = Order::find($transaction->order_id);
-                if ($order) {
-                    // Get existing payment data
-                    $metadata = json_decode($order->metadata ?? '{}', true);
-                    $paymentData = $metadata['payment_data'] ?? [];
-
-                    // Add refund data
-                    $paymentData['refund_id'] = $refundTransaction->transaction_id;
-                    $paymentData['refund_amount'] = $amount;
-                    $paymentData['refund_date'] = now()->format('Y-m-d H:i:s');
-                    $paymentData['refund_reason'] = $reason;
-
-                    // Update metadata
-                    $metadata['payment_data'] = $paymentData;
-
-                    // Update order payment status
-                    $order->update([
-                        'payment_status' => 'refunded',
-                        'status' => 'refunded',
-                        'metadata' => json_encode($metadata),
-                        'notes' => $order->notes . "\nRefund processed: $amount. Reason: $reason"
-                    ]);
-                }
-
-                return [
-                    'success' => true,
-                    'message' => 'Refund processed successfully',
-                    'refund_id' => $refundTransaction->transaction_id,
-                    'gateway_refund_id' => $refundTransaction->gateway_transaction_id,
-                    'original_transaction_id' => $transaction->transaction_id,
-                    'order_id' => $transaction->order_id,
-                    'amount' => $amount,
-                    'currency' => $transaction->currency,
-                    'refund_date' => $refundTransaction->refunded_at ? $refundTransaction->refunded_at->format('Y-m-d H:i:s') : now()->format('Y-m-d H:i:s')
-                ];
-            } else {
-                return [
-                    'success' => false,
-                    'message' => $refundResponse['message'] ?? 'Refund processing failed',
-                    'error' => $refundResponse['error'] ?? null,
-                    'error_code' => $refundResponse['error_code'] ?? null
-                ];
-            }
-        } catch (\Exception $e) {
-            Log::error('Refund processing error: ' . $e->getMessage());
-
-            return [
-                'success' => false,
-                'message' => 'Failed to process refund: ' . $e->getMessage()
-            ];
-        }
-    }
-
-    /**
-     * Process legacy refund (for backward compatibility)
-     *
-     * @param Order $order
-     * @param float $amount
-     * @param string $reason
-     * @return array
-     */
-    protected function processLegacyRefund(Order $order, float $amount, string $reason): array
-    {
-        // In a real application, this would integrate with a payment gateway
-        // For this demo, we'll simulate a successful refund
-
-        try {
-            // Generate refund ID
-            $refundId = 'REF-' . Str::random(16);
-
-            // Get existing payment data
-            $metadata = json_decode($order->metadata ?? '{}', true);
-            $paymentData = $metadata['payment_data'] ?? [];
-
-            // Add refund data
-            $paymentData['refund_id'] = $refundId;
-            $paymentData['refund_amount'] = $amount;
-            $paymentData['refund_date'] = now()->format('Y-m-d H:i:s');
-            $paymentData['refund_reason'] = $reason;
-
-            // Update metadata
-            $metadata['payment_data'] = $paymentData;
-
-            // Update order payment status
-            $order->update([
-                'payment_status' => 'refunded',
-                'status' => 'refunded',
-                'metadata' => json_encode($metadata),
-                'notes' => $order->notes . "\nRefund processed: $amount. Reason: $reason"
-            ]);
-
+        if ($result['status'] === 'ok') {
             return [
                 'success' => true,
-                'message' => 'Refund processed successfully',
-                'refund_id' => $refundId,
-                'order_number' => $order->order_number,
-                'amount' => $amount,
-                'refund_date' => now()->format('Y-m-d H:i:s')
-            ];
-        } catch (\Exception $e) {
-            Log::error('Refund processing error: ' . $e->getMessage());
-
-            return [
-                'success' => false,
-                'message' => 'Failed to process refund: ' . $e->getMessage()
+                'message' => $result['confirmed']
+                    ? 'Refund processed successfully'
+                    : 'Refund initiated; awaiting gateway confirmation',
+                'confirmed' => $result['confirmed'],
+                'refund_transaction_id' => $result['transaction']->transaction_id,
+                'order_id' => $order->id,
+                'amount' => abs((float) $result['transaction']->amount),
+                'currency' => $result['transaction']->currency,
+                'effects' => $result['effects'] ?? null,
             ];
         }
+
+        if ($result['status'] === 'unsupported') {
+            return [
+                'success' => false,
+                'unsupported' => true,
+                'message' => $result['message'],
+                'manual_instructions' => $result['manual_instructions'] ?? null,
+            ];
+        }
+
+        return ['success' => false, 'message' => $result['message'] ?? 'Refund failed'];
     }
 
     /**
@@ -1277,16 +1094,7 @@ class PaymentService
                     ->lockForUpdate()
                     ->firstOrFail();
 
-                $alreadyCompleted = $transaction->status === Transaction::STATUS_COMPLETED;
-
-                $transaction->status = Transaction::STATUS_COMPLETED;
-                $transaction->gateway_status = 'completed';
-                $transaction->gateway_response = $callbackData;
-                $transaction->notes = 'Payment completed via ' . $gateway;
-                $transaction->paid_at = $transaction->paid_at ?: now();
-                $transaction->save();
-
-                $this->processRelatedRecords($transaction, !$alreadyCompleted);
+                $this->applySettlement($transaction, 'completed', $callbackData);
             });
 
             return true;
@@ -1330,28 +1138,7 @@ class PaymentService
                     ->lockForUpdate()
                     ->firstOrFail();
 
-                if ($transaction->status === Transaction::STATUS_COMPLETED) {
-                    Log::warning('Ignoring failure callback for already completed transaction', [
-                        'transaction_id' => $transaction->transaction_id,
-                        'gateway' => $gateway,
-                    ]);
-                    return;
-                }
-
-                $transaction->status = Transaction::STATUS_FAILED;
-                $transaction->gateway_status = 'failed';
-                $transaction->gateway_response = $callbackData;
-                $transaction->notes = 'Payment failed via ' . $gateway;
-                $transaction->save();
-
-                $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
-                if ($payment && $payment->status !== Payment::STATUS_COMPLETED) {
-                    $payment->markAsFailed(
-                        $transaction->gateway_transaction_id,
-                        'failed',
-                        $callbackData
-                    );
-                }
+                $this->applyFailure($transaction, 'failed', $callbackData, 'Payment failed via ' . $gateway);
             });
 
             return true;
@@ -1423,6 +1210,72 @@ class PaymentService
 
 
     /**
+     * Reusable settlement core (KURSA plan §11 step 8). Marks a transaction
+     * completed and fulfils related records (order/subscription/invoice/payment).
+     *
+     * IMPORTANT: the caller MUST already hold a FOR UPDATE lock on the row and be
+     * inside a DB transaction. This is the single fulfilment path shared by the
+     * legacy callback service methods and the new WebhookProcessor — do NOT
+     * duplicate this logic elsewhere.
+     *
+     * @param Transaction $transaction Locked transaction row.
+     * @param string $gatewayStatus Raw gateway status for auditing.
+     * @param array $payload Verified gateway payload.
+     * @return void
+     */
+    public function applySettlement(Transaction $transaction, string $gatewayStatus, array $payload): void
+    {
+        $alreadyCompleted = $transaction->status === Transaction::STATUS_COMPLETED;
+
+        $transaction->status = Transaction::STATUS_COMPLETED;
+        $transaction->gateway_status = $gatewayStatus;
+        $transaction->gateway_response = $payload;
+        $transaction->paid_at = $transaction->paid_at ?: now();
+        $transaction->verified_at = $transaction->verified_at ?: now();
+        $transaction->save();
+        $transaction->refresh();
+
+        $this->processRelatedRecords($transaction, !$alreadyCompleted);
+    }
+
+    /**
+     * Reusable failure core. Marks a transaction failed without regressing an
+     * already-completed one. Caller MUST hold the row lock inside a DB transaction.
+     *
+     * @param Transaction $transaction Locked transaction row.
+     * @param string $gatewayStatus Raw gateway status for auditing.
+     * @param array $payload Verified gateway payload.
+     * @param string|null $notes Optional note.
+     * @return void
+     */
+    public function applyFailure(Transaction $transaction, string $gatewayStatus, array $payload, ?string $notes = null): void
+    {
+        if ($transaction->status === Transaction::STATUS_COMPLETED) {
+            Log::warning('Ignoring failure for already completed transaction', [
+                'transaction_id' => $transaction->transaction_id,
+            ]);
+            return;
+        }
+
+        $transaction->status = Transaction::STATUS_FAILED;
+        $transaction->gateway_status = $gatewayStatus;
+        $transaction->gateway_response = $payload;
+        if ($notes !== null) {
+            $transaction->notes = $notes;
+        }
+        $transaction->save();
+
+        $payment = Payment::where('transaction_id', $transaction->transaction_id)->first();
+        if ($payment && $payment->status !== Payment::STATUS_COMPLETED) {
+            $payment->markAsFailed(
+                $transaction->gateway_transaction_id,
+                $gatewayStatus,
+                $payload
+            );
+        }
+    }
+
+    /**
      * Process any records related to a transaction (orders, subscriptions, etc.)
      *
      * @param Transaction $transaction
@@ -1491,28 +1344,11 @@ class PaymentService
 
     protected function createCommissionRecordIfNeeded(Transaction $transaction): void
     {
-        if (!$transaction->order_id) {
-            return;
-        }
-
-        try {
-            $config = app(EnvironmentPaymentConfigService::class)->getConfig($transaction->environment_id);
-
-            if (!$config || !$config->use_centralized_gateways) {
-                return;
-            }
-
-            if (InstructorCommission::where('transaction_id', $transaction->id)->exists()) {
-                return;
-            }
-
-            app(InstructorCommissionService::class)->createCommissionRecord($transaction);
-        } catch (\Throwable $e) {
-            Log::error('Failed to create commission record from callback', [
-                'transaction_id' => $transaction->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        // KURSA licensing transition (Phase 2): course sales carry 0% platform commission,
+        // so no InstructorCommission (payout liability) records are created for course
+        // transactions anymore. This is intentionally a no-op; the call site is preserved
+        // so historical InstructorCommission read/approval/withdrawal paths keep working.
+        return;
     }
 
     /**
@@ -1549,58 +1385,21 @@ class PaymentService
             ->first();
 
         if ($globalTransaction) {
-            // Check if this is a supported plan transaction using basic detection
-            $isLikelySupportedPlan = $this->isLikelySupportedPlanTransaction($globalTransaction);
-
-            if ($isLikelySupportedPlan) {
-                Log::info('PaymentService: Supported plan transaction found with global lookup', [
+            // KURSA licensing transition (Phase 3): cross-environment lookup is now
+            // driven by the explicit transaction purpose (environment licences are
+            // billed centrally and can therefore be resolved outside their own
+            // environment scope), replacing the old amount/description heuristics.
+            if (in_array($globalTransaction->purpose, Transaction::LICENCE_PURPOSES, true)) {
+                Log::info('PaymentService: Environment-licence transaction found with global lookup', [
                     'transaction_id' => $transactionId,
                     'callback_environment_id' => $environment_id,
-                    'transaction_environment_id' => $globalTransaction->environment_id
+                    'transaction_environment_id' => $globalTransaction->environment_id,
+                    'purpose' => $globalTransaction->purpose,
                 ]);
                 return $globalTransaction;
             }
         }
 
         return null;
-    }
-
-    /**
-     * Basic check to identify likely supported plan transactions
-     * Used by PaymentService to avoid circular dependency
-     * 
-     * @param Transaction $transaction
-     * @return bool
-     */
-    private function isLikelySupportedPlanTransaction($transaction): bool
-    {
-        if (!$transaction) {
-            return false;
-        }
-
-        // Check transaction description for supported plan keywords
-        if ($transaction->description && stripos($transaction->description, 'supported plan') !== false) {
-            return true;
-        }
-
-        // Check if transaction amount matches supported plan pricing ($177.00)
-        if ($transaction->total_amount == 177.00) {
-            return true;
-        }
-
-        // Check transaction notes for supported plan indicators
-        if ($transaction->notes && stripos($transaction->notes, 'supported') !== false) {
-            return true;
-        }
-
-        $details = is_array($transaction->payment_method_details)
-            ? $transaction->payment_method_details
-            : json_decode($transaction->payment_method_details ?: '[]', true);
-
-        if (($details['scope'] ?? null) === 'platform') {
-            return true;
-        }
-
-        return false;
     }
 }

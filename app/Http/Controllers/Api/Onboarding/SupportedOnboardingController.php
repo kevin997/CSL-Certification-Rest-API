@@ -177,26 +177,30 @@ class SupportedOnboardingController extends Controller
                     'organization_type' => $request->organization_type,
                     'niche' => $request->niche,
                 ]);
-                
+
+                // KURSA licensing (Phase 4): dual-write a valid baseline environment
+                // licence (Free is a valid licence, doc §4.1). The paid White Label
+                // licence activates via the verified webhook path (LicenceService).
+                app(\App\Services\Licensing\LicenceService::class)->startFreeForever($environment);
+
                 // Use SubscriptionManager to handle subscription and payment creation
                 $subscriptionManager = app(SubscriptionManager::class);
-                
+
                 $subscriptionData = [
                     'user_id' => $user->id,
                     'plan_id' => $plan->id,
                     'environment_id' => $environment->id,
                     'billing_cycle' => 'monthly',
-                    'start_date' => now(),
-                    'end_date' => now()->addMonth(),
+                    'starts_at' => now(),
+                    'ends_at' => now()->addMonth(),
                     'status' => Subscription::PENDING,
-                    'is_trial' => false,
                 ];
-                
+
                 $paymentData = [
                     'payment_method' => $request->payment_method,
                     'payment_token' => $request->payment_token,
                     'currency' => 'USD',
-                    'amount' => $plan->setup_fee ?? 177.00,
+                    'amount' => (float) ($plan->price_annual ?? $plan->price_monthly ?? 0),
                 ];
                 
                 $subscriptionResult = $subscriptionManager->createSubscriptionWithPayment(
@@ -428,9 +432,9 @@ class SupportedOnboardingController extends Controller
                 'payment_method' => $request->payment_method,
                 'payment_token' => $request->payment_token,
                 'currency' => 'USD',
-                'amount' => $plan->setup_fee ?? 177.00,
+                'amount' => (float) ($plan->price_annual ?? $plan->price_monthly ?? 0),
             ];
-            
+
             // Try to process the payment using the existing subscription
             $subscriptionResult = $subscriptionManager->retryPayment($subscription, $paymentData);
             

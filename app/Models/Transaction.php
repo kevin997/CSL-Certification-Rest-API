@@ -66,6 +66,19 @@ class Transaction extends Model
         'refund_reason',
         'created_by',
         'updated_by',
+        'purpose',
+        'source_type',
+        'source_id',
+        'parent_transaction_id',
+        'provider_event_id',
+        'idempotency_key',
+        'expected_amount',
+        'expected_currency',
+        'platform_fee_amount',
+        'processor_fee_amount',
+        'verified_at',
+        'merchant_environment_id',
+        'gateway_account_environment_id',
     ];
 
     /**
@@ -82,6 +95,10 @@ class Transaction extends Model
         'gateway_response' => 'json',
         'paid_at' => 'datetime',
         'refunded_at' => 'datetime',
+        'expected_amount' => 'decimal:2',
+        'platform_fee_amount' => 'decimal:2',
+        'processor_fee_amount' => 'decimal:2',
+        'verified_at' => 'datetime',
     ];
 
     /**
@@ -94,6 +111,36 @@ class Transaction extends Model
     const STATUS_REFUNDED = 'refunded';
     const STATUS_PARTIALLY_REFUNDED = 'partially_refunded';
     const STATUS_CANCELLED = 'cancelled';
+    // KURSA licensing transition (Phase 5, doc §9.9): chargeback / dispute state.
+    const STATUS_DISPUTED = 'disputed';
+
+    /**
+     * Transaction purposes
+     */
+    const PURPOSE_COURSE_SALE = 'course_sale';
+    const PURPOSE_COURSE_SUBSCRIPTION_INITIAL = 'course_subscription_initial';
+    const PURPOSE_COURSE_SUBSCRIPTION_RENEWAL = 'course_subscription_renewal';
+    const PURPOSE_ENVIRONMENT_CREATOR_LICENSE = 'environment_creator_license';
+    const PURPOSE_ENVIRONMENT_WHITE_LABEL_LICENSE = 'environment_white_label_license';
+    const PURPOSE_ENVIRONMENT_LICENSE_RENEWAL = 'environment_license_renewal';
+    const PURPOSE_ENVIRONMENT_LICENSE_CHANGE = 'environment_license_change';
+    const PURPOSE_LEGACY_COMMISSION_INVOICE = 'legacy_commission_invoice';
+    const PURPOSE_REFUND = 'refund';
+    const PURPOSE_MANUAL_RECEIPT = 'manual_receipt';
+    const PURPOSE_FREE_ENROLLMENT = 'free_enrollment';
+
+    /**
+     * Purposes that represent an environment licence transaction.
+     *
+     * @var array<int, string>
+     */
+    const LICENCE_PURPOSES = [
+        self::PURPOSE_ENVIRONMENT_CREATOR_LICENSE,
+        self::PURPOSE_ENVIRONMENT_WHITE_LABEL_LICENSE,
+        self::PURPOSE_ENVIRONMENT_LICENSE_RENEWAL,
+        self::PURPOSE_ENVIRONMENT_LICENSE_CHANGE,
+        self::PURPOSE_LEGACY_COMMISSION_INVOICE,
+    ];
 
     /**
      * Boot the model.
@@ -497,5 +544,46 @@ class Transaction extends Model
     public function instructorCommission(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
         return $this->hasOne(InstructorCommission::class);
+    }
+
+    /**
+     * Purposes that represent a chargeable course-commerce sale which may be
+     * refunded through the KURSA refund flow (doc §9.9).
+     *
+     * @var array<int, string>
+     */
+    const REFUNDABLE_COURSE_PURPOSES = [
+        self::PURPOSE_COURSE_SALE,
+        self::PURPOSE_COURSE_SUBSCRIPTION_INITIAL,
+        self::PURPOSE_COURSE_SUBSCRIPTION_RENEWAL,
+    ];
+
+    /**
+     * Child refund transactions issued against this (parent) transaction. Refund
+     * children carry purpose = refund and parent_transaction_id = this uuid.
+     */
+    public function childRefunds(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Transaction::class, 'parent_transaction_id', 'transaction_id')
+            ->where('purpose', self::PURPOSE_REFUND);
+    }
+
+    /**
+     * Cumulative amount already refunded against this transaction. Sums the
+     * absolute value of refund children in the given statuses (default: money
+     * that is confirmed OR in-flight, so a caller cannot over-refund).
+     *
+     * @param array<int, string> $statuses
+     */
+    public function refundedAmount(array $statuses = [self::STATUS_COMPLETED, self::STATUS_PROCESSING]): float
+    {
+        // Bypass the environment global scope so cumulative math is correct in any
+        // context (webhook with no session environment, cross-env licence, etc.).
+        return (float) self::withoutGlobalScopes()
+            ->where('parent_transaction_id', $this->transaction_id)
+            ->where('purpose', self::PURPOSE_REFUND)
+            ->whereIn('status', $statuses)
+            ->get()
+            ->sum(fn ($t) => abs((float) $t->amount));
     }
 }

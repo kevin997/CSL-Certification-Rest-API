@@ -45,6 +45,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'chat.rate.messages' => \App\Http\Middleware\ChatRateLimitMiddleware::class . ':messages',
             'chat.rate.typing' => \App\Http\Middleware\ChatRateLimitMiddleware::class . ':typing',
+
+            // KURSA licence enforcement (Phase 9). Environment-scoped, dark by
+            // default (config licensing.enforcement_enabled).
+            'licence.feature' => \App\Http\Middleware\CheckPlanFeature::class,
+            'licence.limit' => \App\Http\Middleware\CheckPlanLimit::class,
         ]);
 
         // Rate limiters are configured in FortifyServiceProvider

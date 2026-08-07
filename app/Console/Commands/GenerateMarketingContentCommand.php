@@ -269,6 +269,21 @@ class GenerateMarketingContentCommand extends Command
             return 'failed';
         }
 
+        // Nothing downstream reviews this before it reaches the customer group,
+        // so degenerate model output must die here rather than be broadcast.
+        foreach (['fr' => $fr, 'en' => $en] as $locale => $text) {
+            if (($reason = $this->rejectionReason($text)) !== null) {
+                Log::warning('Rejected generated group tip', [
+                    'feature' => $feature['name'] ?? null,
+                    'locale' => $locale,
+                    'reason' => $reason,
+                    'text' => $text,
+                ]);
+
+                return 'failed';
+            }
+        }
+
         $link = config('services.retention.links.panel');
         $body = $fr."\n\n".$en."\n\n👉 ".$link;
 
@@ -276,6 +291,54 @@ class GenerateMarketingContentCommand extends Command
             'title' => $topic,
             'source' => ['kind' => 'feature', 'feature' => $feature],
         ]);
+    }
+
+    /**
+     * Why this generated line is unfit to broadcast, or null if it is fine.
+     *
+     * The 14B primary model silently fails over to llama3.2:1b on a CPU box
+     * (FailsOverToFallbackModel), and the 1B output is frequently degenerate:
+     * production rows contained mojibake ("®dutilisation rapide des cycles",
+     * "😊Ç½ deploy independent teams quickly") and hallucinated brand names
+     * ("Mettrah, Moka" in place of Monetbil and TaraMoney). Sending nothing is
+     * strictly better than sending that.
+     */
+    private function rejectionReason(string $text): ?string
+    {
+        if (mb_strlen($text) < 15) {
+            return 'too_short';
+        }
+
+        if (mb_strlen($text) > 300) {
+            return 'too_long';
+        }
+
+        // U+FFFD is the decoder's way of saying the bytes were already broken.
+        if (str_contains($text, "\u{FFFD}")) {
+            return 'replacement_character';
+        }
+
+        if (preg_match('/[\x{0000}-\x{0008}\x{000B}\x{000C}\x{000E}-\x{001F}]/u', $text)) {
+            return 'control_characters';
+        }
+
+        // Marketing copy here is French or English: Latin letters (accented
+        // included), digits, whitespace and ordinary punctuation. Anything else
+        // — ®, ½, CJK, stray emoji mid-sentence — is mojibake, not copy. The
+        // 👉 in the CTA is appended after this check, so it is unaffected.
+        // \p{Nd} (decimal digits), NOT \p{N}: the broader class also covers
+        // category No — vulgar fractions such as ½ — which is exactly the
+        // mojibake this is meant to catch.
+        if (preg_match('/[^\p{Latin}\p{Nd}\p{Zs}\s\'"’“”\-–—_.,;:!?()\[\]&\/%+#@€$£]/u', $text, $m)) {
+            return 'unexpected_character:'.$m[0];
+        }
+
+        // A run of letters with no vowel is a reliable tell for scrambled output.
+        if (preg_match('/[b-df-hj-np-tv-z]{6,}/iu', $text)) {
+            return 'unpronounceable_run';
+        }
+
+        return null;
     }
 
     private function generateStatus(array $feature): string

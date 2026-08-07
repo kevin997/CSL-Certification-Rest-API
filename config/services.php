@@ -135,6 +135,20 @@ return [
         'app_password' => env('STATUS_BLOG_APP_PASSWORD', 'Sh5e Dbbs knC4 DAUz k9Uo BeJO'),
     ],
 
+    // Marketing content engine.
+    'marketing' => [
+        // Documents FeatureInventoryService may mine for sellable "features".
+        // Paths are relative to base_path(). Deliberately EMPTY by default:
+        // everything under docs/ is internal engineering material, and mining it
+        // produced developer jargon in customer-facing WhatsApp broadcasts. Add a
+        // path here only if the document is genuinely customer-facing copy.
+        // Otherwise the curated FeatureInventoryService::seedFeatures() list is
+        // the only source.
+        'feature_docs' => array_values(array_filter(
+            explode(',', (string) env('MARKETING_FEATURE_DOCS', ''))
+        )),
+    ],
+
     // Retention engine — locales for bilingual messages and default links.
     'retention' => [
         'locales' => env('RETENTION_LOCALES', 'fr,en'),

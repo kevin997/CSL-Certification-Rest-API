@@ -19,6 +19,31 @@ class InstructorCommission extends Model
     protected $table = 'instructor_commissions';
 
     /**
+     * Commission statuses. KURSA licensing transition (Phase 5, doc §9.9):
+     * `reversed` (refund reversed a not-yet-paid liability) and `on_hold`
+     * (settlement frozen while a chargeback/dispute is open) were added.
+     */
+    const STATUS_PENDING = 'pending';
+    const STATUS_APPROVED = 'approved';
+    const STATUS_PAID = 'paid';
+    const STATUS_DISPUTED = 'disputed';
+    const STATUS_REVERSED = 'reversed';
+    const STATUS_ON_HOLD = 'on_hold';
+
+    /**
+     * Statuses whose payout liability is still outstanding (safe to reverse /
+     * hold without clawing back money already paid to the instructor).
+     *
+     * @var array<int, string>
+     */
+    const UNSETTLED_STATUSES = [
+        self::STATUS_PENDING,
+        self::STATUS_APPROVED,
+        self::STATUS_ON_HOLD,
+        self::STATUS_DISPUTED,
+    ];
+
+    /**
      * The attributes that are mass assignable.
      */
     protected $fillable = [

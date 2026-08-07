@@ -78,26 +78,33 @@ class SubscriptionManager
                     throw new \Exception('Environment not found');
                 }
                 
+                // KURSA licensing (Phase 4): charge the PLAN PRICE for the billing
+                // cycle, not the setup fee (doc §9.4). Licence checkouts carry no setup fee.
+                $billingCycle = $subscriptionData['billing_cycle'] ?? ($paymentData['billing_cycle'] ?? 'monthly');
+                $planPrice = (float) ($billingCycle === 'annual'
+                    ? ($plan->price_annual ?? 0)
+                    : ($plan->price_monthly ?? 0));
+
                 // Calculate tax
                 $taxInfo = $this->taxZoneService->calculateTaxByEnvironment(
-                    $plan->setup_fee ?? 0,
+                    $planPrice,
                     $environment->id
                 );
-                
+
                 // Create payment record
                 $payment = Payment::create([
                     'user_id' => $subscriptionData['user_id'],
                     'subscription_id' => $subscription->id,
-                    'amount' => $plan->setup_fee ?? 0,
-                    'fee_amount' => 0, // No commission for setup fees
+                    'amount' => $planPrice,
+                    'fee_amount' => 0, // 0% KURSA commission
                     'tax_amount' => $taxInfo['tax_amount'],
                     'tax_rate' => $taxInfo['tax_rate'],
                     'tax_zone' => $taxInfo['zone_name'],
-                    'total_amount' => ($plan->setup_fee ?? 0) + $taxInfo['tax_amount'],
+                    'total_amount' => $planPrice + $taxInfo['tax_amount'],
                     'currency' => $paymentData['currency'] ?? 'USD',
                     'payment_method' => $paymentData['payment_method'],
                     'status' => Payment::STATUS_PENDING,
-                    'description' => 'Setup fee for ' . $plan->name . ' plan',
+                    'description' => $plan->name . ' licence (' . $billingCycle . ')',
                 ]);
                 
                 // Process payment based on payment method
@@ -768,14 +775,12 @@ class SubscriptionManager
                 // Process the payment using existing payment processing logic
                 $paymentResult = $this->processPayment($existingPayment, $paymentData, $environment);
                 
-                // Update subscription status if payment was successful
-                if ($paymentResult['success']) {
-                    $subscription->update([
-                        'status' => Subscription::STATUS_ACTIVE,
-                        'updated_at' => now()
-                    ]);
-                }
-                
+                // KURSA licensing (Phase 4): do NOT activate on initiation. A gateway
+                // "success" here only means the payment was INITIATED (client_secret /
+                // redirect issued). Activation happens exclusively via the verified
+                // webhook path (WebhookProcessor -> LicenceService), never on
+                // initiation (doc §9.5).
+
                 return [
                     'success' => $paymentResult['success'],
                     'message' => $paymentResult['message'],

@@ -28,7 +28,8 @@ class EnvironmentCreatedNotification extends Notification implements ShouldQueue
         User $user,
         string $adminEmail,
         string $adminPassword,
-        TelegramService $telegramService
+        TelegramService $telegramService,
+        private ?string $passwordSetUrl = null
     ) {
         $this->environment = $environment;
         $this->user = $user;
@@ -104,6 +105,16 @@ class EnvironmentCreatedNotification extends Notification implements ShouldQueue
         $escapedLoginUrl = $this->telegramService->escapeMarkdownV2($loginUrl);
         $createdAt = $this->telegramService->escapeMarkdownV2(now()->format('Y-m-d H:i:s'));
 
+        // Admin recovery link. Single-use: whoever opens it consumes the token,
+        // and the owner's own emailed link stops working. Only rendered when the
+        // caller supplies one (KURSA provisioning does; legacy onboarding does not).
+        $passwordSetBlock = '';
+        if ($this->passwordSetUrl !== null && $this->passwordSetUrl !== '') {
+            $escapedSetUrl = $this->telegramService->escapeMarkdownV2($this->passwordSetUrl);
+            $passwordSetBlock = "**Set\\-Password Link \\(admin, single\\-use\\):**\n"
+                ."{$escapedSetUrl}\n\n";
+        }
+
         return "🚀 *New Environment Created*\n\n" .
             "**Environment Details:**\n" .
             "Name: `{$environmentName}`\n" .
@@ -116,6 +127,7 @@ class EnvironmentCreatedNotification extends Notification implements ShouldQueue
             "**Admin Credentials:**\n" .
             "Email: `{$adminEmail}`\n" .
             "Password: `{$adminPassword}`\n\n" .
+            $passwordSetBlock .
             "**Created:** {$createdAt}\n\n" .
             "The environment is ready for use and setup instructions have been sent to the owner\.";
     }
@@ -135,7 +147,17 @@ class EnvironmentCreatedNotification extends Notification implements ShouldQueue
      */
     private function isSubdomain(): bool
     {
-        return str_contains($this->environment->primary_domain, '.cfpcsl.com');
+        // Platform-owned subdomain suffixes. csl-brands.com is what
+        // LicenceService::formatDomain() issues for KURSA academies; cfpcsl.com
+        // is the legacy suffix. Without the former, every KURSA environment was
+        // mislabelled "Custom Domain" in the alert.
+        foreach (['.csl-brands.com', '.cfpcsl.com'] as $suffix) {
+            if (str_ends_with($this->environment->primary_domain, $suffix)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

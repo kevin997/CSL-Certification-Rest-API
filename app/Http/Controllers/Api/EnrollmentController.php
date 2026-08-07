@@ -57,7 +57,7 @@ class EnrollmentController extends Controller
         $validator = Validator::make($request->all(), [
             'course_id' => 'nullable|integer|exists:courses,id',
             'user_id' => 'nullable|integer|exists:users,id',
-            'status' => 'nullable|string|in:active,completed,expired,cancelled',
+            'status' => 'nullable|string|in:enrolled,in-progress,completed,dropped,cancelled,expired,active',
             'sort_by' => 'nullable|string|in:created_at,updated_at,expires_at',
             'sort_order' => 'nullable|string|in:asc,desc',
             'per_page' => 'nullable|integer|min:1|max:100',
@@ -101,7 +101,7 @@ class EnrollmentController extends Controller
 
         // Apply status filter
         if ($request->has('status')) {
-            $query->where('status', $request->input('status'));
+            $query->where('status', Enrollment::normalizeStatus($request->input('status')));
         }
 
         $sortBy = $request->input('sort_by', 'created_at');
@@ -131,7 +131,7 @@ class EnrollmentController extends Controller
                         'user_id' => (string) $environmentUser->user_id,
                         'user' => $environmentUser->user,
                         'course' => null,
-                        'status' => 'active',
+                        'status' => Enrollment::STATUS_ENROLLED,
                         'progress_percentage' => 0,
                         'created_at' => $environmentUser->created_at,
                         'updated_at' => $environmentUser->updated_at,
@@ -173,7 +173,7 @@ class EnrollmentController extends Controller
         $validator = Validator::make($request->all(), [
             'course_id' => 'required|integer|exists:courses,id',
             'user_id' => 'nullable|integer|exists:users,id',
-            'status' => 'nullable|string|in:active,completed,expired,cancelled',
+            'status' => 'nullable|string|in:enrolled,in-progress,completed,dropped,cancelled,expired,active',
             'notes' => 'nullable|string',
         ]);
 
@@ -232,7 +232,7 @@ class EnrollmentController extends Controller
         $enrollment = new Enrollment();
         $enrollment->course_id = $request->course_id;
         $enrollment->user_id = $userId;
-        $enrollment->status = $request->input('status', 'active');
+        $enrollment->status = Enrollment::normalizeStatus($request->input('status')) ?? Enrollment::STATUS_ENROLLED;
         $enrollment->expires_at = $request->expires_at;
         $enrollment->notes = $request->notes;
         $enrollment->enrolled_by = Auth::id();
@@ -292,7 +292,7 @@ class EnrollmentController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'status' => 'string|in:active,completed,expired,cancelled',
+            'status' => 'string|in:enrolled,in-progress,completed,dropped,cancelled,expired,active',
             'expires_at' => 'nullable|date',
             'notes' => 'nullable|string',
         ]);
@@ -305,7 +305,7 @@ class EnrollmentController extends Controller
         }
 
         // Update enrollment fields
-        if ($request->has('status')) $enrollment->status = $request->status;
+        if ($request->has('status')) $enrollment->status = Enrollment::normalizeStatus($request->status);
         if ($request->has('expires_at')) $enrollment->expires_at = $request->expires_at;
         if ($request->has('notes')) $enrollment->notes = $request->notes;
         $enrollment->save();
@@ -353,7 +353,7 @@ class EnrollmentController extends Controller
     public function myEnrollments(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'status' => 'nullable|string|in:active,completed,expired,cancelled',
+            'status' => 'nullable|string|in:enrolled,in-progress,completed,dropped,cancelled,expired,active',
             'sort_by' => 'nullable|string|in:created_at,updated_at,expires_at',
             'sort_order' => 'nullable|string|in:asc,desc',
             'per_page' => 'nullable|integer|min:1|max:100',
@@ -370,7 +370,7 @@ class EnrollmentController extends Controller
 
         // Apply status filter
         if ($request->has('status')) {
-            $query->where('status', $request->input('status'));
+            $query->where('status', Enrollment::normalizeStatus($request->input('status')));
         }
 
         // Apply sorting
@@ -408,7 +408,7 @@ class EnrollmentController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'status' => 'nullable|string|in:active,completed,expired,cancelled',
+            'status' => 'nullable|string|in:enrolled,in-progress,completed,dropped,cancelled,expired,active',
             'sort_by' => 'nullable|string|in:created_at,updated_at,expires_at',
             'sort_order' => 'nullable|string|in:asc,desc',
             'per_page' => 'nullable|integer|min:1|max:100',
@@ -425,7 +425,7 @@ class EnrollmentController extends Controller
 
         // Apply status filter
         if ($request->has('status')) {
-            $query->where('status', $request->input('status'));
+            $query->where('status', Enrollment::normalizeStatus($request->input('status')));
         }
 
         // Apply sorting

@@ -2470,7 +2470,7 @@ class StorefrontController extends Controller
 
             // Get commission rate from Commission model
             $commission = \App\Models\Commission::getActiveCommission($environmentId);
-            $commissionRate = $commission ? ($commission->rate / 100) : 0.17; // Default to 17% if no commission found
+            $commissionRate = $commission ? ($commission->rate / 100) : 0; // Phase 2: 0% platform commission (no 17% fallback)
 
             return response()->json([
                 'success' => true,
@@ -2540,7 +2540,7 @@ class StorefrontController extends Controller
         try {
             // Get commission rate from Commission model
             $commission = \App\Models\Commission::getActiveCommission($environmentId);
-            $commissionRate = $commission ? ($commission->rate / 100) : 0.17; // Default to 17% if no commission found
+            $commissionRate = $commission ? ($commission->rate / 100) : 0; // Phase 2: 0% platform commission (no 17% fallback)
 
             // Commission is INCLUDED in the entered price (deducted from seller earnings at sale time).
             // The stored product price equals what the customer pays — nothing is added on top.

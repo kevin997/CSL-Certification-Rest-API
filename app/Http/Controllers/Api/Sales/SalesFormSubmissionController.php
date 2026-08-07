@@ -319,18 +319,17 @@ class SalesFormSubmissionController extends Controller
                 'payment_method' => 'sales_form_manual',
                 'description' => 'Sales form order manual completion: ' . $order->order_number,
                 'paid_at' => now(),
+                'purpose' => Transaction::PURPOSE_MANUAL_RECEIPT,
+                'source_type' => 'order',
+                'source_id' => $order->id,
+                'expected_amount' => $order->total_amount,
+                'expected_currency' => $order->currency ?? 'USD',
+                'platform_fee_amount' => 0,
             ]);
 
-            if ($order->total_amount > 0) {
-                try {
-                    app(\App\Services\InstructorCommissionService::class)->createCommissionRecord($transaction);
-                } catch (\Exception $e) {
-                    Log::error('Failed to create commission for sales form order', [
-                        'order_id' => $order->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-            }
+            // KURSA licensing transition (Phase 2): sales-form manual completions carry 0%
+            // platform commission, so no InstructorCommission (payout liability) record is
+            // created for the course sale (doc §9.1).
 
             // Lift provisional access on enrollments for the courses in this order.
             $courseIds = $order->items

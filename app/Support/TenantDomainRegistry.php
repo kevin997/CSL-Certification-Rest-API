@@ -47,6 +47,9 @@ class TenantDomainRegistry
             'kursa.csl-brands.com',
             'sales.csl-brands.com',
             'manager.getkursa.space',
+            // Stable Vercel develop-branch preview for the admin app (for testing
+            // admin login on preview; remove if preview testing is no longer needed).
+            'kursa-systtem-admin-git-develop-kevin997s-projects.vercel.app',
             'localhost:3000',  // Certification
             'localhost:3001',  // Sales Website
             'localhost:3002',  // Training Website

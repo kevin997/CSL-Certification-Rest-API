@@ -110,10 +110,42 @@ Route::prefix('onboarding')->group(function () {
     Route::get('/plans', [PlanController::class, 'getOnboardingPlans']);
     Route::post('/referral/validate', [ReferralController::class, 'validate']);
 
-    // Validation routes
+    // Validation routes.
+    //
+    // NOTE: none of these carry a licence gate. They are anonymous, pre-signup
+    // availability checks — there is no environment yet to scope an entitlement
+    // against, so CheckPlanFeature would always fail open here anyway (see
+    // CheckPlanFeature::handle()). The real custom_domain entitlement is
+    // enforced on the authenticated /api/domains/validate route below.
     Route::post('/validate-email', [OnboardingController::class, 'validateEmail']);
     Route::post('/validate-domain', [OnboardingController::class, 'validateDomain']);
     Route::post('/validate', [OnboardingController::class, 'validate']);
+
+    // KURSA licensing (Phase 4): no-card public onboarding — provisions the
+    // environment + Free/Trial licence and emails a password-set link.
+    Route::post('/free', [\App\Http\Controllers\Api\LicenceController::class, 'onboardFree'])
+        ->middleware('throttle:20,1');
+    Route::post('/trial', [\App\Http\Controllers\Api\LicenceController::class, 'onboardTrial'])
+        ->middleware('throttle:20,1');
+});
+
+// KURSA licensing (Phase 4): public, throttled licence checkout lifecycle.
+// createCheckout works both authenticated (existing-env upgrade) and public
+// (anonymous new-env onboarding); pay & status are always public.
+Route::prefix('licence-checkouts')->group(function () {
+    Route::post('/', [\App\Http\Controllers\Api\LicenceController::class, 'createCheckout'])
+        ->middleware('throttle:30,1');
+    Route::post('/{uuid}/pay', [\App\Http\Controllers\Api\LicenceController::class, 'pay'])
+        ->middleware('throttle:30,1');
+    Route::get('/{uuid}/status', [\App\Http\Controllers\Api\LicenceController::class, 'checkoutStatus'])
+        ->middleware('throttle:60,1');
+});
+
+// KURSA licensing (Phase 4): owner/admin-gated environment licence management.
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/environment-licences/current', [\App\Http\Controllers\Api\LicenceController::class, 'current']);
+    Route::post('/environment-licences/trial', [\App\Http\Controllers\Api\LicenceController::class, 'startTrial']);
+    Route::post('/environment-licences/cancel', [\App\Http\Controllers\Api\LicenceController::class, 'cancel']);
 });
 
 // Queue status endpoint
@@ -264,7 +296,7 @@ Route::middleware(['throttle:reset'])->group(function () {
 // Token management routes
 // Authentication endpoints with rate limiting
 Route::middleware(['throttle:login'])->group(function () {
-    Route::post('/tokens', [TokenController::class, 'createToken']);
+    Route::post('/tokens', [TokenController::class, 'createToken'])->middleware('licence.feature:api_webhooks,limited');
 
     Route::post('/session/login', [SessionAuthController::class, 'login']);
     Route::post('/session/logout', [SessionAuthController::class, 'logout'])->middleware('auth:sanctum');
@@ -308,10 +340,11 @@ Route::post('/public/tax-rate', [OnboardingController::class, 'getTaxRate']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('environments', EnvironmentController::class);
     Route::get('environments/{id}/users', [EnvironmentController::class, 'getUsers']);
-    Route::post('environments/{id}/users', [EnvironmentController::class, 'addUser']);
+    Route::post('environments/{id}/users', [EnvironmentController::class, 'addUser'])->middleware('licence.limit:admin_seats');
     Route::delete('environments/{id}/users/{userId}', [EnvironmentController::class, 'removeUser']);
     Route::put('environments/{id}/demo-status', [EnvironmentController::class, 'updateDemoStatus']);
     Route::put('environments/{id}/owner-password', [EnvironmentController::class, 'updateOwnerPassword']);
+    Route::put('environments/{id}/users/{userId}/password', [EnvironmentController::class, 'updateUserPassword']);
 
     // Environment credentials routes
     Route::get('environment-credentials/{environmentId}', [EnvironmentCredentialsController::class, 'show']);
@@ -503,7 +536,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Certificate Template routes
     Route::get('/certificate-templates', [CertificateTemplateController::class, 'index']);
-    Route::post('/certificate-templates', [CertificateTemplateController::class, 'store']);
+    Route::post('/certificate-templates', [CertificateTemplateController::class, 'store'])->middleware('licence.limit:certificate_templates');
     Route::get('/certificate-templates/{id}', [CertificateTemplateController::class, 'show']);
     Route::put('/certificate-templates/{id}/set-default', [CertificateTemplateController::class, 'setDefault']);
     Route::delete('/certificate-templates/{id}', [CertificateTemplateController::class, 'destroy']);
@@ -555,7 +588,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/courses/{id}', [CourseController::class, 'show']);
     Route::put('/courses/{id}', [CourseController::class, 'update']);
     Route::delete('/courses/{id}', [CourseController::class, 'destroy']);
-    Route::post('/courses/{id}/publish', [CourseController::class, 'publish']);
+    Route::post('/courses/{id}/publish', [CourseController::class, 'publish'])->middleware('licence.limit:published_courses');
     Route::post('/courses/{id}/archive', [CourseController::class, 'archive']);
     Route::post('/courses/{id}/duplicate', [CourseController::class, 'duplicate']);
 
@@ -569,7 +602,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Enrollment routes
     Route::get('/enrollments', [EnrollmentController::class, 'index']);
-    Route::post('/enrollments', [EnrollmentController::class, 'store']);
+    Route::post('/enrollments', [EnrollmentController::class, 'store'])->middleware('licence.limit:active_learners');
     Route::get('/enrollments/{id}', [EnrollmentController::class, 'show']);
     Route::put('/enrollments/{id}', [EnrollmentController::class, 'update']);
     Route::delete('/enrollments/{id}', [EnrollmentController::class, 'destroy']);
@@ -618,7 +651,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/enrollment-codes/generate', [EnrollmentCodeController::class, 'generate']);
     Route::get('/enrollment-codes', [EnrollmentCodeController::class, 'index']);
     Route::get('/enrollment-codes/statistics/{productId}', [EnrollmentCodeController::class, 'statistics']);
-    Route::post('/enrollment-codes/redeem', [EnrollmentCodeController::class, 'redeem']);
+    Route::post('/enrollment-codes/redeem', [EnrollmentCodeController::class, 'redeem'])->middleware('licence.limit:active_learners');
     Route::post('/enrollment-codes/{id}/deactivate', [EnrollmentCodeController::class, 'deactivate']);
     Route::post('/enrollment-codes/bulk-deactivate', [EnrollmentCodeController::class, 'bulkDeactivate']);
     Route::post('/enrollment-codes/export', [EnrollmentCodeController::class, 'export']);
@@ -629,19 +662,19 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/sales-forms/course-structure/{courseId}', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'courseStructure']);
     Route::get('/sales-forms/analytics/summary', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'analyticsSummary']);
     Route::get('/sales-forms', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'index']);
-    Route::post('/sales-forms', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'store']);
+    Route::post('/sales-forms', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'store'])->middleware('licence.feature:sales_forms');
     Route::get('/sales-forms/{id}', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'show']);
-    Route::put('/sales-forms/{id}', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'update']);
-    Route::delete('/sales-forms/{id}', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'destroy']);
-    Route::post('/sales-forms/{id}/publish', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'publish']);
+    Route::put('/sales-forms/{id}', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'update'])->middleware('licence.feature:sales_forms');
+    Route::delete('/sales-forms/{id}', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'destroy'])->middleware('licence.feature:sales_forms');
+    Route::post('/sales-forms/{id}/publish', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'publish'])->middleware('licence.feature:sales_forms');
     Route::get('/sales-forms/{id}/analytics', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'analytics']);
     Route::get('/sales-forms/{id}/submissions', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'submissions']);
-    Route::get('/sales-forms/{id}/submissions/export', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'exportSubmissions']);
+    Route::get('/sales-forms/{id}/submissions/export', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'exportSubmissions'])->middleware('licence.feature:data_exports');
     Route::post('/sales-forms/orders/{orderId}/complete', [\App\Http\Controllers\Api\Sales\SalesFormSubmissionController::class, 'completeOrder']);
 
     // Marketing automations (Email/WhatsApp triggers — /settings/integrations/automations)
     Route::get('/marketing-automations', [\App\Http\Controllers\Api\MarketingAutomationController::class, 'index']);
-    Route::put('/marketing-automations/{trigger}', [\App\Http\Controllers\Api\MarketingAutomationController::class, 'upsert']);
+    Route::put('/marketing-automations/{trigger}', [\App\Http\Controllers\Api\MarketingAutomationController::class, 'upsert'])->middleware('licence.feature:marketing_automations');
 
     // "Notify me" interest in coming-soon integrations
     Route::get('/integration-interests', [\App\Http\Controllers\Api\IntegrationInterestController::class, 'index']);
@@ -682,7 +715,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Payment Gateway routes
     Route::get('/payment-gateways', [PaymentGatewayController::class, 'index']);
-    Route::post('/payment-gateways', [PaymentGatewayController::class, 'store']);
+    Route::post('/payment-gateways', [PaymentGatewayController::class, 'store'])->middleware('licence.limit:payment_gateways');
     Route::get('/payment-gateways/{id}', [PaymentGatewayController::class, 'show']);
     Route::put('/payment-gateways/{id}', [PaymentGatewayController::class, 'update']);
     Route::delete('/payment-gateways/{id}', [PaymentGatewayController::class, 'destroy']);
@@ -699,13 +732,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/transactions', [TransactionController::class, 'store']);
     Route::get('/transactions/{id}', [TransactionController::class, 'show']);
     Route::put('/transactions/{id}/status', [TransactionController::class, 'updateStatus']);
+    // KURSA Phase 5 (doc §9.9): admin/finance refund flow. Gateway-supported →
+    // /refund; unsupported gateways return 409 and are recorded via /refund/manual.
+    Route::post('/transactions/{id}/refund', [TransactionController::class, 'refund']);
+    Route::post('/transactions/{id}/refund/manual', [TransactionController::class, 'refundManual']);
     // Marketing routes
     // Referral routes
     Route::get('/marketing/referrals', [ReferralEnvironmentController::class, 'index']);
-    Route::post('/marketing/referrals', [ReferralEnvironmentController::class, 'store']);
+    Route::post('/marketing/referrals', [ReferralEnvironmentController::class, 'store'])->middleware('licence.feature:coupons_referrals,full');
     Route::get('/marketing/referrals/{id}', [ReferralEnvironmentController::class, 'show']);
-    Route::put('/marketing/referrals/{id}', [ReferralEnvironmentController::class, 'update']);
-    Route::delete('/marketing/referrals/{id}', [ReferralEnvironmentController::class, 'destroy']);
+    Route::put('/marketing/referrals/{id}', [ReferralEnvironmentController::class, 'update'])->middleware('licence.feature:coupons_referrals,full');
+    Route::delete('/marketing/referrals/{id}', [ReferralEnvironmentController::class, 'destroy'])->middleware('licence.feature:coupons_referrals,full');
     Route::get('/marketing/my-referrals', [ReferralEnvironmentController::class, 'myReferrals']);
     Route::post('/marketing/referrals/validate', [ReferralEnvironmentController::class, 'validate']);
     Route::get('/marketing/referrals/stats', [App\Http\Controllers\Api\ReferralEnvironmentController::class, 'getStats']);
@@ -741,12 +778,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/legal-pages/{id}/unpublish', [LegalPageController::class, 'unpublish'])->where('id', '[0-9]+');
     Route::delete('/legal-pages/{id}', [LegalPageController::class, 'destroy'])->where('id', '[0-9]+');
 
-    // Finance routes
-    Route::get('/finance/overview', [FinanceController::class, 'overview']);
-    Route::get('/finance/subscription', [FinanceController::class, 'subscription']);
-    Route::get('/finance/orders', [FinanceController::class, 'orders']);
-    Route::get('/finance/transactions', [FinanceController::class, 'transactions']);
-    Route::get('/finance/revenue-by-product-type', [FinanceController::class, 'revenueByProductType']);
+    // Finance routes — full-commerce finance is a Creator+ feature (doc §4.4).
+    // Free (financial_reports=basic) is blocked from these full endpoints.
+    Route::middleware('licence.feature:financial_reports,full')->group(function () {
+        Route::get('/finance/overview', [FinanceController::class, 'overview']);
+        Route::get('/finance/subscription', [FinanceController::class, 'subscription']);
+        Route::get('/finance/orders', [FinanceController::class, 'orders']);
+        Route::get('/finance/transactions', [FinanceController::class, 'transactions']);
+        Route::get('/finance/revenue-by-product-type', [FinanceController::class, 'revenueByProductType']);
+    });
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('/subscription/{id}', [SubscriptionController::class, 'show']);
@@ -852,11 +892,11 @@ Route::post('/webhooks/bunny/stream', [App\Http\Controllers\MediaAssetController
 
 // Validation routes
 Route::post('/subdomains/validate', [ValidationController::class, 'validateSubdomain']);
-Route::post('/domains/validate', [ValidationController::class, 'validateDomain']);
+Route::post('/domains/validate', [ValidationController::class, 'validateDomain'])->middleware('licence.feature:custom_domain');
 Route::post('/emails/validate', [ValidationController::class, 'validateEmail']);
 
 // Enrollment code public route - allows unauthenticated users to redeem codes with account creation
-Route::post('/enrollment-codes/redeem-with-registration', [EnrollmentCodeController::class, 'redeemWithRegistration']);
+Route::post('/enrollment-codes/redeem-with-registration', [EnrollmentCodeController::class, 'redeemWithRegistration'])->middleware('licence.limit:active_learners');
 
 // Certificate public routes
 Route::get('/certificates/download/{path}', [CertificateController::class, 'download'])->name('api.certificates.download');
@@ -921,7 +961,7 @@ Route::group(['prefix' => 'storefront'], function () {
     Route::post('/{environmentId}/calculate-product-price', [StorefrontController::class, 'calculateProductPriceWithCommission']);
 
     // Free course enrollment (requires authentication)
-    Route::post('/{environmentId}/enroll-free', [StorefrontController::class, 'enrollFree']);
+    Route::post('/{environmentId}/enroll-free', [StorefrontController::class, 'enrollFree'])->middleware('licence.limit:active_learners');
 });
 
 // Continue payment for a pending order
@@ -946,6 +986,12 @@ Route::group(['prefix' => 'payments'], function () {
     Route::match(['get', 'post'], '/transactions/webhook/{gateway}/{environment_id}', [TransactionController::class, 'webhook'])->name('api.transactions.webhook');
     Route::get('/paypal/return', [TransactionController::class, 'paypalReturn'])->name('api.paypal.return');
     Route::get('/paypal/cancel', [TransactionController::class, 'paypalCancel'])->name('api.paypal.cancel');
+
+    // Public payment-status poll endpoint (KURSA plan §9.2). Display-only:
+    // browser checkouts poll this to observe asynchronous settlement.
+    Route::get('/transactions/{transaction_uuid}/status', [TransactionController::class, 'pollStatus'])
+        ->middleware('throttle:60,1')
+        ->name('api.transactions.status');
 });
 
 // Team Management Routes
@@ -959,7 +1005,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Team members routes
     Route::get('/teams/{id}/members', [\App\Http\Controllers\Api\TeamController::class, 'getTeamMembers']);
-    Route::post('/teams/invite', [\App\Http\Controllers\Api\TeamController::class, 'inviteMember']);
+    Route::post('/teams/invite', [\App\Http\Controllers\Api\TeamController::class, 'inviteMember'])->middleware('licence.limit:admin_seats');
     Route::post('/teams/accept-invitation', [\App\Http\Controllers\Api\TeamController::class, 'acceptInvitation']);
     Route::post('/teams/remove-member', [\App\Http\Controllers\Api\TeamController::class, 'removeMember']);
     Route::post('/teams/update-member-role', [\App\Http\Controllers\Api\TeamController::class, 'updateMemberRole']);
@@ -1151,6 +1197,12 @@ Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
         Route::put('/{id}', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'update']);
     });
 
+    // Owner password-set link re-send. Onboarding emails the link once from an
+    // unrelated sender domain, so it is frequently never seen; the stored token
+    // is bcrypt-hashed and therefore unrecoverable. This issues a fresh one.
+    Route::post('/environments/{environmentId}/resend-password-link', [\App\Http\Controllers\Api\Admin\PasswordLinkController::class, 'resend'])
+        ->middleware('throttle:20,1');
+
     // System Dashboard
     Route::prefix('system-dashboard')->group(function () {
         Route::get('/overview',              [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'overview']);
@@ -1228,7 +1280,7 @@ Route::middleware(['auth:sanctum'])->prefix('instructor')->group(function () {
 // Live Sessions Routes
 Route::middleware(['auth:sanctum'])->prefix('live-sessions')->group(function () {
     Route::get('/', [\App\Http\Controllers\Api\LiveSessionController::class, 'index']);
-    Route::post('/', [\App\Http\Controllers\Api\LiveSessionController::class, 'store']);
+    Route::post('/', [\App\Http\Controllers\Api\LiveSessionController::class, 'store'])->middleware('licence.feature:live_sessions,full');
     Route::get('/stats', [\App\Http\Controllers\Api\LiveSessionController::class, 'stats']);
     Route::get('/{liveSession}', [\App\Http\Controllers\Api\LiveSessionController::class, 'show']);
     Route::put('/{liveSession}', [\App\Http\Controllers\Api\LiveSessionController::class, 'update']);

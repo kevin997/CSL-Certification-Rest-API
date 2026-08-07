@@ -37,6 +37,15 @@ class Enrollment extends Model
     const STATUS_IN_PROGRESS = 'in-progress';
     const STATUS_COMPLETED = 'completed';
     const STATUS_DROPPED = 'dropped';
+    const STATUS_CANCELLED = 'cancelled';
+    const STATUS_EXPIRED = 'expired';
+
+    public const STATUSES = [self::STATUS_ENROLLED, self::STATUS_IN_PROGRESS, self::STATUS_COMPLETED, self::STATUS_DROPPED, self::STATUS_CANCELLED, self::STATUS_EXPIRED];
+
+    public static function normalizeStatus(?string $s): ?string
+    {
+        return $s === 'active' ? self::STATUS_ENROLLED : $s;
+    }
 
     /**
      * The attributes that should be cast.

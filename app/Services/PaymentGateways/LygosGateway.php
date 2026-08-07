@@ -352,65 +352,29 @@ class LygosGateway implements PaymentGatewayInterface
      * @param string $reason
      * @return array
      */
+    public function supportsRefunds(): bool
+    {
+        return false;
+    }
+
     public function processRefund(Transaction $transaction, ?float $amount = null, string $reason = ''): array
     {
-        // If no gateway transaction ID, we can't process a refund
-        if (!$transaction->gateway_transaction_id) {
-            return [
-                'success' => false,
-                'message' => 'No gateway transaction ID found'
-            ];
-        }
+        // KURSA licensing transition (Phase 5, doc §9.9): Lygos has no programmatic
+        // refund API wired here. The previous SIMULATED "success" is removed —
+        // refunds for Lygos must be processed out-of-band and recorded via the
+        // manual refund path.
+        Log::warning('[LygosGateway] Refund requested but not supported via API', [
+            'transaction_id' => $transaction->id,
+            'gateway_transaction_id' => $transaction->gateway_transaction_id,
+            'amount' => $amount,
+            'reason' => $reason,
+        ]);
 
-        try {
-            // In a real implementation, we would make an API call to Lygos to process the refund
-            // For this demo, we'll simulate a successful refund
-
-            // Simulate API call delay
-            usleep(500000); // 0.5 seconds
-
-            // If amount is not specified, refund the full amount
-            if ($amount === null) {
-                $amount = $transaction->total_amount;
-            }
-
-            // Generate a refund ID
-            $refundId = 'REF-' . Str::random(10);
-
-            // Simulate the response from Lygos API
-            $responseData = [
-                'id' => $refundId,
-                'gateway_id' => $transaction->gateway_transaction_id,
-                'amount' => $amount,
-                'currency' => $transaction->currency,
-                'reason' => $reason,
-                'status' => 'completed',
-                'creation_date' => now()->toIso8601ZuluString(),
-                'completion_date' => now()->toIso8601ZuluString()
-            ];
-
-            return [
-                'success' => true,
-                'message' => 'Refund processed successfully',
-                'refund_id' => $refundId,
-                'transaction_id' => $transaction->gateway_transaction_id,
-                'amount' => $amount,
-                'currency' => $transaction->currency,
-                'reason' => $reason,
-                'created' => strtotime($responseData['creation_date']),
-                'status' => 'completed',
-                'response' => $responseData
-            ];
-        } catch (\Exception $e) {
-            Log::error('Lygos refund error: ' . $e->getMessage());
-
-            return [
-                'success' => false,
-                'message' => 'Refund processing failed: ' . $e->getMessage(),
-                'error' => $e->getMessage(),
-                'error_code' => $e->getCode()
-            ];
-        }
+        return [
+            'success' => false,
+            'unsupported' => true,
+            'message' => 'Refunds are not supported automatically via Lygos. Please process the refund manually.',
+        ];
     }
 
     /**

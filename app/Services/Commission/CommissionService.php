@@ -75,32 +75,15 @@ class CommissionService
      */
     public function extractCommissionFromProductPrice(float $productPriceWithCommission, ?int $environmentId = null): array
     {
-        // Get the active commission
-        $commission = $this->getActiveCommission($environmentId);
-        
-        if (!$commission) {
-            Log::warning('No active commission found, using default 17% commission', [
-                'environment_id' => $environmentId,
-                'product_price_with_commission' => $productPriceWithCommission
-            ]);
-            
-            // Create a temporary commission object with default rate
-            $commission = new Commission();
-            $commission->rate = 17.0; // Default 17% if no commission record found
-        }
-        
-        $commissionRate = $commission->rate / 100; // Convert percentage to decimal
-        
-        // Calculate original price: productPriceWithCommission = originalPrice + (originalPrice * commissionRate)
-        // So: productPriceWithCommission = originalPrice * (1 + commissionRate)
-        // Therefore: originalPrice = productPriceWithCommission / (1 + commissionRate)
-        $originalPrice = $productPriceWithCommission / (1 + $commissionRate);
-        $commissionAmount = $productPriceWithCommission - $originalPrice;
-        
+        // KURSA licensing transition (Phase 2): course sales carry 0% platform commission
+        // on every plan. The price is the creator's selling price and is used AS-IS — no
+        // commission is extracted and NO reverse `/(1 + rate)` calculation is performed.
+        // This method is retained as a zero-returning shim so every existing caller keeps
+        // working without change. The 17% fallback has been removed permanently.
         return [
-            'original_price' => $originalPrice,
-            'commission_amount' => $commissionAmount,
-            'commission_rate' => $commission->rate
+            'original_price' => $productPriceWithCommission,
+            'commission_amount' => 0.0,
+            'commission_rate' => 0.0,
         ];
     }
     
@@ -114,38 +97,31 @@ class CommissionService
      */
     public function calculateTransactionAmountsWithCommissionIncluded(float $productPriceWithCommission, ?int $environmentId = null, ?Order $order = null): array
     {
-        // Extract commission from product price
-        $commissionInfo = $this->extractCommissionFromProductPrice($productPriceWithCommission, $environmentId);
-        
-        $originalPrice = $commissionInfo['original_price'];
-        $commissionAmount = $commissionInfo['commission_amount'];
-        $commissionRate = $commissionInfo['commission_rate'];
-        
-        // Calculate the tax amount using the tax zone service (tax is applied to the original price, not the price with commission)
-        $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($originalPrice, $environmentId, $order);
+        // Phase 2: 0% platform commission. The price is the creator's selling price and is
+        // used AS-IS — the platform fee is always 0 and there is no reverse calculation.
+        // Tax is computed on the selling price via the same TaxZoneService call as before.
+        $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($productPriceWithCommission, $environmentId, $order);
         $taxAmount = $taxInfo['tax_amount'];
         $taxRate = $taxInfo['tax_rate'];
         $taxZone = $taxInfo['zone_name'];
-        
-        // Total amount = product price with commission + tax
+
+        // Total amount = selling price + tax
         $totalAmount = $productPriceWithCommission + $taxAmount;
-        
+
         // Log tax zone information
         if ($taxZone === null) {
             Log::warning('No tax zone found for environment, using 0% tax rate', [
                 'environment_id' => $environmentId,
-                'product_price_with_commission' => $productPriceWithCommission,
-                'original_price' => $originalPrice,
-                'commission_amount' => $commissionAmount
+                'product_price' => $productPriceWithCommission,
             ]);
         }
-        
+
         return [
-            'fee_amount' => $commissionAmount, // Commission amount extracted from product price
+            'fee_amount' => 0.0, // 0% platform commission on course sales
             'tax_amount' => $taxAmount,
             'total_amount' => $totalAmount,
-            'base_amount' => $originalPrice, // Original price without commission
-            'commission_rate' => $commissionRate,
+            'base_amount' => $productPriceWithCommission, // Selling price (no commission extracted)
+            'commission_rate' => 0.0,
             'tax_rate' => $taxRate,
             'tax_zone' => $taxZone
         ];
@@ -160,33 +136,19 @@ class CommissionService
      */
     public function calculateTransactionAmounts(float $baseAmount, ?int $environmentId = null): array
     {
-        // Get the active commission
-        $commission = $this->getActiveCommission($environmentId);
-        
-        if (!$commission) {
-            Log::warning('No active commission found, using default 17% commission', [
-                'environment_id' => $environmentId,
-                'base_amount' => $baseAmount
-            ]);
-            
-            // Create a temporary commission object with default rate
-            $commission = new Commission();
-            $commission->rate = 17.0; // Default 17% if no commission record found
-        }
-        
-        // Calculate the fee amount using the commission rate
-        $commissionAmounts = $commission->calculateAmounts($baseAmount);
-        $feeAmount = $commissionAmounts['fee_amount'];
-        
+        // Phase 2: 0% platform commission — the fee is always 0. The 17% fallback has been
+        // removed. Tax computation is unchanged (applied to the base amount as before).
+        $feeAmount = 0.0;
+
         // Calculate the tax amount using the tax zone service
         $taxInfo = $this->taxZoneService->calculateTaxByEnvironment($baseAmount, $environmentId);
         $taxAmount = $taxInfo['tax_amount'];
         $taxRate = $taxInfo['tax_rate'];
         $taxZone = $taxInfo['zone_name'];
-        
-        // Calculate the total amount
+
+        // Calculate the total amount (fee is 0)
         $totalAmount = $baseAmount + $feeAmount + $taxAmount;
-        
+
         // Log tax zone information
         if ($taxZone === null) {
             Log::warning('No tax zone found for environment, using 0% tax rate', [
@@ -195,13 +157,13 @@ class CommissionService
                 'fee_amount' => $feeAmount
             ]);
         }
-        
+
         return [
             'fee_amount' => $feeAmount,
             'tax_amount' => $taxAmount,
             'total_amount' => $totalAmount,
             'base_amount' => $baseAmount,
-            'commission_rate' => $commission->rate,
+            'commission_rate' => 0.0,
             'tax_rate' => $taxRate,
             'tax_zone' => $taxZone
         ];

@@ -407,6 +407,11 @@ class StripeGateway implements PaymentGatewayInterface
      * @param string $reason
      * @return array
      */
+    public function supportsRefunds(): bool
+    {
+        return true;
+    }
+
     public function processRefund(Transaction $transaction, ?float $amount = null, string $reason = ''): array
     {
         // If no gateway transaction ID, we can't process a refund
@@ -416,54 +421,76 @@ class StripeGateway implements PaymentGatewayInterface
                 'message' => 'No gateway transaction ID found'
             ];
         }
-        
+
+        if (!$this->stripeClient) {
+            return [
+                'success' => false,
+                'message' => 'Stripe client not initialized'
+            ];
+        }
+
         try {
-            // In a real implementation, we would use the Stripe SDK to process the refund
-            // For this demo, we'll simulate a successful refund
-            
-            // Simulate API call delay
-            usleep(500000); // 0.5 seconds
-            
             // If amount is not specified, refund the full amount
             if ($amount === null) {
-                $amount = $transaction->total_amount;
+                $amount = (float) $transaction->total_amount;
             }
-            
-            // Generate a Stripe-like refund ID
-            $refundId = 're_' . Str::random(24);
-            
-            // Prepare response data
-            $responseData = [
-                'id' => $refundId,
-                'object' => 'refund',
-                'amount' => (int)($amount * 100), // Convert to cents
-                'balance_transaction' => 'txn_' . Str::random(24),
-                'charge' => $transaction->gateway_transaction_id,
-                'created' => time(),
-                'currency' => strtolower($transaction->currency),
+
+            // KURSA Phase 5 (doc §9.9): real Stripe Refunds API call. Zero-decimal
+            // currencies are not converted to cents by *100; keep the common case
+            // (USD) correct — smallest unit = amount * 100.
+            $params = [
+                'amount' => (int) round($amount * 100),
                 'metadata' => [
                     'reason' => $reason,
-                    'transaction_id' => $transaction->transaction_id
+                    'transaction_id' => $transaction->transaction_id,
                 ],
-                'payment_intent' => 'pi_' . Str::random(24),
-                'reason' => $reason,
-                'receipt_number' => null,
-                'source_transfer_reversal' => null,
-                'status' => 'succeeded',
-                'transfer_reversal' => null
             ];
-            
+            if ($reason !== '') {
+                // Stripe only accepts a fixed enum for `reason`; free text goes to
+                // metadata (above). Send a valid enum value when it maps cleanly.
+                $mapped = in_array($reason, ['duplicate', 'fraudulent', 'requested_by_customer'], true)
+                    ? $reason
+                    : 'requested_by_customer';
+                $params['reason'] = $mapped;
+            }
+
+            // The stored gateway reference may be a PaymentIntent (pi_) or a
+            // Charge (ch_). Stripe's Refund accepts either key.
+            $ref = (string) $transaction->gateway_transaction_id;
+            if (str_starts_with($ref, 'pi_')) {
+                $params['payment_intent'] = $ref;
+            } else {
+                $params['charge'] = $ref;
+            }
+
+            $refund = $this->stripeClient->refunds->create($params);
+
+            $status = $refund->status ?? 'pending';
+            // Stripe returns 'succeeded' synchronously for card refunds and
+            // 'pending' for async ones (confirmed later via charge.refunded).
+            $confirmed = $status === 'succeeded';
+
             return [
                 'success' => true,
                 'message' => 'Refund processed successfully',
-                'refund_id' => $refundId,
+                'refund_id' => $refund->id,
                 'transaction_id' => $transaction->gateway_transaction_id,
                 'amount' => $amount,
                 'currency' => $transaction->currency,
                 'reason' => $reason,
-                'created' => $responseData['created'],
-                'status' => 'succeeded',
-                'response' => $responseData
+                'created' => $refund->created ?? time(),
+                'status' => $status,
+                'confirmed' => $confirmed,
+                'response' => json_decode(json_encode($refund), true),
+            ];
+        } catch (StripeApiException $e) {
+            Log::error('Stripe refund error: ' . $e->getMessage());
+
+            return [
+                'success' => false,
+                'message' => 'Refund processing failed: ' . $e->getMessage(),
+                'error' => $e->getMessage(),
+                'error_code' => $e->getCode(),
             ];
         } catch (\Exception $e) {
             Log::error('Stripe refund error: ' . $e->getMessage());

@@ -62,7 +62,8 @@ Route::get('/integrations/whatsapp/config', [ThirdPartyServiceController::class,
 // Admin token login — no CSRF required (cross-domain admin clients like manager.getkursa.space
 // cannot use cookie-based Sanctum auth since they are on a different root domain than the API).
 // This endpoint authenticates and returns a Sanctum API token for Bearer auth.
-Route::post('/admin/token-login', [TokenController::class, 'createToken']);
+// Rate-limited to blunt credential brute-force against the admin login (security audit finding).
+Route::post('/admin/token-login', [TokenController::class, 'createToken'])->middleware('throttle:10,1');
 
 // Marketing campaign one-click unsubscribe (signed link emailed with every campaign)
 Route::get('/marketing/unsubscribe/{user}', [MarketingUnsubscribeController::class, '__invoke'])->name('marketing.unsubscribe')->middleware('signed');

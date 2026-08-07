@@ -74,29 +74,34 @@ class FeatureInventoryService
      */
     private function corpus(): array
     {
-        $paths = [];
+        // Explicit allowlist ONLY — never a blanket glob over docs/.
+        //
+        // This used to glob docs/architecture/*.md, docs/*.md and README.md,
+        // excluding only AGENTS.MD and files over MAX_DOC_BYTES. Everything in
+        // docs/ is internal engineering material (architecture notes, bug
+        // write-ups, DB schema), so the extractor happily turned it into
+        // "features" that were then broadcast to customers as marketing copy —
+        // e.g. "Implement the Factory Pattern - Creating Multiple Payment
+        // Gateways" (docs/architecture/11-backend-architecture.md), "Easy
+        // deployment cycles for independent teams"
+        // (docs/architecture/12-unified-project-structure.md) and "Real Product
+        // Value Tracking" (docs/ENROLLMENT_CODE_COMMISSION_TRACKING.md).
+        //
+        // A prompt asking the model to "ignore internal implementation details"
+        // is not a control; the corpus is the control. Default is empty, so the
+        // curated seedFeatures() list is the sole source unless someone
+        // deliberately allowlists a customer-facing document.
+        $allowlist = (array) config('services.marketing.feature_docs', []);
 
-        $architectureGlob = base_path('docs/architecture/*.md');
-        foreach (glob($architectureGlob) ?: [] as $file) {
-            $paths[] = $file;
-        }
-
-        $docsGlob = base_path('docs/*.md');
-        foreach (glob($docsGlob) ?: [] as $file) {
-            $paths[] = $file;
-        }
-
-        $readme = base_path('README.md');
-        if (File::exists($readme)) {
-            $paths[] = $readme;
-        }
+        $paths = array_map(
+            fn (string $relative): string => base_path(ltrim($relative, '/')),
+            array_filter($allowlist, 'is_string')
+        );
 
         return array_values(array_filter($paths, function (string $path) {
-            if (strtoupper(basename($path)) === 'AGENTS.MD') {
-                return false;
-            }
-
             if (! File::exists($path)) {
+                Log::warning("FeatureInventoryService: allowlisted doc not found: {$path}");
+
                 return false;
             }
 

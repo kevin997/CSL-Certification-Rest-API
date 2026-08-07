@@ -10,6 +10,7 @@ use App\Console\Commands\RegularizeCompletedOrders;
 use App\Console\Commands\SendProductSubscriptionReminders;
 use App\Console\Commands\SendInstructorWeeklyDigest;
 use App\Console\Commands\SendLearnerWeeklyDigest;
+use App\Console\Commands\VerifyPendingPayments;
 
 /*
 |--------------------------------------------------------------------------
@@ -36,8 +37,13 @@ Artisan::command('inspire', function () {
 |
 */
 
-Schedule::command(GenerateMonthlyInvoices::class)
-    ->lastDayOfMonth('23:59');
+// KURSA licensing transition (Phase 2): monthly platform-fee (commission) invoices are
+// retired — course sales carry 0% commission, so there is nothing to invoice. The
+// GenerateMonthlyInvoices command class and InvoiceService are intentionally KEPT (not
+// deleted) so historical invoices stay readable and the command can still be run manually
+// if ever needed, but it is no longer scheduled.
+// Schedule::command(GenerateMonthlyInvoices::class)
+//     ->lastDayOfMonth('23:59');
 
 // Regularize orders with completed transactions every 5 minutes
 Schedule::command(RegularizeCompletedOrders::class)
@@ -233,3 +239,26 @@ Schedule::command(\App\Console\Commands\MarketingHealthReportCommand::class)
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('Marketing health report failed');
     });
+
+// KURSA licensing transition (Phase 3): server-to-server verify pending payments
+// for gateways with a trusted status API; confirmations route through WebhookProcessor.
+Schedule::command(VerifyPendingPayments::class)
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// KURSA licensing transition (Phase 4): environment-licence lifecycle.
+// Every 15 min: trial expiry → Free, paid expiry → past-due/grace, grace
+// elapsed → Free, cancel-at-period-end past ends_at → Free (doc §5, §12).
+Schedule::command(\App\Console\Commands\ProcessLicenceLifecycle::class)
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// Daily: trial reminders (days 0/7/12/14 + day-17 recovery) and grace/renewal
+// warnings (doc §5). De-duplicated via the licence reminders_sent column.
+Schedule::command(\App\Console\Commands\SendLicenceReminders::class)
+    ->dailyAt('09:30')
+    ->timezone('Africa/Douala')
+    ->withoutOverlapping(3600)
+    ->runInBackground();
