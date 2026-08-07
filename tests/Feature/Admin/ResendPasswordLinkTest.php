@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
+use App\Services\TelegramService;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -48,8 +49,24 @@ class ResendPasswordLinkTest extends TestCase
         return $admin;
     }
 
+    /**
+     * Telegram is in the default channel set, and the real service curls
+     * api.telegram.org — so every test that does not restrict channels must
+     * swap it out or the suite makes live network calls.
+     */
+    private function fakeTelegram(bool $succeeds = true): void
+    {
+        $fake = \Mockery::mock(TelegramService::class);
+        $fake->shouldReceive('getChatId')->andReturn('-100123456789');
+        $fake->shouldReceive('escapeMarkdownV2')->andReturnUsing(fn ($t) => $t);
+        $fake->shouldReceive('sendMessage')->andReturn($succeeds);
+
+        $this->instance(TelegramService::class, $fake);
+    }
+
     public function test_a_super_admin_can_resend_the_password_set_link(): void
     {
+        $this->fakeTelegram();
         Mail::fake();
         Queue::fake();
         $this->actingAsSuperAdmin();
@@ -66,6 +83,7 @@ class ResendPasswordLinkTest extends TestCase
 
         Mail::assertQueued(EnvironmentResetPasswordMail::class);
         Queue::assertPushed(SendWhatsAppNotification::class);
+        $this->assertContains('telegram', $response->json('data.delivered'));
     }
 
     /**
@@ -74,6 +92,7 @@ class ResendPasswordLinkTest extends TestCase
      */
     public function test_the_issued_token_verifies_against_the_stored_hash(): void
     {
+        $this->fakeTelegram();
         Mail::fake();
         Queue::fake();
         $this->actingAsSuperAdmin();
@@ -92,6 +111,7 @@ class ResendPasswordLinkTest extends TestCase
 
     public function test_resending_invalidates_the_previous_link(): void
     {
+        $this->fakeTelegram();
         Mail::fake();
         Queue::fake();
         $this->actingAsSuperAdmin();
@@ -114,6 +134,8 @@ class ResendPasswordLinkTest extends TestCase
 
     public function test_channels_can_be_restricted_to_email_only(): void
     {
+        // Deliberately no fakeTelegram(): restricting channels must mean the
+        // Telegram path is never entered, so a real send would blow up here.
         Mail::fake();
         Queue::fake();
         $this->actingAsSuperAdmin();
@@ -133,13 +155,42 @@ class ResendPasswordLinkTest extends TestCase
         $this->actingAsSuperAdmin();
         [$environment] = $this->environmentWithOwner(['whatsapp_number' => null]);
 
-        $response = $this->postJson("/api/admin/environments/{$environment->id}/resend-password-link");
+        $response = $this->postJson("/api/admin/environments/{$environment->id}/resend-password-link", [
+            'channels' => ['email', 'whatsapp'],
+        ]);
 
         $response->assertOk()
             ->assertJsonPath('data.delivered', ['email'])
             ->assertJsonPath('data.failed', ['whatsapp']);
 
         Mail::assertQueued(EnvironmentResetPasswordMail::class);
+    }
+
+    public function test_telegram_is_reported_as_failed_when_the_send_does_not_go_through(): void
+    {
+        Mail::fake();
+        Queue::fake();
+        $this->fakeTelegram(succeeds: false);
+        $this->actingAsSuperAdmin();
+        [$environment] = $this->environmentWithOwner();
+
+        $response = $this->postJson("/api/admin/environments/{$environment->id}/resend-password-link", [
+            'channels' => ['telegram'],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.delivered', [])
+            ->assertJsonPath('data.failed', ['telegram']);
+    }
+
+    public function test_an_unknown_channel_is_rejected(): void
+    {
+        $this->actingAsSuperAdmin();
+        [$environment] = $this->environmentWithOwner();
+
+        $this->postJson("/api/admin/environments/{$environment->id}/resend-password-link", [
+            'channels' => ['carrier-pigeon'],
+        ])->assertStatus(422);
     }
 
     public function test_a_non_admin_is_rejected(): void

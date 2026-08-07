@@ -7,6 +7,7 @@ use App\Jobs\SendWhatsAppNotification;
 use App\Mail\EnvironmentResetPasswordMail;
 use App\Models\Environment;
 use App\Models\User;
+use App\Services\TelegramService;
 use App\Support\PhoneNumber;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -48,7 +49,7 @@ class PasswordLinkController extends Controller
 
         $validator = Validator::make($request->all(), [
             'channels' => 'sometimes|array',
-            'channels.*' => 'in:email,whatsapp',
+            'channels.*' => 'in:email,whatsapp,telegram',
         ]);
 
         if ($validator->fails()) {
@@ -73,7 +74,7 @@ class PasswordLinkController extends Controller
             ], 422);
         }
 
-        $channels = $request->input('channels', ['email', 'whatsapp']);
+        $channels = $request->input('channels', ['email', 'whatsapp', 'telegram']);
 
         $token = Str::random(64);
         $url = $this->persistToken($token, $owner, $environment);
@@ -110,6 +111,32 @@ class PasswordLinkController extends Controller
                     ]);
                     $failed[] = 'whatsapp';
                 }
+            }
+        }
+
+        if (in_array('telegram', $channels, true)) {
+            try {
+                $telegram = app(TelegramService::class);
+                $chatId = $telegram->getChatId();
+
+                if (! $chatId) {
+                    $failed[] = 'telegram';
+                } else {
+                    // sendMessage() forces parse_mode=MarkdownV2, so the body
+                    // must be escaped or Telegram rejects the whole request
+                    // with "can't parse entities" and nothing is delivered.
+                    $sent = $telegram->sendMessage(
+                        $chatId,
+                        $telegram->escapeMarkdownV2($this->telegramBody($environment, $owner)),
+                        ['text' => 'Definir le mot de passe', 'url' => $url],
+                    );
+                    $sent ? $delivered[] = 'telegram' : $failed[] = 'telegram';
+                }
+            } catch (\Throwable $e) {
+                Log::error('Admin resend password link: Telegram send failed: ' . $e->getMessage(), [
+                    'environment_id' => $environment->id,
+                ]);
+                $failed[] = 'telegram';
             }
         }
 
@@ -164,6 +191,24 @@ class PasswordLinkController extends Controller
             'token' => $token,
             'email' => $owner->email,
             'environment_id' => $environment->id,
+        ]);
+    }
+
+    /**
+     * Telegram goes to the internal support group, not to the owner, so it
+     * names who the link belongs to. The URL rides on the inline button rather
+     * than in the text, which keeps it out of MarkdownV2 escaping entirely.
+     */
+    private function telegramBody(Environment $environment, User $owner): string
+    {
+        return implode("\n", [
+            'Lien de mot de passe - ' . $environment->name,
+            '',
+            'Proprietaire: ' . $owner->name,
+            'Email: ' . $owner->email,
+            'Academie: ' . $environment->primary_domain,
+            '',
+            'Usage unique, valable 60 minutes.',
         ]);
     }
 
