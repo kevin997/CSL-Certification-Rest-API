@@ -49,12 +49,14 @@ Artisan::command('inspire', function () {
 Schedule::command(RegularizeCompletedOrders::class)
     ->everyFiveMinutes()
     ->withoutOverlapping()
+    ->onOneServer()
     ->runInBackground();
 
 // Clean old backups daily at 1:00 AM
 Schedule::command('backup:clean')
     ->dailyAt('01:00')
     ->withoutOverlapping()
+    ->onOneServer()
     ->runInBackground()
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('Backup cleanup failed');
@@ -64,6 +66,7 @@ Schedule::command('backup:clean')
 Schedule::command('backup:run --only-db')
     ->dailyAt('02:00')
     ->withoutOverlapping()
+    ->onOneServer()
     ->runInBackground()
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('Daily database backup failed');
@@ -76,6 +79,7 @@ Schedule::command('backup:run --only-db')
 Schedule::command('backup:run')
     ->weeklyOn(1, '01:30') // Every Monday at 1:30 AM
     ->withoutOverlapping()
+    ->onOneServer()
     ->runInBackground()
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('Weekly full backup failed');
@@ -88,6 +92,7 @@ Schedule::command('backup:run')
 Schedule::command('backup:monitor')
     ->dailyAt('03:00')
     ->withoutOverlapping()
+    ->onOneServer()
     ->runInBackground()
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('Backup monitoring failed');
@@ -97,6 +102,7 @@ Schedule::command('backup:monitor')
 Schedule::command('analytics:weekly-report --email')
     ->weeklyOn(1, '09:00')
     ->withoutOverlapping()
+    ->onOneServer()
     ->runInBackground()
     ->emailOutputTo('kevinliboire@gmail.com')
     ->onFailure(function () {
@@ -107,6 +113,7 @@ Schedule::command('analytics:weekly-report --email')
 Schedule::command('backup:sales-database --email')
     ->dailyAt('04:00')
     ->withoutOverlapping()
+    ->onOneServer()
     ->runInBackground()
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('Sales database backup failed');
@@ -119,12 +126,14 @@ Schedule::command('backup:sales-database --email')
 Schedule::command(SendProductSubscriptionReminders::class)
     ->dailyAt('05:00')
     ->withoutOverlapping(3600)
+    ->onOneServer()
     ->runInBackground();
 
 // Engagement: Instructor weekly digest - Monday at 8:00 AM
 Schedule::command(SendInstructorWeeklyDigest::class)
     ->weeklyOn(1, '08:00')
     ->withoutOverlapping(3600)
+    ->onOneServer()
     ->runInBackground()
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('Instructor weekly digest failed');
@@ -134,6 +143,7 @@ Schedule::command(SendInstructorWeeklyDigest::class)
 Schedule::command(SendLearnerWeeklyDigest::class)
     ->weeklyOn(3, '08:00')
     ->withoutOverlapping(3600)
+    ->onOneServer()
     ->runInBackground()
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('Learner weekly digest failed');
@@ -245,6 +255,7 @@ Schedule::command(\App\Console\Commands\MarketingHealthReportCommand::class)
 Schedule::command(VerifyPendingPayments::class)
     ->everyFiveMinutes()
     ->withoutOverlapping()
+    ->onOneServer()
     ->runInBackground();
 
 // KURSA licensing transition (Phase 4): environment-licence lifecycle.
@@ -253,6 +264,7 @@ Schedule::command(VerifyPendingPayments::class)
 Schedule::command(\App\Console\Commands\ProcessLicenceLifecycle::class)
     ->everyFifteenMinutes()
     ->withoutOverlapping()
+    ->onOneServer()
     ->runInBackground();
 
 // Daily: trial reminders (days 0/7/12/14 + day-17 recovery) and grace/renewal
@@ -261,4 +273,5 @@ Schedule::command(\App\Console\Commands\SendLicenceReminders::class)
     ->dailyAt('09:30')
     ->timezone('Africa/Douala')
     ->withoutOverlapping(3600)
+    ->onOneServer()
     ->runInBackground();
