@@ -10,10 +10,12 @@ use App\Models\PaymentAttempt;
 use App\Models\Plan;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Jobs\SendWhatsAppNotification;
 use App\Notifications\EnvironmentCreatedNotification;
 use App\Services\PlatformPaymentService;
 use App\Services\TelegramService;
 use App\Services\Tax\TaxZoneService;
+use App\Support\PhoneNumber;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -501,6 +503,7 @@ class LicenceService
         $passwordSetUrl = $this->sendPasswordSetLink($user, $environment);
 
         $this->notifyEnvironmentCreated($environment, $user, $passwordSetUrl);
+        $this->whatsAppEnvironmentCreated($environment, $user, $passwordSetUrl);
 
         return $environment;
     }
@@ -544,6 +547,76 @@ class LicenceService
      * Reuse the existing password-reset machinery (EnvironmentUserController) to
      * email a "set your password" link to a freshly-provisioned invited owner.
      */
+    /**
+     * Owner-facing WhatsApp copy for a newly provisioned academy.
+     *
+     * The Telegram alert above goes to the internal ops group; this is the same
+     * event addressed to the customer on their own number. It deliberately does
+     * NOT reuse the Telegram body — that one is ops framing and carries an
+     * "Admin Credentials" block.
+     *
+     * This matters beyond convenience: the password-set mail goes out from
+     * no.reply@okenlysolutions.com, an unrelated domain, so it lands in spam
+     * often enough that owners never see it. WhatsApp is the reliable channel
+     * for this audience.
+     */
+    private function whatsAppEnvironmentCreated(Environment $environment, User $user, ?string $passwordSetUrl): void
+    {
+        $raw = trim((string) ($user->whatsapp_number ?? ''));
+
+        if ($raw === '') {
+            return;
+        }
+
+        try {
+            $phone = PhoneNumber::normalize($raw, $environment->country_code);
+
+            if ($phone === '') {
+                Log::warning('Environment created: unusable WhatsApp number, skipping owner notification', [
+                    'environment_id' => $environment->id,
+                    'user_id' => $user->id,
+                ]);
+
+                return;
+            }
+
+            $lines = [
+                "🎉 Bienvenue sur KURSA, {$user->name} !",
+                '',
+                "Votre académie *{$environment->name}* est prête :",
+                "https://{$environment->primary_domain}",
+                '',
+            ];
+
+            if ($passwordSetUrl !== null && $passwordSetUrl !== '') {
+                $lines[] = 'Définissez votre mot de passe ici (lien à usage unique) :';
+                $lines[] = $passwordSetUrl;
+                $lines[] = '';
+            }
+
+            $lines[] = '---';
+            $lines[] = "🎉 Welcome to KURSA, {$user->name}!";
+            $lines[] = '';
+            $lines[] = "Your academy *{$environment->name}* is ready:";
+            $lines[] = "https://{$environment->primary_domain}";
+
+            if ($passwordSetUrl !== null && $passwordSetUrl !== '') {
+                $lines[] = '';
+                $lines[] = 'Set your password here (single-use link):';
+                $lines[] = $passwordSetUrl;
+            }
+
+            SendWhatsAppNotification::dispatch($phone, implode("\n", $lines));
+        } catch (\Throwable $e) {
+            // Same contract as the Telegram alert: the academy already exists,
+            // so a notification failure must never fail provisioning.
+            Log::error('Failed to queue owner WhatsApp notification for provisioned environment: ' . $e->getMessage(), [
+                'environment_id' => $environment->id,
+                'user_id' => $user->id,
+            ]);
+        }
+    }
+
     /**
      * @return string the password-set URL, so the ops alert can carry it too
      */

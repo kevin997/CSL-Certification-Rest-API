@@ -1197,6 +1197,12 @@ Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
         Route::put('/{id}', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'update']);
     });
 
+    // Owner password-set link re-send. Onboarding emails the link once from an
+    // unrelated sender domain, so it is frequently never seen; the stored token
+    // is bcrypt-hashed and therefore unrecoverable. This issues a fresh one.
+    Route::post('/environments/{environmentId}/resend-password-link', [\App\Http\Controllers\Api\Admin\PasswordLinkController::class, 'resend'])
+        ->middleware('throttle:20,1');
+
     // System Dashboard
     Route::prefix('system-dashboard')->group(function () {
         Route::get('/overview',              [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'overview']);
