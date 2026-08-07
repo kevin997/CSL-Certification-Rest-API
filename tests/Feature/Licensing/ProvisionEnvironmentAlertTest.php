@@ -96,6 +96,41 @@ class ProvisionEnvironmentAlertTest extends TestCase
     }
 
     /**
+     * Admins need to be able to recover an account whose owner never opened the
+     * emailed link, so the alert carries the same single-use set-password URL.
+     */
+    public function test_the_alert_carries_the_password_set_link(): void
+    {
+        Mail::fake();
+        $telegram = $this->fakeTelegram();
+
+        $captured = null;
+        $telegram->shouldReceive('sendMessage')
+            ->once()
+            ->andReturnUsing(function ($chatId, $message) use (&$captured) {
+                $captured = $message;
+
+                return true;
+            });
+
+        $environment = app(LicenceService::class)->provisionEnvironmentFromPayload(
+            $this->payload(['email' => 'ghislaine-'.uniqid().'@example.com'])
+        );
+
+        $this->assertStringContainsString('Set', $captured);
+        $this->assertStringContainsString(
+            'https://'.$environment->primary_domain.'/auth/reset-password',
+            $captured
+        );
+        $this->assertStringContainsString('environment_id='.$environment->id, $captured);
+
+        // The token in the alert must be the one that actually works.
+        preg_match('/token=([A-Za-z0-9]+)/', $captured, $m);
+        $this->assertNotEmpty($m[1] ?? null, 'no token in the alert link');
+        $this->assertDatabaseHas('password_reset_metadata', ['token' => $m[1]]);
+    }
+
+    /**
      * The alert is best-effort: provisioning has already created the environment
      * and emailed the owner by the time it fires, so a Telegram outage must not
      * surface as a failed onboarding.

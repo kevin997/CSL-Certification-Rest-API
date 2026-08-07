@@ -498,9 +498,9 @@ class LicenceService
             $user->id => ['role' => 'owner', 'joined_at' => now()],
         ]);
 
-        $this->sendPasswordSetLink($user, $environment);
+        $passwordSetUrl = $this->sendPasswordSetLink($user, $environment);
 
-        $this->notifyEnvironmentCreated($environment, $user);
+        $this->notifyEnvironmentCreated($environment, $user, $passwordSetUrl);
 
         return $environment;
     }
@@ -517,7 +517,7 @@ class LicenceService
      * Never allowed to break provisioning: the environment already exists and
      * the owner has been emailed by the time we get here.
      */
-    private function notifyEnvironmentCreated(Environment $environment, User $user): void
+    private function notifyEnvironmentCreated(Environment $environment, User $user, ?string $passwordSetUrl = null): void
     {
         try {
             $notification = new EnvironmentCreatedNotification(
@@ -527,7 +527,8 @@ class LicenceService
                 // KURSA-provisioned owners never get a plaintext password; they
                 // set their own via the link emailed by sendPasswordSetLink().
                 'set via emailed link',
-                app(TelegramService::class)
+                app(TelegramService::class),
+                $passwordSetUrl
             );
 
             $notification->toTelegram($notification);
@@ -543,7 +544,10 @@ class LicenceService
      * Reuse the existing password-reset machinery (EnvironmentUserController) to
      * email a "set your password" link to a freshly-provisioned invited owner.
      */
-    private function sendPasswordSetLink(User $user, Environment $environment): void
+    /**
+     * @return string the password-set URL, so the ops alert can carry it too
+     */
+    private function sendPasswordSetLink(User $user, Environment $environment): string
     {
         $token = Str::random(64);
 
@@ -574,6 +578,12 @@ class LicenceService
                 Log::warning('Licence onboarding: password-set link email failed: ' . $e->getMessage());
             }
         });
+
+        return 'https://' . $environment->primary_domain . '/auth/reset-password?' . http_build_query([
+            'token' => $token,
+            'email' => $user->email,
+            'environment_id' => $environment->id,
+        ]);
     }
 
     // ---------------------------------------------------------------------
