@@ -13,6 +13,53 @@ class PublicBrandingTest extends TestCase
 {
     use RefreshDatabase;
 
+    /**
+     * The application self-heals duplicates on save, but that is a convention
+     * a future code path could bypass. These two assert the database itself
+     * refuses, which is what actually made the KURSA-green bug possible.
+     */
+    public function test_the_database_rejects_a_second_active_branding_row(): void
+    {
+        $owner = User::factory()->create();
+        $environment = Environment::factory()->create(['owner_id' => $owner->id]);
+
+        Branding::factory()->create([
+            'user_id' => $owner->id,
+            'environment_id' => $environment->id,
+            'company_name' => 'First',
+        ]);
+
+        $this->expectException(\Illuminate\Database\QueryException::class);
+
+        Branding::factory()->create([
+            'user_id' => $owner->id,
+            'environment_id' => $environment->id,
+            'company_name' => 'Second',
+        ]);
+    }
+
+    public function test_a_soft_deleted_row_does_not_block_a_new_active_one(): void
+    {
+        $owner = User::factory()->create();
+        $environment = Environment::factory()->create(['owner_id' => $owner->id]);
+
+        $superseded = Branding::factory()->create([
+            'user_id' => $owner->id,
+            'environment_id' => $environment->id,
+            'company_name' => 'Old',
+        ]);
+        $superseded->delete();
+
+        $fresh = Branding::factory()->create([
+            'user_id' => $owner->id,
+            'environment_id' => $environment->id,
+            'company_name' => 'New',
+        ]);
+
+        $this->assertSoftDeleted($superseded);
+        $this->assertDatabaseHas('brandings', ['id' => $fresh->id, 'deleted_at' => null]);
+    }
+
     public function test_anonymous_read_returns_environment_branding_by_domain(): void
     {
         $owner = User::factory()->create();
@@ -39,7 +86,7 @@ class PublicBrandingTest extends TestCase
             ->assertJsonPath('environment.id', $environment->id);
     }
 
-    public function test_anonymous_read_returns_latest_saved_row_when_duplicates_exist(): void
+    public function test_anonymous_read_ignores_superseded_rows_and_returns_the_live_one(): void
     {
         $owner = User::factory()->create();
         $environment = Environment::factory()->create([
@@ -48,7 +95,9 @@ class PublicBrandingTest extends TestCase
             'is_active' => true,
         ]);
 
-        // Older stale default-valued row (the bug: this one used to win).
+        // The stale default-valued row that used to win the unordered read.
+        // A second ACTIVE row is now refused by the database, so this models
+        // the only shape that can still exist: superseded, i.e. soft-deleted.
         $stale = Branding::factory()->create([
             'user_id' => $owner->id,
             'environment_id' => $environment->id,
@@ -60,6 +109,7 @@ class PublicBrandingTest extends TestCase
             'created_at' => now()->subDay(),
             'updated_at' => now()->subDay(),
         ])->saveQuietly();
+        $stale->delete();
 
         // The row the owner actually saved most recently.
         Branding::factory()->create([
@@ -134,7 +184,7 @@ class PublicBrandingTest extends TestCase
         ]);
     }
 
-    public function test_upsert_updates_existing_row_and_soft_deletes_duplicates(): void
+    public function test_upsert_updates_the_existing_row_in_place(): void
     {
         $owner = User::factory()->create(['role' => UserRole::INDIVIDUAL_TEACHER]);
         $environment = Environment::factory()->create([
@@ -143,17 +193,10 @@ class PublicBrandingTest extends TestCase
             'is_active' => true,
         ]);
 
-        $older = Branding::factory()->create([
-            'user_id' => $owner->id,
-            'environment_id' => $environment->id,
-            'company_name' => 'Stale Default',
-        ]);
-        $older->forceFill([
-            'created_at' => now()->subDay(),
-            'updated_at' => now()->subDay(),
-        ])->saveQuietly();
-
-        $newer = Branding::factory()->create([
+        // Only one active row can exist now that the database enforces it, so
+        // this asserts the guarantee that still matters: upsert updates in
+        // place and never adds a second row.
+        $existing = Branding::factory()->create([
             'user_id' => $owner->id,
             'environment_id' => $environment->id,
             'company_name' => 'Current',
@@ -165,11 +208,8 @@ class PublicBrandingTest extends TestCase
 
         $response->assertOk();
 
-        // The most recent row was updated in place, no new row created.
-        $this->assertSame('Updated Academy', $newer->fresh()->company_name);
-
-        // The stale duplicate was soft-deleted.
-        $this->assertSoftDeleted('brandings', ['id' => $older->id]);
+        // Updated in place, no new row created.
+        $this->assertSame('Updated Academy', $existing->fresh()->company_name);
 
         // Exactly one live row remains for the environment.
         $this->assertSame(1, Branding::withoutGlobalScopes()
