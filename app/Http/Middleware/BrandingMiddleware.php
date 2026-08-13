@@ -2,10 +2,11 @@
 
 namespace App\Http\Middleware;
 
-use Closure;
-use Illuminate\Http\Request;
 use App\Models\Branding;
 use App\Models\Environment;
+use Closure;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 
 class BrandingMiddleware
@@ -13,8 +14,6 @@ class BrandingMiddleware
     /**
      * Handle an incoming request.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \Closure  $next
      * @return mixed
      */
     public function handle(Request $request, Closure $next)
@@ -22,31 +21,30 @@ class BrandingMiddleware
         $response = $next($request);
 
         // Only process JSON responses
-        if (!$this->isJsonResponse($response)) {
+        if (! $this->isJsonResponse($response)) {
             return $response;
         }
 
         // Get the current environment from the request
         $environmentId = null;
-        
-        
+
         // If no environment found in token, try to get it from the domain
-        if (!$environmentId) {
+        if (! $environmentId) {
             $domain = $request->headers->get('X-Frontend-Domain');
 
             // Validate and sanitize domain input
             if ($domain && $this->isValidDomain($domain)) {
                 $environment = Environment::where('primary_domain', $domain)
-            ->orWhere(function($query) use ($domain) {
-                $query->whereNotNull('additional_domains')
-                      ->whereJsonContains('additional_domains', $domain);
-            })
-            ->where('is_active', true)
-            ->first();
+                    ->orWhere(function ($query) use ($domain) {
+                        $query->whereNotNull('additional_domains')
+                            ->whereJsonContains('additional_domains', $domain);
+                    })
+                    ->where('is_active', true)
+                    ->first();
             } else {
                 $environment = null;
             }
-                
+
             if ($environment) {
                 $environmentId = $environment->id;
             }
@@ -55,9 +53,7 @@ class BrandingMiddleware
         // Get branding based on environment
         $branding = null;
         if ($environmentId) {
-            $branding = Branding::where('environment_id', $environmentId)
-                ->where('is_active', true)
-                ->first();
+            $branding = Branding::currentForEnvironment($environmentId);
         } elseif (Auth::check()) {
             // Fallback to user's branding if no environment
             $branding = Branding::where('user_id', Auth::id())
@@ -73,8 +69,8 @@ class BrandingMiddleware
             if (is_array($content)) {
                 $content['branding'] = [
                     'company_name' => $this->sanitizeString($branding->company_name),
-                    'logo_url' => $branding->logo_path ? url('storage/' . $this->sanitizePath($branding->logo_path)) : null,
-                    'favicon_url' => $branding->favicon_path ? url('storage/' . $this->sanitizePath($branding->favicon_path)) : null,
+                    'logo_url' => $branding->logo_path ? url('storage/'.$this->sanitizePath($branding->logo_path)) : null,
+                    'favicon_url' => $branding->favicon_path ? url('storage/'.$this->sanitizePath($branding->favicon_path)) : null,
                     'primary_color' => $this->sanitizeColor($branding->primary_color),
                     'secondary_color' => $this->sanitizeColor($branding->secondary_color),
                     'accent_color' => $this->sanitizeColor($branding->accent_color),
@@ -90,11 +86,11 @@ class BrandingMiddleware
 
         return $response;
     }
-    
+
     /**
      * Check if the response is a JSON response.
      *
-     * @param  \Illuminate\Http\Response  $response
+     * @param  Response  $response
      * @return bool
      */
     protected function isJsonResponse($response)
@@ -105,67 +101,79 @@ class BrandingMiddleware
     /**
      * Validate domain format
      *
-     * @param string $domain
+     * @param  string  $domain
      * @return bool
      */
     protected function isValidDomain($domain)
     {
-        return filter_var('http://' . $domain, FILTER_VALIDATE_URL) !== false;
+        return filter_var('http://'.$domain, FILTER_VALIDATE_URL) !== false;
     }
 
     /**
      * Sanitize string input
      *
-     * @param string|null $input
+     * @param  string|null  $input
      * @return string|null
      */
     protected function sanitizeString($input)
     {
-        if (!$input) return null;
+        if (! $input) {
+            return null;
+        }
+
         return htmlspecialchars(strip_tags($input), ENT_QUOTES, 'UTF-8');
     }
 
     /**
      * Sanitize file path
      *
-     * @param string|null $path
+     * @param  string|null  $path
      * @return string|null
      */
     protected function sanitizePath($path)
     {
-        if (!$path) return null;
+        if (! $path) {
+            return null;
+        }
         // Remove any directory traversal attempts
         $path = str_replace(['../', '../', '.\\', '..\\'], '', $path);
+
         return preg_replace('/[^a-zA-Z0-9_\-\.\/]/', '', $path);
     }
 
     /**
      * Sanitize color value
      *
-     * @param string|null $color
+     * @param  string|null  $color
      * @return string|null
      */
     protected function sanitizeColor($color)
     {
-        if (!$color) return null;
+        if (! $color) {
+            return null;
+        }
         // Only allow hex colors or CSS color names
         if (preg_match('/^#[0-9A-Fa-f]{6}$/', $color) ||
             preg_match('/^#[0-9A-Fa-f]{3}$/', $color) ||
             preg_match('/^[a-zA-Z]+$/', $color)) {
             return $color;
         }
+
         return null;
     }
 
     /**
      * Sanitize font family
      *
-     * @param string|null $fontFamily
+     * @param  string|null  $fontFamily
      * @return string|null
      */
     protected function sanitizeFontFamily($fontFamily)
     {
-        if (!$fontFamily) return null;
+        if (! $fontFamily) {
+            return null;
+        }
+
         // Only allow alphanumeric characters, spaces, commas, and hyphens
         return preg_replace('/[^a-zA-Z0-9\s,\-]/', '', $fontFamily);
     }
@@ -173,12 +181,14 @@ class BrandingMiddleware
     /**
      * Sanitize CSS input
      *
-     * @param string|null $css
+     * @param  string|null  $css
      * @return string|null
      */
     protected function sanitizeCSS($css)
     {
-        if (!$css) return null;
+        if (! $css) {
+            return null;
+        }
 
         // Remove potentially dangerous CSS constructs
         $css = preg_replace('/<script[\s\S]*?>[\s\S]*?<\/script>/i', '', $css);

@@ -6,12 +6,13 @@ use App\Jobs\SendWhatsAppNotification;
 use App\Mail\EnvironmentResetPasswordMail;
 use App\Models\Environment;
 use App\Models\User;
+use App\Services\TelegramService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
-use App\Services\TelegramService;
+use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -215,5 +216,122 @@ class ResendPasswordLinkTest extends TestCase
         $this->actingAsSuperAdmin();
 
         $this->postJson('/api/admin/environments/999999/resend-password-link')->assertStatus(404);
+    }
+
+    /**
+     * Seeds a token row the way LicenceService / this controller persist it,
+     * with a created_at in the past so a sloppy rollback that re-stamps now()
+     * is caught (expiry is computed from created_at).
+     */
+    private function seedExistingToken(User $owner): string
+    {
+        $existingToken = Str::random(64);
+
+        DB::table('password_reset_tokens')->insert([
+            'email' => $owner->email,
+            'token' => Hash::make($existingToken),
+            'created_at' => now()->subMinutes(30),
+        ]);
+
+        return $existingToken;
+    }
+
+    /**
+     * A support agent clicking "Resend" on a flaky connection must not destroy
+     * the owner's only working link: when EVERY attempted channel fails, the
+     * previously stored token is restored verbatim so the old URL still
+     * verifies — with its ORIGINAL created_at, since restoring with now()
+     * would silently extend the old link's life.
+     */
+    public function test_total_delivery_failure_restores_the_previous_token(): void
+    {
+        Mail::fake();
+        Queue::fake();
+        $this->fakeTelegram(succeeds: false);
+        $this->actingAsSuperAdmin();
+        [$environment, $owner] = $this->environmentWithOwner(['whatsapp_number' => null]);
+
+        $existingToken = $this->seedExistingToken($owner);
+        $rowBefore = DB::table('password_reset_tokens')->where('email', $owner->email)->first();
+
+        $response = $this->postJson("/api/admin/environments/{$environment->id}/resend-password-link", [
+            'channels' => ['whatsapp', 'telegram'],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.delivered', [])
+            ->assertJsonPath('data.failed', ['whatsapp', 'telegram'])
+            ->assertJsonPath('data.rolled_back', true)
+            ->assertJsonPath('data.password_set_url', null);
+
+        $rowAfter = DB::table('password_reset_tokens')->where('email', $owner->email)->first();
+
+        $this->assertTrue(
+            Hash::check($existingToken, $rowAfter->token),
+            'the owner\'s previous link must still verify after a total delivery failure'
+        );
+        $this->assertSame($rowBefore->token, $rowAfter->token);
+        $this->assertSame(
+            $rowBefore->created_at,
+            $rowAfter->created_at,
+            'created_at must be restored verbatim — expiry is computed from it'
+        );
+
+        // The rolled-back issue must not leave metadata for the dead token.
+        $this->assertDatabaseCount('password_reset_metadata', 0);
+    }
+
+    public function test_total_delivery_failure_with_no_prior_token_leaves_no_orphan_rows(): void
+    {
+        Mail::fake();
+        Queue::fake();
+        $this->fakeTelegram(succeeds: false);
+        $this->actingAsSuperAdmin();
+        [$environment, $owner] = $this->environmentWithOwner();
+
+        $response = $this->postJson("/api/admin/environments/{$environment->id}/resend-password-link", [
+            'channels' => ['telegram'],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.rolled_back', true)
+            ->assertJsonPath('data.password_set_url', null);
+
+        $this->assertDatabaseMissing('password_reset_tokens', ['email' => $owner->email]);
+        $this->assertDatabaseCount('password_reset_metadata', 0);
+    }
+
+    /**
+     * One working channel is enough: the fresh token reached someone, so it
+     * must stand and the superseded link must die — no rollback.
+     */
+    public function test_partial_delivery_failure_does_not_roll_back(): void
+    {
+        Mail::fake();
+        Queue::fake();
+        $this->fakeTelegram(succeeds: false);
+        $this->actingAsSuperAdmin();
+        [$environment, $owner] = $this->environmentWithOwner();
+
+        $existingToken = $this->seedExistingToken($owner);
+
+        $response = $this->postJson("/api/admin/environments/{$environment->id}/resend-password-link", [
+            'channels' => ['email', 'telegram'],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.delivered', ['email'])
+            ->assertJsonPath('data.failed', ['telegram'])
+            ->assertJsonPath('data.rolled_back', false);
+
+        $url = $response->json('data.password_set_url');
+        $this->assertNotNull($url);
+        parse_str(parse_url($url, PHP_URL_QUERY), $query);
+
+        $stored = DB::table('password_reset_tokens')->where('email', $owner->email)->value('token');
+
+        $this->assertTrue(Hash::check($query['token'], $stored), 'the fresh link must verify');
+        $this->assertFalse(Hash::check($existingToken, $stored), 'the superseded link must stop working');
+        $this->assertDatabaseHas('password_reset_metadata', ['token' => $query['token']]);
     }
 }

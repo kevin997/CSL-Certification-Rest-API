@@ -2,6 +2,9 @@
 
 namespace App\Providers;
 
+use App\Models\Environment;
+use App\Models\User;
+use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Mail;
@@ -42,6 +45,9 @@ class AppServiceProvider extends ServiceProvider
             BackupZipWasCreated::class,
             MailBackupWithAttachment::class
         );
+
+        // Point password reset links at the learner's own environment
+        $this->configurePasswordResetUrl();
 
         // Dynamically configure Sanctum stateful domains for multi-tenancy
         // This must be done here (not config file) to avoid CLI crashes when request() is unavailable
@@ -84,5 +90,69 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('reset', function (Request $request) {
             return Limit::perMinute(3)->by($request->input('email') . '|' . $request->ip());
         });
+    }
+
+    /**
+     * Send password reset links to the learner's own environment domain.
+     *
+     * The stock notification builds its URL from APP_URL, which is the central
+     * API host. A learner who requests a reset from their academy therefore
+     * received a link to an unfamiliar, unbranded page on another domain and
+     * abandoned it. Environment-issued links (EnvironmentResetPasswordMail)
+     * already point at the environment; this makes the self-service flow match.
+     */
+    protected function configurePasswordResetUrl(): void
+    {
+        ResetPassword::createUrlUsing(function (object $notifiable, string $token): string {
+            $environment = $this->resolveEnvironmentForReset($notifiable);
+
+            if ($environment === null || blank($environment->primary_domain)) {
+                return url(route('password.reset', [
+                    'token' => $token,
+                    'email' => $notifiable->getEmailForPasswordReset(),
+                ], false));
+            }
+
+            $domain = $environment->primary_domain;
+
+            if (! str_starts_with($domain, 'http')) {
+                $domain = 'https://' . $domain;
+            }
+
+            return $domain . '/auth/reset-password?' . http_build_query([
+                'token' => $token,
+                'email' => $notifiable->getEmailForPasswordReset(),
+                'environment_id' => $environment->id,
+            ]);
+        });
+    }
+
+    /**
+     * Pick the environment whose domain a reset link should point at.
+     *
+     * Preference order: the environment named on the current request, then one
+     * the user owns, then any they belong to. A user with no environment falls
+     * back to the central host.
+     */
+    protected function resolveEnvironmentForReset(object $notifiable): ?Environment
+    {
+        if (! $notifiable instanceof User) {
+            return null;
+        }
+
+        if (! $this->app->runningInConsole()) {
+            $requestedId = request()->input('environment_id');
+
+            if (filled($requestedId)) {
+                $requested = $notifiable->environments()->whereKey($requestedId)->first();
+
+                if ($requested !== null) {
+                    return $requested;
+                }
+            }
+        }
+
+        return $notifiable->ownedEnvironments()->first()
+            ?? $notifiable->environments()->first();
     }
 }

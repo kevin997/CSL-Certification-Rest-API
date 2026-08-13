@@ -7,6 +7,7 @@ use App\Mail\EnvironmentResetPasswordMail;
 use App\Models\Environment;
 use App\Models\EnvironmentUser;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -217,6 +218,24 @@ class EnvironmentUserController extends Controller
 
         if (!$resetRecord) {
             return response()->json(['message' => 'Invalid token'], 400);
+        }
+
+        // The presented token must be the one currently on file. Without this
+        // check any superseded link kept working, because password_reset_metadata
+        // rows survive until the token is used and only the hashed row in
+        // password_reset_tokens is rotated when a new link is issued.
+        if (!Hash::check($request->token, $resetRecord->token)) {
+            return response()->json(['message' => 'Invalid token'], 400);
+        }
+
+        // Reset links expire, matching the broker used by POST /api/reset-password.
+        $expiryMinutes = (int) config('auth.passwords.users.expire', 60);
+
+        if (Carbon::parse($resetRecord->created_at)->addMinutes($expiryMinutes)->isPast()) {
+            DB::table('password_reset_tokens')->where('email', $user->email)->delete();
+            DB::table('password_reset_metadata')->where('token', $request->token)->delete();
+
+            return response()->json(['message' => 'This password reset token has expired.'], 400);
         }
 
         // Get the environment to check if this is the owner
