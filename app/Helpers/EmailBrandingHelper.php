@@ -26,25 +26,28 @@ class EmailBrandingHelper
      */
     public static function resolve(Environment $environment): array
     {
-        $branding = Branding::where('environment_id', $environment->id)
-            ->where('is_active', true)
-            ->first();
+        $branding = Branding::currentForEnvironment($environment->id);
 
-        $logoUrl = null;
         if ($branding && $branding->logo_path) {
-            $logoUrl = url('storage/' . $branding->logo_path);
+            $logoUrl = preg_match('#^https?://#i', $branding->logo_path)
+                ? $branding->logo_path
+                : url('storage/'.ltrim($branding->logo_path, '/'));
+        } elseif ($environment->logo_url) {
+            $logoUrl = $environment->logo_url;
         } else {
             $logoUrl = asset('images/logo-kursa.svg');
         }
 
+        $domain = preg_replace('#^https?://#i', '', trim($environment->primary_domain));
+
         return [
-            'company_name' => $branding?->company_name ?? $environment->name ?? self::DEFAULTS['company_name'],
+            'company_name' => $branding?->company_name ?: ($environment->name ?: self::DEFAULTS['company_name']),
             'primary_color' => $branding?->primary_color ?? self::DEFAULTS['primary_color'],
             'secondary_color' => $branding?->secondary_color ?? self::DEFAULTS['secondary_color'],
             'accent_color' => $branding?->accent_color ?? self::DEFAULTS['accent_color'],
             'font_family' => $branding?->font_family ?? self::DEFAULTS['font_family'],
             'logo_url' => $logoUrl,
-            'login_url' => 'https://' . $environment->primary_domain . '/auth/login',
+            'login_url' => 'https://'.rtrim($domain, '/').'/auth/login',
         ];
     }
 }

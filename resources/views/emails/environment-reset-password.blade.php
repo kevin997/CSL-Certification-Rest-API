@@ -72,9 +72,9 @@
 <body>
     <div class="container">
         <div class="header">
-            @if(!empty($branding['logo_path']))
+            @if(!empty($branding['logo_url']))
             <div class="logo-container">
-                <img src="{{ $branding['logo_path'] }}" alt="{{ $branding['company_name'] }}" class="logo">
+                <img src="{{ $branding['logo_url'] }}" alt="{{ $branding['company_name'] }}" class="logo">
             </div>
             @else
             <h1>{{ $branding['company_name'] }}</h1>

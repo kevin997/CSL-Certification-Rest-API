@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\Environment;
 use App\Models\EnvironmentUser;
 use App\Models\User;
+use App\Support\EffectiveAuthContext;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -21,7 +23,7 @@ class AcademySwitchController extends Controller
 {
     /**
      * Generate a short-lived token for switching to another campus/domain.
-     * 
+     *
      * This token is used for cross-domain authentication when a user wants to
      * switch from one campus domain to another.
      *
@@ -30,29 +32,35 @@ class AcademySwitchController extends Controller
      *     summary="Generate campus switch token",
      *     tags={"Campus Switch"},
      *     security={{"sanctum":{}}},
+     *
      *     @OA\RequestBody(
      *         required=true,
+     *
      *         @OA\JsonContent(
      *             required={"target_environment_id"},
+     *
      *             @OA\Property(property="target_environment_id", type="integer", description="The environment ID to switch to")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Switch token generated successfully",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="token", type="string", description="Short-lived switch token"),
      *             @OA\Property(property="redirect_url", type="string", description="URL to redirect to"),
      *             @OA\Property(property="expires_in", type="integer", description="Token expiry in seconds")
      *         )
      *     ),
+     *
      *     @OA\Response(response=404, description="Target environment not found"),
      *     @OA\Response(response=403, description="User is not a member of target environment"),
      *     @OA\Response(response=401, description="Unauthenticated")
      * )
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function generateSwitchToken(Request $request)
     {
@@ -65,7 +73,7 @@ class AcademySwitchController extends Controller
 
         // Check if target environment exists
         $targetEnvironment = Environment::find($targetEnvironmentId);
-        if (!$targetEnvironment) {
+        if (! $targetEnvironment) {
             return response()->json([
                 'message' => 'Target environment not found',
             ], 404);
@@ -77,7 +85,7 @@ class AcademySwitchController extends Controller
             ->where('user_id', $user->id)
             ->exists();
 
-        if (!$isOwner && !$isMember) {
+        if (! $isOwner && ! $isMember) {
             return response()->json([
                 'message' => 'You are not a member of this campus',
             ], 403);
@@ -126,7 +134,7 @@ class AcademySwitchController extends Controller
 
     /**
      * Validate a switch token and return authentication credentials.
-     * 
+     *
      * This endpoint is called by the target domain to validate the switch token
      * and get the user's authentication token for that domain.
      *
@@ -134,30 +142,36 @@ class AcademySwitchController extends Controller
      *     path="/api/auth/validate-switch-token",
      *     summary="Validate campus switch token",
      *     tags={"Campus Switch"},
+     *
      *     @OA\RequestBody(
      *         required=true,
+     *
      *         @OA\JsonContent(
      *             required={"token"},
+     *
      *             @OA\Property(property="token", type="string", description="The switch token to validate"),
      *             @OA\Property(property="device_name", type="string", description="Device name for the new token")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Token validated, user authenticated",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="token", type="string", description="New auth token for target domain"),
      *             @OA\Property(property="user", type="object"),
      *             @OA\Property(property="environment_id", type="integer"),
      *             @OA\Property(property="role", type="string")
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Invalid or expired token"),
      *     @OA\Response(response=403, description="Token not valid for this environment")
      * )
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function validateSwitchToken(Request $request)
     {
@@ -172,7 +186,7 @@ class AcademySwitchController extends Controller
         // Retrieve token data from cache
         $tokenData = Cache::get("academy_switch_token:{$switchToken}");
 
-        if (!$tokenData) {
+        if (! $tokenData) {
             return response()->json([
                 'message' => 'Invalid or expired switch token',
             ], 401);
@@ -186,7 +200,7 @@ class AcademySwitchController extends Controller
 
         // Get the user
         $user = User::find($userId);
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'message' => 'User not found',
             ], 401);
@@ -194,37 +208,34 @@ class AcademySwitchController extends Controller
 
         // Get the target environment
         $targetEnvironment = Environment::find($targetEnvironmentId);
-        if (!$targetEnvironment) {
+        if (! $targetEnvironment) {
             return response()->json([
                 'message' => 'Target environment not found',
             ], 404);
         }
 
-        // Determine user's role in the target environment
+        // Verify membership before minting a token for the target environment.
         $isOwner = $targetEnvironment->owner_id === $user->id;
-        $environmentUser = null;
-        $role = 'user';
+        $environmentUser = EnvironmentUser::where('environment_id', $targetEnvironmentId)
+            ->where('user_id', $user->id)
+            ->first();
 
-        if ($isOwner) {
-            $role = $user->role?->value ?? 'instructor';
-        } else {
-            $environmentUser = EnvironmentUser::where('environment_id', $targetEnvironmentId)
-                ->where('user_id', $user->id)
-                ->first();
-
-            if ($environmentUser) {
-                $role = $environmentUser->role?->value ?? $environmentUser->role ?? 'learner';
-            }
+        if (! $isOwner && ! $environmentUser) {
+            return response()->json([
+                'message' => 'You are not a member of this campus',
+            ], 403);
         }
 
+        $authContext = EffectiveAuthContext::for($user, (int) $targetEnvironmentId);
+
         // Create abilities array for the token
-        $abilities = ['environment_id:' . $targetEnvironmentId];
+        $abilities = ['environment_id:'.$targetEnvironmentId];
         if ($user->role) {
-            $abilities[] = 'role:' . ($user->role->value ?? $user->role);
+            $abilities[] = 'role:'.($user->role->value ?? $user->role);
         }
         if ($environmentUser && $environmentUser->role) {
             $envRole = $environmentUser->role->value ?? $environmentUser->role;
-            $abilities[] = 'env_role:' . $envRole;
+            $abilities[] = 'env_role:'.$envRole;
         }
 
         // Create new auth token for the target environment
@@ -233,15 +244,17 @@ class AcademySwitchController extends Controller
         Log::info('Academy switch completed', [
             'user_id' => $user->id,
             'target_environment_id' => $targetEnvironmentId,
-            'role' => $role,
+            'role' => $authContext['role'],
         ]);
+
+        $responseUser = $user->toArray();
+        $responseUser['role'] = $authContext['role'];
 
         return response()->json([
             'token' => $authToken,
-            'user' => $user,
+            'user' => $responseUser,
             'environment_id' => $targetEnvironmentId,
-            'role' => $role,
-            'is_owner' => $isOwner,
+            ...$authContext,
             'environment' => [
                 'id' => $targetEnvironment->id,
                 'name' => $targetEnvironment->name,
