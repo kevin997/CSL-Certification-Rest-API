@@ -57,6 +57,20 @@ class EnvironmentController extends Controller
     }
 
     /**
+     * Check if user may set passwords on a specific environment.
+     *
+     * Deliberately stricter than userHasAdminPrivileges(): that helper admits
+     * any teacher or sales agent, and since every environment owner is a
+     * teacher, using it here let any tenant set any other tenant's owner
+     * password. Setting a password is account takeover, so it is limited to
+     * platform admins and the environment's own owner.
+     */
+    private function userCanSetPasswordsFor($user, Environment $environment): bool
+    {
+        return $user->isAdmin() || $environment->owner_id === $user->id;
+    }
+
+    /**
      * @OA\Get(
      *     path="/api/environments",
      *     summary="Get all environments for the authenticated user",
@@ -934,15 +948,15 @@ class EnvironmentController extends Controller
     {
         try {
             $environment = Environment::findOrFail($id);
-            
-            // Check if user has admin permissions
-            if (!$this->userHasAdminPrivileges($request->user())) {
+
+            // Check if user may set passwords on this environment
+            if (!$this->userCanSetPasswordsFor($request->user(), $environment)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Unauthorized. Admin access required.'
                 ], 403);
             }
-            
+
             // Validate request
             $validator = Validator::make($request->all(), [
                 'password' => 'required|string|min:6',
@@ -1007,8 +1021,10 @@ class EnvironmentController extends Controller
         try {
             $environment = Environment::findOrFail($id);
 
-            // Only platform admins may reset arbitrary user passwords.
-            if (!$this->userHasAdminPrivileges($request->user())) {
+            // Only platform admins, or this environment's own owner, may reset
+            // user passwords. The comment below used to say "platform admins"
+            // while the check admitted any teacher or sales agent.
+            if (!$this->userCanSetPasswordsFor($request->user(), $environment)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Unauthorized. Admin access required.'
