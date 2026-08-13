@@ -2,14 +2,16 @@
 
 namespace App\Mail;
 
+use App\Helpers\EmailBrandingHelper;
+use App\Models\Environment;
+use App\Models\Invoice;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Address;
 use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
-use App\Models\Invoice;
-use App\Models\Environment;
 
 class InvoiceMail extends Mailable
 {
@@ -28,7 +30,7 @@ class InvoiceMail extends Mailable
     /**
      * Branding data (if available).
      */
-    public mixed $branding;
+    public ?array $branding;
 
     /**
      * Create a new message instance.
@@ -39,10 +41,8 @@ class InvoiceMail extends Mailable
         $this->environment = $invoice->environment;
         $this->branding = null;
 
-        if ($invoice->environment) {
-            $this->branding = \App\Models\Branding::where('environment_id', $invoice->environment->id)
-                ->where('is_active', true)
-                ->first();
+        if ($this->environment) {
+            $this->branding = EmailBrandingHelper::resolve($this->environment);
         }
     }
 
@@ -51,14 +51,14 @@ class InvoiceMail extends Mailable
      */
     public function envelope(): Envelope
     {
-        $environmentName = $this->environment?->name ?? 'CSL';
+        $companyName = $this->branding['company_name'] ?? $this->environment?->name ?? 'CSL';
 
         return new Envelope(
-            from: new \Illuminate\Mail\Mailables\Address(
+            from: new Address(
                 config('mail.from.address'),
-                $environmentName
+                $companyName
             ),
-            subject: 'Platform Fee Invoice — ' . ($this->invoice->invoice_number ?? 'Invoice'),
+            subject: 'Platform Fee Invoice — '.($this->invoice->invoice_number ?? 'Invoice'),
         );
     }
 
@@ -88,11 +88,11 @@ class InvoiceMail extends Mailable
 
         // Attach the generated PDF if it exists
         if ($this->invoice->pdf_path) {
-            $fullPath = storage_path('app/' . $this->invoice->pdf_path);
+            $fullPath = storage_path('app/'.$this->invoice->pdf_path);
 
             if (file_exists($fullPath)) {
                 $attachments[] = Attachment::fromPath($fullPath)
-                    ->as('invoice-' . $this->invoice->invoice_number . '.pdf')
+                    ->as('invoice-'.$this->invoice->invoice_number.'.pdf')
                     ->withMime('application/pdf');
             }
         }

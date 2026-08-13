@@ -2,13 +2,14 @@
 
 namespace App\Mail;
 
-use App\Models\Branding;
+use App\Helpers\EmailBrandingHelper;
 use App\Models\Environment;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Address;
+use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
@@ -19,7 +20,7 @@ class WelcomeToEnvironment extends Mailable implements ShouldQueue
 
     /**
      * Create a new message instance.
-     * 
+     *
      * IDENTITY UNIFICATION: Password is now optional.
      * When null, the email will instruct user to log in with their existing account.
      */
@@ -34,15 +35,11 @@ class WelcomeToEnvironment extends Mailable implements ShouldQueue
      */
     public function envelope(): Envelope
     {
-        $branding = Branding::where('environment_id', $this->environment->id)
-            ->where('is_active', true)
-            ->first();
-
-        $companyName = $branding?->company_name ?? $this->environment->name;
+        $branding = EmailBrandingHelper::resolve($this->environment);
 
         return new Envelope(
-            from: new Address(config('mail.from.address'), $companyName),
-            subject: "Welcome to {$companyName}",
+            from: new Address(config('mail.from.address'), $branding['company_name']),
+            subject: "Welcome to {$branding['company_name']}",
         );
     }
 
@@ -51,9 +48,7 @@ class WelcomeToEnvironment extends Mailable implements ShouldQueue
      */
     public function content(): Content
     {
-        $branding = Branding::where('environment_id', $this->environment->id)
-            ->where('is_active', true)
-            ->first();
+        $branding = EmailBrandingHelper::resolve($this->environment);
 
         return new Content(
             view: 'emails.welcome-to-environment',
@@ -62,8 +57,7 @@ class WelcomeToEnvironment extends Mailable implements ShouldQueue
                 'environment' => $this->environment,
                 'password' => $this->password,
                 'branding' => $branding,
-                'loginUrl' => 'https://' . $this->environment->primary_domain . '/auth/login',
-                'logoUrl' => asset('images/logo-kursa.svg'),
+                'loginUrl' => $branding['login_url'],
             ],
         );
     }
@@ -71,7 +65,7 @@ class WelcomeToEnvironment extends Mailable implements ShouldQueue
     /**
      * Get the attachments for the message.
      *
-     * @return array<int, \Illuminate\Mail\Mailables\Attachment>
+     * @return array<int, Attachment>
      */
     public function attachments(): array
     {

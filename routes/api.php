@@ -2,81 +2,122 @@
 
 use App\Http\Controllers\Api\ActivityCompletionController;
 use App\Http\Controllers\Api\ActivityController;
+use App\Http\Controllers\Api\Admin\AuditLogController;
+use App\Http\Controllers\Api\Admin\CentralizedTransactionController;
+use App\Http\Controllers\Api\Admin\CommissionController;
+use App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController;
+use App\Http\Controllers\Api\Admin\PasswordLinkController;
+use App\Http\Controllers\Api\Admin\SystemDashboardController;
+use App\Http\Controllers\Api\Admin\WithdrawalRequestController;
+use App\Http\Controllers\Api\AnalyticsController;
+use App\Http\Controllers\Api\AnalyticsWidgetsController;
 use App\Http\Controllers\Api\AssignmentContentController;
 use App\Http\Controllers\Api\AssignmentSubmissionController;
+use App\Http\Controllers\Api\Auth\AcademySwitchController;
 use App\Http\Controllers\Api\Auth\ForgotPasswordController;
+use App\Http\Controllers\Api\Auth\IdpForgotPasswordController;
 use App\Http\Controllers\Api\Auth\RegisterController;
 use App\Http\Controllers\Api\Auth\ResetPasswordController;
+use App\Http\Controllers\Api\BillingPaymentGatewayController;
 use App\Http\Controllers\Api\BlockController;
 use App\Http\Controllers\Api\BrandingController;
-use App\Http\Controllers\Api\LegalPageController;
 use App\Http\Controllers\Api\CertificateContentController;
 use App\Http\Controllers\Api\CertificateController;
 use App\Http\Controllers\Api\CertificateTemplateController;
+use App\Http\Controllers\Api\Chat\DiscussionController;
+use App\Http\Controllers\Api\Chat\MessageController;
+use App\Http\Controllers\Api\ChatAnalyticsController;
+use App\Http\Controllers\Api\ChatArchivalController;
+use App\Http\Controllers\Api\ChatSearchController;
+use App\Http\Controllers\Api\CourseBuilderController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\CourseSectionController;
+use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\DigitalProductController;
 use App\Http\Controllers\Api\DocumentationContentController;
-use App\Http\Controllers\Api\EnrollmentController;
+use App\Http\Controllers\Api\EnrollmentAnalyticsController;
 use App\Http\Controllers\Api\EnrollmentCodeController;
-use App\Http\Controllers\Api\LearnerController;
-use App\Http\Controllers\Api\EventContentController;
-use App\Http\Controllers\Api\VideoHandInContentController;
+use App\Http\Controllers\Api\EnrollmentController;
+use App\Http\Controllers\Api\EnvironmentAnalyticsController;
 use App\Http\Controllers\Api\EnvironmentController;
 use App\Http\Controllers\Api\EnvironmentCredentialsController;
+use App\Http\Controllers\Api\EnvironmentLiveSettingsController;
+use App\Http\Controllers\Api\EnvironmentMembershipController;
+use App\Http\Controllers\Api\EnvironmentUserController;
+use App\Http\Controllers\Api\EventContentController;
 use App\Http\Controllers\Api\FeedbackContentController;
 use App\Http\Controllers\Api\FeedbackSubmissionController;
 use App\Http\Controllers\Api\FileController;
+use App\Http\Controllers\Api\FinanceController;
+use App\Http\Controllers\Api\Instructor\EarningsController;
+use App\Http\Controllers\Api\Instructor\PaymentConfigController;
+use App\Http\Controllers\Api\Instructor\WithdrawalController;
+use App\Http\Controllers\Api\InstructorAssistantController;
+use App\Http\Controllers\Api\IntegrationInterestController;
+use App\Http\Controllers\Api\InvoiceController;
+use App\Http\Controllers\Api\LandingPagePopupController;
+use App\Http\Controllers\Api\LearnerController;
+use App\Http\Controllers\Api\LegalPageController;
 use App\Http\Controllers\Api\LessonContentController;
+use App\Http\Controllers\Api\LessonDiscussionController;
 use App\Http\Controllers\Api\LessonQuestionResponseController;
+use App\Http\Controllers\Api\LicenceController;
+use App\Http\Controllers\Api\LiveKitWebhookController;
+use App\Http\Controllers\Api\LiveSessionController;
+use App\Http\Controllers\Api\LiveSessionTokenController;
+use App\Http\Controllers\Api\MarketingAutomationController;
+use App\Http\Controllers\Api\MarketplaceController;
+use App\Http\Controllers\Api\Onboarding\DemoOnboardingController;
+use App\Http\Controllers\Api\Onboarding\OnboardingController;
+use App\Http\Controllers\Api\Onboarding\StandaloneOnboardingController;
+use App\Http\Controllers\Api\Onboarding\SupportedOnboardingController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PaymentGatewayController;
-use App\Http\Controllers\Api\BillingPaymentGatewayController;
+use App\Http\Controllers\Api\PersonalizationRequestController;
 use App\Http\Controllers\Api\PlanController;
+use App\Http\Controllers\Api\PlatformPaymentController;
 use App\Http\Controllers\Api\ProductAssetController;
 use App\Http\Controllers\Api\ProductCategoryController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProductReviewController;
 use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\PushSubscriptionController;
 use App\Http\Controllers\Api\QuestionController;
 use App\Http\Controllers\Api\QuizContentController;
 use App\Http\Controllers\Api\ReferralController;
+use App\Http\Controllers\Api\ReferralEnvironmentController;
+use App\Http\Controllers\Api\Sales\AuthController;
+use App\Http\Controllers\Api\Sales\SalesAgentController;
+use App\Http\Controllers\Api\Sales\SalesDashboardController;
+use App\Http\Controllers\Api\Sales\SalesFormController;
+use App\Http\Controllers\Api\Sales\SalesFormSubmissionController;
+use App\Http\Controllers\Api\SellerPanelController;
+use App\Http\Controllers\Api\SessionAuthController;
+use App\Http\Controllers\Api\StorefrontController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\SubscriptionProductController;
-use App\Http\Controllers\Api\TemplateController;
+use App\Http\Controllers\Api\TeamController;
 use App\Http\Controllers\Api\TemplateActivityQuestionController;
+use App\Http\Controllers\Api\TemplateController;
 use App\Http\Controllers\Api\TextContentController;
-use App\Http\Controllers\Api\SessionAuthController;
+use App\Http\Controllers\Api\ThirdPartyServiceController;
 use App\Http\Controllers\Api\TokenController;
 use App\Http\Controllers\Api\TransactionController;
+use App\Http\Controllers\Api\UserNotificationController;
 use App\Http\Controllers\Api\ValidationController;
 use App\Http\Controllers\Api\VideoContentController;
+use App\Http\Controllers\Api\VideoHandInContentController;
+use App\Http\Controllers\MediaAssetController;
+use App\Http\Controllers\QuizSubmissionController;
+use App\Mail\QueueFailureNotification;
+use App\Models\Environment;
+use App\Support\EffectiveAuthContext;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
-use App\Http\Controllers\Api\StorefrontController;
-use App\Http\Controllers\Api\ChatArchivalController;
-use App\Http\Controllers\Api\ChatSearchController;
-use App\Http\Controllers\Api\Onboarding\OnboardingController;
-use App\Http\Controllers\Api\ReferralEnvironmentController;
-use App\Http\Controllers\Api\FinanceController;
-use App\Http\Controllers\Api\AnalyticsController;
-use App\Http\Controllers\Api\AnalyticsWidgetsController;
-use App\Http\Controllers\Api\Onboarding\StandaloneOnboardingController;
-use App\Http\Controllers\Api\Onboarding\SupportedOnboardingController;
-use App\Http\Controllers\Api\Onboarding\DemoOnboardingController;
-use App\Http\Controllers\Api\LessonDiscussionController;
-use Illuminate\Support\Facades\Broadcast;
-use App\Http\Controllers\Api\UserNotificationController;
-use App\Http\Controllers\Api\PushSubscriptionController;
-use App\Http\Controllers\Api\CustomerController;
-use App\Http\Controllers\Api\ChatAnalyticsController;
-use App\Http\Controllers\Api\DigitalProductController;
-use App\Http\Controllers\Api\ThirdPartyServiceController;
-use App\Http\Controllers\Api\PersonalizationRequestController;
-use App\Http\Controllers\Api\SellerPanelController;
-use App\Http\Controllers\Api\Auth\IdpForgotPasswordController;
+use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth:sanctum')->post('/broadcasting/auth', function (Request $request) {
     return Broadcast::auth($request);
@@ -123,9 +164,9 @@ Route::prefix('onboarding')->group(function () {
 
     // KURSA licensing (Phase 4): no-card public onboarding — provisions the
     // environment + Free/Trial licence and emails a password-set link.
-    Route::post('/free', [\App\Http\Controllers\Api\LicenceController::class, 'onboardFree'])
+    Route::post('/free', [LicenceController::class, 'onboardFree'])
         ->middleware('throttle:20,1');
-    Route::post('/trial', [\App\Http\Controllers\Api\LicenceController::class, 'onboardTrial'])
+    Route::post('/trial', [LicenceController::class, 'onboardTrial'])
         ->middleware('throttle:20,1');
 });
 
@@ -133,19 +174,19 @@ Route::prefix('onboarding')->group(function () {
 // createCheckout works both authenticated (existing-env upgrade) and public
 // (anonymous new-env onboarding); pay & status are always public.
 Route::prefix('licence-checkouts')->group(function () {
-    Route::post('/', [\App\Http\Controllers\Api\LicenceController::class, 'createCheckout'])
+    Route::post('/', [LicenceController::class, 'createCheckout'])
         ->middleware('throttle:30,1');
-    Route::post('/{uuid}/pay', [\App\Http\Controllers\Api\LicenceController::class, 'pay'])
+    Route::post('/{uuid}/pay', [LicenceController::class, 'pay'])
         ->middleware('throttle:30,1');
-    Route::get('/{uuid}/status', [\App\Http\Controllers\Api\LicenceController::class, 'checkoutStatus'])
+    Route::get('/{uuid}/status', [LicenceController::class, 'checkoutStatus'])
         ->middleware('throttle:60,1');
 });
 
 // KURSA licensing (Phase 4): owner/admin-gated environment licence management.
 Route::middleware('auth:sanctum')->group(function () {
-    Route::get('/environment-licences/current', [\App\Http\Controllers\Api\LicenceController::class, 'current']);
-    Route::post('/environment-licences/trial', [\App\Http\Controllers\Api\LicenceController::class, 'startTrial']);
-    Route::post('/environment-licences/cancel', [\App\Http\Controllers\Api\LicenceController::class, 'cancel']);
+    Route::get('/environment-licences/current', [LicenceController::class, 'current']);
+    Route::post('/environment-licences/trial', [LicenceController::class, 'startTrial']);
+    Route::post('/environment-licences/cancel', [LicenceController::class, 'cancel']);
 });
 
 // Queue status endpoint
@@ -168,10 +209,10 @@ Route::get('/health/queue', function () {
     if ($failedJobs > 0) {
         // Check if we've already sent a notification recently (within the last hour)
         $cacheKey = 'queue_failure_notification_sent';
-        if (!cache()->has($cacheKey)) {
+        if (! cache()->has($cacheKey)) {
             // Send the email notification
             Mail::to('kevinliboire@gmail.com')
-                ->send(new \App\Mail\QueueFailureNotification($queueData));
+                ->send(new QueueFailureNotification($queueData));
 
             // Cache the notification to prevent sending too many emails
             cache()->put($cacheKey, now(), now()->addHour());
@@ -182,7 +223,7 @@ Route::get('/health/queue', function () {
 });
 
 Route::get('/debug/environments', function () {
-    $environments = \App\Models\Environment::where('is_active', true)
+    $environments = Environment::where('is_active', true)
         ->get(['id', 'name', 'primary_domain', 'additional_domains']);
 
     return response()->json([
@@ -194,7 +235,6 @@ Route::get('/debug/environments', function () {
 // User authentication routes
 Route::get('/user', function (Request $request) {
     $user = $request->user();
-    $response = $user->toArray();
 
     // Cookie-session auth: environment context is stored in session.
     $sessionEnvironmentId = session('current_environment_id');
@@ -222,14 +262,22 @@ Route::get('/user', function (Request $request) {
             }
         }
 
-        $response['environment_id'] = $environmentId;
     } else {
-        $response['environment_id'] = $sessionEnvironmentId ? (int) $sessionEnvironmentId : null;
+        $environmentId = $sessionEnvironmentId ? (int) $sessionEnvironmentId : null;
     }
+
+    $authContext = EffectiveAuthContext::for($user, $environmentId);
+    $responseUser = $user->toArray();
+    $responseUser['role'] = $authContext['role'];
+
+    $response = array_merge($responseUser, [
+        'user' => $responseUser,
+        'environment_id' => $environmentId,
+    ], $authContext);
 
     // For marketplace tokens, include the user's owned environment details
     if ($isMarketplaceToken) {
-        $ownedEnv = \App\Models\Environment::where('owner_id', $user->id)->first();
+        $ownedEnv = Environment::where('owner_id', $user->id)->first();
         $response['environment'] = $ownedEnv ? [
             'id' => $ownedEnv->id,
             'name' => $ownedEnv->name,
@@ -243,7 +291,6 @@ Route::get('/user', function (Request $request) {
 
 Route::get('/session/user', function (Request $request) {
     $user = $request->user();
-    $response = $user->toArray();
 
     // Cookie-session auth: environment context is stored in session.
     $sessionEnvironmentId = session('current_environment_id');
@@ -269,14 +316,19 @@ Route::get('/session/user', function (Request $request) {
             }
         }
 
-        $response['environment_id'] = $environmentId;
     } else {
-        $response['environment_id'] = $sessionEnvironmentId ? (int) $sessionEnvironmentId : null;
+        $environmentId = $sessionEnvironmentId ? (int) $sessionEnvironmentId : null;
     }
 
-    return response()->json($response);
-})->middleware('auth:sanctum');
+    $authContext = EffectiveAuthContext::for($user, $environmentId);
+    $responseUser = $user->toArray();
+    $responseUser['role'] = $authContext['role'];
 
+    return response()->json(array_merge($responseUser, [
+        'user' => $responseUser,
+        'environment_id' => $environmentId,
+    ], $authContext));
+})->middleware('auth:sanctum');
 
 // API Authentication Routes
 Route::post('/register', [RegisterController::class, 'register']);
@@ -307,22 +359,22 @@ Route::delete('/tokens', [TokenController::class, 'revokeTokens'])->middleware('
 
 // Environment Membership Routes (Identity Unification - Story 3)
 Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/environments/{id}/join', [\App\Http\Controllers\Api\EnvironmentMembershipController::class, 'join']);
-    Route::delete('/environments/{id}/leave', [\App\Http\Controllers\Api\EnvironmentMembershipController::class, 'leave']);
-    Route::get('/user/environments', [\App\Http\Controllers\Api\EnvironmentMembershipController::class, 'myEnvironments']);
+    Route::post('/environments/{id}/join', [EnvironmentMembershipController::class, 'join']);
+    Route::delete('/environments/{id}/leave', [EnvironmentMembershipController::class, 'leave']);
+    Route::get('/user/environments', [EnvironmentMembershipController::class, 'myEnvironments']);
 });
 
 // Academy Switch Routes (Cross-domain authentication for academy switching)
 Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/auth/academy-switch-token', [\App\Http\Controllers\Api\Auth\AcademySwitchController::class, 'generateSwitchToken']);
+    Route::post('/auth/academy-switch-token', [AcademySwitchController::class, 'generateSwitchToken']);
 });
 // Public endpoint for validating switch tokens (called by target domain)
-Route::post('/auth/validate-switch-token', [\App\Http\Controllers\Api\Auth\AcademySwitchController::class, 'validateSwitchToken']);
+Route::post('/auth/validate-switch-token', [AcademySwitchController::class, 'validateSwitchToken']);
 
 // Sales Platform Authentication Routes
-Route::post('/admin/sales/tokens', [\App\Http\Controllers\Api\Sales\AuthController::class, 'login']);
-Route::get('/admin/sales/user', [\App\Http\Controllers\Api\Sales\AuthController::class, 'user'])->middleware('auth:sanctum');
-Route::post('/admin/sales/logout', [\App\Http\Controllers\Api\Sales\AuthController::class, 'logout'])->middleware('auth:sanctum');
+Route::post('/admin/sales/tokens', [AuthController::class, 'login']);
+Route::get('/admin/sales/user', [AuthController::class, 'user'])->middleware('auth:sanctum');
+Route::post('/admin/sales/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
 
 // Environment routes
 Route::get('/current-environment', [EnvironmentController::class, 'getCurrentEnvironment']);
@@ -361,28 +413,28 @@ Route::middleware('auth:sanctum')->group(function () {
 // Sales Dashboard Routes
 Route::middleware('auth:sanctum')->group(function () {
     // Admin dashboard stats
-    Route::get('/sales/admin/stats', [App\Http\Controllers\Api\Sales\SalesDashboardController::class, 'getAdminStats']);
+    Route::get('/sales/admin/stats', [SalesDashboardController::class, 'getAdminStats']);
 
     // Sales agent dashboard stats
-    Route::get('/sales/agent/stats', [App\Http\Controllers\Api\Sales\SalesDashboardController::class, 'getAgentStats']);
+    Route::get('/sales/agent/stats', [SalesDashboardController::class, 'getAgentStats']);
 
     // Performance by period
-    Route::get('/sales/performance', [App\Http\Controllers\Api\Sales\SalesDashboardController::class, 'getPerformanceByPeriod']);
+    Route::get('/sales/performance', [SalesDashboardController::class, 'getPerformanceByPeriod']);
 
     // Referral listing and creation
-    Route::get('/sales/admin/referrals', [App\Http\Controllers\Api\ReferralController::class, 'index']);
-    Route::post('/sales/admin/referrals', [App\Http\Controllers\Api\ReferralController::class, 'store']);
+    Route::get('/sales/admin/referrals', [ReferralController::class, 'index']);
+    Route::post('/sales/admin/referrals', [ReferralController::class, 'store']);
 
     // Referral statistics (must come before wildcard routes)
-    Route::get('/sales/admin/referrals/stats', [App\Http\Controllers\Api\ReferralController::class, 'getStats']);
+    Route::get('/sales/admin/referrals/stats', [ReferralController::class, 'getStats']);
 
     // Validate referral code
-    Route::post('/sales/admin/referrals/validate', [App\Http\Controllers\Api\ReferralController::class, 'validate']);
+    Route::post('/sales/admin/referrals/validate', [ReferralController::class, 'validate']);
 
     // Individual referral operations (wildcard routes come last)
-    Route::get('/sales/admin/referrals/{id}', [App\Http\Controllers\Api\ReferralController::class, 'show']);
-    Route::put('/sales/admin/referrals/{id}', [App\Http\Controllers\Api\ReferralController::class, 'update']);
-    Route::delete('/sales/admin/referrals/{id}', [App\Http\Controllers\Api\ReferralController::class, 'destroy']);
+    Route::get('/sales/admin/referrals/{id}', [ReferralController::class, 'show']);
+    Route::put('/sales/admin/referrals/{id}', [ReferralController::class, 'update']);
+    Route::delete('/sales/admin/referrals/{id}', [ReferralController::class, 'destroy']);
 
     // Customer management routes
     Route::get('/sales/admin/customers', [App\Http\Controllers\Api\Sales\CustomerController::class, 'index']);
@@ -395,25 +447,25 @@ Route::middleware('auth:sanctum')->group(function () {
 // Sales Agent Management Routes
 Route::middleware('auth:sanctum')->group(function () {
     // Sales agent listing and creation
-    Route::get('/sales/admin/agents', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'index']);
-    Route::post('/sales/admin/agents', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'store']);
-    Route::get('/sales/admin/agents/{id}', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'show']);
-    Route::put('/sales/admin/agents/{id}', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'update']);
-    Route::delete('/sales/admin/agents/{id}', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'destroy']);
-    Route::get('/sales/admin/agents/{id}/performance', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'getPerformance']);
-    Route::get('/sales/admin/agents/{id}/referrals', [App\Http\Controllers\Api\Sales\SalesAgentController::class, 'getReferrals']);
+    Route::get('/sales/admin/agents', [SalesAgentController::class, 'index']);
+    Route::post('/sales/admin/agents', [SalesAgentController::class, 'store']);
+    Route::get('/sales/admin/agents/{id}', [SalesAgentController::class, 'show']);
+    Route::put('/sales/admin/agents/{id}', [SalesAgentController::class, 'update']);
+    Route::delete('/sales/admin/agents/{id}', [SalesAgentController::class, 'destroy']);
+    Route::get('/sales/admin/agents/{id}/performance', [SalesAgentController::class, 'getPerformance']);
+    Route::get('/sales/admin/agents/{id}/referrals', [SalesAgentController::class, 'getReferrals']);
 });
 
 // Template Management Routes
 Route::middleware('auth:sanctum')->group(function () {
 
     // Invoice routes
-    Route::get('/invoices', [App\Http\Controllers\Api\InvoiceController::class, 'index']);
-    Route::get('/invoices/{id}', [App\Http\Controllers\Api\InvoiceController::class, 'show']);
-    Route::post('/invoices', [App\Http\Controllers\Api\InvoiceController::class, 'generateMonthlyInvoices']);
-    Route::post('/invoices/{id}/pay', [App\Http\Controllers\Api\InvoiceController::class, 'initiatePayment']);
-    Route::put('/invoices/{id}', [App\Http\Controllers\Api\InvoiceController::class, 'markAsPaid']);
-    Route::get('/invoices/{id}/download', [App\Http\Controllers\Api\InvoiceController::class, 'downloadPDF']);
+    Route::get('/invoices', [InvoiceController::class, 'index']);
+    Route::get('/invoices/{id}', [InvoiceController::class, 'show']);
+    Route::post('/invoices', [InvoiceController::class, 'generateMonthlyInvoices']);
+    Route::post('/invoices/{id}/pay', [InvoiceController::class, 'initiatePayment']);
+    Route::put('/invoices/{id}', [InvoiceController::class, 'markAsPaid']);
+    Route::get('/invoices/{id}/download', [InvoiceController::class, 'downloadPDF']);
 
     // Product review moderation routes
     Route::get('/product-reviews', [ProductReviewController::class, 'index']);
@@ -427,7 +479,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/templates/{id}', [TemplateController::class, 'update']);
     Route::delete('/templates/{id}', [TemplateController::class, 'destroy']);
     Route::post('/templates/{id}/duplicate', [TemplateController::class, 'duplicate']);
-    Route::post('/templates/{id}/sell', [App\Http\Controllers\Api\MarketplaceController::class, 'sellTemplate']);
+    Route::post('/templates/{id}/sell', [MarketplaceController::class, 'sellTemplate']);
 
     // Seller Panel (BFF proxy to Marketplace API)
     Route::prefix('seller-panel')->group(function () {
@@ -451,7 +503,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/blocks/{id}', [BlockController::class, 'update']);
     Route::delete('/blocks/{id}', [BlockController::class, 'destroy']);
     Route::post('/templates/{templateId}/blocks/reorder', [BlockController::class, 'reorder']);
-    Route::post('/templates/{templateId}/blocks/batch', [\App\Http\Controllers\Api\BlockController::class, 'batchStore']);
+    Route::post('/templates/{templateId}/blocks/batch', [BlockController::class, 'batchStore']);
 
     // Activity routes
     Route::get('/blocks/{blockId}/activities', [ActivityController::class, 'index']);
@@ -503,18 +555,16 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Lesson Question Response routes
 
-
-
     // Quiz Submission Routes
-    Route::post('/quiz/{quizContentId}/submissions', [\App\Http\Controllers\QuizSubmissionController::class, 'store']);
-    Route::get('/quiz/{quizContentId}/submissions', [\App\Http\Controllers\QuizSubmissionController::class, 'index']);
-    Route::get('/quiz/{quizContentId}/user/submissions', [\App\Http\Controllers\QuizSubmissionController::class, 'getUserSubmissions']);
-    Route::get('/quiz/submissions/{submissionId}', [\App\Http\Controllers\QuizSubmissionController::class, 'show']);
-    Route::get('/enrollments/{enrollmentId}/quiz-submissions', [\App\Http\Controllers\QuizSubmissionController::class, 'getByEnrollment']);
+    Route::post('/quiz/{quizContentId}/submissions', [QuizSubmissionController::class, 'store']);
+    Route::get('/quiz/{quizContentId}/submissions', [QuizSubmissionController::class, 'index']);
+    Route::get('/quiz/{quizContentId}/user/submissions', [QuizSubmissionController::class, 'getUserSubmissions']);
+    Route::get('/quiz/submissions/{submissionId}', [QuizSubmissionController::class, 'show']);
+    Route::get('/enrollments/{enrollmentId}/quiz-submissions', [QuizSubmissionController::class, 'getByEnrollment']);
 
     // Assessment Violation Routes
-    Route::post('/quiz/submissions/{submissionId}/violations', [\App\Http\Controllers\QuizSubmissionController::class, 'logViolation']);
-    Route::get('/quiz/submissions/{submissionId}/violations', [\App\Http\Controllers\QuizSubmissionController::class, 'getViolations']);
+    Route::post('/quiz/submissions/{submissionId}/violations', [QuizSubmissionController::class, 'logViolation']);
+    Route::get('/quiz/submissions/{submissionId}/violations', [QuizSubmissionController::class, 'getViolations']);
 
     Route::get('/lessons/{lessonId}/responses', [LessonQuestionResponseController::class, 'getResponses']);
 
@@ -658,27 +708,27 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/enrollment-codes/{id}', [EnrollmentCodeController::class, 'show']);
 
     // Sales Forms routes (Marketing > Sales Forms builder & admin)
-    Route::get('/sales-forms/attachable-products', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'attachableProducts']);
-    Route::get('/sales-forms/course-structure/{courseId}', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'courseStructure']);
-    Route::get('/sales-forms/analytics/summary', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'analyticsSummary']);
-    Route::get('/sales-forms', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'index']);
-    Route::post('/sales-forms', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'store'])->middleware('licence.feature:sales_forms');
-    Route::get('/sales-forms/{id}', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'show']);
-    Route::put('/sales-forms/{id}', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'update'])->middleware('licence.feature:sales_forms');
-    Route::delete('/sales-forms/{id}', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'destroy'])->middleware('licence.feature:sales_forms');
-    Route::post('/sales-forms/{id}/publish', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'publish'])->middleware('licence.feature:sales_forms');
-    Route::get('/sales-forms/{id}/analytics', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'analytics']);
-    Route::get('/sales-forms/{id}/submissions', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'submissions']);
-    Route::get('/sales-forms/{id}/submissions/export', [\App\Http\Controllers\Api\Sales\SalesFormController::class, 'exportSubmissions'])->middleware('licence.feature:data_exports');
-    Route::post('/sales-forms/orders/{orderId}/complete', [\App\Http\Controllers\Api\Sales\SalesFormSubmissionController::class, 'completeOrder']);
+    Route::get('/sales-forms/attachable-products', [SalesFormController::class, 'attachableProducts']);
+    Route::get('/sales-forms/course-structure/{courseId}', [SalesFormController::class, 'courseStructure']);
+    Route::get('/sales-forms/analytics/summary', [SalesFormController::class, 'analyticsSummary']);
+    Route::get('/sales-forms', [SalesFormController::class, 'index']);
+    Route::post('/sales-forms', [SalesFormController::class, 'store'])->middleware('licence.feature:sales_forms');
+    Route::get('/sales-forms/{id}', [SalesFormController::class, 'show']);
+    Route::put('/sales-forms/{id}', [SalesFormController::class, 'update'])->middleware('licence.feature:sales_forms');
+    Route::delete('/sales-forms/{id}', [SalesFormController::class, 'destroy'])->middleware('licence.feature:sales_forms');
+    Route::post('/sales-forms/{id}/publish', [SalesFormController::class, 'publish'])->middleware('licence.feature:sales_forms');
+    Route::get('/sales-forms/{id}/analytics', [SalesFormController::class, 'analytics']);
+    Route::get('/sales-forms/{id}/submissions', [SalesFormController::class, 'submissions']);
+    Route::get('/sales-forms/{id}/submissions/export', [SalesFormController::class, 'exportSubmissions'])->middleware('licence.feature:data_exports');
+    Route::post('/sales-forms/orders/{orderId}/complete', [SalesFormSubmissionController::class, 'completeOrder']);
 
     // Marketing automations (Email/WhatsApp triggers — /settings/integrations/automations)
-    Route::get('/marketing-automations', [\App\Http\Controllers\Api\MarketingAutomationController::class, 'index']);
-    Route::put('/marketing-automations/{trigger}', [\App\Http\Controllers\Api\MarketingAutomationController::class, 'upsert'])->middleware('licence.feature:marketing_automations');
+    Route::get('/marketing-automations', [MarketingAutomationController::class, 'index']);
+    Route::put('/marketing-automations/{trigger}', [MarketingAutomationController::class, 'upsert'])->middleware('licence.feature:marketing_automations');
 
     // "Notify me" interest in coming-soon integrations
-    Route::get('/integration-interests', [\App\Http\Controllers\Api\IntegrationInterestController::class, 'index']);
-    Route::post('/integration-interests', [\App\Http\Controllers\Api\IntegrationInterestController::class, 'store']);
+    Route::get('/integration-interests', [IntegrationInterestController::class, 'index']);
+    Route::post('/integration-interests', [IntegrationInterestController::class, 'store']);
 
     // Order routes
     Route::get('/orders', [OrderController::class, 'index']);
@@ -705,8 +755,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/admin/personalization-requests', [PersonalizationRequestController::class, 'index']);
         Route::put('/admin/personalization-requests/{id}', [PersonalizationRequestController::class, 'update']);
     });
-
-
 
     // Profile routes
     Route::get('/profile', [ProfileController::class, 'getProfile']);
@@ -745,8 +793,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/marketing/referrals/{id}', [ReferralEnvironmentController::class, 'destroy'])->middleware('licence.feature:coupons_referrals,full');
     Route::get('/marketing/my-referrals', [ReferralEnvironmentController::class, 'myReferrals']);
     Route::post('/marketing/referrals/validate', [ReferralEnvironmentController::class, 'validate']);
-    Route::get('/marketing/referrals/stats', [App\Http\Controllers\Api\ReferralEnvironmentController::class, 'getStats']);
-
+    Route::get('/marketing/referrals/stats', [ReferralEnvironmentController::class, 'getStats']);
 
     // Branding routes
     Route::get('/branding', [BrandingController::class, 'index']);
@@ -761,12 +808,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/branding/{id}/landing-page/toggle', [BrandingController::class, 'toggleLandingPage'])->where('id', '[0-9]+');
 
     // Landing Page Popup Routes
-    Route::get('/branding/{brandingId}/popups', [\App\Http\Controllers\Api\LandingPagePopupController::class, 'index'])->where('brandingId', '[0-9]+');
-    Route::post('/branding/{brandingId}/popups', [\App\Http\Controllers\Api\LandingPagePopupController::class, 'store'])->where('brandingId', '[0-9]+');
-    Route::get('/branding/{brandingId}/popups/{popupId}', [\App\Http\Controllers\Api\LandingPagePopupController::class, 'show'])->where(['brandingId' => '[0-9]+', 'popupId' => '[0-9]+']);
-    Route::put('/branding/{brandingId}/popups/{popupId}', [\App\Http\Controllers\Api\LandingPagePopupController::class, 'update'])->where(['brandingId' => '[0-9]+', 'popupId' => '[0-9]+']);
-    Route::delete('/branding/{brandingId}/popups/{popupId}', [\App\Http\Controllers\Api\LandingPagePopupController::class, 'destroy'])->where(['brandingId' => '[0-9]+', 'popupId' => '[0-9]+']);
-    Route::post('/branding/{brandingId}/popups/{popupId}/toggle', [\App\Http\Controllers\Api\LandingPagePopupController::class, 'toggle'])->where(['brandingId' => '[0-9]+', 'popupId' => '[0-9]+']);
+    Route::get('/branding/{brandingId}/popups', [LandingPagePopupController::class, 'index'])->where('brandingId', '[0-9]+');
+    Route::post('/branding/{brandingId}/popups', [LandingPagePopupController::class, 'store'])->where('brandingId', '[0-9]+');
+    Route::get('/branding/{brandingId}/popups/{popupId}', [LandingPagePopupController::class, 'show'])->where(['brandingId' => '[0-9]+', 'popupId' => '[0-9]+']);
+    Route::put('/branding/{brandingId}/popups/{popupId}', [LandingPagePopupController::class, 'update'])->where(['brandingId' => '[0-9]+', 'popupId' => '[0-9]+']);
+    Route::delete('/branding/{brandingId}/popups/{popupId}', [LandingPagePopupController::class, 'destroy'])->where(['brandingId' => '[0-9]+', 'popupId' => '[0-9]+']);
+    Route::post('/branding/{brandingId}/popups/{popupId}/toggle', [LandingPagePopupController::class, 'toggle'])->where(['brandingId' => '[0-9]+', 'popupId' => '[0-9]+']);
 
     // Legal Pages Routes (About Us, Privacy Policy, Legal Notice, Terms of Service)
     Route::get('/legal-pages', [LegalPageController::class, 'index']);
@@ -818,7 +865,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/subscription/{id}/failed-payment', [SubscriptionController::class, 'getFailedPayment']);
         Route::post('/subscription/{id}/renew', [SubscriptionController::class, 'renew']);
         Route::post('/subscription/{id}/cancel-subscription', [SubscriptionController::class, 'cancelSubscription']);
-        Route::post('/platform-payments', [\App\Http\Controllers\Api\PlatformPaymentController::class, 'store']);
+        Route::post('/platform-payments', [PlatformPaymentController::class, 'store']);
 
         // Admin subscription management endpoints
         Route::get('/subscriptions', [SubscriptionController::class, 'index']);
@@ -830,7 +877,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/subscriptions/{id}/reactivate', [SubscriptionController::class, 'reactivate']);
 
         // Admin Invoice Management
-        Route::post('/admin/invoices/regenerate', [\App\Http\Controllers\Api\Admin\InvoiceController::class, 'regenerate']);
+        Route::post('/admin/invoices/regenerate', [App\Http\Controllers\Api\Admin\InvoiceController::class, 'regenerate']);
     });
 
     // Analytics routes
@@ -841,7 +888,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Unified environment-scoped analytics (audience, learning, commerce,
     // subscriptions, payouts, engagement, traffic) — EnvironmentAnalyticsService.
-    Route::get('/analytics/environment/overview', [\App\Http\Controllers\Api\EnvironmentAnalyticsController::class, 'overview']);
+    Route::get('/analytics/environment/overview', [EnvironmentAnalyticsController::class, 'overview']);
 
     // Analytics widgets (financial + traffic)
     Route::get('/analytics/financial-widgets', [AnalyticsWidgetsController::class, 'financialWidgets']);
@@ -853,17 +900,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/environments/{environmentId}/files', [FileController::class, 'getByEnvironment']);
 
     // Media Asset routes
-    Route::get('/media', [App\Http\Controllers\MediaAssetController::class, 'index']); // Listing
-    Route::post('/media/upload/init', [App\Http\Controllers\MediaAssetController::class, 'initUpload']);
-    Route::post('/media/upload/{id}/complete', [App\Http\Controllers\MediaAssetController::class, 'completeUpload']);
+    Route::get('/media', [MediaAssetController::class, 'index']); // Listing
+    Route::post('/media/upload/init', [MediaAssetController::class, 'initUpload']);
+    Route::post('/media/upload/{id}/complete', [MediaAssetController::class, 'completeUpload']);
     // Resumable direct-to-MinIO multipart upload (init + complete relay; sign/parts go browser->media-service)
-    Route::post('/media/upload/multipart/init', [App\Http\Controllers\MediaAssetController::class, 'initMultipartUpload']);
-    Route::post('/media/upload/multipart/{id}/complete', [App\Http\Controllers\MediaAssetController::class, 'completeMultipartUpload']);
-    Route::get('/media/playback/{id}', [App\Http\Controllers\MediaAssetController::class, 'playbackSession']);
-    Route::get('/media/{id}', [App\Http\Controllers\MediaAssetController::class, 'show']);
-    Route::delete('/media/{id}', [App\Http\Controllers\MediaAssetController::class, 'destroy']); // Deletion
-
-
+    Route::post('/media/upload/multipart/init', [MediaAssetController::class, 'initMultipartUpload']);
+    Route::post('/media/upload/multipart/{id}/complete', [MediaAssetController::class, 'completeMultipartUpload']);
+    Route::get('/media/playback/{id}', [MediaAssetController::class, 'playbackSession']);
+    Route::get('/media/{id}', [MediaAssetController::class, 'show']);
+    Route::delete('/media/{id}', [MediaAssetController::class, 'destroy']); // Deletion
 
     // User Notification routes
     Route::get('/environments/{environmentId}/notifications', [UserNotificationController::class, 'index']);
@@ -883,9 +928,9 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 // Webhook routes (Signature verified, no auth:sanctum)
-Route::post('/webhooks/media/processing', [App\Http\Controllers\MediaAssetController::class, 'processingWebhook']);
+Route::post('/webhooks/media/processing', [MediaAssetController::class, 'processingWebhook']);
 // Bunny Stream encoding webhook (protected by shared secret, no auth:sanctum)
-Route::post('/webhooks/bunny/stream', [App\Http\Controllers\MediaAssetController::class, 'bunnyWebhook']);
+Route::post('/webhooks/bunny/stream', [MediaAssetController::class, 'bunnyWebhook']);
 
 // Note: Public routes (/branding/public, /environment/status, /subscription/current)
 // are defined in routes/api-public.php to bypass Sanctum's EnsureFrontendRequestsAreStateful middleware
@@ -912,7 +957,6 @@ Route::group(['prefix' => 'storefront'], function () {
     Route::get('/{environmentId}/products', [StorefrontController::class, 'getProducts']);
     Route::get('/{environmentId}/products/{productId}', [StorefrontController::class, 'getProduct']);
 
-
     // Get Course By Slug
     Route::get('/{environmentId}/courses/{slug}', [StorefrontController::class, 'getCourseBySlug']);
 
@@ -937,8 +981,6 @@ Route::group(['prefix' => 'storefront'], function () {
 
     // Get Order
     Route::get('/{environmentId}/orders/{orderId}', [StorefrontController::class, 'getOrder']);
-
-
 
     // Get all approved product reviews for the entire store
     Route::get('/{environmentId}/reviews', [StorefrontController::class, 'getStoreReviews']);
@@ -997,50 +1039,50 @@ Route::group(['prefix' => 'payments'], function () {
 // Team Management Routes
 Route::middleware('auth:sanctum')->group(function () {
     // Team routes
-    Route::get('/teams', [\App\Http\Controllers\Api\TeamController::class, 'index']);
-    Route::post('/teams', [\App\Http\Controllers\Api\TeamController::class, 'store']);
-    Route::get('/teams/{id}', [\App\Http\Controllers\Api\TeamController::class, 'show']);
-    Route::put('/teams/{id}', [\App\Http\Controllers\Api\TeamController::class, 'update']);
-    Route::delete('/teams/{id}', [\App\Http\Controllers\Api\TeamController::class, 'destroy']);
+    Route::get('/teams', [TeamController::class, 'index']);
+    Route::post('/teams', [TeamController::class, 'store']);
+    Route::get('/teams/{id}', [TeamController::class, 'show']);
+    Route::put('/teams/{id}', [TeamController::class, 'update']);
+    Route::delete('/teams/{id}', [TeamController::class, 'destroy']);
 
     // Team members routes
-    Route::get('/teams/{id}/members', [\App\Http\Controllers\Api\TeamController::class, 'getTeamMembers']);
-    Route::post('/teams/invite', [\App\Http\Controllers\Api\TeamController::class, 'inviteMember'])->middleware('licence.limit:admin_seats');
-    Route::post('/teams/accept-invitation', [\App\Http\Controllers\Api\TeamController::class, 'acceptInvitation']);
-    Route::post('/teams/remove-member', [\App\Http\Controllers\Api\TeamController::class, 'removeMember']);
-    Route::post('/teams/update-member-role', [\App\Http\Controllers\Api\TeamController::class, 'updateMemberRole']);
+    Route::get('/teams/{id}/members', [TeamController::class, 'getTeamMembers']);
+    Route::post('/teams/invite', [TeamController::class, 'inviteMember'])->middleware('licence.limit:admin_seats');
+    Route::post('/teams/accept-invitation', [TeamController::class, 'acceptInvitation']);
+    Route::post('/teams/remove-member', [TeamController::class, 'removeMember']);
+    Route::post('/teams/update-member-role', [TeamController::class, 'updateMemberRole']);
 });
 
 // Environment User Routes
 Route::middleware('auth:sanctum')->group(function () {
     // Account setup route
-    Route::put('/environment-users/setup-account', [\App\Http\Controllers\Api\EnvironmentUserController::class, 'setupAccount']);
+    Route::put('/environment-users/setup-account', [EnvironmentUserController::class, 'setupAccount']);
 });
 // Include the environment authentication routes
-require __DIR__ . '/environment-auth.php';
+require __DIR__.'/environment-auth.php';
 
 // Include the learner routes
-require __DIR__ . '/learner.php';
+require __DIR__.'/learner.php';
 
 // Enrollment Analytics Routes
 Route::middleware('auth:sanctum')->prefix('analytics')->group(function () {
     // Track activity analytics
-    Route::post('/activity/track', [\App\Http\Controllers\Api\EnrollmentAnalyticsController::class, 'trackActivityAnalytics']);
+    Route::post('/activity/track', [EnrollmentAnalyticsController::class, 'trackActivityAnalytics']);
 
     // Get analytics for specific activity
-    Route::get('/enrollments/{enrollmentId}/activities/{activityId}', [\App\Http\Controllers\Api\EnrollmentAnalyticsController::class, 'getActivityAnalytics']);
+    Route::get('/enrollments/{enrollmentId}/activities/{activityId}', [EnrollmentAnalyticsController::class, 'getActivityAnalytics']);
 
     // Get all analytics for an enrollment
-    Route::get('/enrollments/{enrollmentId}', [\App\Http\Controllers\Api\EnrollmentAnalyticsController::class, 'getEnrollmentAnalytics']);
+    Route::get('/enrollments/{enrollmentId}', [EnrollmentAnalyticsController::class, 'getEnrollmentAnalytics']);
 
     // Get analytics summary for a user
-    Route::get('/users/{userId}/summary', [\App\Http\Controllers\Api\EnrollmentAnalyticsController::class, 'getUserAnalyticsSummary']);
+    Route::get('/users/{userId}/summary', [EnrollmentAnalyticsController::class, 'getUserAnalyticsSummary']);
 
     // Get course engagement over time
-    Route::get('/courses/{courseId}/engagement-over-time', [\App\Http\Controllers\Api\EnrollmentAnalyticsController::class, 'getCourseEngagementOverTime']);
+    Route::get('/courses/{courseId}/engagement-over-time', [EnrollmentAnalyticsController::class, 'getCourseEngagementOverTime']);
 
     // Get activity engagement leaderboard
-    Route::get('/courses/{courseId}/activity-leaderboard', [\App\Http\Controllers\Api\EnrollmentAnalyticsController::class, 'getActivityEngagementLeaderboard']);
+    Route::get('/courses/{courseId}/activity-leaderboard', [EnrollmentAnalyticsController::class, 'getActivityEngagementLeaderboard']);
 });
 
 // Lesson Discussion Routes
@@ -1051,48 +1093,48 @@ Route::prefix('lessons/{lessonId}/discussions')
         Route::post('/', 'store');
         Route::post('{discussionId}/reply', 'reply');
         Route::delete('{discussionId}', 'destroy');
-    })->middleware("auth:sanctum");
+    })->middleware('auth:sanctum');
 
 // Chat System Routes
 Route::middleware('auth:sanctum')->prefix('chat')->group(function () {
     // Discussion routes
-    Route::post('discussions', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'store']);
-    Route::get('discussions/{discussion}', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'show']);
-    Route::post('discussions/{discussion}/join', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'join'])
+    Route::post('discussions', [DiscussionController::class, 'store']);
+    Route::get('discussions/{discussion}', [DiscussionController::class, 'show']);
+    Route::post('discussions/{discussion}/join', [DiscussionController::class, 'join'])
         ->middleware('throttle:10,1'); // 10 join/leave actions per minute
-    Route::post('discussions/{discussion}/leave', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'leave'])
+    Route::post('discussions/{discussion}/leave', [DiscussionController::class, 'leave'])
         ->middleware('throttle:10,1'); // 10 join/leave actions per minute
-    Route::get('discussions/{discussion}/participants', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'participants']);
+    Route::get('discussions/{discussion}/participants', [DiscussionController::class, 'participants']);
 
     // Course-specific discussion routes
-    Route::get('courses/{courseId}/discussions', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'courseDiscussions']);
-    Route::post('courses/{courseId}/discussions/get-or-create', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'getOrCreate']);
+    Route::get('courses/{courseId}/discussions', [DiscussionController::class, 'courseDiscussions']);
+    Route::post('courses/{courseId}/discussions/get-or-create', [DiscussionController::class, 'getOrCreate']);
 
     // Message routes with rate limiting
-    Route::post('messages', [\App\Http\Controllers\Api\Chat\MessageController::class, 'store'])
+    Route::post('messages', [MessageController::class, 'store'])
         ->middleware('chat.rate.messages'); // 60 messages per minute
-    Route::post('discussions/{discussion}/mark-read', [\App\Http\Controllers\Api\Chat\MessageController::class, 'markAsRead']);
+    Route::post('discussions/{discussion}/mark-read', [MessageController::class, 'markAsRead']);
 });
 
 // Chat Analytics Routes
 Route::middleware('auth:sanctum')->prefix('chat/analytics')->group(function () {
     // Course engagement reports
-    Route::get('course/{courseId}/engagement', [\App\Http\Controllers\Api\ChatAnalyticsController::class, 'getCourseEngagementReport']);
+    Route::get('course/{courseId}/engagement', [ChatAnalyticsController::class, 'getCourseEngagementReport']);
 
     // Participation metrics
-    Route::get('course/{courseId}/participation', [\App\Http\Controllers\Api\ChatAnalyticsController::class, 'getParticipationMetrics']);
+    Route::get('course/{courseId}/participation', [ChatAnalyticsController::class, 'getParticipationMetrics']);
 
     // Certificate eligibility
-    Route::get('course/{courseId}/certificate-eligibility', [\App\Http\Controllers\Api\ChatAnalyticsController::class, 'getCertificateEligibility']);
+    Route::get('course/{courseId}/certificate-eligibility', [ChatAnalyticsController::class, 'getCertificateEligibility']);
 
     // Generate participation certificate
-    Route::post('course/{courseId}/users/{userId}/certificate', [\App\Http\Controllers\Api\ChatAnalyticsController::class, 'generateParticipationCertificate']);
+    Route::post('course/{courseId}/users/{userId}/certificate', [ChatAnalyticsController::class, 'generateParticipationCertificate']);
 
     // Process participation data (webhook endpoint)
-    Route::post('participation/process', [\App\Http\Controllers\Api\ChatAnalyticsController::class, 'processParticipationData']);
+    Route::post('participation/process', [ChatAnalyticsController::class, 'processParticipationData']);
 
     // Dashboard summary
-    Route::get('course/{courseId}/dashboard', [\App\Http\Controllers\Api\ChatAnalyticsController::class, 'getDashboardSummary']);
+    Route::get('course/{courseId}/dashboard', [ChatAnalyticsController::class, 'getDashboardSummary']);
 });
 
 // Chat Archival Routes
@@ -1139,13 +1181,13 @@ Route::prefix('chat/search')->group(function () {
 // Chat Instructor Routes
 Route::prefix('chat/instructor')->group(function () {
     // Get all discussions for instructor (across all their courses)
-    Route::get('discussions', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'instructorDiscussions']);
+    Route::get('discussions', [DiscussionController::class, 'instructorDiscussions']);
 
     // Get discussions for a specific course
-    Route::get('courses/{courseId}/discussions', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'courseDiscussions']);
+    Route::get('courses/{courseId}/discussions', [DiscussionController::class, 'courseDiscussions']);
 
     // Get discussion analytics for instructor
-    Route::get('discussions/analytics', [\App\Http\Controllers\Api\Chat\DiscussionController::class, 'instructorAnalytics']);
+    Route::get('discussions/analytics', [DiscussionController::class, 'instructorAnalytics']);
 });
 
 // Third Party Service Management Routes
@@ -1169,71 +1211,71 @@ Route::middleware('auth:sanctum')->prefix('third-party-services')->group(functio
 Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
     // Commission Management
     Route::prefix('commissions')->group(function () {
-        Route::get('/', [\App\Http\Controllers\Api\Admin\CommissionController::class, 'index']);
-        Route::get('/stats', [\App\Http\Controllers\Api\Admin\CommissionController::class, 'stats']);
-        Route::get('/environment/{environmentId}', [\App\Http\Controllers\Api\Admin\CommissionController::class, 'byEnvironment']);
-        Route::get('/{id}', [\App\Http\Controllers\Api\Admin\CommissionController::class, 'show']);
-        Route::post('/{id}/approve', [\App\Http\Controllers\Api\Admin\CommissionController::class, 'approve']);
-        Route::post('/bulk-approve', [\App\Http\Controllers\Api\Admin\CommissionController::class, 'bulkApprove']);
+        Route::get('/', [CommissionController::class, 'index']);
+        Route::get('/stats', [CommissionController::class, 'stats']);
+        Route::get('/environment/{environmentId}', [CommissionController::class, 'byEnvironment']);
+        Route::get('/{id}', [CommissionController::class, 'show']);
+        Route::post('/{id}/approve', [CommissionController::class, 'approve']);
+        Route::post('/bulk-approve', [CommissionController::class, 'bulkApprove']);
     });
 
     // Withdrawal Request Management
     Route::prefix('withdrawal-requests')->group(function () {
-        Route::get('/', [\App\Http\Controllers\Api\Admin\WithdrawalRequestController::class, 'index']);
-        Route::get('/stats', [\App\Http\Controllers\Api\Admin\WithdrawalRequestController::class, 'stats']);
-        Route::get('/{id}', [\App\Http\Controllers\Api\Admin\WithdrawalRequestController::class, 'show']);
-        Route::post('/{id}/approve', [\App\Http\Controllers\Api\Admin\WithdrawalRequestController::class, 'approve']);
-        Route::post('/{id}/reject', [\App\Http\Controllers\Api\Admin\WithdrawalRequestController::class, 'reject']);
-        Route::post('/{id}/process', [\App\Http\Controllers\Api\Admin\WithdrawalRequestController::class, 'process']);
+        Route::get('/', [WithdrawalRequestController::class, 'index']);
+        Route::get('/stats', [WithdrawalRequestController::class, 'stats']);
+        Route::get('/{id}', [WithdrawalRequestController::class, 'show']);
+        Route::post('/{id}/approve', [WithdrawalRequestController::class, 'approve']);
+        Route::post('/{id}/reject', [WithdrawalRequestController::class, 'reject']);
+        Route::post('/{id}/process', [WithdrawalRequestController::class, 'process']);
     });
 
     // Centralized Transaction Management
     Route::prefix('centralized-transactions')->group(function () {
-        Route::get('/', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'index']);
-        Route::get('/stats', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'stats']);
-        Route::get('/export', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'export']);
-        Route::get('/environment/{environmentId}', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'byEnvironment']);
-        Route::get('/{id}', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'show']);
-        Route::put('/{id}', [\App\Http\Controllers\Api\Admin\CentralizedTransactionController::class, 'update']);
+        Route::get('/', [CentralizedTransactionController::class, 'index']);
+        Route::get('/stats', [CentralizedTransactionController::class, 'stats']);
+        Route::get('/export', [CentralizedTransactionController::class, 'export']);
+        Route::get('/environment/{environmentId}', [CentralizedTransactionController::class, 'byEnvironment']);
+        Route::get('/{id}', [CentralizedTransactionController::class, 'show']);
+        Route::put('/{id}', [CentralizedTransactionController::class, 'update']);
     });
 
     // Owner password-set link re-send. Onboarding emails the link once from an
     // unrelated sender domain, so it is frequently never seen; the stored token
     // is bcrypt-hashed and therefore unrecoverable. This issues a fresh one.
-    Route::post('/environments/{environmentId}/resend-password-link', [\App\Http\Controllers\Api\Admin\PasswordLinkController::class, 'resend'])
+    Route::post('/environments/{environmentId}/resend-password-link', [PasswordLinkController::class, 'resend'])
         ->middleware('throttle:20,1');
 
     // System Dashboard
     Route::prefix('system-dashboard')->group(function () {
-        Route::get('/overview',              [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'overview']);
-        Route::get('/environments',          [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'environments']);
-        Route::get('/enrollment-trends',     [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'enrollmentTrends']);
-        Route::get('/revenue-trends',        [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'revenueTrends']);
-        Route::get('/environment-growth',    [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'environmentGrowth']);
-        Route::get('/environments-by-country', [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'environmentsByCountry']);
-        Route::get('/top-environments',      [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'topEnvironments']);
-        Route::get('/recent-activity',       [\App\Http\Controllers\Api\Admin\SystemDashboardController::class, 'recentActivity']);
+        Route::get('/overview', [SystemDashboardController::class, 'overview']);
+        Route::get('/environments', [SystemDashboardController::class, 'environments']);
+        Route::get('/enrollment-trends', [SystemDashboardController::class, 'enrollmentTrends']);
+        Route::get('/revenue-trends', [SystemDashboardController::class, 'revenueTrends']);
+        Route::get('/environment-growth', [SystemDashboardController::class, 'environmentGrowth']);
+        Route::get('/environments-by-country', [SystemDashboardController::class, 'environmentsByCountry']);
+        Route::get('/top-environments', [SystemDashboardController::class, 'topEnvironments']);
+        Route::get('/recent-activity', [SystemDashboardController::class, 'recentActivity']);
     });
 
     // Admin Orders Management
     Route::prefix('orders')->group(function () {
-        Route::get('/',        [\App\Http\Controllers\Api\Admin\OrderController::class, 'index']);
-        Route::get('/stats',   [\App\Http\Controllers\Api\Admin\OrderController::class, 'stats']);
-        Route::get('/{id}',    [\App\Http\Controllers\Api\Admin\OrderController::class, 'show']);
-        Route::put('/{id}',    [\App\Http\Controllers\Api\Admin\OrderController::class, 'update']);
-        Route::delete('/{id}', [\App\Http\Controllers\Api\Admin\OrderController::class, 'destroy']);
+        Route::get('/', [App\Http\Controllers\Api\Admin\OrderController::class, 'index']);
+        Route::get('/stats', [App\Http\Controllers\Api\Admin\OrderController::class, 'stats']);
+        Route::get('/{id}', [App\Http\Controllers\Api\Admin\OrderController::class, 'show']);
+        Route::put('/{id}', [App\Http\Controllers\Api\Admin\OrderController::class, 'update']);
+        Route::delete('/{id}', [App\Http\Controllers\Api\Admin\OrderController::class, 'destroy']);
     });
 
     // Audit Logs
-    Route::get('/audit-logs', [\App\Http\Controllers\Api\Admin\AuditLogController::class, 'index']);
-    Route::get('/audit-logs/{id}', [\App\Http\Controllers\Api\Admin\AuditLogController::class, 'show']);
+    Route::get('/audit-logs', [AuditLogController::class, 'index']);
+    Route::get('/audit-logs/{id}', [AuditLogController::class, 'show']);
 
     // Environment Payment Configuration
     Route::prefix('environment-payment-configs')->group(function () {
-        Route::get('/', [\App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController::class, 'index']);
-        Route::get('/{environmentId}', [\App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController::class, 'show']);
-        Route::put('/{environmentId}', [\App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController::class, 'update']);
-        Route::post('/{environmentId}/toggle', [\App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController::class, 'toggle']);
+        Route::get('/', [EnvironmentPaymentConfigController::class, 'index']);
+        Route::get('/{environmentId}', [EnvironmentPaymentConfigController::class, 'show']);
+        Route::put('/{environmentId}', [EnvironmentPaymentConfigController::class, 'update']);
+        Route::post('/{environmentId}/toggle', [EnvironmentPaymentConfigController::class, 'toggle']);
     });
 });
 
@@ -1241,61 +1283,61 @@ Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
 Route::middleware(['auth:sanctum'])->prefix('instructor')->group(function () {
     // Earnings Management
     Route::prefix('earnings')->group(function () {
-        Route::get('/', [\App\Http\Controllers\Api\Instructor\EarningsController::class, 'index']);
-        Route::get('/stats', [\App\Http\Controllers\Api\Instructor\EarningsController::class, 'stats']);
-        Route::get('/balance', [\App\Http\Controllers\Api\Instructor\EarningsController::class, 'balance']);
+        Route::get('/', [EarningsController::class, 'index']);
+        Route::get('/stats', [EarningsController::class, 'stats']);
+        Route::get('/balance', [EarningsController::class, 'balance']);
     });
 
     // Withdrawal Management
     Route::prefix('withdrawals')->group(function () {
-        Route::get('/', [\App\Http\Controllers\Api\Instructor\WithdrawalController::class, 'index']);
-        Route::post('/', [\App\Http\Controllers\Api\Instructor\WithdrawalController::class, 'store']);
-        Route::get('/{id}', [\App\Http\Controllers\Api\Instructor\WithdrawalController::class, 'show']);
+        Route::get('/', [WithdrawalController::class, 'index']);
+        Route::post('/', [WithdrawalController::class, 'store']);
+        Route::get('/{id}', [WithdrawalController::class, 'show']);
     });
 
     // Payment Configuration
     Route::prefix('payment-config')->group(function () {
-        Route::get('/', [\App\Http\Controllers\Api\Instructor\PaymentConfigController::class, 'show']);
-        Route::put('/', [\App\Http\Controllers\Api\Instructor\PaymentConfigController::class, 'update']);
+        Route::get('/', [PaymentConfigController::class, 'show']);
+        Route::put('/', [PaymentConfigController::class, 'update']);
 
         // Centralized payment gateway opt-in
-        Route::get('/centralized', [\App\Http\Controllers\Api\Instructor\PaymentConfigController::class, 'getCentralizedConfig']);
-        Route::post('/centralized/toggle', [\App\Http\Controllers\Api\Instructor\PaymentConfigController::class, 'toggleCentralized']);
+        Route::get('/centralized', [PaymentConfigController::class, 'getCentralizedConfig']);
+        Route::post('/centralized/toggle', [PaymentConfigController::class, 'toggleCentralized']);
     });
 
     // KURSA Assistant (conversational RAG agent — see InstructorAssistantAgent)
     Route::prefix('assistant')->group(function () {
-        Route::post('/message', [\App\Http\Controllers\Api\InstructorAssistantController::class, 'message'])
+        Route::post('/message', [InstructorAssistantController::class, 'message'])
             ->middleware('throttle:20,1');
     });
 
     // AI Course Builder (queued draft generation — see CourseBuilderAgent / GenerateCourseDraftJob)
     Route::prefix('course-builder')->group(function () {
-        Route::post('/generate', [\App\Http\Controllers\Api\CourseBuilderController::class, 'generate'])
+        Route::post('/generate', [CourseBuilderController::class, 'generate'])
             ->middleware('throttle:10,1');
-        Route::get('/result/{jobId}', [\App\Http\Controllers\Api\CourseBuilderController::class, 'result']);
+        Route::get('/result/{jobId}', [CourseBuilderController::class, 'result']);
     });
 });
 
 // Live Sessions Routes
 Route::middleware(['auth:sanctum'])->prefix('live-sessions')->group(function () {
-    Route::get('/', [\App\Http\Controllers\Api\LiveSessionController::class, 'index']);
-    Route::post('/', [\App\Http\Controllers\Api\LiveSessionController::class, 'store'])->middleware('licence.feature:live_sessions,full');
-    Route::get('/stats', [\App\Http\Controllers\Api\LiveSessionController::class, 'stats']);
-    Route::get('/{liveSession}', [\App\Http\Controllers\Api\LiveSessionController::class, 'show']);
-    Route::put('/{liveSession}', [\App\Http\Controllers\Api\LiveSessionController::class, 'update']);
-    Route::delete('/{liveSession}', [\App\Http\Controllers\Api\LiveSessionController::class, 'destroy']);
-    Route::post('/{liveSession}/start', [\App\Http\Controllers\Api\LiveSessionController::class, 'start']);
-    Route::post('/{liveSession}/end', [\App\Http\Controllers\Api\LiveSessionController::class, 'end']);
-    Route::post('/{liveSession}/token', [\App\Http\Controllers\Api\LiveSessionTokenController::class, 'generateToken']);
+    Route::get('/', [LiveSessionController::class, 'index']);
+    Route::post('/', [LiveSessionController::class, 'store'])->middleware('licence.feature:live_sessions,full');
+    Route::get('/stats', [LiveSessionController::class, 'stats']);
+    Route::get('/{liveSession}', [LiveSessionController::class, 'show']);
+    Route::put('/{liveSession}', [LiveSessionController::class, 'update']);
+    Route::delete('/{liveSession}', [LiveSessionController::class, 'destroy']);
+    Route::post('/{liveSession}/start', [LiveSessionController::class, 'start']);
+    Route::post('/{liveSession}/end', [LiveSessionController::class, 'end']);
+    Route::post('/{liveSession}/token', [LiveSessionTokenController::class, 'generateToken']);
 });
 
 // LiveKit Webhook (no auth - uses signature verification)
-Route::post('/webhooks/livekit', [\App\Http\Controllers\Api\LiveKitWebhookController::class, 'handle']);
+Route::post('/webhooks/livekit', [LiveKitWebhookController::class, 'handle']);
 
 // Live Settings Routes
 Route::middleware(['auth:sanctum'])->prefix('live-settings')->group(function () {
-    Route::get('/', [\App\Http\Controllers\Api\EnvironmentLiveSettingsController::class, 'show']);
-    Route::put('/', [\App\Http\Controllers\Api\EnvironmentLiveSettingsController::class, 'update']);
-    Route::get('/usage', [\App\Http\Controllers\Api\EnvironmentLiveSettingsController::class, 'usage']);
+    Route::get('/', [EnvironmentLiveSettingsController::class, 'show']);
+    Route::put('/', [EnvironmentLiveSettingsController::class, 'update']);
+    Route::get('/usage', [EnvironmentLiveSettingsController::class, 'usage']);
 });

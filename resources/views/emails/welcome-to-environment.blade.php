@@ -5,7 +5,7 @@
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Welcome to {{ $branding?->company_name ?? $environment->name }}</title>
+    <title>Welcome to {{ $branding['company_name'] }}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
@@ -17,15 +17,15 @@
         <tbody>
             {{-- Header with Logo --}}
             <tr>
-                <td style="background-color: #19682f; padding: 28px 40px; text-align: left;">
+                <td style="background-color: {{ $branding['primary_color'] }}; padding: 28px 40px; text-align: left;">
                     <table style="border-collapse: collapse; border-spacing: 0; width: 100%;" border="0" cellpadding="0" cellspacing="0">
                         <tr>
                             <td align="left" valign="middle">
-                                <img src="{{ $logoUrl }}" alt="{{ $branding?->company_name ?? $environment->name }}" style="width: 48px; height: 48px;" />
+                                <img src="{{ $branding['logo_url'] }}" alt="{{ $branding['company_name'] }}" style="width: 48px; height: 48px;" />
                             </td>
                             <td align="left" valign="middle" style="padding-left: 14px;">
                                 <span style="font-size: 22px; font-weight: 700; color: #ffffff; letter-spacing: -0.01em;">
-                                    {{ $branding?->company_name ?? $environment->name }}
+                                    {{ $branding['company_name'] }}
                                 </span>
                             </td>
                         </tr>
@@ -35,14 +35,14 @@
 
             {{-- Accent Bar --}}
             <tr>
-                <td style="background: linear-gradient(90deg, #f59c00, #ffb733); height: 4px; font-size: 0; line-height: 0;">
+                <td style="background: linear-gradient(90deg, {{ $branding['secondary_color'] }}, {{ $branding['accent_color'] }}); height: 4px; font-size: 0; line-height: 0;">
                     &nbsp;
                 </td>
             </tr>
 
             {{-- Welcome Banner Section --}}
             <tr>
-                <td style="background: linear-gradient(135deg, #145524 0%, #19682f 50%, #2a8a42 100%); padding: 48px 40px; text-align: center;">
+                <td style="background: linear-gradient(135deg, {{ $branding['primary_color'] }}dd 0%, {{ $branding['primary_color'] }} 100%); padding: 48px 40px; text-align: center;">
                     <table style="border-collapse: collapse; border-spacing: 0; width: 100%;" border="0" cellpadding="0" cellspacing="0">
                         <tr>
                             <td align="center">
@@ -69,7 +69,7 @@
                         Hi {{ $user->name }},
                     </h2>
                     <p style="margin: 0; font-weight: 400; font-size: 15px; line-height: 1.7; color: #717882;">
-                        Thank you for joining <strong style="color: #19682f;">{{ $branding?->company_name ?? $environment->name }}</strong>.
+                        Thank you for joining <strong style="color: {{ $branding['primary_color'] }};">{{ $branding['company_name'] }}</strong>.
                         We're excited to have you on board! Your account has been created and you can now access the learning environment.
                     </p>
                 </td>
@@ -81,7 +81,7 @@
                     <table style="border-collapse: collapse; border-spacing: 0; width: 100%; background-color: #fafafa; border-radius: 10px; border: 1px solid #e8e8e8;" border="0" cellpadding="0" cellspacing="0">
                         <tr>
                             <td style="padding: 24px 28px;">
-                                <h3 style="margin: 0 0 16px; font-weight: 700; font-size: 14px; line-height: 1; color: #19682f; text-transform: uppercase; letter-spacing: 0.08em;">
+                                <h3 style="margin: 0 0 16px; font-weight: 700; font-size: 14px; line-height: 1; color: {{ $branding['primary_color'] }}; text-transform: uppercase; letter-spacing: 0.08em;">
                                     🔑 Your Login Details
                                 </h3>
                                 <table style="border-collapse: collapse; border-spacing: 0; width: 100%;" border="0" cellpadding="0" cellspacing="0">
@@ -110,7 +110,7 @@
                                             <span style="font-size: 13px; font-weight: 600; color: #717882; text-transform: uppercase; letter-spacing: 0.05em;">Login URL</span>
                                         </td>
                                         <td style="padding: 8px 0; text-align: right;">
-                                            <a href="{{ $loginUrl }}" style="font-size: 14px; font-weight: 600; color: #19682f; text-decoration: none;">{{ $loginUrl }}</a>
+                                            <a href="{{ $loginUrl }}" style="font-size: 14px; font-weight: 600; color: {{ $branding['primary_color'] }}; text-decoration: none;">{{ $loginUrl }}</a>
                                         </td>
                                     </tr>
                                 </table>
@@ -123,7 +123,7 @@
             {{-- CTA Button --}}
             <tr>
                 <td style="padding: 24px 40px; text-align: center;">
-                    <a href="{{ $loginUrl }}" style="display: inline-block; text-decoration: none; font-weight: 700; font-size: 16px; line-height: 1; color: #1a1a1a; background-color: #f59c00; border-radius: 9999px; padding: 16px 48px; transition: background-color 0.2s ease;">
+                    <a href="{{ $loginUrl }}" style="display: inline-block; text-decoration: none; font-weight: 700; font-size: 16px; line-height: 1; color: #1a1a1a; background-color: {{ $branding['secondary_color'] }}; border-radius: 9999px; padding: 16px 48px; transition: background-color 0.2s ease;">
                         Login to Your Account
                     </a>
                 </td>
@@ -133,7 +133,7 @@
             <tr>
                 <td style="padding: 0 40px 32px; text-align: center;">
                     @if($password)
-                        <p style="margin: 0; font-weight: 500; font-size: 13px; line-height: 1.6; color: #d98a00; background-color: #fff8eb; padding: 12px 20px; border-radius: 8px; border: 1px solid #ffe4a0;">
+                        <p style="margin: 0; font-weight: 500; font-size: 13px; line-height: 1.6; color: {{ $branding['secondary_color'] }}; background-color: #fff8eb; padding: 12px 20px; border-radius: 8px; border: 1px solid {{ $branding['accent_color'] }};">
                             🔒 For security reasons, we recommend changing your password after your first login.
                         </p>
                     @else
@@ -166,16 +166,16 @@
                     <table style="border-collapse: collapse; border-spacing: 0; width: 100%;" border="0" cellpadding="0" cellspacing="0">
                         <tr>
                             <td align="center">
-                                <img src="{{ $logoUrl }}" alt="{{ $branding?->company_name ?? $environment->name }}" style="width: 36px; height: 36px; margin-bottom: 16px;" />
+                                <img src="{{ $branding['logo_url'] }}" alt="{{ $branding['company_name'] }}" style="width: 36px; height: 36px; margin-bottom: 16px;" />
                             </td>
                         </tr>
                         <tr>
                             <td align="center">
                                 <p style="margin: 0 0 8px; font-weight: 600; font-size: 14px; color: #ffffff;">
-                                    {{ $branding?->company_name ?? $environment->name }}
+                                    {{ $branding['company_name'] }}
                                 </p>
                                 <p style="margin: 0; font-weight: 400; font-size: 12px; line-height: 1.6; color: #717882;">
-                                    &copy; {{ date('Y') }} {{ $branding?->company_name ?? $environment->name }}. All rights reserved.
+                                    &copy; {{ date('Y') }} {{ $branding['company_name'] }}. All rights reserved.
                                 </p>
                             </td>
                         </tr>

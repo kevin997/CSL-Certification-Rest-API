@@ -2,6 +2,7 @@
 
 namespace App\Mail;
 
+use App\Helpers\EmailBrandingHelper;
 use App\Models\Environment;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -25,7 +26,7 @@ class EnvironmentResetPasswordMail extends Mailable implements ShouldQueue
     /**
      * The environment instance.
      *
-     * @var \App\Models\Environment
+     * @var Environment
      */
     public $environment;
 
@@ -59,9 +60,11 @@ class EnvironmentResetPasswordMail extends Mailable implements ShouldQueue
      */
     public function envelope(): Envelope
     {
+        $branding = EmailBrandingHelper::resolve($this->environment);
+
         return new Envelope(
-            subject: 'Reset Password for ' . $this->environment->name,
-            from: new Address(config('mail.from.address'), $this->environment->name),
+            subject: 'Reset Password for '.$branding['company_name'],
+            from: new Address(config('mail.from.address'), $branding['company_name']),
         );
     }
 
@@ -70,39 +73,15 @@ class EnvironmentResetPasswordMail extends Mailable implements ShouldQueue
      */
     public function content(): Content
     {
-        // Get the active branding for this environment
-        $branding = $this->environment->brandings()->where('is_active', true)->first();
-        
-        // Default branding values if no active branding exists
-        $brandingData = [
-            'company_name' => $this->environment->name,
-            'logo_path' => $this->environment->logo_url,
-            'primary_color' => $this->environment->theme_color ?? '#00a5ff',
-            'secondary_color' => '#4F46E5',
-            'accent_color' => '#10B981',
-            'font_family' => '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-        ];
-        
-        // Override with actual branding if available
-        if ($branding) {
-            $brandingData = [
-                'company_name' => $branding->company_name ?? $brandingData['company_name'],
-                'logo_path' => $branding->logo_path ?? $brandingData['logo_path'],
-                'primary_color' => $branding->primary_color ?? $brandingData['primary_color'],
-                'secondary_color' => $branding->secondary_color ?? $brandingData['secondary_color'],
-                'accent_color' => $branding->accent_color ?? $brandingData['accent_color'],
-                'font_family' => $branding->font_family ?? $brandingData['font_family'],
-                'custom_css' => $branding->custom_css,
-            ];
-        }
-        
+        $branding = EmailBrandingHelper::resolve($this->environment);
+
         return new Content(
             view: 'emails.environment-reset-password',
             with: [
                 'resetUrl' => $this->generateResetUrl(),
                 'environmentName' => $this->environment->name,
                 'environmentEmail' => $this->environmentEmail,
-                'branding' => $brandingData,
+                'branding' => $branding,
             ],
         );
     }
@@ -112,15 +91,11 @@ class EnvironmentResetPasswordMail extends Mailable implements ShouldQueue
      */
     protected function generateResetUrl(): string
     {
-        $domain = $this->environment->primary_domain;
-        
-        // If domain doesn't include protocol, add it
-        if (!str_starts_with($domain, 'http')) {
-            $domain = 'https://' . $domain;
-        }
-        
+        $domain = preg_replace('#^https?://#i', '', trim($this->environment->primary_domain));
+        $domain = 'https://'.rtrim($domain, '/');
+
         // Build the reset URL with the token and email parameters
-        return $domain . '/auth/reset-password?' . http_build_query([
+        return $domain.'/auth/reset-password?'.http_build_query([
             'token' => $this->token,
             'email' => $this->userEmail,
             'environment_id' => $this->environment->id,

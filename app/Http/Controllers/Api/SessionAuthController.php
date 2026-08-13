@@ -7,11 +7,12 @@ use App\Http\Controllers\Controller;
 use App\Models\Environment;
 use App\Models\EnvironmentUser;
 use App\Models\User;
+use App\Support\EffectiveAuthContext;
+use App\Support\TenantDomainRegistry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use App\Support\TenantDomainRegistry;
 use Illuminate\Validation\ValidationException;
 
 class SessionAuthController extends Controller
@@ -29,16 +30,12 @@ class SessionAuthController extends Controller
         $authenticatedViaEnvironment = false;
         $environmentUser = null;
 
-        if ($request->has('environment_id')) {
-            session(['current_environment_id' => $environmentId]);
-        }
-
-        if (Auth::attempt($request->only('email', 'password'))) {
-            $user = Auth::user();
+        $user = $this->tryGlobalCredentials($request->email, $request->password);
+        if ($user) {
             Log::info('Session Login: User authenticated via global password', ['user_id' => $user?->id]);
         }
 
-        if (!$user && $environmentId) {
+        if (! $user && $environmentId) {
             $result = $this->tryEnvironmentCredentials($request->email, $request->password, $environmentId);
 
             if ($result) {
@@ -46,11 +43,10 @@ class SessionAuthController extends Controller
                 $environmentUser = $result['environmentUser'];
                 $authenticatedViaEnvironment = true;
 
-                $this->autoHealPassword($user, $request->password);
             }
         }
 
-        if (!$user) {
+        if (! $user && ! $environmentId) {
             $result = $this->tryAnyEnvironmentCredentials($request->email, $request->password);
 
             if ($result) {
@@ -58,15 +54,11 @@ class SessionAuthController extends Controller
                 $environmentUser = $result['environmentUser'];
                 $authenticatedViaEnvironment = true;
 
-                $this->autoHealPassword($user, $request->password);
-
-                // If no environment_id explicitly provided, persist the matched environment.
-                session(['current_environment_id' => $environmentUser->environment_id]);
                 $environmentId = (int) $environmentUser->environment_id;
             }
         }
 
-        if (!$user) {
+        if (! $user) {
             throw ValidationException::withMessages([
                 'credentials' => ['Invalid credentials provided.'],
             ]);
@@ -80,7 +72,7 @@ class SessionAuthController extends Controller
             UserRole::SALES_AGENT->value,
             'admin',
             'super_admin',
-            'sales_agent'
+            'sales_agent',
         ]);
 
         if ($isAdminOrSalesAgent) {
@@ -117,23 +109,23 @@ class SessionAuthController extends Controller
             // 1. Exact match against static baseline + live tenant hosts
             $exactHosts = array_merge($staticAdminHosts, $tenantHosts);
             foreach ($exactHosts as $allowed) {
-                if ($requestHost === $allowed || str_starts_with($requestHost, $allowed . ':')) {
+                if ($requestHost === $allowed || str_starts_with($requestHost, $allowed.':')) {
                     $isAllowedDomain = true;
                     break;
                 }
             }
 
             // 2. Wildcard subdomain match for known production root domains
-            if (!$isAllowedDomain) {
+            if (! $isAllowedDomain) {
                 foreach ($allowedRoots as $root) {
-                    if ($requestHost === $root || str_ends_with($requestHost, '.' . $root)) {
+                    if ($requestHost === $root || str_ends_with($requestHost, '.'.$root)) {
                         $isAllowedDomain = true;
                         break;
                     }
                 }
             }
 
-            if (!$isAllowedDomain) {
+            if (! $isAllowedDomain) {
                 Log::warning('Admin/sales agent login attempt from unauthorized domain', [
                     'user_id' => $user->id,
                     'user_role' => $userRoleCheck,
@@ -147,18 +139,10 @@ class SessionAuthController extends Controller
             }
         }
 
-        if ($authenticatedViaEnvironment) {
-            Auth::login($user);
-        }
-
-        $request->session()->regenerate();
-
-        $user = Auth::user();
-
         if ($environmentId) {
             $environment = Environment::find($environmentId);
 
-            if (!$environment) {
+            if (! $environment) {
                 throw ValidationException::withMessages([
                     'credentials' => ['Invalid credentials provided.'],
                 ]);
@@ -166,33 +150,19 @@ class SessionAuthController extends Controller
 
             $isOwner = $environment->owner_id === $user->id;
 
-            if (!$isOwner && !$environmentUser) {
+            if (! $isOwner && ! $environmentUser) {
                 $environmentUser = EnvironmentUser::where('environment_id', $environmentId)
                     ->where('user_id', $user->id)
                     ->first();
 
-                if (!$environmentUser) {
+                if (! $environmentUser) {
                     throw ValidationException::withMessages([
                         'credentials' => ['Invalid credentials provided.'],
                     ]);
                 }
             }
-
-            $userRole = $user->role;
-            $environmentRole = $environmentUser ? $environmentUser->role : null;
-
-            $userRoleValue = $userRole instanceof UserRole ? $userRole->value : $userRole;
-            $environmentRoleValue = $environmentRole instanceof UserRole ? $environmentRole->value : $environmentRole;
-
-            if ($isOwner) {
-                $role = $userRoleValue === UserRole::COMPANY_TEACHER->value ? 'company_teacher' : 'individual_teacher';
-            } else {
-                $role = $environmentRoleValue ?: $userRoleValue;
-            }
         } else {
             $userRoleValue = $user->role instanceof UserRole ? $user->role->value : $user->role;
-            $role = $userRoleValue ?: 'user';
-            $environmentRoleValue = null;
 
             // Auto-resolve environment for teachers who login without explicit environment_id
             // (e.g. from the Sales Website for marketplace auth). This ensures that if they
@@ -209,11 +179,24 @@ class SessionAuthController extends Controller
             if ($isTeacherRole) {
                 $ownedEnvironment = Environment::where('owner_id', $user->id)->first();
                 if ($ownedEnvironment) {
-                    session(['current_environment_id' => $ownedEnvironment->id]);
                     $environmentId = $ownedEnvironment->id;
-                    $role = $userRoleValue === UserRole::COMPANY_TEACHER->value ? 'company_teacher' : 'individual_teacher';
                 }
             }
+        }
+
+        $authContext = EffectiveAuthContext::for($user, $environmentId);
+
+        if ($authenticatedViaEnvironment) {
+            $this->autoHealPassword($user, $request->password);
+        }
+
+        Auth::login($user);
+        $request->session()->regenerate();
+
+        if ($environmentId) {
+            $request->session()->put('current_environment_id', $environmentId);
+        } else {
+            $request->session()->forget('current_environment_id');
         }
 
         $isAccountSetup = null;
@@ -224,6 +207,9 @@ class SessionAuthController extends Controller
             $isAccountSetup = $envUser ? $envUser->is_account_setup : null;
         }
 
+        $responseUser = $user->toArray();
+        $responseUser['role'] = $authContext['role'];
+
         // For admin/sales_agent roles, issue a Sanctum API token so cross-domain
         // clients (e.g. manager.getkursa.space) can authenticate via Bearer header
         // instead of relying on session cookies, which cannot cross root domains.
@@ -232,17 +218,15 @@ class SessionAuthController extends Controller
             'admin', 'super_admin', 'sales_agent',
         ];
         $apiToken = null;
-        if (in_array($role, $adminRoles)) {
+        if (in_array($authContext['role'], $adminRoles)) {
             $apiToken = $user->createToken('admin-session')->plainTextToken;
         }
 
         return response()->json([
             'success' => true,
-            'user' => $user,
+            'user' => $responseUser,
             'environment_id' => $environmentId,
-            'role' => $role,
-            'user_role' => $user->role instanceof UserRole ? $user->role->value : $user->role,
-            'environment_role' => $environmentRoleValue,
+            ...$authContext,
             'is_account_setup' => $isAccountSetup,
             'api_token' => $apiToken,
         ]);
@@ -266,6 +250,17 @@ class SessionAuthController extends Controller
         ]);
     }
 
+    private function tryGlobalCredentials(string $email, string $password): ?User
+    {
+        $user = User::where('email', $email)->first();
+
+        if (! $user || ! Hash::check($password, $user->password)) {
+            return null;
+        }
+
+        return $user;
+    }
+
     private function tryEnvironmentCredentials(string $email, string $password, int $environmentId): ?array
     {
         $environmentUser = EnvironmentUser::where('environment_id', $environmentId)
@@ -273,16 +268,16 @@ class SessionAuthController extends Controller
             ->where('use_environment_credentials', true)
             ->first();
 
-        if (!$environmentUser) {
+        if (! $environmentUser) {
             return null;
         }
 
-        if (!Hash::check($password, $environmentUser->environment_password)) {
+        if (! Hash::check($password, $environmentUser->environment_password)) {
             return null;
         }
 
         $user = User::find($environmentUser->user_id);
-        if (!$user) {
+        if (! $user) {
             return null;
         }
 
@@ -351,7 +346,7 @@ class SessionAuthController extends Controller
         ]);
 
         $user = Auth::user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'success' => false,
                 'message' => 'Not authenticated',
@@ -361,7 +356,7 @@ class SessionAuthController extends Controller
         $redirectUrl = $request->input('redirect_url');
 
         // Validate the redirect URL against allowed domains
-        if (!$this->isAllowedRedirectUrl($redirectUrl)) {
+        if (! $this->isAllowedRedirectUrl($redirectUrl)) {
             Log::warning('Marketplace token: rejected redirect URL', [
                 'user_id' => $user->id,
                 'redirect_url' => $redirectUrl,
@@ -406,7 +401,7 @@ class SessionAuthController extends Controller
     private function isAllowedRedirectUrl(string $url): bool
     {
         $parsed = parse_url($url);
-        if (!$parsed || !isset($parsed['host'])) {
+        if (! $parsed || ! isset($parsed['host'])) {
             return false;
         }
 
@@ -442,32 +437,35 @@ class SessionAuthController extends Controller
     private function extractHostFromHeaders(string $frontendDomain, string $origin, string $referer): string
     {
         // Use X-Frontend-Domain if provided (set by our frontend)
-        if (!empty($frontendDomain)) {
+        if (! empty($frontendDomain)) {
             // Remove any scheme if accidentally included
             $frontendDomain = preg_replace('#^https?://#', '', $frontendDomain);
+
             return strtolower(trim($frontendDomain));
         }
 
         // Try Origin header
-        if (!empty($origin)) {
+        if (! empty($origin)) {
             $parsed = parse_url($origin);
             if (isset($parsed['host'])) {
                 $host = strtolower($parsed['host']);
                 if (isset($parsed['port'])) {
-                    $host .= ':' . $parsed['port'];
+                    $host .= ':'.$parsed['port'];
                 }
+
                 return $host;
             }
         }
 
         // Try Referer header
-        if (!empty($referer)) {
+        if (! empty($referer)) {
             $parsed = parse_url($referer);
             if (isset($parsed['host'])) {
                 $host = strtolower($parsed['host']);
                 if (isset($parsed['port'])) {
-                    $host .= ':' . $parsed['port'];
+                    $host .= ':'.$parsed['port'];
                 }
+
                 return $host;
             }
         }
