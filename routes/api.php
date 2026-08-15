@@ -769,7 +769,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/payment-gateways/{id}', [PaymentGatewayController::class, 'destroy']);
     Route::get('/payment-gateway-types', [PaymentGatewayController::class, 'getTypes']);
 
-    // Billing Payment Gateway routes (always uses default environment ID 1)
+    // Billing Payment Gateway routes (always uses platform-scoped gateways, environment_id IS NULL)
     Route::get('/billing/payment-gateways', [BillingPaymentGatewayController::class, 'index']);
     Route::get('/billing/payment-gateways/{id}', [BillingPaymentGatewayController::class, 'show']);
     Route::get('/billing/payment-gateway-types', [BillingPaymentGatewayController::class, 'getAvailableTypes']);
