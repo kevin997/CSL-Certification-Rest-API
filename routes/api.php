@@ -1271,6 +1271,14 @@ Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
     Route::get('/audit-logs/{id}', [AuditLogController::class, 'show']);
 
     // Environment Payment Configuration
+    // Which environment provides the gateways that centralized tenants use.
+    // Declared before the /{environmentId} routes so "provider" is not captured
+    // as an environment id.
+    Route::prefix('centralized-payment-provider')->group(function () {
+        Route::get('/', [EnvironmentPaymentConfigController::class, 'showCentralizedProvider']);
+        Route::put('/', [EnvironmentPaymentConfigController::class, 'setCentralizedProvider']);
+    });
+
     Route::prefix('environment-payment-configs')->group(function () {
         Route::get('/', [EnvironmentPaymentConfigController::class, 'index']);
         Route::get('/{environmentId}', [EnvironmentPaymentConfigController::class, 'show']);

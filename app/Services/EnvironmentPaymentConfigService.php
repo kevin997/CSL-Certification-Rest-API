@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Environment;
 use App\Models\EnvironmentPaymentConfig;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -142,10 +143,15 @@ class EnvironmentPaymentConfigService
     /**
      * Resolve the environment whose gateways centralized tenants transact through.
      *
-     * Identified by primary domain (config payments.centralized.environment_domain)
-     * rather than a literal id, so relocating it is a config change. Returns null
-     * when the environment cannot be resolved — the caller must then fall back to
-     * the tenant's own environment rather than guessing.
+     * Order: an explicit config id (tests and local work), then the
+     * environments.is_centralized_payment_provider flag an admin controls, then
+     * the configured primary domain as the bootstrap default. Returns null when
+     * nothing resolves — the caller must then fall back to the tenant's own
+     * environment rather than guessing.
+     *
+     * Deliberately uncached: this decides which account a tenant's money lands
+     * in, and a stale entry would keep routing to the previous provider after a
+     * switch. Both lookups are single indexed reads.
      */
     public function getCentralizedEnvironmentId(): ?int
     {
@@ -155,6 +161,15 @@ class EnvironmentPaymentConfigService
             return (int) $override;
         }
 
+        $flagged = Environment::query()
+            ->where('is_centralized_payment_provider', true)
+            ->where('is_active', true)
+            ->value('id');
+
+        if ($flagged !== null) {
+            return (int) $flagged;
+        }
+
         $domain = (string) config('payments.centralized.environment_domain');
 
         if ($domain === '') {
@@ -162,16 +177,66 @@ class EnvironmentPaymentConfigService
         }
 
         // Deliberately not Environment::findByDomain(): its OR/AND precedence
-        // lets an inactive environment match on primary_domain, and this value
-        // decides which account a tenant's money lands in. primary_domain is
-        // uniquely indexed, so this is a cheap point lookup and needs no cache
-        // that could serve a stale id after the domain moves.
+        // lets an inactive environment match on primary_domain.
         $id = Environment::query()
             ->where('primary_domain', $domain)
             ->where('is_active', true)
             ->value('id');
 
         return $id === null ? null : (int) $id;
+    }
+
+    /**
+     * Make an environment the centralized gateway provider.
+     *
+     * Exactly one environment holds the flag, so this clears the previous
+     * holder in the same transaction. The new provider also stops borrowing
+     * gateways, since it now owns them.
+     *
+     * @throws \Exception when the environment is missing or inactive
+     */
+    public function setCentralizedEnvironment(int $environmentId): Environment
+    {
+        $environment = Environment::find($environmentId);
+
+        if (! $environment) {
+            throw new \Exception("Environment not found: {$environmentId}");
+        }
+
+        if (! $environment->is_active) {
+            throw new \Exception('An inactive environment cannot provide the centralized payment gateways.');
+        }
+
+        $previousIds = Environment::query()
+            ->where('is_centralized_payment_provider', true)
+            ->where('id', '!=', $environmentId)
+            ->pluck('id')
+            ->all();
+
+        DB::transaction(function () use ($environment, $environmentId, $previousIds) {
+            Environment::query()
+                ->whereIn('id', $previousIds)
+                ->update(['is_centralized_payment_provider' => false]);
+
+            $environment->forceFill(['is_centralized_payment_provider' => true])->save();
+
+            // A provider cannot borrow from itself.
+            EnvironmentPaymentConfig::where('environment_id', $environmentId)
+                ->update(['use_centralized_gateways' => false]);
+        });
+
+        $this->invalidateCache($environmentId);
+
+        foreach ($previousIds as $previousId) {
+            $this->invalidateCache((int) $previousId);
+        }
+
+        Log::info('Centralized payment provider changed', [
+            'environment_id' => $environmentId,
+            'previous_environment_ids' => $previousIds,
+        ]);
+
+        return $environment->refresh();
     }
 
     /**

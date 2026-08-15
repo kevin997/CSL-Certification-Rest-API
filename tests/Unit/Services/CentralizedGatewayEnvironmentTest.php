@@ -152,4 +152,70 @@ class CentralizedGatewayEnvironmentTest extends TestCase
             $this->service->getEffectiveEnvironmentId($centralized->id)
         );
     }
+
+    public function test_the_provider_flag_wins_over_the_configured_domain(): void
+    {
+        $byDomain = $this->centralizedEnvironment();
+        $flagged = Environment::factory()->create(['is_centralized_payment_provider' => true]);
+
+        $this->assertNotSame($byDomain->id, $flagged->id);
+        $this->assertSame($flagged->id, $this->service->getCentralizedEnvironmentId());
+    }
+
+    public function test_an_inactive_flagged_environment_falls_back_to_the_configured_domain(): void
+    {
+        $byDomain = $this->centralizedEnvironment();
+        Environment::factory()->create([
+            'is_centralized_payment_provider' => true,
+            'is_active' => false,
+        ]);
+
+        $this->assertSame($byDomain->id, $this->service->getCentralizedEnvironmentId());
+    }
+
+    public function test_setting_a_provider_clears_the_previous_one(): void
+    {
+        $first = Environment::factory()->create(['is_centralized_payment_provider' => true]);
+        $second = Environment::factory()->create();
+
+        $this->service->setCentralizedEnvironment($second->id);
+
+        $this->assertFalse($first->fresh()->is_centralized_payment_provider);
+        $this->assertTrue($second->fresh()->is_centralized_payment_provider);
+        $this->assertSame($second->id, $this->service->getCentralizedEnvironmentId());
+    }
+
+    public function test_a_new_provider_stops_borrowing_gateways_from_anyone(): void
+    {
+        $environment = Environment::factory()->create();
+        EnvironmentPaymentConfig::factory()->create([
+            'environment_id' => $environment->id,
+            'use_centralized_gateways' => true,
+            'is_active' => true,
+        ]);
+
+        $this->service->setCentralizedEnvironment($environment->id);
+
+        $this->assertFalse($this->service->isCentralized($environment->id));
+    }
+
+    public function test_an_inactive_environment_cannot_become_the_provider(): void
+    {
+        $inactive = Environment::factory()->create(['is_active' => false]);
+
+        $this->expectException(\Exception::class);
+
+        $this->service->setCentralizedEnvironment($inactive->id);
+    }
+
+    public function test_switching_provider_reroutes_existing_borrowers(): void
+    {
+        $this->centralizedEnvironment();
+        $tenant = $this->tenantUsingCentralizedGateways();
+        $newProvider = Environment::factory()->create();
+
+        $this->service->setCentralizedEnvironment($newProvider->id);
+
+        $this->assertSame($newProvider->id, $this->service->getEffectiveEnvironmentId($tenant->id));
+    }
 }
