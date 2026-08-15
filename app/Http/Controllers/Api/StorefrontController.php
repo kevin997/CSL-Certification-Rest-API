@@ -248,8 +248,37 @@ class StorefrontController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $countries,
+            'data' => $this->sortByName($countries),
         ]);
+    }
+
+    /**
+     * Sort country/state rows alphabetically by display name.
+     *
+     * These lists are hand-maintained literals grouped by region, and several
+     * are ordered by ISO code rather than by the name shown to the user — so
+     * "Lower Saxony" landed after "Mecklenburg-Vorpommern" (code NI vs MV).
+     * Collator is used so accented names sort where a reader expects them:
+     * "Kédougou" before "Kolda", not after every unaccented entry.
+     *
+     * @param  array<int, array{code: string, name: string}>  $rows
+     * @return array<int, array{code: string, name: string}>
+     */
+    private function sortByName(array $rows): array
+    {
+        if (class_exists(\Collator::class)) {
+            $collator = new \Collator(app()->getLocale());
+            usort($rows, fn ($a, $b) => $collator->compare($a['name'], $b['name']));
+
+            return array_values($rows);
+        }
+
+        // intl absent: fold accents to their ASCII base so the order stays
+        // close to correct rather than pushing accented names to the end.
+        $key = fn (string $name) => @iconv('UTF-8', 'ASCII//TRANSLIT', $name) ?: $name;
+        usort($rows, fn ($a, $b) => strcasecmp($key($a['name']), $key($b['name'])));
+
+        return array_values($rows);
     }
 
     /**
@@ -654,7 +683,7 @@ class StorefrontController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $states,
+            'data' => $this->sortByName($states),
         ]);
     }
 
