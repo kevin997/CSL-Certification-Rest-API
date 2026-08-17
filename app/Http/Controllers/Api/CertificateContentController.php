@@ -213,7 +213,11 @@ class CertificateContentController extends Controller
         
         // If certificate_template_id is provided, fetch the template path from the certificate template
         if ($request->has('certificate_template_id') && $request->certificate_template_id) {
-            $certificateTemplate = CertificateTemplate::findOrFail($request->certificate_template_id);
+            // Scoped: the id comes from the request, so an unscoped lookup let a
+            // tenant attach another tenant's template to its own content.
+            $certificateTemplate = CertificateTemplate::query()
+                ->forEnvironment(session('current_environment_id'))
+                ->findOrFail($request->certificate_template_id);
             $data['template_path'] = $certificateTemplate->file_path;
         }
         
@@ -465,7 +469,11 @@ class CertificateContentController extends Controller
         if ($request->has('certificate_template_id') && $request->certificate_template_id) {
             // Only update template_path if the template ID has changed
             if ($certificateContent->certificate_template_id != $request->certificate_template_id) {
-                $certificateTemplate = CertificateTemplate::findOrFail($request->certificate_template_id);
+                // Scoped, as in store(): a request-supplied id must not reach
+                // another tenant's template.
+                $certificateTemplate = CertificateTemplate::query()
+                    ->forEnvironment(session('current_environment_id'))
+                    ->findOrFail($request->certificate_template_id);
                 $updateData['template_path'] = $certificateTemplate->file_path;
             }
         }
