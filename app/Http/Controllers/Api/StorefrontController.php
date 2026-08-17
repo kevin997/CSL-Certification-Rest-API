@@ -2,29 +2,38 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\OrderCompleted;
+use App\Events\OrderPlaced;
+use App\Events\UserCreatedDuringCheckout;
 use App\Http\Controllers\Controller;
+use App\Models\Commission;
 use App\Models\Course;
+use App\Models\Enrollment;
 use App\Models\Environment;
+use App\Models\EnvironmentReferral;
+use App\Models\EnvironmentUser;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\PaymentGatewaySetting;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ProductReview;
-use App\Models\Enrollment;
 use App\Models\User;
+use App\Notifications\OrderCreated;
+use App\Services\Commission\CommissionService;
+use App\Services\EnvironmentPaymentConfigService;
+use App\Services\OrderService;
+use App\Services\PaymentGateways\PaymentGatewayFactory;
+use App\Services\PaymentService;
 use App\Services\Tax\TaxZoneService;
+use App\Services\TelegramService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
-use App\Models\EnvironmentUser;
-use Carbon\Carbon;
-use App\Services\TelegramService;
-use App\Notifications\EnvironmentAccountCreated;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Hash;
 
 class StorefrontController extends Controller
 {
@@ -38,7 +47,6 @@ class StorefrontController extends Controller
     /**
      * Create a new controller instance.
      *
-     * @param TaxZoneService $taxZoneService
      * @return void
      */
     public function __construct(TaxZoneService $taxZoneService)
@@ -49,7 +57,6 @@ class StorefrontController extends Controller
     /**
      * Get the environment by ID
      *
-     * @param string $environmentId
      * @return Environment|null
      */
     protected function getEnvironmentById(string $environmentId)
@@ -72,8 +79,6 @@ class StorefrontController extends Controller
     /**
      * Get the order by ID
      *
-     * @param string $environmentId
-     * @param string $orderId
      * @return Order|null
      */
     protected function getOrderById(string $environmentId, string $orderId)
@@ -86,19 +91,16 @@ class StorefrontController extends Controller
             ->first();
     }
 
-
     /**
      * Get the order by ID
      *
-     * @param string $environmentId
-     * @param string $orderId
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getOrder(string $environmentId, string $orderId)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -106,7 +108,7 @@ class StorefrontController extends Controller
         // order is scoped to the store it actually belongs to.
         $order = $this->getOrderById((string) $environment->id, $orderId);
 
-        if (!$order) {
+        if (! $order) {
             return response()->json(['message' => 'Order not found'], 404);
         }
 
@@ -119,9 +121,7 @@ class StorefrontController extends Controller
     /**
      * Get a list of countries
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getCountries(Request $request, string $environmentId)
     {
@@ -248,17 +248,43 @@ class StorefrontController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $countries,
+            'data' => $this->sortByName($countries),
         ]);
+    }
+
+    /**
+     * Sort country/state rows alphabetically by display name.
+     *
+     * These lists are hand-maintained literals grouped by region, and several
+     * are ordered by ISO code rather than by the name shown to the user — so
+     * "Lower Saxony" landed after "Mecklenburg-Vorpommern" (code NI vs MV).
+     * Collator is used so accented names sort where a reader expects them:
+     * "Kédougou" before "Kolda", not after every unaccented entry.
+     *
+     * @param  array<int, array{code: string, name: string}>  $rows
+     * @return array<int, array{code: string, name: string}>
+     */
+    private function sortByName(array $rows): array
+    {
+        if (class_exists(\Collator::class)) {
+            $collator = new \Collator(app()->getLocale());
+            usort($rows, fn ($a, $b) => $collator->compare($a['name'], $b['name']));
+
+            return array_values($rows);
+        }
+
+        // intl absent: fold accents to their ASCII base so the order stays
+        // close to correct rather than pushing accented names to the end.
+        $key = fn (string $name) => @iconv('UTF-8', 'ASCII//TRANSLIT', $name) ?: $name;
+        usort($rows, fn ($a, $b) => strcasecmp($key($a['name']), $key($b['name'])));
+
+        return array_values($rows);
     }
 
     /**
      * Get a list of states/provinces for a country
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @param string $countryCode
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getStates(Request $request, string $environmentId, string $countryCode)
     {
@@ -323,9 +349,9 @@ class StorefrontController extends Controller
                 ['code' => 'WV', 'name' => 'West Virginia'],
                 ['code' => 'WI', 'name' => 'Wisconsin'],
                 ['code' => 'WY', 'name' => 'Wyoming'],
-                ['code' => 'DC', 'name' => 'District of Columbia']
+                ['code' => 'DC', 'name' => 'District of Columbia'],
             ];
-        } else if ($countryCode === 'CA') {
+        } elseif ($countryCode === 'CA') {
             $states = [
                 ['code' => 'AB', 'name' => 'Alberta'],
                 ['code' => 'BC', 'name' => 'British Columbia'],
@@ -339,16 +365,16 @@ class StorefrontController extends Controller
                 ['code' => 'PE', 'name' => 'Prince Edward Island'],
                 ['code' => 'QC', 'name' => 'Quebec'],
                 ['code' => 'SK', 'name' => 'Saskatchewan'],
-                ['code' => 'YT', 'name' => 'Yukon']
+                ['code' => 'YT', 'name' => 'Yukon'],
             ];
-        } else if ($countryCode === 'GB') {
+        } elseif ($countryCode === 'GB') {
             $states = [
                 ['code' => 'ENG', 'name' => 'England'],
                 ['code' => 'SCT', 'name' => 'Scotland'],
                 ['code' => 'WLS', 'name' => 'Wales'],
-                ['code' => 'NIR', 'name' => 'Northern Ireland']
+                ['code' => 'NIR', 'name' => 'Northern Ireland'],
             ];
-        } else if ($countryCode === 'AU') {
+        } elseif ($countryCode === 'AU') {
             $states = [
                 ['code' => 'ACT', 'name' => 'Australian Capital Territory'],
                 ['code' => 'NSW', 'name' => 'New South Wales'],
@@ -357,9 +383,9 @@ class StorefrontController extends Controller
                 ['code' => 'SA', 'name' => 'South Australia'],
                 ['code' => 'TAS', 'name' => 'Tasmania'],
                 ['code' => 'VIC', 'name' => 'Victoria'],
-                ['code' => 'WA', 'name' => 'Western Australia']
+                ['code' => 'WA', 'name' => 'Western Australia'],
             ];
-        } else if ($countryCode === 'DE') {
+        } elseif ($countryCode === 'DE') {
             $states = [
                 ['code' => 'BW', 'name' => 'Baden-Württemberg'],
                 ['code' => 'BY', 'name' => 'Bavaria'],
@@ -376,9 +402,9 @@ class StorefrontController extends Controller
                 ['code' => 'SN', 'name' => 'Saxony'],
                 ['code' => 'ST', 'name' => 'Saxony-Anhalt'],
                 ['code' => 'SH', 'name' => 'Schleswig-Holstein'],
-                ['code' => 'TH', 'name' => 'Thuringia']
+                ['code' => 'TH', 'name' => 'Thuringia'],
             ];
-        } else if ($countryCode === 'IN') {
+        } elseif ($countryCode === 'IN') {
             $states = [
                 ['code' => 'AP', 'name' => 'Andhra Pradesh'],
                 ['code' => 'AR', 'name' => 'Arunachal Pradesh'],
@@ -407,9 +433,9 @@ class StorefrontController extends Controller
                 ['code' => 'TR', 'name' => 'Tripura'],
                 ['code' => 'UT', 'name' => 'Uttarakhand'],
                 ['code' => 'UP', 'name' => 'Uttar Pradesh'],
-                ['code' => 'WB', 'name' => 'West Bengal']
+                ['code' => 'WB', 'name' => 'West Bengal'],
             ];
-        } else if ($countryCode === 'MX') {
+        } elseif ($countryCode === 'MX') {
             $states = [
                 ['code' => 'AGU', 'name' => 'Aguascalientes'],
                 ['code' => 'BCN', 'name' => 'Baja California'],
@@ -442,12 +468,12 @@ class StorefrontController extends Controller
                 ['code' => 'TLA', 'name' => 'Tlaxcala'],
                 ['code' => 'VER', 'name' => 'Veracruz'],
                 ['code' => 'YUC', 'name' => 'Yucatán'],
-                ['code' => 'ZAC', 'name' => 'Zacatecas']
+                ['code' => 'ZAC', 'name' => 'Zacatecas'],
             ];
         }
         // CEMAC Countries
         // Cameroon
-        else if ($countryCode === 'CM') {
+        elseif ($countryCode === 'CM') {
             $states = [
                 ['code' => 'AD', 'name' => 'Adamawa'],
                 ['code' => 'CE', 'name' => 'Centre'],
@@ -458,11 +484,11 @@ class StorefrontController extends Controller
                 ['code' => 'NW', 'name' => 'North-West'],
                 ['code' => 'SU', 'name' => 'South'],
                 ['code' => 'SW', 'name' => 'South-West'],
-                ['code' => 'OU', 'name' => 'West']
+                ['code' => 'OU', 'name' => 'West'],
             ];
         }
         // Central African Republic
-        else if ($countryCode === 'CF') {
+        elseif ($countryCode === 'CF') {
             $states = [
                 ['code' => 'BGF', 'name' => 'Bangui'],
                 ['code' => 'BB', 'name' => 'Bamingui-Bangoran'],
@@ -479,11 +505,11 @@ class StorefrontController extends Controller
                 ['code' => 'AC', 'name' => 'Ouham'],
                 ['code' => 'OP', 'name' => 'Ouham-Pendé'],
                 ['code' => 'SE', 'name' => 'Sangha-Mbaéré'],
-                ['code' => 'VK', 'name' => 'Vakaga']
+                ['code' => 'VK', 'name' => 'Vakaga'],
             ];
         }
         // Chad
-        else if ($countryCode === 'TD') {
+        elseif ($countryCode === 'TD') {
             $states = [
                 ['code' => 'BA', 'name' => 'Batha'],
                 ['code' => 'BG', 'name' => 'Borkou'],
@@ -506,11 +532,11 @@ class StorefrontController extends Controller
                 ['code' => 'SI', 'name' => 'Sila'],
                 ['code' => 'TA', 'name' => 'Tandjilé'],
                 ['code' => 'TI', 'name' => 'Tibesti'],
-                ['code' => 'WF', 'name' => 'Wadi Fira']
+                ['code' => 'WF', 'name' => 'Wadi Fira'],
             ];
         }
         // Republic of Congo
-        else if ($countryCode === 'CG') {
+        elseif ($countryCode === 'CG') {
             $states = [
                 ['code' => 'BZV', 'name' => 'Brazzaville'],
                 ['code' => 'PNR', 'name' => 'Pointe-Noire'],
@@ -523,11 +549,11 @@ class StorefrontController extends Controller
                 ['code' => 'NIA', 'name' => 'Niari'],
                 ['code' => 'PLT', 'name' => 'Plateaux'],
                 ['code' => 'POO', 'name' => 'Pool'],
-                ['code' => 'SAN', 'name' => 'Sangha']
+                ['code' => 'SAN', 'name' => 'Sangha'],
             ];
         }
         // Equatorial Guinea
-        else if ($countryCode === 'GQ') {
+        elseif ($countryCode === 'GQ') {
             $states = [
                 ['code' => 'AN', 'name' => 'Annobón'],
                 ['code' => 'BN', 'name' => 'Bioko Norte'],
@@ -535,11 +561,11 @@ class StorefrontController extends Controller
                 ['code' => 'CS', 'name' => 'Centro Sur'],
                 ['code' => 'KN', 'name' => 'Kié-Ntem'],
                 ['code' => 'LI', 'name' => 'Litoral'],
-                ['code' => 'WN', 'name' => 'Wele-Nzas']
+                ['code' => 'WN', 'name' => 'Wele-Nzas'],
             ];
         }
         // Gabon
-        else if ($countryCode === 'GA') {
+        elseif ($countryCode === 'GA') {
             $states = [
                 ['code' => 'ES', 'name' => 'Estuaire'],
                 ['code' => 'HO', 'name' => 'Haut-Ogooué'],
@@ -549,12 +575,12 @@ class StorefrontController extends Controller
                 ['code' => 'OI', 'name' => 'Ogooué-Ivindo'],
                 ['code' => 'OL', 'name' => 'Ogooué-Lolo'],
                 ['code' => 'OM', 'name' => 'Ogooué-Maritime'],
-                ['code' => 'WN', 'name' => 'Woleu-Ntem']
+                ['code' => 'WN', 'name' => 'Woleu-Ntem'],
             ];
         }
         // ECOWAS Countries
         // Nigeria
-        else if ($countryCode === 'NG') {
+        elseif ($countryCode === 'NG') {
             $states = [
                 ['code' => 'AB', 'name' => 'Abia'],
                 ['code' => 'AD', 'name' => 'Adamawa'],
@@ -592,11 +618,11 @@ class StorefrontController extends Controller
                 ['code' => 'SO', 'name' => 'Sokoto'],
                 ['code' => 'TA', 'name' => 'Taraba'],
                 ['code' => 'YO', 'name' => 'Yobe'],
-                ['code' => 'ZA', 'name' => 'Zamfara']
+                ['code' => 'ZA', 'name' => 'Zamfara'],
             ];
         }
         // Ghana
-        else if ($countryCode === 'GH') {
+        elseif ($countryCode === 'GH') {
             $states = [
                 ['code' => 'AF', 'name' => 'Ahafo'],
                 ['code' => 'AH', 'name' => 'Ashanti'],
@@ -613,11 +639,11 @@ class StorefrontController extends Controller
                 ['code' => 'UW', 'name' => 'Upper West'],
                 ['code' => 'TV', 'name' => 'Volta'],
                 ['code' => 'WP', 'name' => 'Western'],
-                ['code' => 'WN', 'name' => 'Western North']
+                ['code' => 'WN', 'name' => 'Western North'],
             ];
         }
         // Senegal
-        else if ($countryCode === 'SN') {
+        elseif ($countryCode === 'SN') {
             $states = [
                 ['code' => 'DK', 'name' => 'Dakar'],
                 ['code' => 'DB', 'name' => 'Diourbel'],
@@ -632,11 +658,11 @@ class StorefrontController extends Controller
                 ['code' => 'SE', 'name' => 'Sédhiou'],
                 ['code' => 'TC', 'name' => 'Tambacounda'],
                 ['code' => 'TH', 'name' => 'Thiès'],
-                ['code' => 'ZG', 'name' => 'Ziguinchor']
+                ['code' => 'ZG', 'name' => 'Ziguinchor'],
             ];
         }
         // Ivory Coast
-        else if ($countryCode === 'CI') {
+        elseif ($countryCode === 'CI') {
             $states = [
                 ['code' => 'AB', 'name' => 'Abidjan'],
                 ['code' => 'BS', 'name' => 'Bas-Sassandra'],
@@ -651,30 +677,26 @@ class StorefrontController extends Controller
                 ['code' => 'VB', 'name' => 'Vallée du Bandama'],
                 ['code' => 'WR', 'name' => 'Woroba'],
                 ['code' => 'YM', 'name' => 'Yamoussoukro'],
-                ['code' => 'ZZ', 'name' => 'Zanzan']
+                ['code' => 'ZZ', 'name' => 'Zanzan'],
             ];
         }
 
         return response()->json([
             'success' => true,
-            'data' => $states
+            'data' => $this->sortByName($states),
         ]);
     }
 
     /**
      * Get a list of cities for a state/province
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @param string $countryCode
-     * @param string $stateCode
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getCities(Request $request, string $environmentId, string $countryCode, string $stateCode)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -701,11 +723,11 @@ class StorefrontController extends Controller
                     ['name' => 'Irvine'],
                     ['name' => 'San Bernardino'],
                     ['name' => 'Modesto'],
-                    ['name' => 'Fontana']
+                    ['name' => 'Fontana'],
                 ];
             }
             // New York
-            else if ($stateCode === 'NY') {
+            elseif ($stateCode === 'NY') {
                 $cities = [
                     ['name' => 'New York City'],
                     ['name' => 'Buffalo'],
@@ -721,11 +743,11 @@ class StorefrontController extends Controller
                     ['name' => 'Troy'],
                     ['name' => 'Niagara Falls'],
                     ['name' => 'White Plains'],
-                    ['name' => 'Saratoga Springs']
+                    ['name' => 'Saratoga Springs'],
                 ];
             }
             // Texas
-            else if ($stateCode === 'TX') {
+            elseif ($stateCode === 'TX') {
                 $cities = [
                     ['name' => 'Houston'],
                     ['name' => 'San Antonio'],
@@ -741,11 +763,11 @@ class StorefrontController extends Controller
                     ['name' => 'Garland'],
                     ['name' => 'Irving'],
                     ['name' => 'Amarillo'],
-                    ['name' => 'Grand Prairie']
+                    ['name' => 'Grand Prairie'],
                 ];
             }
             // Florida
-            else if ($stateCode === 'FL') {
+            elseif ($stateCode === 'FL') {
                 $cities = [
                     ['name' => 'Jacksonville'],
                     ['name' => 'Miami'],
@@ -761,12 +783,12 @@ class StorefrontController extends Controller
                     ['name' => 'Hollywood'],
                     ['name' => 'Miramar'],
                     ['name' => 'Gainesville'],
-                    ['name' => 'Coral Springs']
+                    ['name' => 'Coral Springs'],
                 ];
             }
         }
         // Canada Cities
-        else if ($countryCode === 'CA') {
+        elseif ($countryCode === 'CA') {
             // Ontario
             if ($stateCode === 'ON') {
                 $cities = [
@@ -779,11 +801,11 @@ class StorefrontController extends Controller
                     ['name' => 'Markham'],
                     ['name' => 'Vaughan'],
                     ['name' => 'Kitchener'],
-                    ['name' => 'Windsor']
+                    ['name' => 'Windsor'],
                 ];
             }
             // British Columbia
-            else if ($stateCode === 'BC') {
+            elseif ($stateCode === 'BC') {
                 $cities = [
                     ['name' => 'Vancouver'],
                     ['name' => 'Victoria'],
@@ -794,11 +816,11 @@ class StorefrontController extends Controller
                     ['name' => 'Kelowna'],
                     ['name' => 'Coquitlam'],
                     ['name' => 'Saanich'],
-                    ['name' => 'Delta']
+                    ['name' => 'Delta'],
                 ];
             }
             // Quebec
-            else if ($stateCode === 'QC') {
+            elseif ($stateCode === 'QC') {
                 $cities = [
                     ['name' => 'Montreal'],
                     ['name' => 'Quebec City'],
@@ -809,12 +831,12 @@ class StorefrontController extends Controller
                     ['name' => 'Saguenay'],
                     ['name' => 'Lévis'],
                     ['name' => 'Trois-Rivières'],
-                    ['name' => 'Terrebonne']
+                    ['name' => 'Terrebonne'],
                 ];
             }
         }
         // UK Cities
-        else if ($countryCode === 'GB') {
+        elseif ($countryCode === 'GB') {
             // England
             if ($stateCode === 'ENG') {
                 $cities = [
@@ -832,11 +854,11 @@ class StorefrontController extends Controller
                     ['name' => 'Cambridge'],
                     ['name' => 'York'],
                     ['name' => 'Brighton'],
-                    ['name' => 'Portsmouth']
+                    ['name' => 'Portsmouth'],
                 ];
             }
             // Scotland
-            else if ($stateCode === 'SCT') {
+            elseif ($stateCode === 'SCT') {
                 $cities = [
                     ['name' => 'Edinburgh'],
                     ['name' => 'Glasgow'],
@@ -847,11 +869,11 @@ class StorefrontController extends Controller
                     ['name' => 'Stirling'],
                     ['name' => 'St Andrews'],
                     ['name' => 'Paisley'],
-                    ['name' => 'Falkirk']
+                    ['name' => 'Falkirk'],
                 ];
             }
             // Wales
-            else if ($stateCode === 'WLS') {
+            elseif ($stateCode === 'WLS') {
                 $cities = [
                     ['name' => 'Cardiff'],
                     ['name' => 'Swansea'],
@@ -862,12 +884,12 @@ class StorefrontController extends Controller
                     ['name' => 'St Asaph'],
                     ['name' => 'Aberystwyth'],
                     ['name' => 'Llandudno'],
-                    ['name' => 'Carmarthen']
+                    ['name' => 'Carmarthen'],
                 ];
             }
         }
         // Australian Cities
-        else if ($countryCode === 'AU') {
+        elseif ($countryCode === 'AU') {
             // New South Wales
             if ($stateCode === 'NSW') {
                 $cities = [
@@ -880,11 +902,11 @@ class StorefrontController extends Controller
                     ['name' => 'Albury'],
                     ['name' => 'Port Macquarie'],
                     ['name' => 'Tamworth'],
-                    ['name' => 'Orange']
+                    ['name' => 'Orange'],
                 ];
             }
             // Victoria
-            else if ($stateCode === 'VIC') {
+            elseif ($stateCode === 'VIC') {
                 $cities = [
                     ['name' => 'Melbourne'],
                     ['name' => 'Geelong'],
@@ -895,11 +917,11 @@ class StorefrontController extends Controller
                     ['name' => 'Mildura'],
                     ['name' => 'Warrnambool'],
                     ['name' => 'Wodonga'],
-                    ['name' => 'Traralgon']
+                    ['name' => 'Traralgon'],
                 ];
             }
             // Queensland
-            else if ($stateCode === 'QLD') {
+            elseif ($stateCode === 'QLD') {
                 $cities = [
                     ['name' => 'Brisbane'],
                     ['name' => 'Gold Coast'],
@@ -910,13 +932,13 @@ class StorefrontController extends Controller
                     ['name' => 'Mackay'],
                     ['name' => 'Rockhampton'],
                     ['name' => 'Bundaberg'],
-                    ['name' => 'Hervey Bay']
+                    ['name' => 'Hervey Bay'],
                 ];
             }
         }
         // CEMAC Countries Cities
         // Cameroon
-        else if ($countryCode === 'CM') {
+        elseif ($countryCode === 'CM') {
             // Centre Region
             if ($stateCode === 'CE') {
                 $cities = [
@@ -929,11 +951,11 @@ class StorefrontController extends Controller
                     ['name' => 'Ntui'],
                     ['name' => 'Eseka'],
                     ['name' => 'Mfou'],
-                    ['name' => 'Nkoteng']
+                    ['name' => 'Nkoteng'],
                 ];
             }
             // Littoral Region
-            else if ($stateCode === 'LT') {
+            elseif ($stateCode === 'LT') {
                 $cities = [
                     ['name' => 'Douala'],
                     ['name' => 'Nkongsamba'],
@@ -944,11 +966,11 @@ class StorefrontController extends Controller
                     ['name' => 'Dizangué'],
                     ['name' => 'Yabassi'],
                     ['name' => 'Penja'],
-                    ['name' => 'Njombé']
+                    ['name' => 'Njombé'],
                 ];
             }
             // North-West Region
-            else if ($stateCode === 'NW') {
+            elseif ($stateCode === 'NW') {
                 $cities = [
                     ['name' => 'Bamenda'],
                     ['name' => 'Kumbo'],
@@ -959,12 +981,12 @@ class StorefrontController extends Controller
                     ['name' => 'Ndop'],
                     ['name' => 'Batibo'],
                     ['name' => 'Bali'],
-                    ['name' => 'Jakiri']
+                    ['name' => 'Jakiri'],
                 ];
             }
         }
         // Republic of Congo
-        else if ($countryCode === 'CG') {
+        elseif ($countryCode === 'CG') {
             // Brazzaville
             if ($stateCode === 'BZV') {
                 $cities = [
@@ -977,11 +999,11 @@ class StorefrontController extends Controller
                     ['name' => 'Goma Tsé-Tsé'],
                     ['name' => 'Ignié'],
                     ['name' => 'Makoua'],
-                    ['name' => 'Ngabé']
+                    ['name' => 'Ngabé'],
                 ];
             }
             // Pointe-Noire
-            else if ($stateCode === 'PNR') {
+            elseif ($stateCode === 'PNR') {
                 $cities = [
                     ['name' => 'Pointe-Noire'],
                     ['name' => 'Tié-Tié'],
@@ -992,12 +1014,12 @@ class StorefrontController extends Controller
                     ['name' => 'Mvou-Mvou'],
                     ['name' => 'Tchibamba'],
                     ['name' => 'Nkouikou'],
-                    ['name' => 'Vindoulou']
+                    ['name' => 'Vindoulou'],
                 ];
             }
         }
         // Gabon
-        else if ($countryCode === 'GA') {
+        elseif ($countryCode === 'GA') {
             // Estuaire
             if ($stateCode === 'ES') {
                 $cities = [
@@ -1010,11 +1032,11 @@ class StorefrontController extends Controller
                     ['name' => 'Cap Estérias'],
                     ['name' => 'Cap Santa Clara'],
                     ['name' => 'Donguila'],
-                    ['name' => 'Ikoy-Tsini']
+                    ['name' => 'Ikoy-Tsini'],
                 ];
             }
             // Haut-Ogooué
-            else if ($stateCode === 'HO') {
+            elseif ($stateCode === 'HO') {
                 $cities = [
                     ['name' => 'Franceville'],
                     ['name' => 'Moanda'],
@@ -1025,13 +1047,13 @@ class StorefrontController extends Controller
                     ['name' => 'Bakoumba'],
                     ['name' => 'Ngouoni'],
                     ['name' => 'Bongoville'],
-                    ['name' => 'Boumango']
+                    ['name' => 'Boumango'],
                 ];
             }
         }
         // ECOWAS Countries Cities
         // Nigeria
-        else if ($countryCode === 'NG') {
+        elseif ($countryCode === 'NG') {
             // Lagos
             if ($stateCode === 'LA') {
                 $cities = [
@@ -1049,11 +1071,11 @@ class StorefrontController extends Controller
                     ['name' => 'Alimosho'],
                     ['name' => 'Apapa'],
                     ['name' => 'Festac'],
-                    ['name' => 'Victoria Island']
+                    ['name' => 'Victoria Island'],
                 ];
             }
             // Federal Capital Territory
-            else if ($stateCode === 'FC') {
+            elseif ($stateCode === 'FC') {
                 $cities = [
                     ['name' => 'Abuja'],
                     ['name' => 'Gwagwalada'],
@@ -1069,11 +1091,11 @@ class StorefrontController extends Controller
                     ['name' => 'Asokoro'],
                     ['name' => 'Wuse'],
                     ['name' => 'Garki'],
-                    ['name' => 'Lugbe']
+                    ['name' => 'Lugbe'],
                 ];
             }
             // Rivers
-            else if ($stateCode === 'RI') {
+            elseif ($stateCode === 'RI') {
                 $cities = [
                     ['name' => 'Port Harcourt'],
                     ['name' => 'Bonny'],
@@ -1089,12 +1111,12 @@ class StorefrontController extends Controller
                     ['name' => 'Eberi'],
                     ['name' => 'Etche'],
                     ['name' => 'Isiokpo'],
-                    ['name' => 'Tai']
+                    ['name' => 'Tai'],
                 ];
             }
         }
         // Ghana
-        else if ($countryCode === 'GH') {
+        elseif ($countryCode === 'GH') {
             // Greater Accra
             if ($stateCode === 'AA') {
                 $cities = [
@@ -1112,11 +1134,11 @@ class StorefrontController extends Controller
                     ['name' => 'Kaneshie'],
                     ['name' => 'Achimota'],
                     ['name' => 'Labadi'],
-                    ['name' => 'Jamestown']
+                    ['name' => 'Jamestown'],
                 ];
             }
             // Ashanti
-            else if ($stateCode === 'AH') {
+            elseif ($stateCode === 'AH') {
                 $cities = [
                     ['name' => 'Kumasi'],
                     ['name' => 'Obuasi'],
@@ -1132,12 +1154,12 @@ class StorefrontController extends Controller
                     ['name' => 'Juaben'],
                     ['name' => 'Tepa'],
                     ['name' => 'Agogo'],
-                    ['name' => 'Nkawie']
+                    ['name' => 'Nkawie'],
                 ];
             }
         }
         // Senegal
-        else if ($countryCode === 'SN') {
+        elseif ($countryCode === 'SN') {
             // Dakar
             if ($stateCode === 'DK') {
                 $cities = [
@@ -1155,11 +1177,11 @@ class StorefrontController extends Controller
                     ['name' => 'Mbao'],
                     ['name' => 'Thiaroye'],
                     ['name' => 'Yeumbeul'],
-                    ['name' => 'Malika']
+                    ['name' => 'Malika'],
                 ];
             }
             // Saint-Louis
-            else if ($stateCode === 'SL') {
+            elseif ($stateCode === 'SL') {
                 $cities = [
                     ['name' => 'Saint-Louis'],
                     ['name' => 'Dagana'],
@@ -1170,12 +1192,12 @@ class StorefrontController extends Controller
                     ['name' => 'Ross Béthio'],
                     ['name' => 'Mpal'],
                     ['name' => 'Guédé'],
-                    ['name' => 'Galoya']
+                    ['name' => 'Galoya'],
                 ];
             }
         }
         // Ivory Coast
-        else if ($countryCode === 'CI') {
+        elseif ($countryCode === 'CI') {
             // Abidjan
             if ($stateCode === 'AB') {
                 $cities = [
@@ -1193,11 +1215,11 @@ class StorefrontController extends Controller
                     ['name' => 'Bingerville'],
                     ['name' => 'Songon'],
                     ['name' => 'Anyama'],
-                    ['name' => 'Grand-Bassam']
+                    ['name' => 'Grand-Bassam'],
                 ];
             }
             // Yamoussoukro
-            else if ($stateCode === 'YM') {
+            elseif ($stateCode === 'YM') {
                 $cities = [
                     ['name' => 'Yamoussoukro'],
                     ['name' => 'Toumodi'],
@@ -1208,29 +1230,27 @@ class StorefrontController extends Controller
                     ['name' => 'Kossou'],
                     ['name' => 'Lolobo'],
                     ['name' => 'Seman'],
-                    ['name' => 'Zatta']
+                    ['name' => 'Zatta'],
                 ];
             }
         }
 
         return response()->json([
             'success' => true,
-            'data' => $cities
+            'data' => $cities,
         ]);
     }
 
     /**
      * Get featured products for an environment
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getFeaturedProducts(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -1247,15 +1267,13 @@ class StorefrontController extends Controller
     /**
      * Get all products for an environment with pagination and filtering
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getAllProducts(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -1369,16 +1387,13 @@ class StorefrontController extends Controller
     /**
      * Get a product by slug
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @param string $slug
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getProductBySlug(Request $request, string $environmentId, string $slug)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -1387,7 +1402,7 @@ class StorefrontController extends Controller
             ->with(['category', 'courses.template.blocks.activities'])
             ->first();
 
-        if (!$product) {
+        if (! $product) {
             return response()->json(['message' => 'Product not found'], 404);
         }
 
@@ -1410,16 +1425,13 @@ class StorefrontController extends Controller
     /**
      * Get a product by ID
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getProductById(Request $request, string $environmentId, int $id)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -1428,7 +1440,7 @@ class StorefrontController extends Controller
             ->with(['category', 'courses.template.blocks.activities'])
             ->first();
 
-        if (!$product) {
+        if (! $product) {
             return response()->json(['message' => 'Product not found'], 404);
         }
 
@@ -1451,15 +1463,13 @@ class StorefrontController extends Controller
     /**
      * Get product categories
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getCategories(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -1472,29 +1482,28 @@ class StorefrontController extends Controller
     /**
      * Get available payment methods
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getPaymentMethods(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
-        // Check if environment uses centralized payment gateways
-        $targetEnvironmentId = $environment->id;
-        $paymentConfig = \App\Models\EnvironmentPaymentConfig::where('environment_id', $environment->id)->first();
+        // A centralized environment transacts through the designated centralized
+        // environment's gateways rather than its own.
+        $targetEnvironmentId = app(EnvironmentPaymentConfigService::class)
+            ->getEffectiveEnvironmentId($environment->id);
 
-        if ($paymentConfig && $paymentConfig->use_centralized_gateways) {
-            // Use centralized gateways from environment 1 (platform gateways)
-            $targetEnvironmentId = 1;
-        }
-
-        $paymentMethods = PaymentGatewaySetting::where('environment_id', $targetEnvironmentId)
-            ->where('is_active', true)
+        // withoutGlobalScopes() bypasses EnvironmentScope, which would otherwise
+        // restrict the query to the requesting environment and return nothing.
+        // The enabled flag on this table is `status`; there is no `is_active`
+        // column, so the previous filter made this endpoint throw.
+        $paymentMethods = PaymentGatewaySetting::withoutGlobalScopes()
+            ->where('environment_id', $targetEnvironmentId)
+            ->where('status', true)
             ->with('paymentGateway')
             ->get()
             ->map(function ($method) {
@@ -1513,38 +1522,34 @@ class StorefrontController extends Controller
     /**
      * Get payment gateways
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getPaymentGateways(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
-        // Check if environment uses centralized payment gateways
-        $targetEnvironmentId = $environment->id;
-        $paymentConfig = \App\Models\EnvironmentPaymentConfig::where('environment_id', $environment->id)->first();
+        // A centralized environment transacts through the designated centralized
+        // environment's gateways rather than its own.
+        $paymentConfigService = app(EnvironmentPaymentConfigService::class);
+        $targetEnvironmentId = $paymentConfigService->getEffectiveEnvironmentId($environment->id);
 
-        if ($paymentConfig && $paymentConfig->use_centralized_gateways) {
-            // Use centralized gateways from environment 1 (platform gateways)
-            $targetEnvironmentId = 1;
-            \Log::info('Using centralized payment gateways from environment 1', [
+        if ($targetEnvironmentId !== $environment->id) {
+            \Log::info('Using centralized payment gateways', [
                 'requesting_environment' => $environment->id,
-                'target_environment' => $targetEnvironmentId
+                'target_environment' => $targetEnvironmentId,
             ]);
         } else {
             \Log::info('Using local payment gateways', [
                 'environment' => $environment->id,
-                'has_config' => $paymentConfig !== null,
-                'use_centralized' => $paymentConfig ? $paymentConfig->use_centralized_gateways : null
+                'use_centralized' => $paymentConfigService->isCentralized($environment->id),
             ]);
         }
 
-        //create an array of gateways we don't fetch
+        // create an array of gateways we don't fetch
         $excludeGateways = ['lygos'];
 
         // Get active payment gateways for this environment
@@ -1562,9 +1567,7 @@ class StorefrontController extends Controller
     /**
      * Process checkout
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function checkout(Request $request, string $environmentId)
     {
@@ -1576,7 +1579,7 @@ class StorefrontController extends Controller
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -1621,7 +1624,7 @@ class StorefrontController extends Controller
                 ]
             );
 
-            event(new \App\Events\UserCreatedDuringCheckout($user, $environment, !$userExists));
+            event(new UserCreatedDuringCheckout($user, $environment, ! $userExists));
 
             $totalAmount = 0;
             $currency = null;
@@ -1649,14 +1652,14 @@ class StorefrontController extends Controller
 
             $referral = null;
             if ($request->filled('referral_code')) {
-                $referral = \App\Models\EnvironmentReferral::where('code', $request->input('referral_code'))
+                $referral = EnvironmentReferral::where('code', $request->input('referral_code'))
                     ->where('environment_id', $environment->id)
                     ->where('is_active', true)
                     ->first();
 
                 if (
                     $referral
-                    && (!$referral->expiration_date || now()->isBefore($referral->expiration_date))
+                    && (! $referral->expiration_date || now()->isBefore($referral->expiration_date))
                     && ($referral->max_uses <= 0 || $referral->uses_count < $referral->max_uses)
                 ) {
                     $discount = $referral->discount_type === 'fixed'
@@ -1672,9 +1675,10 @@ class StorefrontController extends Controller
             $gatewayCode = null;
             $paymentMethod = $request->input('payment_method');
 
-            if (!$isFree) {
-                if (!$paymentMethod || !is_numeric($paymentMethod)) {
+            if (! $isFree) {
+                if (! $paymentMethod || ! is_numeric($paymentMethod)) {
                     DB::rollBack();
+
                     return response()->json([
                         'success' => false,
                         'message' => 'A valid payment method is required for paid checkout',
@@ -1682,8 +1686,9 @@ class StorefrontController extends Controller
                 }
 
                 $gatewaySettings = PaymentGatewaySetting::find($paymentMethod);
-                if (!$gatewaySettings || !$gatewaySettings->status) {
+                if (! $gatewaySettings || ! $gatewaySettings->status) {
                     DB::rollBack();
+
                     return response()->json([
                         'success' => false,
                         'message' => 'Selected payment method is not available',
@@ -1698,7 +1703,7 @@ class StorefrontController extends Controller
             // submit / retry within a short window would otherwise create duplicate
             // pending orders for the same user + products + amount.
             $productKey = collect($orderItems)
-                ->map(fn ($i) => $i['product']->id . 'x' . $i['quantity'])
+                ->map(fn ($i) => $i['product']->id.'x'.$i['quantity'])
                 ->sort()
                 ->values()
                 ->implode(',');
@@ -1713,20 +1718,21 @@ class StorefrontController extends Controller
                 ->get()
                 ->first(function ($o) use ($productKey) {
                     $key = $o->items
-                        ->map(fn ($i) => $i->product_id . 'x' . $i->quantity)
+                        ->map(fn ($i) => $i->product_id.'x'.$i->quantity)
                         ->sort()
                         ->values()
                         ->implode(',');
+
                     return $key === $productKey;
                 });
 
             if ($existingOrder) {
                 $order = $existingOrder;
             } else {
-                $order = new Order();
+                $order = new Order;
                 $order->user_id = $user->id;
                 $order->environment_id = $environment->id;
-                $order->order_number = 'ORD-' . strtoupper(Str::random(8));
+                $order->order_number = 'ORD-'.strtoupper(Str::random(8));
                 $order->status = 'pending';
                 $order->payment_method = $isFree ? 'free' : $paymentMethod;
                 $order->billing_name = $request->input('name');
@@ -1744,7 +1750,7 @@ class StorefrontController extends Controller
                 $order->save();
 
                 foreach ($orderItems as $item) {
-                    $orderItem = new OrderItem();
+                    $orderItem = new OrderItem;
                     $orderItem->order_id = $order->id;
                     $orderItem->product_id = $item['product']->id;
                     $orderItem->quantity = $item['quantity'];
@@ -1758,20 +1764,20 @@ class StorefrontController extends Controller
 
             // Only fire creation side-effects for a genuinely new order — a reused
             // (deduped) order already sent these when it was first created.
-            if (!$existingOrder) {
+            if (! $existingOrder) {
                 try {
                     $order->load(['user']);
                     if ($order->user) {
-                        $order->user->notify(new \App\Notifications\OrderCreated($order, app(\App\Services\TelegramService::class)));
+                        $order->user->notify(new OrderCreated($order, app(TelegramService::class)));
                     }
                 } catch (\Exception $e) {
-                    Log::error('Failed to send OrderCreated notification: ' . $e->getMessage());
+                    Log::error('Failed to send OrderCreated notification: '.$e->getMessage());
                 }
 
                 // Marketing automation trigger (pending-payment storefront checkout).
                 // The instant-complete path fires OrderCompleted → payment_confirmed
                 // automation instead, so it is intentionally not wired here.
-                event(new \App\Events\OrderPlaced($order));
+                event(new OrderPlaced($order));
             }
 
             $responseData = [
@@ -1783,7 +1789,7 @@ class StorefrontController extends Controller
             ];
 
             if ($isFree) {
-                event(new \App\Events\OrderCompleted($order));
+                event(new OrderCompleted($order));
 
                 return response()->json([
                     'success' => true,
@@ -1795,16 +1801,16 @@ class StorefrontController extends Controller
                 ]);
             }
 
-            $orderService = app()->make(\App\Services\OrderService::class);
-            $gatewayFactory = app()->make(\App\Services\PaymentGateways\PaymentGatewayFactory::class);
-            $commissionService = app()->make(\App\Services\Commission\CommissionService::class);
-            $taxZoneService = app()->make(\App\Services\Tax\TaxZoneService::class);
-            $environmentPaymentConfigService = app()->make(\App\Services\EnvironmentPaymentConfigService::class);
+            $orderService = app()->make(OrderService::class);
+            $gatewayFactory = app()->make(PaymentGatewayFactory::class);
+            $commissionService = app()->make(CommissionService::class);
+            $taxZoneService = app()->make(TaxZoneService::class);
+            $environmentPaymentConfigService = app()->make(EnvironmentPaymentConfigService::class);
 
-            $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService, $taxZoneService, $environmentPaymentConfigService);
+            $paymentService = new PaymentService($orderService, $gatewayFactory, $commissionService, $taxZoneService, $environmentPaymentConfigService);
             $paymentResult = $paymentService->createPayment($order->id, $gatewayCode, [], $environment->name);
 
-            if (!($paymentResult['success'] ?? false)) {
+            if (! ($paymentResult['success'] ?? false)) {
                 Log::error('Payment creation failed', [
                     'order_id' => $order->id,
                     'gateway' => $gatewayCode,
@@ -1850,7 +1856,7 @@ class StorefrontController extends Controller
 
                 case 'payment_links':
                     $responseData['payment_type'] = 'taramoney';
-                    if (!empty($paymentResult['general_link'])) {
+                    if (! empty($paymentResult['general_link'])) {
                         $responseData['redirect_url'] = $paymentResult['general_link'];
                         $responseData['general_link'] = $paymentResult['general_link'];
                     } else {
@@ -1885,6 +1891,7 @@ class StorefrontController extends Controller
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();
             }
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to process checkout',
@@ -1896,16 +1903,13 @@ class StorefrontController extends Controller
     /**
      * Get product reviews
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @param int $productId
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getProductReviews(Request $request, string $environmentId, int $productId)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -1913,7 +1917,7 @@ class StorefrontController extends Controller
             ->where('id', $productId)
             ->first();
 
-        if (!$product) {
+        if (! $product) {
             return response()->json(['message' => 'Product not found'], 404);
         }
 
@@ -1930,22 +1934,20 @@ class StorefrontController extends Controller
         return response()->json([
             'data' => $reviews,
             'average_rating' => round($averageRating, 1),
-            'total_reviews' => $reviews->count()
+            'total_reviews' => $reviews->count(),
         ]);
     }
 
     /**
      * Get all product reviews for a store/environment
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getStoreReviews(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -1978,23 +1980,20 @@ class StorefrontController extends Controller
         return response()->json([
             'data' => $reviews,
             'average_rating' => round($averageRating, 1),
-            'total_reviews' => $totalReviews
+            'total_reviews' => $totalReviews,
         ]);
     }
 
     /**
      * Submit a product review
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @param int $productId
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function submitProductReview(Request $request, string $environmentId, int $productId)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -2002,7 +2001,7 @@ class StorefrontController extends Controller
             ->where('id', $productId)
             ->first();
 
-        if (!$product) {
+        if (! $product) {
             return response()->json(['message' => 'Product not found'], 404);
         }
 
@@ -2025,7 +2024,7 @@ class StorefrontController extends Controller
         }
 
         // Create the review
-        $review = new ProductReview();
+        $review = new ProductReview;
         $review->product_id = $product->id;
         $review->environment_id = $environment->id;
         $review->user_id = $userId;
@@ -2042,15 +2041,13 @@ class StorefrontController extends Controller
     /**
      * Get all courses for an environment
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getCourses(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -2084,16 +2081,13 @@ class StorefrontController extends Controller
     /**
      * Get a course by slug
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @param string $slug
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getCourseBySlug(Request $request, string $environmentId, string $slug)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -2106,11 +2100,11 @@ class StorefrontController extends Controller
                 'sections.items' => function ($query) {
                     $query->orderBy('order');
                 },
-                'sections.items.activity'
+                'sections.items.activity',
             ])
             ->first();
 
-        if (!$course) {
+        if (! $course) {
             return response()->json(['message' => 'Course not found'], 404);
         }
 
@@ -2149,16 +2143,13 @@ class StorefrontController extends Controller
     /**
      * Get a course by ID
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getCourseById(Request $request, string $environmentId, int $id)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -2171,11 +2162,11 @@ class StorefrontController extends Controller
                 'sections.items' => function ($query) {
                     $query->orderBy('order');
                 },
-                'sections.items.activity'
+                'sections.items.activity',
             ])
             ->first();
 
-        if (!$course) {
+        if (! $course) {
             return response()->json(['message' => 'Course not found'], 404);
         }
 
@@ -2197,10 +2188,8 @@ class StorefrontController extends Controller
 
     /**
      * Get products for an environment (maps to getAllProducts)
-     * 
-     * @param Request $request
-     * @param string $environmentId
-     * @return \Illuminate\Http\JsonResponse
+     *
+     * @return JsonResponse
      */
     public function getProducts(Request $request, string $environmentId)
     {
@@ -2210,17 +2199,14 @@ class StorefrontController extends Controller
 
     /**
      * Get a product by ID or slug
-     * 
-     * @param Request $request
-     * @param string $environmentId
-     * @param string $productId
-     * @return \Illuminate\Http\JsonResponse
+     *
+     * @return JsonResponse
      */
     public function getProduct(Request $request, string $environmentId, string $productId)
     {
         // Determine if the productId is numeric (ID) or a string (slug)
         if (is_numeric($productId)) {
-            return $this->getProductById($request, $environmentId, (int)$productId);
+            return $this->getProductById($request, $environmentId, (int) $productId);
         } else {
             return $this->getProductBySlug($request, $environmentId, $productId);
         }
@@ -2228,17 +2214,14 @@ class StorefrontController extends Controller
 
     /**
      * Get a category by ID
-     * 
-     * @param Request $request
-     * @param string $environmentId
-     * @param int $categoryId
-     * @return \Illuminate\Http\JsonResponse
+     *
+     * @return JsonResponse
      */
     public function getCategory(Request $request, string $environmentId, int $categoryId)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -2246,7 +2229,7 @@ class StorefrontController extends Controller
             ->where('id', $categoryId)
             ->first();
 
-        if (!$category) {
+        if (! $category) {
             return response()->json(['message' => 'Category not found'], 404);
         }
 
@@ -2266,9 +2249,8 @@ class StorefrontController extends Controller
     /**
      * Continue payment for a pending order
      *
-     * @param Request $request
-     * @param int $orderId
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $orderId
+     * @return JsonResponse
      */
     public function continuePayment(Request $request, $orderId)
     {
@@ -2279,10 +2261,10 @@ class StorefrontController extends Controller
         $order = Order::find($orderId);
 
         // Check if order exists
-        if (!$order) {
+        if (! $order) {
             return response()->json([
                 'success' => false,
-                'message' => 'Order not found'
+                'message' => 'Order not found',
             ], 404);
         }
 
@@ -2290,7 +2272,7 @@ class StorefrontController extends Controller
         if ($user->id !== $order->user_id) {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthorized access to this order'
+                'message' => 'Unauthorized access to this order',
             ], 403);
         }
 
@@ -2299,7 +2281,7 @@ class StorefrontController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Only pending orders can continue payment',
-                'order_status' => $order->status
+                'order_status' => $order->status,
             ], 400);
         }
 
@@ -2313,7 +2295,7 @@ class StorefrontController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -2334,33 +2316,33 @@ class StorefrontController extends Controller
                 })
                 ->first();
 
-            if (!$paymentGatewaySetting) {
+            if (! $paymentGatewaySetting) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Payment method not available'
+                    'message' => 'Payment method not available',
                 ], 400);
             }
 
             // Create OrderService instance
-            $orderService = app()->make(\App\Services\OrderService::class);
+            $orderService = app()->make(OrderService::class);
 
             // Create PaymentGatewayFactory instance
-            $gatewayFactory = app()->make(\App\Services\PaymentGateways\PaymentGatewayFactory::class);
+            $gatewayFactory = app()->make(PaymentGatewayFactory::class);
 
             // Create CommissionService instance
-            $commissionService = app()->make(\App\Services\Commission\CommissionService::class);
+            $commissionService = app()->make(CommissionService::class);
 
-            $taxZoneService = app()->make(\App\Services\Tax\TaxZoneService::class);
-            $environmentPaymentConfigService = app()->make(\App\Services\EnvironmentPaymentConfigService::class);
+            $taxZoneService = app()->make(TaxZoneService::class);
+            $environmentPaymentConfigService = app()->make(EnvironmentPaymentConfigService::class);
 
             // Initialize payment service with proper dependencies
-            $paymentService = new \App\Services\PaymentService($orderService, $gatewayFactory, $commissionService, $taxZoneService, $environmentPaymentConfigService);
+            $paymentService = new PaymentService($orderService, $gatewayFactory, $commissionService, $taxZoneService, $environmentPaymentConfigService);
 
             // Process the payment - pass order ID as expected by the method
             $result = $paymentService->processPayment($order->id, [
                 'payment_method' => $paymentGatewaySetting->code, // Use the gateway code from settings
                 'environment_id' => $order->environment_id,
-                ...$paymentData
+                ...$paymentData,
             ]);
 
             // Update the order with payment method
@@ -2389,7 +2371,7 @@ class StorefrontController extends Controller
                     break;
 
                 case 'taramoney':
-                    if (!empty($result['general_link'])) {
+                    if (! empty($result['general_link'])) {
                         $responseData['redirect_url'] = $result['general_link'];
                         $responseData['general_link'] = $result['general_link'];
                     } else {
@@ -2410,23 +2392,22 @@ class StorefrontController extends Controller
                     break;
             }
 
-
             return response()->json([
                 'success' => true,
                 'message' => 'Payment processing initiated',
-                'data' => $responseData
+                'data' => $responseData,
             ]);
         } catch (\Exception $e) {
-            Log::error('Payment continuation error: ' . $e->getMessage(), [
+            Log::error('Payment continuation error: '.$e->getMessage(), [
                 'order_id' => $order->id,
                 'payment_method' => $paymentMethod,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Payment processing failed: ' . $e->getMessage()
+                'message' => 'Payment processing failed: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -2434,15 +2415,13 @@ class StorefrontController extends Controller
     /**
      * Get tax rate for a specific location
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getTaxRateForLocation(Request $request, string $environmentId)
     {
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -2456,7 +2435,7 @@ class StorefrontController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -2469,7 +2448,7 @@ class StorefrontController extends Controller
             $taxRate = $taxZone ? $taxZone->tax_rate : 0;
 
             // Get commission rate from Commission model
-            $commission = \App\Models\Commission::getActiveCommission($environmentId);
+            $commission = Commission::getActiveCommission($environmentId);
             $commissionRate = $commission ? ($commission->rate / 100) : 0; // Phase 2: 0% platform commission (no 17% fallback)
 
             return response()->json([
@@ -2487,7 +2466,7 @@ class StorefrontController extends Controller
                 ],
             ]);
         } catch (\Exception $e) {
-            Log::error('Error fetching tax rate: ' . $e->getMessage(), [
+            Log::error('Error fetching tax rate: '.$e->getMessage(), [
                 'environment_id' => $environmentId,
                 'country_code' => $countryCode,
                 'state_code' => $stateCode,
@@ -2505,18 +2484,16 @@ class StorefrontController extends Controller
     /**
      * Calculate product price with commission included (for product creation)
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function calculateProductPriceWithCommission(Request $request, ?string $environmentId = null)
     {
         $environmentId = $environmentId
-            ?? session("current_environment_id")
+            ?? session('current_environment_id')
             ?? $request->input('environment_id');
         $environment = $this->getEnvironmentById($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -2530,7 +2507,7 @@ class StorefrontController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -2539,7 +2516,7 @@ class StorefrontController extends Controller
 
         try {
             // Get commission rate from Commission model
-            $commission = \App\Models\Commission::getActiveCommission($environmentId);
+            $commission = Commission::getActiveCommission($environmentId);
             $commissionRate = $commission ? ($commission->rate / 100) : 0; // Phase 2: 0% platform commission (no 17% fallback)
 
             // Commission is INCLUDED in the entered price (deducted from seller earnings at sale time).
@@ -2569,7 +2546,7 @@ class StorefrontController extends Controller
                 ],
             ]);
         } catch (\Exception $e) {
-            Log::error('Error calculating product price with commission: ' . $e->getMessage(), [
+            Log::error('Error calculating product price with commission: '.$e->getMessage(), [
                 'environment_id' => $environmentId,
                 'base_price' => $basePrice,
                 'discount_price' => $discountPrice,
@@ -2587,15 +2564,13 @@ class StorefrontController extends Controller
     /**
      * Enroll user in free course
      *
-     * @param Request $request
-     * @param string $environmentId
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function enrollFree(Request $request, string $environmentId)
     {
         // Validate environment
         $environment = $this->getEnvironmentById($environmentId);
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -2612,7 +2587,7 @@ class StorefrontController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -2625,13 +2600,13 @@ class StorefrontController extends Controller
             if ($product && $product->created_by === $user->id) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Instructors cannot enroll in their own courses.'
+                    'message' => 'Instructors cannot enroll in their own courses.',
                 ], 403);
             }
         }
         $token = null;
 
-        if (!$user) {
+        if (! $user) {
             // Check if registration data is provided
             if ($request->has(['name', 'email', 'password'])) {
                 // Check if user exists
@@ -2643,9 +2618,9 @@ class StorefrontController extends Controller
                         ->where('user_id', $existingUser->id)
                         ->first();
 
-                    if (!$environmentUser) {
+                    if (! $environmentUser) {
                         // Add user to environment
-                        event(new \App\Events\UserCreatedDuringCheckout(
+                        event(new UserCreatedDuringCheckout(
                             $existingUser,
                             $environment,
                             false // isNewUser = false
@@ -2660,7 +2635,7 @@ class StorefrontController extends Controller
                         return response()->json([
                             'success' => false,
                             'message' => 'User already exists. Please login to continue.',
-                            'error_code' => 'USER_EXISTS'
+                            'error_code' => 'USER_EXISTS',
                         ], 400);
                     }
                 } else {
@@ -2678,7 +2653,7 @@ class StorefrontController extends Controller
                         ]);
 
                         // Create environment membership logic (delegated to listener)
-                        event(new \App\Events\UserCreatedDuringCheckout($user, $environment, true));
+                        event(new UserCreatedDuringCheckout($user, $environment, true));
 
                         // Create token for the new user
                         $token = $user->createToken('auth_token')->plainTextToken;
@@ -2686,22 +2661,23 @@ class StorefrontController extends Controller
                         DB::commit();
                     } catch (\Exception $e) {
                         DB::rollBack();
+
                         return response()->json([
                             'success' => false,
                             'message' => 'Failed to create user account',
-                            'error' => $e->getMessage()
+                            'error' => $e->getMessage(),
                         ], 500);
                     }
                 }
             } else {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Authentication required or provide registration details'
+                    'message' => 'Authentication required or provide registration details',
                 ], 401);
             }
         } else {
             // Ensure existing user is added to the environment if not already a member
-            event(new \App\Events\UserCreatedDuringCheckout($user, $environment, false));
+            event(new UserCreatedDuringCheckout($user, $environment, false));
         }
 
         // Get and validate product
@@ -2709,18 +2685,18 @@ class StorefrontController extends Controller
             ->where('environment_id', $environmentId)
             ->first();
 
-        if (!$product) {
+        if (! $product) {
             return response()->json([
                 'success' => false,
-                'message' => 'Product not found'
+                'message' => 'Product not found',
             ], 404);
         }
 
-        if (!$product->is_free) {
+        if (! $product->is_free) {
             return response()->json([
                 'success' => false,
                 'message' => 'This course requires payment',
-                'error_code' => 'COURSE_NOT_FREE'
+                'error_code' => 'COURSE_NOT_FREE',
             ], 400);
         }
 
@@ -2728,21 +2704,21 @@ class StorefrontController extends Controller
         try {
             DB::beginTransaction();
 
-            $order = \App\Models\Order::create([
+            $order = Order::create([
                 'user_id' => $user->id,
                 'environment_id' => $environmentId,
-                'order_number' => 'ORD-' . strtoupper(\Illuminate\Support\Str::random(10)),
-                'status' => \App\Models\Order::STATUS_COMPLETED,
+                'order_number' => 'ORD-'.strtoupper(Str::random(10)),
+                'status' => Order::STATUS_COMPLETED,
                 'total_amount' => 0,
                 'currency' => $product->currency ?? 'USD',
                 'payment_method' => 'free',
-                'payment_id' => 'free_' . \Illuminate\Support\Str::random(10),
+                'payment_id' => 'free_'.Str::random(10),
                 'billing_name' => $user->name,
                 'billing_email' => $user->email,
             ]);
 
             // Create order item
-            \App\Models\OrderItem::create([
+            OrderItem::create([
                 'order_id' => $order->id,
                 'product_id' => $product->id,
                 'quantity' => 1,
@@ -2756,14 +2732,14 @@ class StorefrontController extends Controller
             try {
                 $order->load(['user']);
                 if ($order->user) {
-                    $order->user->notify(new \App\Notifications\OrderCreated($order, app(\App\Services\TelegramService::class)));
+                    $order->user->notify(new OrderCreated($order, app(TelegramService::class)));
                 }
             } catch (\Exception $e) {
-                Log::error('Failed to send OrderCreated notification: ' . $e->getMessage());
+                Log::error('Failed to send OrderCreated notification: '.$e->getMessage());
             }
 
             // Dispatch event to handle enrollments and digital delivery
-            event(new \App\Events\OrderCompleted($order));
+            event(new OrderCompleted($order));
 
             return response()->json([
                 'success' => true,
@@ -2774,15 +2750,16 @@ class StorefrontController extends Controller
                     'order_id' => $order->id,
                     'product_id' => $product->id,
                     'product_name' => $product->name,
-                    'status' => 'completed'
-                ]
+                    'status' => 'completed',
+                ],
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to process enrollment',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }

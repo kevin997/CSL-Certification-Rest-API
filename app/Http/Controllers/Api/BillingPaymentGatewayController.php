@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\PaymentGatewaySetting;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Validator;
@@ -12,10 +13,9 @@ class BillingPaymentGatewayController extends Controller
 {
     /**
      * Get payment gateways for billing/subscription purposes.
-     * Always uses the default environment (ID 1) payment gateways.
+     * Always uses the platform-scoped payment gateways (environment_id IS NULL).
      *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function index(Request $request)
     {
@@ -59,7 +59,7 @@ class BillingPaymentGatewayController extends Controller
 
                 foreach ($settings as $key => $value) {
                     if (in_array($key, ['api_key', 'client_secret', 'secret_key', 'webhook_secret'])) {
-                        $settings[$key] = '••••••••' . substr($value, -4);
+                        $settings[$key] = '••••••••'.substr($value, -4);
                     }
                 }
 
@@ -77,10 +77,10 @@ class BillingPaymentGatewayController extends Controller
 
     /**
      * Get a specific payment gateway for billing purposes.
-     * Always uses the default environment (ID 1).
+     * Always uses the platform-scoped gateways (environment_id IS NULL).
      *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function show($id)
     {
@@ -92,7 +92,7 @@ class BillingPaymentGatewayController extends Controller
             ->where('id', $id)
             ->first();
 
-        if (!$paymentGateway) {
+        if (! $paymentGateway) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Platform payment gateway not found',
@@ -108,7 +108,7 @@ class BillingPaymentGatewayController extends Controller
 
             foreach ($settings as $key => $value) {
                 if (in_array($key, ['api_key', 'client_secret', 'secret_key', 'webhook_secret'])) {
-                    $settings[$key] = '••••••••' . substr($value, -4);
+                    $settings[$key] = '••••••••'.substr($value, -4);
                 }
             }
 
@@ -123,9 +123,9 @@ class BillingPaymentGatewayController extends Controller
 
     /**
      * Get available payment gateway types for billing.
-     * Returns the supported gateway types from the default environment.
+     * Returns the supported gateway types from the platform-scoped gateways.
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getAvailableTypes()
     {
@@ -147,9 +147,9 @@ class BillingPaymentGatewayController extends Controller
 
     /**
      * Get the default payment gateway for billing.
-     * Always uses the default environment (ID 1).
+     * Always uses the platform-scoped gateways (environment_id IS NULL).
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getDefault()
     {
@@ -161,7 +161,7 @@ class BillingPaymentGatewayController extends Controller
             ->where('status', true)
             ->first();
 
-        if (!$defaultGateway) {
+        if (! $defaultGateway) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'No default payment gateway found',
@@ -177,7 +177,7 @@ class BillingPaymentGatewayController extends Controller
 
             foreach ($settings as $key => $value) {
                 if (in_array($key, ['api_key', 'client_secret', 'secret_key', 'webhook_secret'])) {
-                    $settings[$key] = '••••••••' . substr($value, -4);
+                    $settings[$key] = '••••••••'.substr($value, -4);
                 }
             }
 

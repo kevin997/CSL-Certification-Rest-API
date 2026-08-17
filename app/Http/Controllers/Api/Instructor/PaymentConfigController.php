@@ -4,33 +4,31 @@ namespace App\Http\Controllers\Api\Instructor;
 
 use App\Http\Controllers\Controller;
 use App\Models\EnvironmentPaymentConfig;
-use Illuminate\Http\Request;
+use App\Services\EnvironmentPaymentConfigService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
 class PaymentConfigController extends Controller
 {
     /**
      * Get current payment configuration
-     *
-     * @param Request $request
-     * @return JsonResponse
      */
     public function show(Request $request): JsonResponse
     {
         $user = $request->user();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
         // Get instructor's environment
         $environment = $user->ownedEnvironments()->first();
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json([
                 'success' => false,
-                'message' => 'No environment found for this instructor'
+                'message' => 'No environment found for this instructor',
             ], 404);
         }
 
@@ -38,7 +36,7 @@ class PaymentConfigController extends Controller
         // For now, we'll use a settings JSON column (you may need to add this via migration)
         $paymentSettings = $environment->payment_settings ?? [
             'withdrawal_method' => null,
-            'withdrawal_details' => []
+            'withdrawal_details' => [],
         ];
 
         return response()->json([
@@ -54,49 +52,46 @@ class PaymentConfigController extends Controller
                             'account_number' => 'Account Number',
                             'bank_name' => 'Bank Name',
                             'bank_code' => 'Bank Code (Optional)',
-                            'swift_code' => 'SWIFT Code (Optional)'
-                        ]
+                            'swift_code' => 'SWIFT Code (Optional)',
+                        ],
                     ],
                     'paypal' => [
                         'name' => 'PayPal',
                         'fields' => [
-                            'paypal_email' => 'PayPal Email Address'
-                        ]
+                            'paypal_email' => 'PayPal Email Address',
+                        ],
                     ],
                     'mobile_money' => [
                         'name' => 'Mobile Money',
                         'fields' => [
                             'phone_number' => 'Phone Number',
                             'provider' => 'Provider (orange_money or mtn_mobile_money)',
-                            'account_name' => 'Account Name'
-                        ]
-                    ]
-                ]
-            ]
+                            'account_name' => 'Account Name',
+                        ],
+                    ],
+                ],
+            ],
         ]);
     }
 
     /**
      * Update withdrawal method and details
-     *
-     * @param Request $request
-     * @return JsonResponse
      */
     public function update(Request $request): JsonResponse
     {
         $user = $request->user();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
         // Get instructor's environment
         $environment = $user->ownedEnvironments()->first();
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json([
                 'success' => false,
-                'message' => 'No environment found for this instructor'
+                'message' => 'No environment found for this instructor',
             ], 404);
         }
 
@@ -110,7 +105,7 @@ class PaymentConfigController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -124,7 +119,7 @@ class PaymentConfigController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid withdrawal details',
-                'errors' => $detailsValidator->errors()
+                'errors' => $detailsValidator->errors(),
             ], 422);
         }
 
@@ -132,7 +127,7 @@ class PaymentConfigController extends Controller
         $paymentSettings = [
             'withdrawal_method' => $request->withdrawal_method,
             'withdrawal_details' => $request->withdrawal_details,
-            'updated_at' => now()->toDateTimeString()
+            'updated_at' => now()->toDateTimeString(),
         ];
 
         // Store in environment settings (assuming payment_settings column exists)
@@ -143,15 +138,13 @@ class PaymentConfigController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Payment configuration updated successfully',
-            'data' => $paymentSettings
+            'data' => $paymentSettings,
         ]);
     }
 
     /**
      * Validate withdrawal details based on method
      *
-     * @param string $method
-     * @param array $details
      * @return \Illuminate\Validation\Validator
      */
     private function validateWithdrawalDetails(string $method, array $details)
@@ -189,32 +182,36 @@ class PaymentConfigController extends Controller
 
     /**
      * Get centralized payment gateway configuration
-     *
-     * @return JsonResponse
      */
     public function getCentralizedConfig(): JsonResponse
     {
         $environmentId = session('current_environment_id');
 
-        if (!$environmentId) {
+        if (! $environmentId) {
             return response()->json([
                 'success' => false,
-                'message' => 'Environment ID is required'
+                'message' => 'Environment ID is required',
             ], 400);
         }
 
         $config = EnvironmentPaymentConfig::where('environment_id', $environmentId)->first();
 
-        if (!$config) {
+        // The environment that owns the centralized gateways cannot borrow them
+        // from itself. The client uses this to hide the opt-in entirely.
+        $isCentralizedEnvironment = app(EnvironmentPaymentConfigService::class)
+            ->isCentralizedEnvironment((int) $environmentId);
+
+        if (! $config) {
             return response()->json([
                 'success' => true,
                 'data' => [
                     'use_centralized_gateways' => false,
+                    'is_centralized_environment' => $isCentralizedEnvironment,
                     'platform_fee_rate' => 0, // Phase 2: 0% platform fee (creator receives 100%)
                     'instructor_payout_rate' => 1, // Creator receives 100% of course sales
                     'minimum_withdrawal_amount' => 82.00, // $82 USD (≈50,000 XAF)
                     'payment_terms' => 'NET_30',
-                ]
+                ],
             ]);
         }
 
@@ -222,43 +219,53 @@ class PaymentConfigController extends Controller
             'success' => true,
             'data' => [
                 'use_centralized_gateways' => $config->use_centralized_gateways,
+                'is_centralized_environment' => $isCentralizedEnvironment,
                 'platform_fee_rate' => $config->platform_fee_rate,
                 'instructor_payout_rate' => 1 - $config->platform_fee_rate, // Calculate instructor's share
                 'minimum_withdrawal_amount' => $config->minimum_withdrawal_amount,
                 'payment_terms' => $config->payment_terms,
-            ]
+            ],
         ]);
     }
 
     /**
      * Toggle centralized payment gateways for instructor's environment
-     *
-     * @param Request $request
-     * @return JsonResponse
      */
     public function toggleCentralized(Request $request): JsonResponse
     {
         $environmentId = session('current_environment_id');
 
-        if (!$environmentId) {
+        if (! $environmentId) {
             return response()->json([
                 'success' => false,
-                'message' => 'Environment ID is required'
+                'message' => 'Environment ID is required',
             ], 400);
-        } 
+        }
 
         // Ensure user is instructor/admin of this environment
         $user = $request->user();
-        if (!$user || !in_array($user->role->value, ['super_admin', 'admin', 'company_teacher', 'individual_teacher', 'company_team_member'])) {
+        if (! $user || ! in_array($user->role->value, ['super_admin', 'admin', 'company_teacher', 'individual_teacher', 'company_team_member'])) {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthorized. Only instructors can manage payment settings.'
+                'message' => 'Unauthorized. Only instructors can manage payment settings.',
             ], 403);
+        }
+
+        $paymentConfigService = app(EnvironmentPaymentConfigService::class);
+
+        // The centralized environment owns the gateways everyone else borrows;
+        // letting it opt in would make getEffectiveEnvironmentId() a no-op that
+        // looks like it did something.
+        if ($paymentConfigService->isCentralizedEnvironment((int) $environmentId)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This environment provides the centralized payment gateways and cannot use them itself.',
+            ], 422);
         }
 
         $config = EnvironmentPaymentConfig::where('environment_id', $environmentId)->first();
 
-        if (!$config) {
+        if (! $config) {
             // Create default config if it doesn't exist
             $config = EnvironmentPaymentConfig::create([
                 'environment_id' => $environmentId,
@@ -267,34 +274,27 @@ class PaymentConfigController extends Controller
                 'payment_terms' => 'NET_30', // Default payment terms
                 'minimum_withdrawal_amount' => 82.00, // Minimum withdrawal: $82 USD (≈50,000 XAF)
             ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Centralized payment gateways enabled successfully',
-                'data' => [
-                    'use_centralized_gateways' => $config->use_centralized_gateways,
-                    'platform_fee_rate' => $config->platform_fee_rate,
-                    'instructor_payout_rate' => 1 - $config->platform_fee_rate,
-                    'minimum_withdrawal_amount' => $config->minimum_withdrawal_amount,
-                    'payment_terms' => $config->payment_terms,
-                ]
-            ]);
+        } else {
+            // Toggle the centralized gateways setting
+            $config->use_centralized_gateways = ! $config->use_centralized_gateways;
+            $config->save();
         }
 
-        // Toggle the centralized gateways setting
-        $config->use_centralized_gateways = !$config->use_centralized_gateways;
-        $config->save();
+        // getConfig() caches for an hour, so without this the toggle would not
+        // reach checkout until the entry expired.
+        $paymentConfigService->invalidateCache((int) $environmentId);
 
         return response()->json([
             'success' => true,
-            'message' => 'Centralized payment gateways ' . ($config->use_centralized_gateways ? 'enabled' : 'disabled') . ' successfully',
+            'message' => 'Centralized payment gateways '.($config->use_centralized_gateways ? 'enabled' : 'disabled').' successfully',
             'data' => [
                 'use_centralized_gateways' => $config->use_centralized_gateways,
+                'is_centralized_environment' => false,
                 'platform_fee_rate' => $config->platform_fee_rate,
                 'instructor_payout_rate' => 1 - $config->platform_fee_rate,
                 'minimum_withdrawal_amount' => $config->minimum_withdrawal_amount,
                 'payment_terms' => $config->payment_terms,
-            ]
+            ],
         ]);
     }
 }

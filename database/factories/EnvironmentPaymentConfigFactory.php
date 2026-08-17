@@ -2,10 +2,12 @@
 
 namespace Database\Factories;
 
+use App\Models\Environment;
+use App\Models\EnvironmentPaymentConfig;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\EnvironmentPaymentConfig>
+ * @extends Factory<EnvironmentPaymentConfig>
  */
 class EnvironmentPaymentConfigFactory extends Factory
 {
@@ -17,9 +19,11 @@ class EnvironmentPaymentConfigFactory extends Factory
     public function definition(): array
     {
         return [
-            'environment_id' => \App\Models\Environment::factory(),
+            'environment_id' => Environment::factory(),
             'use_centralized_gateways' => false,
-            'commission_rate' => 0.1500,
+            // Renamed from commission_rate by
+            // 2025_10_09_193400_rename_commission_to_platform_fee_in_environment_payment_configs.
+            'platform_fee_rate' => 0.1500,
             'payment_terms' => fake()->randomElement(['NET_30', 'NET_60', 'Immediate']),
             'withdrawal_method' => fake()->randomElement(['bank_transfer', 'paypal', 'mobile_money', null]),
             'withdrawal_details' => fake()->boolean(50) ? [

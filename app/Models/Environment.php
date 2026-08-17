@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Cache;
 
@@ -15,6 +16,7 @@ use Illuminate\Support\Facades\Cache;
  *     schema="Environment",
  *     title="Environment",
  *     description="Environment model",
+ *
  *     @OA\Property(property="id", type="integer", format="int64", example=1),
  *     @OA\Property(property="name", type="string", example="Acme Corp Training"),
  *     @OA\Property(property="primary_domain", type="string", example="training.acmecorp.com"),
@@ -48,13 +50,14 @@ class Environment extends Model
         'favicon_url',
         'is_active',
         'is_demo',
+        'is_centralized_payment_provider',
         'owner_id',
         'description',
-        'country_code', //default CM
+        'country_code', // default CM
         'state_code', // default null
         'organization_type',
         'niche',
-        'payment_settings'
+        'payment_settings',
     ];
 
     /**
@@ -66,6 +69,7 @@ class Environment extends Model
         'additional_domains' => 'array',
         'is_active' => 'boolean',
         'is_demo' => 'boolean',
+        'is_centralized_payment_provider' => 'boolean',
         'payment_settings' => 'array',
     ];
 
@@ -90,7 +94,7 @@ class Environment extends Model
 
             // Also clear any previously registered domains that may have changed.
             if ($env->isDirty('primary_domain') && $env->getOriginal('primary_domain')) {
-                Cache::forget('env_by_domain:' . $env->getOriginal('primary_domain'));
+                Cache::forget('env_by_domain:'.$env->getOriginal('primary_domain'));
             }
 
             if ($env->isDirty('additional_domains')) {
@@ -150,7 +154,7 @@ class Environment extends Model
     {
         $domains = [$this->primary_domain];
 
-        if (!empty($this->additional_domains)) {
+        if (! empty($this->additional_domains)) {
             $domains = array_merge($domains, $this->additional_domains);
         }
 
@@ -159,9 +163,6 @@ class Environment extends Model
 
     /**
      * Check if a domain belongs to this environment.
-     *
-     * @param string $domain
-     * @return bool
      */
     public function hasDomain(string $domain): bool
     {
@@ -221,15 +222,15 @@ class Environment extends Model
      */
     public function brandings(): HasMany
     {
-        return $this->hasMany(Branding::class, "environment_id");
+        return $this->hasMany(Branding::class, 'environment_id');
     }
 
     /**
      * Get the active branding for this environment.
      */
-    public function branding(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function branding(): HasOne
     {
-        return $this->hasOne(Branding::class, "environment_id")->where('is_active', 1)->latest();
+        return $this->hasOne(Branding::class, 'environment_id')->where('is_active', 1)->latest();
     }
 
     /**
@@ -244,7 +245,7 @@ class Environment extends Model
      * Get the current environment licence (KURSA licensing, doc §11).
      * Exactly one per environment; Free Forever is a valid licence (§4.1).
      */
-    public function licence(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function licence(): HasOne
     {
         return $this->hasOne(EnvironmentLicence::class);
     }
@@ -271,7 +272,7 @@ class Environment extends Model
             ->whereHas('plan')
             ->first();
 
-        if (!$activeSubscription) {
+        if (! $activeSubscription) {
             return 'free';
         }
 
@@ -280,8 +281,6 @@ class Environment extends Model
 
     /**
      * Check if the environment is a demo environment.
-     *
-     * @return bool
      */
     public function isDemoEnvironment(): bool
     {
@@ -291,7 +290,7 @@ class Environment extends Model
     /**
      * Get the payment configuration for this environment.
      */
-    public function paymentConfig(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function paymentConfig(): HasOne
     {
         return $this->hasOne(EnvironmentPaymentConfig::class);
     }
@@ -315,7 +314,7 @@ class Environment extends Model
     /**
      * Get the live session settings for this environment.
      */
-    public function liveSettings(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function liveSettings(): HasOne
     {
         return $this->hasOne(EnvironmentLiveSettings::class);
     }

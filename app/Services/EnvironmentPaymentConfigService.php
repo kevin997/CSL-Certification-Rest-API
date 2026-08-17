@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Models\Environment;
 use App\Models\EnvironmentPaymentConfig;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -26,13 +28,10 @@ class EnvironmentPaymentConfigService
 
     /**
      * Get payment config for environment (with caching)
-     *
-     * @param int $environmentId
-     * @return EnvironmentPaymentConfig|null
      */
     public function getConfig(int $environmentId): ?EnvironmentPaymentConfig
     {
-        $cacheKey = self::CACHE_PREFIX . $environmentId;
+        $cacheKey = self::CACHE_PREFIX.$environmentId;
 
         return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($environmentId) {
             return EnvironmentPaymentConfig::where('environment_id', $environmentId)
@@ -44,16 +43,13 @@ class EnvironmentPaymentConfigService
     /**
      * Update payment config
      *
-     * @param int $environmentId
-     * @param array $data
-     * @return EnvironmentPaymentConfig
      * @throws \Exception
      */
     public function updateConfig(int $environmentId, array $data): EnvironmentPaymentConfig
     {
         $config = EnvironmentPaymentConfig::where('environment_id', $environmentId)->first();
 
-        if (!$config) {
+        if (! $config) {
             throw new \Exception("Payment config not found for environment ID: {$environmentId}");
         }
 
@@ -72,16 +68,13 @@ class EnvironmentPaymentConfigService
 
     /**
      * Enable centralized payments
-     *
-     * @param int $environmentId
-     * @return bool
      */
     public function enableCentralizedPayments(int $environmentId): bool
     {
         try {
             $config = EnvironmentPaymentConfig::where('environment_id', $environmentId)->first();
 
-            if (!$config) {
+            if (! $config) {
                 throw new \Exception("Payment config not found for environment ID: {$environmentId}");
             }
 
@@ -107,16 +100,13 @@ class EnvironmentPaymentConfigService
 
     /**
      * Disable centralized payments
-     *
-     * @param int $environmentId
-     * @return bool
      */
     public function disableCentralizedPayments(int $environmentId): bool
     {
         try {
             $config = EnvironmentPaymentConfig::where('environment_id', $environmentId)->first();
 
-            if (!$config) {
+            if (! $config) {
                 throw new \Exception("Payment config not found for environment ID: {$environmentId}");
             }
 
@@ -142,9 +132,6 @@ class EnvironmentPaymentConfigService
 
     /**
      * Check if environment uses centralized gateways
-     *
-     * @param int $environmentId
-     * @return bool
      */
     public function isCentralized(int $environmentId): bool
     {
@@ -154,21 +141,146 @@ class EnvironmentPaymentConfigService
     }
 
     /**
-     * Get the effective environment ID for payment/commission operations
-     * Returns Environment 1 (platform) if centralized gateways enabled, otherwise returns original ID
+     * Resolve the environment whose gateways centralized tenants transact through.
      *
-     * @param int $environmentId
-     * @return int
+     * Order: an explicit config id (tests and local work), then the
+     * environments.is_centralized_payment_provider flag an admin controls, then
+     * the configured primary domain as the bootstrap default. Returns null when
+     * nothing resolves — the caller must then fall back to the tenant's own
+     * environment rather than guessing.
+     *
+     * Deliberately uncached: this decides which account a tenant's money lands
+     * in, and a stale entry would keep routing to the previous provider after a
+     * switch. Both lookups are single indexed reads.
+     */
+    public function getCentralizedEnvironmentId(): ?int
+    {
+        $override = config('payments.centralized.environment_id');
+
+        if ($override !== null && $override !== '') {
+            return (int) $override;
+        }
+
+        $flagged = Environment::query()
+            ->where('is_centralized_payment_provider', true)
+            ->where('is_active', true)
+            ->value('id');
+
+        if ($flagged !== null) {
+            return (int) $flagged;
+        }
+
+        $domain = (string) config('payments.centralized.environment_domain');
+
+        if ($domain === '') {
+            return null;
+        }
+
+        // Deliberately not Environment::findByDomain(): its OR/AND precedence
+        // lets an inactive environment match on primary_domain.
+        $id = Environment::query()
+            ->where('primary_domain', $domain)
+            ->where('is_active', true)
+            ->value('id');
+
+        return $id === null ? null : (int) $id;
+    }
+
+    /**
+     * Make an environment the centralized gateway provider.
+     *
+     * Exactly one environment holds the flag, so this clears the previous
+     * holder in the same transaction. The new provider also stops borrowing
+     * gateways, since it now owns them.
+     *
+     * @throws \Exception when the environment is missing or inactive
+     */
+    public function setCentralizedEnvironment(int $environmentId): Environment
+    {
+        $environment = Environment::find($environmentId);
+
+        if (! $environment) {
+            throw new \Exception("Environment not found: {$environmentId}");
+        }
+
+        if (! $environment->is_active) {
+            throw new \Exception('An inactive environment cannot provide the centralized payment gateways.');
+        }
+
+        $previousIds = Environment::query()
+            ->where('is_centralized_payment_provider', true)
+            ->where('id', '!=', $environmentId)
+            ->pluck('id')
+            ->all();
+
+        DB::transaction(function () use ($environment, $environmentId, $previousIds) {
+            Environment::query()
+                ->whereIn('id', $previousIds)
+                ->update(['is_centralized_payment_provider' => false]);
+
+            $environment->forceFill(['is_centralized_payment_provider' => true])->save();
+
+            // A provider cannot borrow from itself.
+            EnvironmentPaymentConfig::where('environment_id', $environmentId)
+                ->update(['use_centralized_gateways' => false]);
+        });
+
+        $this->invalidateCache($environmentId);
+
+        foreach ($previousIds as $previousId) {
+            $this->invalidateCache((int) $previousId);
+        }
+
+        Log::info('Centralized payment provider changed', [
+            'environment_id' => $environmentId,
+            'previous_environment_ids' => $previousIds,
+        ]);
+
+        return $environment->refresh();
+    }
+
+    /**
+     * Whether this environment is itself the centralized gateway environment.
+     *
+     * It owns the gateways everyone else borrows, so it must never opt in to
+     * borrowing from itself.
+     */
+    public function isCentralizedEnvironment(int $environmentId): bool
+    {
+        return $this->getCentralizedEnvironmentId() === $environmentId;
+    }
+
+    /**
+     * Get the effective environment ID for payment/commission operations.
+     *
+     * Returns the centralized environment's ID when this environment has opted
+     * in to centralized gateways, otherwise the environment's own ID.
      */
     public function getEffectiveEnvironmentId(int $environmentId): int
     {
-        return $this->isCentralized($environmentId) ? 1 : $environmentId;
+        if (! $this->isCentralized($environmentId)) {
+            return $environmentId;
+        }
+
+        $centralizedId = $this->getCentralizedEnvironmentId();
+
+        if ($centralizedId === null) {
+            // Misconfiguration. Falling back to the tenant's own environment
+            // surfaces as "no gateway configured"; routing to an arbitrary
+            // environment would silently send money to the wrong account.
+            Log::error('Centralized payment environment could not be resolved', [
+                'environment_id' => $environmentId,
+                'configured_domain' => config('payments.centralized.environment_domain'),
+            ]);
+
+            return $environmentId;
+        }
+
+        return $centralizedId;
     }
 
     /**
      * Get default config values
-     *
-     * @return array
      */
     public function getDefaultConfig(): array
     {
@@ -186,12 +298,13 @@ class EnvironmentPaymentConfigService
     /**
      * Invalidate cache for environment
      *
-     * @param int $environmentId
-     * @return void
+     * Public because callers that write the config row directly (rather than
+     * through this service) must still drop the cached copy, otherwise the
+     * change takes up to CACHE_TTL to become visible.
      */
-    private function invalidateCache(int $environmentId): void
+    public function invalidateCache(int $environmentId): void
     {
-        $cacheKey = self::CACHE_PREFIX . $environmentId;
+        $cacheKey = self::CACHE_PREFIX.$environmentId;
         Cache::forget($cacheKey);
 
         Log::debug('Cache invalidated', [

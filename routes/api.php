@@ -769,7 +769,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/payment-gateways/{id}', [PaymentGatewayController::class, 'destroy']);
     Route::get('/payment-gateway-types', [PaymentGatewayController::class, 'getTypes']);
 
-    // Billing Payment Gateway routes (always uses default environment ID 1)
+    // Billing Payment Gateway routes (always uses platform-scoped gateways, environment_id IS NULL)
     Route::get('/billing/payment-gateways', [BillingPaymentGatewayController::class, 'index']);
     Route::get('/billing/payment-gateways/{id}', [BillingPaymentGatewayController::class, 'show']);
     Route::get('/billing/payment-gateway-types', [BillingPaymentGatewayController::class, 'getAvailableTypes']);
@@ -1271,6 +1271,14 @@ Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
     Route::get('/audit-logs/{id}', [AuditLogController::class, 'show']);
 
     // Environment Payment Configuration
+    // Which environment provides the gateways that centralized tenants use.
+    // Declared before the /{environmentId} routes so "provider" is not captured
+    // as an environment id.
+    Route::prefix('centralized-payment-provider')->group(function () {
+        Route::get('/', [EnvironmentPaymentConfigController::class, 'showCentralizedProvider']);
+        Route::put('/', [EnvironmentPaymentConfigController::class, 'setCentralizedProvider']);
+    });
+
     Route::prefix('environment-payment-configs')->group(function () {
         Route::get('/', [EnvironmentPaymentConfigController::class, 'index']);
         Route::get('/{environmentId}', [EnvironmentPaymentConfigController::class, 'show']);
