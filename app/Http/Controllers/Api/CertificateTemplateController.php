@@ -32,6 +32,31 @@ class CertificateTemplateController extends Controller
     }
 
     /**
+     * The environment this request belongs to, as resolved by DetectEnvironment
+     * from the request's domain.
+     */
+    protected function environmentId(): ?int
+    {
+        $environmentId = session('current_environment_id');
+
+        return $environmentId === null ? null : (int) $environmentId;
+    }
+
+    /**
+     * Find a template within the current environment, or fail.
+     *
+     * findOrFail on the bare id would let any tenant address any tenant's
+     * template by guessing a number -- and destroy() acts on the shared
+     * certificate service, so that reached across tenants destructively.
+     */
+    protected function findForEnvironment($id): CertificateTemplate
+    {
+        return CertificateTemplate::query()
+            ->forEnvironment($this->environmentId())
+            ->findOrFail($id);
+    }
+
+    /**
      * List available certificate templates
      * 
      * @return Response
@@ -56,8 +81,11 @@ class CertificateTemplateController extends Controller
      */
     public function index()
     {
-        $templates = CertificateTemplate::all();
-        
+        $templates = CertificateTemplate::query()
+            ->forEnvironment($this->environmentId())
+            ->orderByDesc('id')
+            ->get();
+
         return response()->json([
             'status' => 'success',
             'data' => $templates,
@@ -124,6 +152,15 @@ class CertificateTemplateController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+        // Refuse rather than create a template no environment owns: it would
+        // be invisible to every tenant, including the one that uploaded it.
+        if ($this->environmentId() === null) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No environment resolved for this request.',
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
         // Upload template to certificate service
         $result = $this->certificateGenerationService->uploadTemplate(
             $request->file('template'),
@@ -145,6 +182,7 @@ class CertificateTemplateController extends Controller
         
         // Create template record in database with correct data structure
         $template = CertificateTemplate::create([
+            'environment_id' => $this->environmentId(),
             'name' => $request->name,
             'description' => $request->description,
             'filename' => $templateData['filename'] ?? $request->name . '.pdf',
@@ -199,8 +237,8 @@ class CertificateTemplateController extends Controller
      */
     public function show($id)
     {
-        $template = CertificateTemplate::findOrFail($id);
-        
+        $template = $this->findForEnvironment($id);
+
         return response()->json([
             'status' => 'success',
             'data' => $template,
@@ -244,12 +282,15 @@ class CertificateTemplateController extends Controller
      */
     public function setDefault($id)
     {
-        $template = CertificateTemplate::findOrFail($id);
-        
-        // Reset all templates of this type to non-default
-        CertificateTemplate::where('template_type', $template->template_type)
+        $template = $this->findForEnvironment($id);
+
+        // Reset only this environment's templates of this type. Unscoped, one
+        // tenant picking a default cleared every other tenant's default.
+        CertificateTemplate::query()
+            ->forEnvironment($this->environmentId())
+            ->where('template_type', $template->template_type)
             ->update(['is_default' => false]);
-        
+
         // Set this template as default
         $template->is_default = true;
         $template->save();
@@ -297,17 +338,27 @@ class CertificateTemplateController extends Controller
      */
     public function destroy($id)
     {
-        // Find template
-        $template = CertificateTemplate::findOrFail($id);
+        // Find template within this environment
+        $template = $this->findForEnvironment($id);
 
-        // Delete from certificate service
-        $result = $this->certificateGenerationService->deleteTemplate($template->filename);
+        // The certificate service stores templates in one flat namespace shared
+        // by every environment, so the same filename can back another tenant's
+        // template. Remove the remote file only when this row is the last one
+        // pointing at it; otherwise drop the local record and leave the file.
+        $sharedWithOthers = CertificateTemplate::query()
+            ->where('filename', $template->filename)
+            ->whereKeyNot($template->getKey())
+            ->exists();
 
-        if (!$result) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to delete template from certificate service',
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        if (! $sharedWithOthers) {
+            $result = $this->certificateGenerationService->deleteTemplate($template->filename);
+
+            if (! $result) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Failed to delete template from certificate service',
+                ], Response::HTTP_INTERNAL_SERVER_ERROR);
+            }
         }
 
         // Delete from database
