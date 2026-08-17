@@ -155,6 +155,21 @@ class CertificateTemplateScopingTest extends TestCase
         $this->assertNotSoftDeleted($theirs);
     }
 
+    public function test_a_template_id_cannot_be_borrowed_across_environments(): void
+    {
+        /* The listing can hide a template while the id still resolves. Certificate
+           content takes certificate_template_id straight from the request, so an
+           unscoped lookup there reopened the leak on a write path. */
+        $theirs = $this->template($this->theirs);
+        $this->actingInMyEnvironment();
+
+        $resolved = CertificateTemplate::query()
+            ->forEnvironment(session('current_environment_id'))
+            ->find($theirs->id);
+
+        $this->assertNull($resolved);
+    }
+
     public function test_get_default_template_is_scoped_to_the_environment(): void
     {
         $this->template($this->theirs, ['is_default' => true, 'name' => 'Theirs']);
