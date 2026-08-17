@@ -6,13 +6,6 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Thrown when Ollama can't produce a usable response after all retries.
- */
-class OllamaException extends \RuntimeException
-{
-}
-
-/**
  * Chat completions via a self-hosted Ollama server. Used to generate
  * marketing/retention copy (see App\Support\Marketing\Multilingual and
  * App\Models\MarketingMessage).
