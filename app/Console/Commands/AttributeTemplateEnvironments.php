@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\CertificateTemplate;
+use App\Models\Environment;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +21,8 @@ use Illuminate\Support\Facades\DB;
 class AttributeTemplateEnvironments extends Command
 {
     protected $signature = 'certificates:attribute-template-environments
-                            {--apply : Write the attributions. Without this, only report.}';
+                            {--apply : Write the attributions. Without this, only report.}
+                            {--assign=* : Attribute explicitly as templateId:environmentId, for templates usage cannot resolve.}';
 
     protected $description = 'Attribute unowned certificate templates to the environment that uses them';
 
@@ -35,9 +37,25 @@ class AttributeTemplateEnvironments extends Command
         }
 
         $usage = $this->usageByTemplate();
+        $explicit = $this->explicitAssignments();
         $attributed = $ambiguous = $orphaned = 0;
 
         foreach ($unowned as $template) {
+            // An explicit assignment is a human answering the question usage
+            // could not, so it wins over the derived owner.
+            if ($explicit->has($template->getKey())) {
+                $environmentId = $explicit->get($template->getKey());
+                $this->line("template {$template->id} ({$template->name}) -> environment {$environmentId} (assigned)");
+
+                if ($this->option('apply')) {
+                    $template->update(['environment_id' => $environmentId]);
+                }
+
+                $attributed++;
+
+                continue;
+            }
+
             $environments = $usage->get($template->getKey(), collect());
 
             if ($environments->isEmpty()) {
@@ -82,6 +100,31 @@ class AttributeTemplateEnvironments extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Operator-supplied templateId:environmentId pairs.
+     *
+     * Validated against real environments so a typo becomes an error rather
+     * than a template pointed at an environment that does not exist.
+     *
+     * @return Collection<int, int>
+     */
+    private function explicitAssignments()
+    {
+        return collect($this->option('assign'))->mapWithKeys(function (string $pair) {
+            if (! preg_match('/^(\d+):(\d+)$/', $pair, $matches)) {
+                throw new \InvalidArgumentException("--assign expects templateId:environmentId, got [{$pair}]");
+            }
+
+            [$templateId, $environmentId] = [(int) $matches[1], (int) $matches[2]];
+
+            if (! Environment::whereKey($environmentId)->exists()) {
+                throw new \InvalidArgumentException("--assign refers to unknown environment [{$environmentId}]");
+            }
+
+            return [$templateId => $environmentId];
+        });
     }
 
     /**
