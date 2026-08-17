@@ -16,15 +16,13 @@ class CertificateTemplateController extends Controller
 {
     /**
      * Certificate generation service
-     * 
+     *
      * @var CertificateGenerationService
      */
     protected $certificateGenerationService;
-    
+
     /**
      * Constructor
-     * 
-     * @param CertificateGenerationService $certificateGenerationService
      */
     public function __construct(CertificateGenerationService $certificateGenerationService)
     {
@@ -58,9 +56,9 @@ class CertificateTemplateController extends Controller
 
     /**
      * List available certificate templates
-     * 
+     *
      * @return Response
-     * 
+     *
      * @OA\Get(
      *     path="/certificate-templates",
      *     summary="List available certificate templates",
@@ -68,11 +66,14 @@ class CertificateTemplateController extends Controller
      *     operationId="listCertificateTemplates",
      *     tags={"Certificates"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Response(
      *         response=200,
      *         description="List of templates",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="data", type="array", @OA\Items(ref="#/components/schemas/CertificateTemplate"))
      *         )
@@ -94,10 +95,9 @@ class CertificateTemplateController extends Controller
 
     /**
      * Upload a new certificate template
-     * 
-     * @param Request $request
+     *
      * @return Response
-     * 
+     *
      * @OA\Post(
      *     path="/certificate-templates",
      *     summary="Upload a new certificate template",
@@ -105,12 +105,16 @@ class CertificateTemplateController extends Controller
      *     operationId="uploadCertificateTemplate",
      *     tags={"Certificates"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\RequestBody(
      *         required=true,
+     *
      *         @OA\MediaType(
      *             mediaType="multipart/form-data",
+     *
      *             @OA\Schema(
      *                 required={"template", "name"},
+     *
      *                 @OA\Property(property="template", type="string", format="binary", description="PDF template file"),
      *                 @OA\Property(property="name", type="string", description="Template name"),
      *                 @OA\Property(property="description", type="string", description="Template description"),
@@ -118,16 +122,20 @@ class CertificateTemplateController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Template uploaded successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Template uploaded successfully"),
      *             @OA\Property(property="data", ref="#/components/schemas/CertificateTemplate")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=422,
      *         description="Validation error"
@@ -167,7 +175,7 @@ class CertificateTemplateController extends Controller
             $request->name
         );
 
-        if (!$result) {
+        if (! $result) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to upload template to certificate service',
@@ -176,16 +184,16 @@ class CertificateTemplateController extends Controller
 
         // Log the response from certificate service for debugging
         Log::info('Certificate service response', ['result' => $result]);
-        
+
         // Extract data from the nested response structure
         $templateData = $result['data'] ?? $result;
-        
+
         // Create template record in database with correct data structure
         $template = CertificateTemplate::create([
             'environment_id' => $this->environmentId(),
             'name' => $request->name,
             'description' => $request->description,
-            'filename' => $templateData['filename'] ?? $request->name . '.pdf',
+            'filename' => $templateData['filename'] ?? $request->name.'.pdf',
             'file_path' => $templateData['path'] ?? null,
             'template_type' => $request->template_type,
             'is_default' => false,
@@ -202,10 +210,10 @@ class CertificateTemplateController extends Controller
 
     /**
      * Get a specific certificate template
-     * 
-     * @param int $id
+     *
+     * @param  int  $id
      * @return Response
-     * 
+     *
      * @OA\Get(
      *     path="/certificate-templates/{id}",
      *     summary="Get a specific certificate template",
@@ -213,22 +221,28 @@ class CertificateTemplateController extends Controller
      *     operationId="getCertificateTemplate",
      *     tags={"Certificates"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         required=true,
      *         description="ID of the template",
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Template details",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="data", ref="#/components/schemas/CertificateTemplate")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=404,
      *         description="Template not found"
@@ -247,10 +261,10 @@ class CertificateTemplateController extends Controller
 
     /**
      * Set a template as default for its type
-     * 
-     * @param int $id
+     *
+     * @param  int  $id
      * @return Response
-     * 
+     *
      * @OA\Put(
      *     path="/certificate-templates/{id}/set-default",
      *     summary="Set a template as default for its type",
@@ -258,22 +272,28 @@ class CertificateTemplateController extends Controller
      *     operationId="setDefaultCertificateTemplate",
      *     tags={"Certificates"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         required=true,
      *         description="ID of the template to set as default",
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Template set as default successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Template set as default successfully")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=404,
      *         description="Template not found"
@@ -294,7 +314,7 @@ class CertificateTemplateController extends Controller
         // Set this template as default
         $template->is_default = true;
         $template->save();
-        
+
         return response()->json([
             'status' => 'success',
             'message' => 'Template set as default successfully',
@@ -303,10 +323,10 @@ class CertificateTemplateController extends Controller
 
     /**
      * Delete a certificate template
-     * 
-     * @param int $id
+     *
+     * @param  int  $id
      * @return Response
-     * 
+     *
      * @OA\Delete(
      *     path="/certificate-templates/{id}",
      *     summary="Delete a certificate template",
@@ -314,22 +334,28 @@ class CertificateTemplateController extends Controller
      *     operationId="deleteCertificateTemplate",
      *     tags={"Certificates"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         required=true,
      *         description="ID of the template to delete",
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Template deleted successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Template deleted successfully")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=404,
      *         description="Template not found"

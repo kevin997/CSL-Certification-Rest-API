@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @OA\Schema(
  *     schema="CertificateTemplate",
  *     type="object",
+ *
  *     @OA\Property(property="id", type="integer", format="int64", example=1),
  *     @OA\Property(property="name", type="string", example="Completion Certificate"),
  *     @OA\Property(property="description", type="string", example="Standard completion certificate template"),
@@ -97,9 +98,6 @@ class CertificateTemplate extends Model
 
     /**
      * Get the default template of a type, within one environment.
-     *
-     * @param string $type
-     * @return CertificateTemplate|null
      */
     public static function getDefaultTemplate(string $type = 'completion', ?int $environmentId = null): ?CertificateTemplate
     {

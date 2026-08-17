@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Validator;
  * @OA\Schema(
  *     schema="CertificateContent",
  *     required={"activity_id", "title", "description", "template_type"},
+ *
  *     @OA\Property(property="id", type="integer", format="int64", example=1),
  *     @OA\Property(property="activity_id", type="integer", format="int64", example=1),
  *     @OA\Property(property="title", type="string", example="CSL Certification of Completion"),
@@ -32,8 +33,10 @@ use Illuminate\Support\Facades\Validator;
  *     @OA\Property(
  *         property="custom_fields",
  *         type="array",
+ *
  *         @OA\Items(
  *             type="object",
+ *
  *             @OA\Property(property="name", type="string", example="Course Duration"),
  *             @OA\Property(property="value", type="string", example="120 Hours"),
  *             @OA\Property(property="position", type="string", enum={"header", "body", "footer"}, example="body")
@@ -43,32 +46,29 @@ use Illuminate\Support\Facades\Validator;
  *     @OA\Property(property="updated_at", type="string", format="date-time")
  * )
  */
-
 class CertificateContentController extends Controller
 {
     /**
      * Certificate generation service
-     * 
+     *
      * @var CertificateGenerationService
      */
     protected $certificateGenerationService;
-    
+
     /**
      * Constructor
-     * 
-     * @param CertificateGenerationService $certificateGenerationService
      */
     public function __construct(CertificateGenerationService $certificateGenerationService)
     {
         $this->certificateGenerationService = $certificateGenerationService;
     }
+
     /**
      * Store a newly created certificate content in storage.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $activityId
-     * @return \Illuminate\Http\Response
-     * 
+     * @return Response
+     *
      * @OA\Post(
      *     path="/activities/{activityId}/certificate-content",
      *     summary="Create certificate content for an activity",
@@ -76,18 +76,23 @@ class CertificateContentController extends Controller
      *     operationId="storeCertificateContent",
      *     tags={"Content Types"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="activityId",
      *         in="path",
      *         required=true,
      *         description="ID of the activity",
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\RequestBody(
      *         required=true,
      *         description="Certificate content data",
+     *
      *         @OA\JsonContent(
      *             required={"title", "description", "template_type"},
+     *
      *             @OA\Property(property="title", type="string", example="CSL Certification of Completion"),
      *             @OA\Property(property="description", type="string", example="This certificate is awarded for successful completion of the CSL Certification Program"),
      *             @OA\Property(property="template_type", type="string", enum={"completion", "achievement", "participation", "custom"}, example="completion"),
@@ -100,8 +105,10 @@ class CertificateContentController extends Controller
      *             @OA\Property(
      *                 property="custom_fields",
      *                 type="array",
+     *
      *                 @OA\Items(
      *                     type="object",
+     *
      *                     @OA\Property(property="name", type="string", example="Course Duration"),
      *                     @OA\Property(property="value", type="string", example="120 Hours"),
      *                     @OA\Property(property="position", type="string", enum={"header", "body", "footer"}, example="body")
@@ -109,16 +116,20 @@ class CertificateContentController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=201,
      *         description="Certificate content created successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Certificate content created successfully"),
      *             @OA\Property(property="data", ref="#/components/schemas/CertificateContent")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=400,
      *         description="Invalid activity type"
@@ -210,7 +221,7 @@ class CertificateContentController extends Controller
 
         // Prepare data for storage
         $data = $request->except(['custom_fields', 'completion_criteria', 'download_formats', 'sharing_platforms']);
-        
+
         // If certificate_template_id is provided, fetch the template path from the certificate template
         if ($request->has('certificate_template_id') && $request->certificate_template_id) {
             // Scoped: the id comes from the request, so an unscoped lookup let a
@@ -220,24 +231,24 @@ class CertificateContentController extends Controller
                 ->findOrFail($request->certificate_template_id);
             $data['template_path'] = $certificateTemplate->file_path;
         }
-        
+
         // Handle arrays that need to be stored as JSON
         if ($request->has('custom_fields')) {
             $data['custom_fields'] = json_encode($request->custom_fields);
         }
-        
+
         if ($request->has('completion_criteria')) {
             $data['completion_criteria'] = json_encode($request->completion_criteria);
         }
-        
+
         if ($request->has('download_formats')) {
             $data['download_formats'] = json_encode($request->download_formats);
         }
-        
+
         if ($request->has('sharing_platforms')) {
             $data['sharing_platforms'] = json_encode($request->sharing_platforms);
         }
-        
+
         // Add activity_id to data
         $data['activity_id'] = $activityId;
 
@@ -254,8 +265,8 @@ class CertificateContentController extends Controller
      * Display the specified certificate content.
      *
      * @param  int  $activityId
-     * @return \Illuminate\Http\Response
-     * 
+     * @return Response
+     *
      * @OA\Get(
      *     path="/activities/{activityId}/certificate-content",
      *     summary="Get certificate content for an activity",
@@ -263,22 +274,28 @@ class CertificateContentController extends Controller
      *     operationId="getCertificateContent",
      *     tags={"Content Types"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="activityId",
      *         in="path",
      *         required=true,
      *         description="ID of the activity",
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Certificate content retrieved successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="data", ref="#/components/schemas/CertificateContent")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=403,
      *         description="Forbidden - User does not have permission"
@@ -296,7 +313,7 @@ class CertificateContentController extends Controller
         $template = Template::findOrFail($block->template_id);
 
         // Check if user has access to this template
-        if (!$template->is_public && $template->created_by !== Auth::id()) {
+        if (! $template->is_public && $template->created_by !== Auth::id()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to view this content',
@@ -304,27 +321,27 @@ class CertificateContentController extends Controller
         }
 
         $certificateContent = CertificateContent::where('activity_id', $activityId)->firstOrFail();
-        
+
         // Decode JSON fields for the response
         if ($certificateContent->custom_fields) {
             $certificateContent->custom_fields = json_decode($certificateContent->custom_fields);
         }
-        
+
         if ($certificateContent->completion_criteria) {
             $certificateContent->completion_criteria = json_decode($certificateContent->completion_criteria);
         }
-        
+
         if ($certificateContent->download_formats) {
             $certificateContent->download_formats = json_decode($certificateContent->download_formats);
         }
-        
+
         if ($certificateContent->sharing_platforms) {
             $certificateContent->sharing_platforms = json_decode($certificateContent->sharing_platforms);
         }
-        
+
         // Add certificate preview and download URLs if metadata exists
         $responseData = $certificateContent->toArray();
-        
+
         // Add preview and download URLs to the response if certificate has been generated
         if ($certificateContent->metadata && isset($certificateContent->metadata['certificate_url'])) {
             $responseData['preview_url'] = $this->certificateGenerationService->getCertificatePreviewUrl($certificateContent);
@@ -340,10 +357,9 @@ class CertificateContentController extends Controller
     /**
      * Update the specified certificate content in storage.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $activityId
-     * @return \Illuminate\Http\Response
-     * 
+     * @return Response
+     *
      * @OA\Put(
      *     path="/activities/{activityId}/certificate-content",
      *     summary="Update certificate content for an activity",
@@ -351,17 +367,22 @@ class CertificateContentController extends Controller
      *     operationId="updateCertificateContent",
      *     tags={"Content Types"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="activityId",
      *         in="path",
      *         required=true,
      *         description="ID of the activity",
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\RequestBody(
      *         required=true,
      *         description="Certificate content data",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="title", type="string", example="CSL Certification of Completion"),
      *             @OA\Property(property="description", type="string", example="This certificate is awarded for successful completion of the CSL Certification Program"),
      *             @OA\Property(property="template_type", type="string", enum={"completion", "achievement", "participation", "custom"}, example="completion"),
@@ -374,8 +395,10 @@ class CertificateContentController extends Controller
      *             @OA\Property(
      *                 property="custom_fields",
      *                 type="array",
+     *
      *                 @OA\Items(
      *                     type="object",
+     *
      *                     @OA\Property(property="name", type="string", example="Course Duration"),
      *                     @OA\Property(property="value", type="string", example="120 Hours"),
      *                     @OA\Property(property="position", type="string", enum={"header", "body", "footer"}, example="body")
@@ -383,16 +406,20 @@ class CertificateContentController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Certificate content updated successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Certificate content updated successfully"),
      *             @OA\Property(property="data", ref="#/components/schemas/CertificateContent")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=403,
      *         description="Forbidden - User does not have permission"
@@ -464,7 +491,7 @@ class CertificateContentController extends Controller
 
         // Prepare data for update
         $updateData = $request->except(['custom_fields', 'completion_criteria', 'download_formats', 'sharing_platforms']);
-        
+
         // If certificate_template_id is provided, fetch the template path from the certificate template
         if ($request->has('certificate_template_id') && $request->certificate_template_id) {
             // Only update template_path if the template ID has changed
@@ -477,20 +504,20 @@ class CertificateContentController extends Controller
                 $updateData['template_path'] = $certificateTemplate->file_path;
             }
         }
-        
+
         // Handle arrays that need to be stored as JSON
         if ($request->has('custom_fields')) {
             $updateData['custom_fields'] = json_encode($request->custom_fields);
         }
-        
+
         if ($request->has('completion_criteria')) {
             $updateData['completion_criteria'] = json_encode($request->completion_criteria);
         }
-        
+
         if ($request->has('download_formats')) {
             $updateData['download_formats'] = json_encode($request->download_formats);
         }
-        
+
         if ($request->has('sharing_platforms')) {
             $updateData['sharing_platforms'] = json_encode($request->sharing_platforms);
         }
@@ -501,15 +528,15 @@ class CertificateContentController extends Controller
         if ($certificateContent->custom_fields) {
             $certificateContent->custom_fields = json_decode($certificateContent->custom_fields);
         }
-        
+
         if ($certificateContent->completion_criteria) {
             $certificateContent->completion_criteria = json_decode($certificateContent->completion_criteria);
         }
-        
+
         if ($certificateContent->download_formats) {
             $certificateContent->download_formats = json_decode($certificateContent->download_formats);
         }
-        
+
         if ($certificateContent->sharing_platforms) {
             $certificateContent->sharing_platforms = json_decode($certificateContent->sharing_platforms);
         }
@@ -525,8 +552,8 @@ class CertificateContentController extends Controller
      * Remove the specified certificate content from storage.
      *
      * @param  int  $activityId
-     * @return \Illuminate\Http\Response
-     * 
+     * @return Response
+     *
      * @OA\Delete(
      *     path="/activities/{activityId}/certificate-content",
      *     summary="Delete certificate content for an activity",
@@ -534,22 +561,28 @@ class CertificateContentController extends Controller
      *     operationId="deleteCertificateContent",
      *     tags={"Content Types"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="activityId",
      *         in="path",
      *         required=true,
      *         description="ID of the activity",
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Certificate content deleted successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Certificate content deleted successfully")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=403,
      *         description="Forbidden - User does not have permission"

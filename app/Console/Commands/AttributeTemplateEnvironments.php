@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\CertificateTemplate;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -87,7 +88,7 @@ class AttributeTemplateEnvironments extends Command
      * Environments each template is reachable from, via the courses whose
      * activities carry a certificate content pointing at it.
      *
-     * @return \Illuminate\Support\Collection<int, \Illuminate\Support\Collection<int, int>>
+     * @return Collection<int, Collection<int, int>>
      */
     private function usageByTemplate()
     {
