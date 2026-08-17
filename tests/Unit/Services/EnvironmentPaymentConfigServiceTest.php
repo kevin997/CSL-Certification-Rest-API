@@ -2,12 +2,12 @@
 
 namespace Tests\Unit\Services;
 
-use Tests\TestCase;
 use App\Models\Environment;
 use App\Models\EnvironmentPaymentConfig;
 use App\Services\EnvironmentPaymentConfigService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Tests\TestCase;
 
 class EnvironmentPaymentConfigServiceTest extends TestCase
 {
@@ -59,7 +59,7 @@ class EnvironmentPaymentConfigServiceTest extends TestCase
         $result1 = $this->service->getConfig($environment->id);
 
         // Verify cache exists
-        $cacheKey = 'env_payment_config:' . $environment->id;
+        $cacheKey = 'env_payment_config:'.$environment->id;
         $this->assertTrue(Cache::has($cacheKey));
 
         // Second call - should use cache
@@ -74,15 +74,15 @@ class EnvironmentPaymentConfigServiceTest extends TestCase
         $environment = Environment::factory()->create();
         $config = EnvironmentPaymentConfig::factory()->create([
             'environment_id' => $environment->id,
-            'commission_rate' => 0.1500,
+            'platform_fee_rate' => 0.1500,
         ]);
 
         $updated = $this->service->updateConfig($environment->id, [
-            'commission_rate' => 0.2000,
+            'platform_fee_rate' => 0.2000,
             'payment_terms' => 'NET_60',
         ]);
 
-        $this->assertEquals(0.2000, $updated->commission_rate);
+        $this->assertEquals(0.2000, $updated->platform_fee_rate);
         $this->assertEquals('NET_60', $updated->payment_terms);
     }
 
@@ -98,7 +98,7 @@ class EnvironmentPaymentConfigServiceTest extends TestCase
         // Populate cache
         $this->service->getConfig($environment->id);
 
-        $cacheKey = 'env_payment_config:' . $environment->id;
+        $cacheKey = 'env_payment_config:'.$environment->id;
         $this->assertTrue(Cache::has($cacheKey));
 
         // Update config
@@ -189,7 +189,9 @@ class EnvironmentPaymentConfigServiceTest extends TestCase
 
         $this->assertIsArray($defaults);
         $this->assertFalse($defaults['use_centralized_gateways']);
-        $this->assertEquals(0.1700, $defaults['commission_rate']);
+        // Phase 2 of the KURSA licensing transition set the platform's cut on
+        // course sales to 0%; the 17% here predates that.
+        $this->assertEquals(0, $defaults['commission_rate']);
         $this->assertEquals('NET_30', $defaults['payment_terms']);
         $this->assertEquals(50000.00, $defaults['minimum_withdrawal_amount']);
         $this->assertTrue($defaults['is_active']);

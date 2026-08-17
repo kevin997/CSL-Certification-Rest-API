@@ -2,18 +2,20 @@
 
 namespace App\Services;
 
-use App\Models\Order;
-use App\Models\Transaction;
+use App\Events\OrderCompleted;
 use App\Models\Environment;
+use App\Models\InstructorCommission;
 use App\Models\Invoice;
+use App\Models\Order;
 use App\Models\Payment;
 use App\Models\PaymentGatewaySetting;
 use App\Models\Plan;
 use App\Models\Subscription;
-use App\Models\InstructorCommission;
+use App\Models\Transaction;
+use App\Services\Commission\CommissionService;
 use App\Services\PaymentGateways\PaymentGatewayFactory;
 use App\Services\PaymentGateways\PaymentGatewayInterface;
-use App\Services\Commission\CommissionService;
+use App\Services\Payments\RefundService;
 use App\Services\Tax\TaxZoneService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -58,12 +60,6 @@ class PaymentService
 
     /**
      * Constructor for PaymentService
-     *
-     * @param OrderService $orderService
-     * @param PaymentGatewayFactory $gatewayFactory
-     * @param CommissionService $commissionService
-     * @param TaxZoneService $taxZoneService
-     * @param EnvironmentPaymentConfigService $environmentPaymentConfigService
      */
     public function __construct(
         OrderService $orderService,
@@ -79,8 +75,6 @@ class PaymentService
         $this->environmentPaymentConfigService = $environmentPaymentConfigService;
     }
 
-
-
     /***
      * @param string|null|int $environment_id
      * @return App\Models\Environment
@@ -92,67 +86,60 @@ class PaymentService
 
     /**
      * Create a payment for an order with environment-specific configuration
-     *
-     * @param string $orderId
-     * @param string $paymentMethod
-     * @param array $paymentData
-     * @param string|null $environment
-     * @return array
      */
     public function createPayment(string $orderId, string $paymentMethod, array $paymentData = [], ?string $environment = null): array
     {
         Log::info("createPayment method called with orderId: $orderId, paymentMethod: $paymentMethod, environment: $environment");
 
-
         $environmentId = session('current_environment_id');
 
-        // Get effective environment ID (routes to Environment 1 if centralized gateways enabled)
+        // Get effective environment ID (routes to the centralized environment if enabled)
         $effectiveEnvironmentId = $this->environmentPaymentConfigService->getEffectiveEnvironmentId($environmentId);
 
         if ($effectiveEnvironmentId !== $environmentId) {
-            Log::info('Using platform payment gateway due to centralized gateways in createPayment', [
+            Log::info('Using centralized payment gateway in createPayment', [
                 'original_environment_id' => $environmentId,
                 'effective_environment_id' => $effectiveEnvironmentId,
-                'order_id' => $orderId
+                'order_id' => $orderId,
             ]);
         }
 
         Log::info('Found environement Id on createPayment', [
-            "env" => $environmentId,
-            "effective_env" => $effectiveEnvironmentId
+            'env' => $environmentId,
+            'effective_env' => $effectiveEnvironmentId,
         ]);
 
         try {
             // Get the order
             $order = $this->orderService->getOrderById($orderId);
-            if (!$order) {
+            if (! $order) {
                 return [
                     'success' => false,
-                    'message' => 'Order not found'
+                    'message' => 'Order not found',
                 ];
             }
 
             // Check if a transaction already exists for this order
             $existingTransaction = Transaction::where('order_id', $order->id)
-                ->where("status", "pending")
+                ->where('status', 'pending')
                 ->first();
 
             if ($existingTransaction) {
                 Log::info('Found existing transaction for order', [
                     'order_id' => $order->id,
-                    'transaction_id' => $existingTransaction->transaction_id
+                    'transaction_id' => $existingTransaction->transaction_id,
                 ]);
 
-                //update the transaction with a new transaction_id 'TXN_' . Str::uuid(),
+                // update the transaction with a new transaction_id 'TXN_' . Str::uuid(),
                 $existingTransaction->update([
-                    'transaction_id' => 'TXN_' . Str::uuid(),
+                    'transaction_id' => 'TXN_'.Str::uuid(),
                     'payment_method' => $paymentMethod,
-                    'environment_id' => $effectiveEnvironmentId
+                    'environment_id' => $effectiveEnvironmentId,
                 ]);
 
                 // Initialize the payment gateway with environment-specific settings
                 $gateway = $this->initializeGateway($paymentMethod, $environment);
-                if (!$gateway['success']) {
+                if (! $gateway['success']) {
                     return $gateway;
                 }
 
@@ -161,7 +148,7 @@ class PaymentService
                 // Create the payment with the gateway using existing transaction
                 $response = $this->currentGateway->createPayment($existingTransaction, $paymentData);
 
-                if (!$response['success']) {
+                if (! $response['success']) {
                     return $response;
                 }
 
@@ -179,11 +166,11 @@ class PaymentService
             $transactionData = [
                 'order_id' => $order->id,
                 'customer_id' => $order->user_id,
-                'transaction_id' => 'TXN_' . Str::uuid(),
+                'transaction_id' => 'TXN_'.Str::uuid(),
                 'payment_method' => $paymentMethod,
                 'currency' => $order->currency ?? 'USD',
                 'status' => 'pending',
-                'description' => 'Payment for Order #' . $order->order_number,
+                'description' => 'Payment for Order #'.$order->order_number,
                 'amount' => $order->total_amount,
                 'country_code' => $countryCode,
                 'state_code' => $stateCode,
@@ -201,8 +188,8 @@ class PaymentService
             $transaction = Transaction::create($transactionData);
 
             if ($transaction) {
-                Log::info("Transaction was created with", [
-                    'transaction_id' => $transaction->transaction_id
+                Log::info('Transaction was created with', [
+                    'transaction_id' => $transaction->transaction_id,
                 ]);
             }
 
@@ -219,7 +206,7 @@ class PaymentService
                 'tax_zone' => $transactionAmounts['tax_zone'],
                 'tax_rate' => $transactionAmounts['tax_rate'],
                 'tax_amount' => $transactionAmounts['tax_amount'],
-                'total_amount' => $transactionAmounts['total_amount']
+                'total_amount' => $transactionAmounts['total_amount'],
             ]);
 
             Log::info('Transaction amounts calculated with commission included in product price', [
@@ -227,7 +214,7 @@ class PaymentService
                 'original_amount' => $transaction->amount,
                 'extracted_commission' => $transactionAmounts['fee_amount'],
                 'tax_amount' => $transactionAmounts['tax_amount'],
-                'total_amount' => $transactionAmounts['total_amount']
+                'total_amount' => $transactionAmounts['total_amount'],
             ]);
 
             // Log the commission and tax application
@@ -238,16 +225,17 @@ class PaymentService
                 'tax_amount' => $transaction->tax_amount,
                 'tax_rate' => $transaction->tax_rate,
                 'tax_zone' => $transaction->tax_zone,
-                'total_amount' => $transaction->total_amount
+                'total_amount' => $transaction->total_amount,
             ]);
 
             // Initialize the payment gateway with environment-specific settings
             $gateway = $this->initializeGateway($paymentMethod, $environment);
-            if (!$gateway['success']) {
-                Log::warning("Payment Gateway initialization failed", [
+            if (! $gateway['success']) {
+                Log::warning('Payment Gateway initialization failed', [
                     'success' => false,
-                    'message' => "Payment gateway '$paymentMethod' not supported"
+                    'message' => "Payment gateway '$paymentMethod' not supported",
                 ]);
+
                 return $gateway;
             }
 
@@ -256,11 +244,12 @@ class PaymentService
             // Create the payment with the gateway
             $response = $this->currentGateway->createPayment($transaction, $paymentData);
 
-            if (!$response['success']) {
-                Log::warning("Payment creation failed", [
+            if (! $response['success']) {
+                Log::warning('Payment creation failed', [
                     'success' => false,
-                    'message' => "Payment gateway '$paymentMethod' not supported"
+                    'message' => "Payment gateway '$paymentMethod' not supported",
                 ]);
+
                 return $response;
             }
 
@@ -269,26 +258,22 @@ class PaymentService
                 $transaction->save();
             }
 
-
-
             $transaction->refresh();
             $response['transaction'] = $transaction;
+
             return $response;
         } catch (\Exception $e) {
-            Log::error('Payment creation failed: ' . $e->getMessage());
+            Log::error('Payment creation failed: '.$e->getMessage());
+
             return [
                 'success' => false,
-                'message' => 'Payment creation failed: ' . $e->getMessage()
+                'message' => 'Payment creation failed: '.$e->getMessage(),
             ];
         }
     }
 
     /**
      * Initialize a payment gateway with environment-specific configuration
-     *
-     * @param string $gatewayCode
-     * @param string|null $environment
-     * @return array
      */
     protected function initializeGateway(string $gatewayCode, ?string $environment = null): array
     {
@@ -296,59 +281,61 @@ class PaymentService
             // Get environment ID based on environment name
             $environmentId = session('current_environment_id');
 
-            // Get effective environment ID (routes to Environment 1 if centralized gateways enabled)
+            // Get effective environment ID (routes to the centralized environment if enabled)
             $effectiveEnvironmentId = $this->environmentPaymentConfigService->getEffectiveEnvironmentId($environmentId);
 
             if ($effectiveEnvironmentId !== $environmentId) {
-                Log::info('Using platform payment gateway due to centralized gateways in initializeGateway', [
+                Log::info('Using centralized payment gateway in initializeGateway', [
                     'original_environment_id' => $environmentId,
                     'effective_environment_id' => $effectiveEnvironmentId,
-                    'gateway_code' => $gatewayCode
+                    'gateway_code' => $gatewayCode,
                 ]);
             }
 
             Log::info('Environment id in payment service', [
                 'environment_id' => $environmentId,
-                'effective_environment_id' => $effectiveEnvironmentId
+                'effective_environment_id' => $effectiveEnvironmentId,
             ]);
 
             // Get gateway settings using effective environment ID
             $gatewaySettings = $this->getGatewaySettings($gatewayCode, $effectiveEnvironmentId);
 
-            if (!$gatewaySettings) {
-                Log::warning("Payment Gateway settings retrieval failed", [
+            if (! $gatewaySettings) {
+                Log::warning('Payment Gateway settings retrieval failed', [
                     'success' => false,
                     'message' => "Payment gateway '$gatewayCode' not configured for the specified environment",
                     'environment_id' => $environmentId,
                     'effective_environment_id' => $effectiveEnvironmentId,
                 ]);
+
                 return [
                     'success' => false,
-                    'message' => "Payment gateway '$gatewayCode' not configured for the specified environment"
+                    'message' => "Payment gateway '$gatewayCode' not configured for the specified environment",
                 ];
             }
 
             // Create and initialize the gateway
             $gateway = $this->gatewayFactory->create($gatewayCode, $gatewaySettings);
 
-            if (!$gateway) {
-                Log::warning("Payment Gateway creation failed", [
+            if (! $gateway) {
+                Log::warning('Payment Gateway creation failed', [
                     'success' => false,
-                    'message' => "Payment gateway '$gatewayCode' not supported"
+                    'message' => "Payment gateway '$gatewayCode' not supported",
                 ]);
+
                 return [
                     'success' => false,
-                    'message' => "Payment gateway '$gatewayCode' not supported"
+                    'message' => "Payment gateway '$gatewayCode' not supported",
                 ];
             }
 
             return [
                 'success' => true,
                 'gateway' => $gateway,
-                'settings' => $gatewaySettings
+                'settings' => $gatewaySettings,
             ];
         } catch (\Exception $e) {
-            Log::error('Gateway initialization failed: ' . $e->getMessage(), [
+            Log::error('Gateway initialization failed: '.$e->getMessage(), [
                 'environment_id' => $environmentId ?? null,
                 'gateway_code' => $gatewayCode,
                 'trace' => $e->getTraceAsString(),
@@ -356,7 +343,7 @@ class PaymentService
 
             return [
                 'success' => false,
-                'message' => 'Gateway initialization failed: ' . $e->getMessage()
+                'message' => 'Gateway initialization failed: '.$e->getMessage(),
             ];
         }
     }
@@ -364,10 +351,6 @@ class PaymentService
     /**
      * Process a payment with environment-specific configuration
      * Get the payment gateway settings for a specific gateway and environment
-     *
-     * @param string $gatewayCode
-     * @param int|null $environmentId
-     * @return PaymentGatewaySetting|null
      */
     private function getGatewaySettings(string $gatewayCode, ?int $environmentId): ?PaymentGatewaySetting
     {
@@ -376,7 +359,7 @@ class PaymentService
             $environmentId = session('current_environment_id');
         }
 
-        // Get effective environment ID (routes to Environment 1 if centralized gateways enabled)
+        // Get effective environment ID (routes to the centralized environment if enabled)
         $effectiveEnvironmentId = $this->environmentPaymentConfigService->getEffectiveEnvironmentId($environmentId);
 
         return PaymentGatewaySetting::where('code', $gatewayCode)
@@ -387,26 +370,18 @@ class PaymentService
             ->first();
     }
 
-
-
-
-
     /**
      * Process payment for an order
-     *
-     * @param int $orderId
-     * @param array $paymentData
-     * @return array
      */
     public function processPayment(int $orderId, array $paymentData): array
     {
-        Log::info('Processing payment for order ' . $paymentData['payment_method']);
+        Log::info('Processing payment for order '.$paymentData['payment_method']);
         $order = $this->orderService->getOrderById($orderId);
 
-        if (!$order) {
+        if (! $order) {
             return [
                 'success' => false,
-                'message' => 'Order not found'
+                'message' => 'Order not found',
             ];
         }
 
@@ -414,15 +389,15 @@ class PaymentService
         if ($order->payment_status === 'paid') {
             return [
                 'success' => false,
-                'message' => 'Order is already paid'
+                'message' => 'Order is already paid',
             ];
         }
 
         // Validate payment method
-        if (!isset($paymentData['payment_method'])) {
+        if (! isset($paymentData['payment_method'])) {
             return [
                 'success' => false,
-                'message' => 'Payment method is required'
+                'message' => 'Payment method is required',
             ];
         }
 
@@ -447,36 +422,31 @@ class PaymentService
 
                 return [
                     'success' => false,
-                    'message' => 'Unsupported payment method'
+                    'message' => 'Unsupported payment method',
                 ];
         }
     }
 
     /**
      * Process payment using a payment gateway
-     *
-     * @param Order $order
-     * @param string $gatewayCode
-     * @param array $paymentData
-     * @return array
      */
     protected function processGatewayPayment(Order $order, string $gatewayCode, array $paymentData): array
     {
 
         $environmentId = session('current_environment_id');
 
-        // Get effective environment ID (routes to Environment 1 if centralized gateways enabled)
+        // Get effective environment ID (routes to the centralized environment if enabled)
         $effectiveEnvironmentId = $this->environmentPaymentConfigService->getEffectiveEnvironmentId($environmentId);
 
         if ($effectiveEnvironmentId !== $environmentId) {
-            Log::info('Using platform payment gateway due to centralized gateways', [
+            Log::info('Using centralized payment gateway', [
                 'original_environment_id' => $environmentId,
                 'effective_environment_id' => $effectiveEnvironmentId,
-                'order_id' => $order->id
+                'order_id' => $order->id,
             ]);
         }
 
-        Log::info('Processing payment for order ' . $order->id . ' using ' . $gatewayCode);
+        Log::info('Processing payment for order '.$order->id.' using '.$gatewayCode);
         try {
             // Get the payment gateway settings using effective environment ID
             $gatewaySettings = PaymentGatewaySetting::where('code', $gatewayCode)
@@ -484,10 +454,10 @@ class PaymentService
                 ->where('status', true)
                 ->first();
 
-            if (!$gatewaySettings) {
+            if (! $gatewaySettings) {
                 return [
                     'success' => false,
-                    'message' => 'Payment gateway settings not found'
+                    'message' => 'Payment gateway settings not found',
                 ];
             }
 
@@ -495,26 +465,26 @@ class PaymentService
 
             // Check if a transaction already exists for this order
             $existingTransaction = Transaction::where('order_id', $order->id)
-                ->whereIn("status", ["pending", "failed", "processing", "cancelled"])
+                ->whereIn('status', ['pending', 'failed', 'processing', 'cancelled'])
                 ->first();
 
             if ($existingTransaction) {
                 Log::info('Found existing transaction for order', [
                     'order_id' => $order->id,
-                    'transaction_id' => $existingTransaction->transaction_id
+                    'transaction_id' => $existingTransaction->transaction_id,
                 ]);
 
-                //update the transaction with a new transaction_id 'TXN_' . Str::uuid(),
+                // update the transaction with a new transaction_id 'TXN_' . Str::uuid(),
                 $existingTransaction->update([
-                    'transaction_id' => 'TXN_' . Str::uuid(),
+                    'transaction_id' => 'TXN_'.Str::uuid(),
                     'payment_method' => $gatewayCode,
                     'environment_id' => $environmentId,
-                    "status" => "pending"
+                    'status' => 'pending',
                 ]);
 
                 // Initialize the payment gateway with environment-specific settings
                 $gateway = $this->initializeGateway($gatewayCode, $environment->name);
-                if (!$gateway['success']) {
+                if (! $gateway['success']) {
                     return $gateway;
                 }
 
@@ -523,7 +493,7 @@ class PaymentService
                 // Create the payment with the gateway using existing transaction
                 $response = $this->currentGateway->createPayment($existingTransaction, $paymentData);
 
-                if (!$response['success']) {
+                if (! $response['success']) {
                     return $response;
                 }
 
@@ -533,32 +503,32 @@ class PaymentService
             }
 
             // Create a new transaction if one doesn't exist
-            if (!$existingTransaction) {
+            if (! $existingTransaction) {
                 Log::info('Creating new transaction for order', ['order_id' => $order->id]);
 
-                $transaction = new Transaction();
+                $transaction = new Transaction;
                 $transaction->order_id = $order->id;
                 $transaction->environment_id = $paymentData['environment_id'] ?? $gatewaySettings->environment_id;
                 $transaction->payment_gateway_setting_id = $gatewaySettings->id;
                 $transaction->payment_method = $gatewayCode;
-                $transaction->transaction_id = 'TXN-' . Str::random(16);
+                $transaction->transaction_id = 'TXN-'.Str::random(16);
 
                 // Validate customer name and email
-                $transaction->customer_name = !empty($order->billing_name) ? $order->billing_name : 'Guest Customer';
+                $transaction->customer_name = ! empty($order->billing_name) ? $order->billing_name : 'Guest Customer';
 
                 // Only set customer email if it's valid
-                if (!empty($order->billing_email) && filter_var($order->billing_email, FILTER_VALIDATE_EMAIL)) {
+                if (! empty($order->billing_email) && filter_var($order->billing_email, FILTER_VALIDATE_EMAIL)) {
                     $transaction->customer_email = $order->billing_email;
-                    Log::info('Valid customer email found for order ' . $order->id, ['email' => $order->billing_email]);
+                    Log::info('Valid customer email found for order '.$order->id, ['email' => $order->billing_email]);
                 } else {
                     $transaction->customer_email = null;
-                    Log::info('Invalid or missing customer email for order ' . $order->id, ['raw_email' => $order->billing_email ?? 'null']);
+                    Log::info('Invalid or missing customer email for order '.$order->id, ['raw_email' => $order->billing_email ?? 'null']);
                 }
 
                 // Set base amount (without commission)
                 $transaction->amount = $order->total_amount ?? $order->total; // Fallback if total_amount is not set
                 $transaction->currency = $order->currency ?? 'USD';
-                $transaction->description = 'Payment for order #' . $order->order_number;
+                $transaction->description = 'Payment for order #'.$order->order_number;
                 $transaction->status = 'pending';
                 $transaction->customer_id = $order->user_id;
 
@@ -582,7 +552,7 @@ class PaymentService
                     'original_amount' => $transaction->amount,
                     'extracted_commission' => $transactionAmounts['fee_amount'],
                     'tax_amount' => $transactionAmounts['tax_amount'],
-                    'total_amount' => $transactionAmounts['total_amount']
+                    'total_amount' => $transactionAmounts['total_amount'],
                 ]);
 
                 $transaction->purpose = (($order->total_amount ?? 0) == 0 ? Transaction::PURPOSE_FREE_ENROLLMENT : Transaction::PURPOSE_COURSE_SALE);
@@ -598,21 +568,21 @@ class PaymentService
                 $transaction = $existingTransaction;
 
                 // Update the transaction with new payment details
-                $transaction->transaction_id = 'TXN_' . Str::uuid();
+                $transaction->transaction_id = 'TXN_'.Str::uuid();
                 $transaction->payment_method = $gatewayCode;
                 $transaction->environment_id = $environmentId;
-                $transaction->status = "pending";
+                $transaction->status = 'pending';
                 $transaction->save();
 
                 Log::info('Updated existing transaction for order', [
                     'order_id' => $order->id,
-                    'transaction_id' => $transaction->transaction_id
+                    'transaction_id' => $transaction->transaction_id,
                 ]);
             }
 
             // Initialize the payment gateway with environment-specific settings
             $gateway = $this->initializeGateway($gatewayCode, $environment->name);
-            if (!$gateway['success']) {
+            if (! $gateway['success']) {
                 return $gateway;
             }
 
@@ -621,7 +591,7 @@ class PaymentService
             // Create the payment with the gateway
             $paymentResponse = $this->currentGateway->createPayment($transaction, $paymentData);
 
-            if (!$paymentResponse['success']) {
+            if (! $paymentResponse['success']) {
                 return $paymentResponse;
             }
 
@@ -639,7 +609,7 @@ class PaymentService
                         'transaction_id' => $transaction->transaction_id,
                         'gateway_transaction_id' => $transaction->gateway_transaction_id,
                         'payment_method' => $gatewayCode,
-                        'payment_date' => now()->format('Y-m-d H:i:s')
+                        'payment_date' => now()->format('Y-m-d H:i:s'),
                     ]);
 
                     // Update order status
@@ -672,84 +642,69 @@ class PaymentService
                 ];
 
                 $response['transaction'] = $transaction;
+
                 return $response;
             } else {
                 return [
                     'success' => false,
                     'message' => $paymentResponse['message'] ?? 'Payment processing failed',
                     'error' => $paymentResponse['error'] ?? null,
-                    'error_code' => $paymentResponse['error_code'] ?? null
+                    'error_code' => $paymentResponse['error_code'] ?? null,
                 ];
             }
         } catch (\Exception $e) {
-            Log::error('Payment gateway error: ' . $e->getMessage());
+            Log::error('Payment gateway error: '.$e->getMessage());
 
             return [
                 'success' => false,
-                'message' => 'Payment processing failed: ' . $e->getMessage()
+                'message' => 'Payment processing failed: '.$e->getMessage(),
             ];
         }
     }
 
     /**
      * Process credit card payment
-     *
-     * @param Order $order
-     * @param array $paymentData
-     * @return array
      */
     protected function processCreditCardPayment(Order $order, array $paymentData): array
     {
         return [
             'success' => false,
-            'message' => 'Credit card payment is not supported'
+            'message' => 'Credit card payment is not supported',
         ];
     }
 
     /**
      * Process PayPal payment
-     *
-     * @param Order $order
-     * @param array $paymentData
-     * @return array
      */
     protected function processPayPalPayment(Order $order, array $paymentData): array
     {
         return [
             'success' => false,
-            'message' => 'PayPal payment is not supported'
+            'message' => 'PayPal payment is not supported',
         ];
     }
 
     /**
      * Process bank transfer payment
-     *
-     * @param Order $order
-     * @param array $paymentData
-     * @return array
      */
     protected function processBankTransferPayment(Order $order, array $paymentData): array
     {
         return [
             'success' => false,
-            'message' => 'Bank transfer payment is not supported'
+            'message' => 'Bank transfer payment is not supported',
         ];
     }
 
     /**
      * Process manual payment
-     *
-     * @param Order $order
-     * @param array $paymentData
-     * @return array
      */
     protected function processManualPayment(Order $order, array $paymentData): array
     {
         // Validate manual payment data
-        if (!isset($paymentData['payment_reference'])) {
+        if (! isset($paymentData['payment_reference'])) {
             return [
                 'success' => false,
-                'message' => 'Payment reference is required'
+                'message' => 'Payment reference is required',
             ];
         }
 
@@ -759,7 +714,7 @@ class PaymentService
                 'transaction_id' => $paymentData['payment_reference'],
                 'payment_method' => 'manual',
                 'payment_date' => now()->format('Y-m-d H:i:s'),
-                'notes' => $paymentData['notes'] ?? 'Manual payment'
+                'notes' => $paymentData['notes'] ?? 'Manual payment',
             ]);
 
             // Update order status
@@ -771,23 +726,20 @@ class PaymentService
                 'transaction_id' => $paymentData['payment_reference'],
                 'order_number' => $order->order_number,
                 'amount' => $order->total,
-                'payment_date' => now()->format('Y-m-d H:i:s')
+                'payment_date' => now()->format('Y-m-d H:i:s'),
             ];
         } catch (\Exception $e) {
-            Log::error('Manual payment error: ' . $e->getMessage());
+            Log::error('Manual payment error: '.$e->getMessage());
 
             return [
                 'success' => false,
-                'message' => 'Failed to record manual payment: ' . $e->getMessage()
+                'message' => 'Failed to record manual payment: '.$e->getMessage(),
             ];
         }
     }
 
     /**
      * Verify payment status
-     *
-     * @param string $transactionId
-     * @return array
      */
     public function verifyPayment(string $transactionId): array
     {
@@ -796,10 +748,10 @@ class PaymentService
             ->orWhere('gateway_transaction_id', $transactionId)
             ->first();
 
-        if (!$transaction) {
+        if (! $transaction) {
             return [
                 'success' => false,
-                'message' => 'Transaction not found'
+                'message' => 'Transaction not found',
             ];
         }
 
@@ -807,7 +759,7 @@ class PaymentService
             // Get the payment gateway settings
             $gatewaySettings = PaymentGatewaySetting::where('id', $transaction->payment_gateway_setting_id)->first();
 
-            if (!$gatewaySettings) {
+            if (! $gatewaySettings) {
                 // Fall back to legacy verification method
                 return $this->verifyLegacyPayment($transactionId);
             }
@@ -815,10 +767,10 @@ class PaymentService
             // Verify the payment using the gateway
             $gateway = PaymentGatewayFactory::create($transaction->payment_method, $gatewaySettings);
 
-            if (!$gateway) {
+            if (! $gateway) {
                 return [
                     'success' => false,
-                    'message' => 'Failed to initialize payment gateway'
+                    'message' => 'Failed to initialize payment gateway',
                 ];
             }
 
@@ -837,7 +789,7 @@ class PaymentService
                         'transaction_id' => $transaction->transaction_id,
                         'gateway_transaction_id' => $transaction->gateway_transaction_id,
                         'payment_method' => $transaction->payment_method,
-                        'payment_date' => now()->format('Y-m-d H:i:s')
+                        'payment_date' => now()->format('Y-m-d H:i:s'),
                     ]);
 
                     // Update order status
@@ -855,23 +807,20 @@ class PaymentService
                 'amount' => $transaction->total_amount,
                 'currency' => $transaction->currency,
                 'payment_date' => $transaction->paid_at ? $transaction->paid_at->format('Y-m-d H:i:s') : null,
-                'verification_date' => $transaction->verified_at ? $transaction->verified_at->format('Y-m-d H:i:s') : null
+                'verification_date' => $transaction->verified_at ? $transaction->verified_at->format('Y-m-d H:i:s') : null,
             ];
         } catch (\Exception $e) {
-            Log::error('Payment verification error: ' . $e->getMessage());
+            Log::error('Payment verification error: '.$e->getMessage());
 
             return [
                 'success' => false,
-                'message' => 'Payment verification failed: ' . $e->getMessage()
+                'message' => 'Payment verification failed: '.$e->getMessage(),
             ];
         }
     }
 
     /**
      * Verify legacy payment status (for backward compatibility)
-     *
-     * @param string $transactionId
-     * @return array
      */
     protected function verifyLegacyPayment(string $transactionId): array
     {
@@ -894,10 +843,10 @@ class PaymentService
             }
         }
 
-        if (!$matchingOrder) {
+        if (! $matchingOrder) {
             return [
                 'success' => false,
-                'message' => 'Transaction not found'
+                'message' => 'Transaction not found',
             ];
         }
 
@@ -908,7 +857,7 @@ class PaymentService
             'order_number' => $matchingOrder->order_number,
             'payment_status' => $matchingOrder->payment_status,
             'amount' => $matchingOrder->total,
-            'payment_date' => json_decode($matchingOrder->metadata ?? '{}', true)['payment_data']['payment_date'] ?? null
+            'payment_date' => json_decode($matchingOrder->metadata ?? '{}', true)['payment_data']['payment_date'] ?? null,
         ];
     }
 
@@ -916,24 +865,19 @@ class PaymentService
      * Process a refund for an order.
      *
      * KURSA licensing transition (Phase 5, doc §9.9): this now delegates to the
-     * authoritative {@see \App\Services\Payments\RefundService}, which writes the
+     * authoritative {@see RefundService}, which writes the
      * Phase 3 transaction schema (child refund transaction with purpose=refund,
      * parent_transaction_id, negative amounts, verified_at on gateway
      * confirmation) and applies the ledger effects. The previous implementation
      * wrote non-existent columns (`type`, `metadata`) and simulated success — both
      * are removed. The legacy simulated fallback is gone; unsupported gateways are
      * handled through the manual refund path (RefundService::recordManualRefund).
-     *
-     * @param int $orderId
-     * @param float|null $amount
-     * @param string $reason
-     * @return array
      */
     public function processRefund(int $orderId, ?float $amount = null, string $reason = ''): array
     {
         $order = $this->orderService->getOrderById($orderId);
 
-        if (!$order) {
+        if (! $order) {
             return ['success' => false, 'message' => 'Order not found'];
         }
 
@@ -946,11 +890,11 @@ class PaymentService
             ->orderByDesc('id')
             ->first();
 
-        if (!$transaction) {
+        if (! $transaction) {
             return ['success' => false, 'message' => 'No settled transaction found for this order to refund'];
         }
 
-        $result = app(\App\Services\Payments\RefundService::class)
+        $result = app(RefundService::class)
             ->initiateRefund($transaction, $amount, $reason);
 
         if ($result['status'] === 'ok') {
@@ -982,23 +926,20 @@ class PaymentService
 
     /**
      * Generate invoice
-     *
-     * @param int $orderId
-     * @return array
      */
     public function generateInvoice(int $orderId): array
     {
         $order = $this->orderService->getOrderById($orderId);
 
-        if (!$order) {
+        if (! $order) {
             return [
                 'success' => false,
-                'message' => 'Order not found'
+                'message' => 'Order not found',
             ];
         }
 
         // Generate invoice number
-        $invoiceNumber = 'INV-' . $order->order_number;
+        $invoiceNumber = 'INV-'.$order->order_number;
 
         // Prepare invoice data
         $invoiceData = [
@@ -1010,7 +951,7 @@ class PaymentService
                 'name' => $order->customer_name,
                 'email' => $order->customer_email,
                 'billing_address' => $order->billing_address,
-                'shipping_address' => $order->shipping_address
+                'shipping_address' => $order->shipping_address,
             ],
             'items' => [],
             'subtotal' => $order->subtotal,
@@ -1018,7 +959,7 @@ class PaymentService
             'tax' => $order->tax,
             'total' => $order->total,
             'payment_status' => $order->payment_status,
-            'payment_method' => $order->payment_method
+            'payment_method' => $order->payment_method,
         ];
 
         // Add items to invoice
@@ -1027,7 +968,7 @@ class PaymentService
                 'name' => $item->name,
                 'quantity' => $item->quantity,
                 'price' => $item->price,
-                'total' => $item->total
+                'total' => $item->total,
             ];
         }
 
@@ -1037,19 +978,16 @@ class PaymentService
         return [
             'success' => true,
             'message' => 'Invoice generated successfully',
-            'invoice_data' => $invoiceData
+            'invoice_data' => $invoiceData,
         ];
     }
 
     /**
      * Get payment methods
-     *
-     * @param int|null $environmentId
-     * @return array
      */
     public function getPaymentMethods(?int $environmentId = null): array
     {
-        if (!$environmentId) {
+        if (! $environmentId) {
             return [];
         }
 
@@ -1067,10 +1005,10 @@ class PaymentService
     /**
      * Process a successful payment callback from a payment gateway
      *
-     * @param string $gateway The payment gateway name
-     * @param string $transactionId The transaction ID
-     * @param int $environmentId The environment ID
-     * @param array $callbackData The callback data received from the payment gateway
+     * @param  string  $gateway  The payment gateway name
+     * @param  string  $transactionId  The transaction ID
+     * @param  int  $environmentId  The environment ID
+     * @param  array  $callbackData  The callback data received from the payment gateway
      * @return bool True if processing was successful, false otherwise
      */
     public function processSuccessCallback(string $gateway, string $transactionId, $environmentId, array $callbackData): bool
@@ -1079,16 +1017,17 @@ class PaymentService
             // Find the transaction using smart lookup that handles cross-environment supported plan transactions
             $transaction = $this->findTransactionForCallback($transactionId, $environmentId);
 
-            if (!$transaction) {
+            if (! $transaction) {
                 Log::error('Transaction not found for success callback', [
                     'gateway' => $gateway,
                     'transaction_id' => $transactionId,
-                    'environment_id' => $environmentId
+                    'environment_id' => $environmentId,
                 ]);
+
                 return false;
             }
 
-            DB::transaction(function () use ($transaction, $gateway, $callbackData) {
+            DB::transaction(function () use ($transaction, $callbackData) {
                 $transaction = Transaction::withoutGlobalScopes()
                     ->whereKey($transaction->id)
                     ->lockForUpdate()
@@ -1102,8 +1041,9 @@ class PaymentService
             Log::error('Error processing payment success callback in service', [
                 'error' => $e->getMessage(),
                 'gateway' => $gateway,
-                'transaction_id' => $transactionId
+                'transaction_id' => $transactionId,
             ]);
+
             return false;
         }
     }
@@ -1111,10 +1051,10 @@ class PaymentService
     /**
      * Process a failed payment callback from a payment gateway
      *
-     * @param string $gateway The payment gateway name
-     * @param string $transactionId The transaction ID
-     * @param int $environmentId The environment ID
-     * @param array $callbackData The callback data received from the payment gateway
+     * @param  string  $gateway  The payment gateway name
+     * @param  string  $transactionId  The transaction ID
+     * @param  int  $environmentId  The environment ID
+     * @param  array  $callbackData  The callback data received from the payment gateway
      * @return bool True if processing was successful, false otherwise
      */
     public function processFailureCallback(string $gateway, string $transactionId, $environmentId, array $callbackData): bool
@@ -1123,12 +1063,13 @@ class PaymentService
             // Find the transaction using smart lookup that handles cross-environment supported plan transactions
             $transaction = $this->findTransactionForCallback($transactionId, $environmentId);
 
-            if (!$transaction) {
+            if (! $transaction) {
                 Log::error('Transaction not found for failure callback', [
                     'gateway' => $gateway,
                     'transaction_id' => $transactionId,
-                    'environment_id' => $environmentId
+                    'environment_id' => $environmentId,
                 ]);
+
                 return false;
             }
 
@@ -1138,7 +1079,7 @@ class PaymentService
                     ->lockForUpdate()
                     ->firstOrFail();
 
-                $this->applyFailure($transaction, 'failed', $callbackData, 'Payment failed via ' . $gateway);
+                $this->applyFailure($transaction, 'failed', $callbackData, 'Payment failed via '.$gateway);
             });
 
             return true;
@@ -1146,8 +1087,9 @@ class PaymentService
             Log::error('Error processing payment failure callback in service', [
                 'error' => $e->getMessage(),
                 'gateway' => $gateway,
-                'transaction_id' => $transactionId
+                'transaction_id' => $transactionId,
             ]);
+
             return false;
         }
     }
@@ -1155,10 +1097,10 @@ class PaymentService
     /**
      * Process a cancelled payment callback from a payment gateway
      *
-     * @param string $gateway The payment gateway name
-     * @param string $transactionId The transaction ID
-     * @param int $environmentId The environment ID
-     * @param array $callbackData The callback data received from the payment gateway
+     * @param  string  $gateway  The payment gateway name
+     * @param  string  $transactionId  The transaction ID
+     * @param  int  $environmentId  The environment ID
+     * @param  array  $callbackData  The callback data received from the payment gateway
      * @return bool True if processing was successful, false otherwise
      */
     public function processCancelledCallback(string $gateway, string $transactionId, $environmentId, array $callbackData): bool
@@ -1167,12 +1109,13 @@ class PaymentService
             // Find the transaction using smart lookup that handles cross-environment supported plan transactions
             $transaction = $this->findTransactionForCallback($transactionId, $environmentId);
 
-            if (!$transaction) {
+            if (! $transaction) {
                 Log::error('Transaction not found for cancelled callback', [
                     'gateway' => $gateway,
                     'transaction_id' => $transactionId,
-                    'environment_id' => $environmentId
+                    'environment_id' => $environmentId,
                 ]);
+
                 return false;
             }
 
@@ -1187,13 +1130,14 @@ class PaymentService
                         'transaction_id' => $transaction->transaction_id,
                         'gateway' => $gateway,
                     ]);
+
                     return;
                 }
 
                 $transaction->status = Transaction::STATUS_CANCELLED;
                 $transaction->gateway_status = 'cancelled';
                 $transaction->gateway_response = $callbackData;
-                $transaction->notes = 'Payment cancelled via ' . $gateway;
+                $transaction->notes = 'Payment cancelled via '.$gateway;
                 $transaction->save();
             });
 
@@ -1202,12 +1146,12 @@ class PaymentService
             Log::error('Error processing payment cancelled callback in service', [
                 'error' => $e->getMessage(),
                 'gateway' => $gateway,
-                'transaction_id' => $transactionId
+                'transaction_id' => $transactionId,
             ]);
+
             return false;
         }
     }
-
 
     /**
      * Reusable settlement core (KURSA plan §11 step 8). Marks a transaction
@@ -1218,10 +1162,9 @@ class PaymentService
      * legacy callback service methods and the new WebhookProcessor — do NOT
      * duplicate this logic elsewhere.
      *
-     * @param Transaction $transaction Locked transaction row.
-     * @param string $gatewayStatus Raw gateway status for auditing.
-     * @param array $payload Verified gateway payload.
-     * @return void
+     * @param  Transaction  $transaction  Locked transaction row.
+     * @param  string  $gatewayStatus  Raw gateway status for auditing.
+     * @param  array  $payload  Verified gateway payload.
      */
     public function applySettlement(Transaction $transaction, string $gatewayStatus, array $payload): void
     {
@@ -1235,18 +1178,17 @@ class PaymentService
         $transaction->save();
         $transaction->refresh();
 
-        $this->processRelatedRecords($transaction, !$alreadyCompleted);
+        $this->processRelatedRecords($transaction, ! $alreadyCompleted);
     }
 
     /**
      * Reusable failure core. Marks a transaction failed without regressing an
      * already-completed one. Caller MUST hold the row lock inside a DB transaction.
      *
-     * @param Transaction $transaction Locked transaction row.
-     * @param string $gatewayStatus Raw gateway status for auditing.
-     * @param array $payload Verified gateway payload.
-     * @param string|null $notes Optional note.
-     * @return void
+     * @param  Transaction  $transaction  Locked transaction row.
+     * @param  string  $gatewayStatus  Raw gateway status for auditing.
+     * @param  array  $payload  Verified gateway payload.
+     * @param  string|null  $notes  Optional note.
      */
     public function applyFailure(Transaction $transaction, string $gatewayStatus, array $payload, ?string $notes = null): void
     {
@@ -1254,6 +1196,7 @@ class PaymentService
             Log::warning('Ignoring failure for already completed transaction', [
                 'transaction_id' => $transaction->transaction_id,
             ]);
+
             return;
         }
 
@@ -1277,9 +1220,6 @@ class PaymentService
 
     /**
      * Process any records related to a transaction (orders, subscriptions, etc.)
-     *
-     * @param Transaction $transaction
-     * @return void
      */
     protected function processRelatedRecords(Transaction $transaction, bool $shouldDispatchOrderEvent = true): void
     {
@@ -1288,7 +1228,7 @@ class PaymentService
         if ($shouldDispatchOrderEvent) {
             $order = Order::where('id', $transaction->order_id)->first();
             if ($order && $order->status !== Order::STATUS_COMPLETED) {
-                event(new \App\Events\OrderCompleted($order));
+                event(new OrderCompleted($order));
             }
         }
 
@@ -1348,26 +1288,26 @@ class PaymentService
         // so no InstructorCommission (payout liability) records are created for course
         // transactions anymore. This is intentionally a no-op; the call site is preserved
         // so historical InstructorCommission read/approval/withdrawal paths keep working.
-        return;
+
     }
 
     /**
      * Find transaction for callback with smart lookup logic
      * Handles cross-environment transactions for supported plans
-     * 
-     * @param string $transactionId
-     * @param int $environment_id
+     *
+     * @param  string  $transactionId
+     * @param  int  $environment_id
      * @return Transaction|null
      */
     private function findTransactionForCallback($transactionId, $environment_id)
     {
         // First, try environment-specific lookup (existing behavior)
         $transaction = Transaction::where(function ($query) use ($transactionId) {
-                $query->where('transaction_id', $transactionId)
-                    ->orWhere('gateway_transaction_id', $transactionId);
-            })
-            ->when(is_numeric($environment_id), fn ($query) => $query->where("environment_id", $environment_id))
-            ->whereHas("paymentGatewaySetting")
+            $query->where('transaction_id', $transactionId)
+                ->orWhere('gateway_transaction_id', $transactionId);
+        })
+            ->when(is_numeric($environment_id), fn ($query) => $query->where('environment_id', $environment_id))
+            ->whereHas('paymentGatewaySetting')
             ->first();
 
         if ($transaction) {
@@ -1381,7 +1321,7 @@ class PaymentService
                 $query->where('transaction_id', $transactionId)
                     ->orWhere('gateway_transaction_id', $transactionId);
             })
-            ->whereHas("paymentGatewaySetting")
+            ->whereHas('paymentGatewaySetting')
             ->first();
 
         if ($globalTransaction) {
@@ -1396,6 +1336,7 @@ class PaymentService
                     'transaction_environment_id' => $globalTransaction->environment_id,
                     'purpose' => $globalTransaction->purpose,
                 ]);
+
                 return $globalTransaction;
             }
         }

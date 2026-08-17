@@ -5,8 +5,8 @@ namespace App\Services\Commission;
 use App\Models\Commission;
 use App\Models\Order;
 use App\Models\Transaction;
-use App\Services\Tax\TaxZoneService;
 use App\Services\EnvironmentPaymentConfigService;
+use App\Services\Tax\TaxZoneService;
 use Illuminate\Support\Facades\Log;
 
 class CommissionService
@@ -17,19 +17,17 @@ class CommissionService
      * @var TaxZoneService
      */
     protected $taxZoneService;
-    
+
     /**
      * The environment payment config service instance.
      *
      * @var EnvironmentPaymentConfigService
      */
     protected $environmentPaymentConfigService;
-    
+
     /**
      * Create a new commission service instance.
      *
-     * @param TaxZoneService $taxZoneService
-     * @param EnvironmentPaymentConfigService $environmentPaymentConfigService
      * @return void
      */
     public function __construct(
@@ -39,38 +37,35 @@ class CommissionService
         $this->taxZoneService = $taxZoneService;
         $this->environmentPaymentConfigService = $environmentPaymentConfigService;
     }
-    
+
     /**
      * Get the active commission for an environment
-     * Uses platform commission (Environment 1) if centralized gateways enabled
-     *
-     * @param int|null $environmentId
-     * @return Commission|null
+     * Uses the centralized environment's commission if centralized gateways enabled
      */
     public function getActiveCommission(?int $environmentId = null): ?Commission
     {
         if ($environmentId) {
-            // Get effective environment ID (routes to Environment 1 if centralized)
+            // Get effective environment ID (routes to the centralized environment if enabled)
             $effectiveEnvironmentId = $this->environmentPaymentConfigService->getEffectiveEnvironmentId($environmentId);
-            
+
             if ($effectiveEnvironmentId !== $environmentId) {
-                Log::info('Using platform commission due to centralized gateways', [
+                Log::info('Using centralized commission', [
                     'original_environment_id' => $environmentId,
-                    'effective_environment_id' => $effectiveEnvironmentId
+                    'effective_environment_id' => $effectiveEnvironmentId,
                 ]);
             }
-            
+
             return Commission::getActiveCommission($effectiveEnvironmentId);
         }
-        
+
         return Commission::getActiveCommission($environmentId);
     }
-    
+
     /**
      * Extract commission from product price (new flow - commission already included in product price)
      *
-     * @param float $productPriceWithCommission The product price that already includes commission
-     * @param int|null $environmentId The environment ID to get commission for
+     * @param  float  $productPriceWithCommission  The product price that already includes commission
+     * @param  int|null  $environmentId  The environment ID to get commission for
      * @return array Returns ['original_price' => float, 'commission_amount' => float, 'commission_rate' => float]
      */
     public function extractCommissionFromProductPrice(float $productPriceWithCommission, ?int $environmentId = null): array
@@ -86,13 +81,13 @@ class CommissionService
             'commission_rate' => 0.0,
         ];
     }
-    
+
     /**
      * Calculate transaction amounts with tax only (commission already included in product price)
      *
-     * @param float $productPriceWithCommission The product price that already includes commission
-     * @param int|null $environmentId The environment ID to get commission for
-     * @param Order|null $order Optional order to use for billing country if environment has no country code
+     * @param  float  $productPriceWithCommission  The product price that already includes commission
+     * @param  int|null  $environmentId  The environment ID to get commission for
+     * @param  Order|null  $order  Optional order to use for billing country if environment has no country code
      * @return array Returns ['fee_amount' => float, 'tax_amount' => float, 'total_amount' => float, 'base_amount' => float, 'commission_rate' => float, 'tax_rate' => float, 'tax_zone' => string|null]
      */
     public function calculateTransactionAmountsWithCommissionIncluded(float $productPriceWithCommission, ?int $environmentId = null, ?Order $order = null): array
@@ -123,15 +118,15 @@ class CommissionService
             'base_amount' => $productPriceWithCommission, // Selling price (no commission extracted)
             'commission_rate' => 0.0,
             'tax_rate' => $taxRate,
-            'tax_zone' => $taxZone
+            'tax_zone' => $taxZone,
         ];
     }
-    
+
     /**
      * Calculate transaction amounts including commission and tax (legacy method - for backward compatibility)
      *
-     * @param float $baseAmount The original amount without commission
-     * @param int|null $environmentId The environment ID to get commission for
+     * @param  float  $baseAmount  The original amount without commission
+     * @param  int|null  $environmentId  The environment ID to get commission for
      * @return array Returns ['fee_amount' => float, 'tax_amount' => float, 'total_amount' => float, 'base_amount' => float, 'commission_rate' => float, 'tax_rate' => float, 'tax_zone' => string|null]
      */
     public function calculateTransactionAmounts(float $baseAmount, ?int $environmentId = null): array
@@ -154,7 +149,7 @@ class CommissionService
             Log::warning('No tax zone found for environment, using 0% tax rate', [
                 'environment_id' => $environmentId,
                 'base_amount' => $baseAmount,
-                'fee_amount' => $feeAmount
+                'fee_amount' => $feeAmount,
             ]);
         }
 
@@ -165,39 +160,39 @@ class CommissionService
             'base_amount' => $baseAmount,
             'commission_rate' => 0.0,
             'tax_rate' => $taxRate,
-            'tax_zone' => $taxZone
+            'tax_zone' => $taxZone,
         ];
     }
-    
+
     /**
      * Apply commission to a transaction if not already applied
      *
-     * @param Transaction $transaction The transaction to apply commission to
-     * @param float|null $baseAmount Optional base amount, if not provided will use transaction's amount
+     * @param  Transaction  $transaction  The transaction to apply commission to
+     * @param  float|null  $baseAmount  Optional base amount, if not provided will use transaction's amount
      * @return Transaction The updated transaction
      */
     public function applyCommissionToTransaction(Transaction $transaction, ?float $baseAmount = null): Transaction
     {
         // If base amount is not provided, use transaction's amount as base
         $baseAmount = $baseAmount ?? $transaction->amount;
-        $environmentId = session("current_environment_id");
-        
+        $environmentId = session('current_environment_id');
+
         // Commission is already applied when fee_amount is recorded on the transaction.
         // Removed the total_amount > amount check because with 0% tax, total_amount == amount
         // (commission is extracted, not added), causing false negatives.
         $commissionAlreadyApplied =
             $transaction->fee_amount !== null &&
             $transaction->tax_amount !== null;
-        
-        if (!$commissionAlreadyApplied) {
+
+        if (! $commissionAlreadyApplied) {
             // Commission is included in the product price; extract it rather than adding on top.
             $amounts = $this->calculateTransactionAmountsWithCommissionIncluded($baseAmount, $environmentId);
-            
+
             // Update transaction with calculated amounts
             $transaction->fee_amount = $amounts['fee_amount'];
             $transaction->tax_amount = $amounts['tax_amount'];
             $transaction->total_amount = $amounts['total_amount'];
-            
+
             // Log the commission and tax application
             Log::info('Applied commission and tax to transaction', [
                 'transaction_id' => $transaction->transaction_id,
@@ -207,10 +202,10 @@ class CommissionService
                 'total_amount' => $amounts['total_amount'],
                 'commission_rate' => $amounts['commission_rate'],
                 'tax_rate' => $amounts['tax_rate'],
-                'tax_zone' => $amounts['tax_zone']
+                'tax_zone' => $amounts['tax_zone'],
             ]);
         }
-        
+
         return $transaction;
     }
 }
