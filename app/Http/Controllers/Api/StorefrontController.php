@@ -1501,18 +1501,21 @@ class StorefrontController extends Controller
         // restrict the query to the requesting environment and return nothing.
         // The enabled flag on this table is `status`; there is no `is_active`
         // column, so the previous filter made this endpoint throw.
+        // There is no paymentGateway relation on this model — eager-loading it
+        // threw RelationNotFoundException, so this endpoint has never returned
+        // a response. The settings row carries these fields itself.
         $paymentMethods = PaymentGatewaySetting::withoutGlobalScopes()
             ->where('environment_id', $targetEnvironmentId)
             ->where('status', true)
-            ->with('paymentGateway')
+            ->orderBy('sort_order')
             ->get()
-            ->map(function ($method) {
+            ->map(function (PaymentGatewaySetting $method) {
                 return [
                     'id' => $method->id,
-                    'name' => $method->paymentGateway->name,
-                    'type' => $method->paymentGateway->type,
-                    'logo' => $method->paymentGateway->logo_url,
-                    'description' => $method->paymentGateway->description,
+                    'name' => $method->display_name ?: $method->gateway_name,
+                    'type' => $method->code,
+                    'logo' => $method->icon,
+                    'description' => $method->description,
                 ];
             });
 
@@ -1559,9 +1562,45 @@ class StorefrontController extends Controller
             ->where('status', true)
             ->whereNotIn('code', $excludeGateways)
             ->orderBy('sort_order')
-            ->get();
+            ->get()
+            ->map(fn (PaymentGatewaySetting $gateway) => $this->publicGatewayPayload($gateway))
+            ->values();
 
         return response()->json(['data' => $gateways]);
+    }
+
+    /**
+     * The subset of a gateway safe to hand an unauthenticated storefront visitor.
+     *
+     * This route has no auth middleware, and it previously serialized the whole
+     * model — which put the `settings` blob (Stripe api_key and webhook_secret,
+     * MonetBill service_secret, TaraMoney api_key) in a public response.
+     *
+     * Whitelisted rather than blacklisted on purpose: `publishable_key` sits in
+     * the same blob as `api_key`, so a "remove the secret names" rule would leak
+     * every key a future gateway introduces. Nothing here needs the browser to
+     * see `settings` — checkout receives Stripe's publishable key in the
+     * create-order response, next to the client secret.
+     *
+     * @return array<string, mixed>
+     */
+    private function publicGatewayPayload(PaymentGatewaySetting $gateway): array
+    {
+        return [
+            'id' => $gateway->id,
+            'environment_id' => $gateway->environment_id,
+            'gateway_name' => $gateway->gateway_name,
+            'code' => $gateway->code,
+            'display_name' => $gateway->display_name,
+            'description' => $gateway->description,
+            'status' => $gateway->status,
+            'is_default' => $gateway->is_default,
+            'icon' => $gateway->icon,
+            'mode' => $gateway->mode,
+            'transaction_fee_percentage' => $gateway->transaction_fee_percentage,
+            'transaction_fee_fixed' => $gateway->transaction_fee_fixed,
+            'sort_order' => $gateway->sort_order,
+        ];
     }
 
     /**
