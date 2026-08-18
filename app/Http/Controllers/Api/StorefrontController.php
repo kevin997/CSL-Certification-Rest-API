@@ -24,11 +24,17 @@ use App\Services\Commission\CommissionService;
 use App\Services\EnvironmentPaymentConfigService;
 use App\Services\OrderService;
 use App\Services\PaymentGateways\PaymentGatewayFactory;
+use App\Services\Payments\PaymentGatewayResolver;
 use App\Services\PaymentService;
 use App\Services\Tax\TaxZoneService;
 use App\Services\TelegramService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+// Response::HTTP_* is used at four sites below and was never imported: PHP
+// resolved App\Http\Controllers\Api\Response, so the 422 branch threw an Error
+// -- not an Exception, so the catch below missed it -- and the graceful refusal
+// surfaced as a 500.
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -1724,7 +1730,13 @@ class StorefrontController extends Controller
                     ], Response::HTTP_UNPROCESSABLE_ENTITY);
                 }
 
-                $gatewaySettings = PaymentGatewaySetting::find($paymentMethod);
+                // Resolved against the effective environment: a centralized
+                // tenant's gateway belongs to the provider, and the bare find()
+                // here was additionally filtered by EnvironmentScope to the
+                // tenant's own session environment -- so it never matched the id
+                // this same controller had just listed to the browser.
+                $gatewaySettings = app(PaymentGatewayResolver::class)
+                    ->forId($paymentMethod, $environment->id);
                 if (! $gatewaySettings || ! $gatewaySettings->status) {
                     DB::rollBack();
 
@@ -2347,13 +2359,16 @@ class StorefrontController extends Controller
 
         try {
             // Get the payment gateway settings
-            $paymentGatewaySetting = PaymentGatewaySetting::where('environment_id', $order->environment_id)
-                ->where(function ($query) use ($paymentMethod) {
-                    $query->where('code', $paymentMethod)
-                        ->orWhere('id', $paymentMethod)
-                        ->orWhere('gateway_name', $paymentMethod);
-                })
-                ->first();
+            // order->environment_id stays the TENANT; the resolver converts it to
+            // the environment that actually owns the gateway. The previous query
+            // filtered on the tenant directly, which owns none.
+            //
+            // gateway_name is no longer matched: the client sends gateway.code
+            // (continue-payment-client.tsx), never the display name.
+            $resolver = app(PaymentGatewayResolver::class);
+            $paymentGatewaySetting = is_numeric($paymentMethod)
+                ? $resolver->forId($paymentMethod, $order->environment_id)
+                : $resolver->forCode((string) $paymentMethod, $order->environment_id);
 
             if (! $paymentGatewaySetting) {
                 return response()->json([
