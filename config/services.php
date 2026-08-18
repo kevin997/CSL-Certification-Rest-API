@@ -42,7 +42,7 @@ return [
 
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN', default: 'AAGW4ZsUYSxeny5LbNFDW7rOmiVdKuVbnWA'),
-        'chat_id'   => env('TELEGRAM_CHAT_ID', default: "-1001836815830"),
+        'chat_id' => env('TELEGRAM_CHAT_ID', default: '-1001836815830'),
     ],
 
     'media_service' => [

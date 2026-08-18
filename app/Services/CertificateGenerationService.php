@@ -2,40 +2,24 @@
 
 namespace App\Services;
 
+use App\Events\CertificateIssued;
+use App\Models\Activity;
+use App\Models\Block;
 use App\Models\CertificateContent;
 use App\Models\CertificateTemplate;
 use App\Models\Enrollment;
+use App\Models\IssuedCertificate;
+use App\Models\Template;
 use App\Models\ThirdPartyService;
+use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use App\Events\CertificateIssued;
 
 class CertificateGenerationService
 {
-    /**
-     * Fields the app can supply, keyed by the template field name they fill.
-     *
-     * The v1 endpoint accepted a fixed five-key payload, so a tenant whose
-     * template declared MATRICULE/SPECIALITE/SESSION got a blank certificate:
-     * none of those names were ever sent. v2 takes an open map validated
-     * against the template's own declaration, so what is sent is now decided
-     * per template rather than per code change.
-     *
-     * Anything a caller passes through additionalData is merged on top of
-     * these, so a tenant can fill a field this list has never heard of.
-     */
-    private const CANONICAL_FIELDS = [
-        'fullName',
-        'courseTitle',
-        'certificateDate',
-        'expiryDate',
-        'accessCode',
-    ];
-
     /**
      * Template field names, keyed by template name, for this request.
      *
@@ -56,7 +40,7 @@ class CertificateGenerationService
         $this->service = ThirdPartyService::getServiceByType('certificate_generation');
 
         // Authenticate with the service if we have credentials but no token
-        if ($this->service && !$this->service->bearer_token && $this->service->username && $this->service->password) {
+        if ($this->service && ! $this->service->bearer_token && $this->service->username && $this->service->password) {
             $this->authenticate();
         }
     }
@@ -215,8 +199,9 @@ class CertificateGenerationService
      */
     public function authenticate(): bool
     {
-        if (!$this->service) {
+        if (! $this->service) {
             Log::error('Certificate generation service not configured');
+
             return false;
         }
 
@@ -228,7 +213,7 @@ class CertificateGenerationService
             // Disable SSL verification for the request
             $response = Http::withOptions([
                 'verify' => $verifySSL,
-            ])->post($this->service->base_url . '/api/login', [
+            ])->post($this->service->base_url.'/api/login', [
                 'email' => $this->service->username,
                 'password' => $this->service->password,
             ]);
@@ -239,13 +224,16 @@ class CertificateGenerationService
                 $this->service->save();
 
                 Log::info('Successfully authenticated with certificate service');
+
                 return true;
             }
 
-            Log::error('Failed to authenticate with certificate service: ' . $response->body());
+            Log::error('Failed to authenticate with certificate service: '.$response->body());
+
             return false;
         } catch (\Exception $e) {
-            Log::error('Error authenticating with certificate service: ' . $e->getMessage());
+            Log::error('Error authenticating with certificate service: '.$e->getMessage());
+
             return false;
         }
     }
@@ -253,20 +241,21 @@ class CertificateGenerationService
     /**
      * Make an authenticated API call to the certificate service with automatic re-authentication on 401
      *
-     * @param string $method HTTP method (get, post, put, delete)
-     * @param string $endpoint API endpoint (without base URL)
-     * @param array $data Request data
-     * @param array $files Files to attach to the request
-     * @return \Illuminate\Http\Client\Response|null Response or null if failed
+     * @param  string  $method  HTTP method (get, post, put, delete)
+     * @param  string  $endpoint  API endpoint (without base URL)
+     * @param  array  $data  Request data
+     * @param  array  $files  Files to attach to the request
+     * @return Response|null Response or null if failed
      */
-    protected function makeAuthenticatedRequest(string $method, string $endpoint, array $data = [], array $files = []): ?\Illuminate\Http\Client\Response
+    protected function makeAuthenticatedRequest(string $method, string $endpoint, array $data = [], array $files = []): ?Response
     {
-        if (!$this->service) {
+        if (! $this->service) {
             Log::error('Certificate generation service not configured');
+
             return null;
         }
 
-        $url = $this->service->base_url . '/api/' . ltrim($endpoint, '/');
+        $url = $this->service->base_url.'/api/'.ltrim($endpoint, '/');
 
         try {
             // Get config from service
@@ -315,7 +304,8 @@ class CertificateGenerationService
 
             return $response;
         } catch (\Exception $e) {
-            Log::error("Error making {$method} request to {$endpoint}: " . $e->getMessage());
+            Log::error("Error making {$method} request to {$endpoint}: ".$e->getMessage());
+
             return null;
         }
     }
@@ -323,14 +313,15 @@ class CertificateGenerationService
     /**
      * Upload a certificate template to the certificate service
      *
-     * @param UploadedFile $file The template PDF file
-     * @param string $name The name of the template
+     * @param  UploadedFile  $file  The template PDF file
+     * @param  string  $name  The name of the template
      * @return array|null The response from the certificate service or null if failed
      */
     public function uploadTemplate(UploadedFile $file, string $name): ?array
     {
-        if (!$this->service) {
+        if (! $this->service) {
             Log::error('Certificate generation service not configured');
+
             return null;
         }
 
@@ -348,14 +339,16 @@ class CertificateGenerationService
 
             Log::error('Failed to upload template to certificate service', [
                 'status' => $response->status(),
-                'body' => $response->body()
+                'body' => $response->body(),
             ]);
+
             return null;
         } catch (\Exception $e) {
             Log::error('Exception when uploading template to certificate service', [
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return null;
         }
     }
@@ -367,14 +360,15 @@ class CertificateGenerationService
      */
     public function listTemplates(): ?array
     {
-        if (!$this->service) {
+        if (! $this->service) {
             Log::error('Certificate generation service not configured');
+
             return null;
         }
 
         try {
             $response = Http::withToken($this->service->bearer_token)
-                ->get($this->service->base_url . '/api/templates');
+                ->get($this->service->base_url.'/api/templates');
 
             if ($response->successful()) {
                 return $response->json();
@@ -382,14 +376,16 @@ class CertificateGenerationService
 
             Log::error('Failed to list templates from certificate service', [
                 'status' => $response->status(),
-                'body' => $response->body()
+                'body' => $response->body(),
             ]);
+
             return null;
         } catch (\Exception $e) {
             Log::error('Exception when listing templates from certificate service', [
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return null;
         }
     }
@@ -397,20 +393,21 @@ class CertificateGenerationService
     /**
      * Delete a template from the certificate service
      *
-     * @param string $filename The filename of the template to delete
+     * @param  string  $filename  The filename of the template to delete
      * @return bool Whether the deletion was successful
      */
     public function deleteTemplate(string $filename): bool
     {
-        if (!$this->service) {
+        if (! $this->service) {
             Log::error('Certificate generation service not configured');
+
             return false;
         }
 
         try {
             $response = $this->makeAuthenticatedRequest(
                 'delete',
-                'templates/' . $filename
+                'templates/'.$filename
             );
 
             if ($response && $response->successful()) {
@@ -419,14 +416,16 @@ class CertificateGenerationService
 
             Log::error('Failed to delete template from certificate service', [
                 'status' => $response ? $response->status() : 'No response',
-                'body' => $response ? $response->body() : 'No response'
+                'body' => $response ? $response->body() : 'No response',
             ]);
+
             return false;
         } catch (\Exception $e) {
             Log::error('Exception when deleting template from certificate service', [
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return false;
         }
     }
@@ -434,16 +433,17 @@ class CertificateGenerationService
     /**
      * Generate a certificate using the certificate service
      *
-     * @param CertificateContent $certificateContent The certificate content
-     * @param array $userData The user data for the certificate (name, etc.)
-     * @param string|null $templateName The name of the template to use (defaults to the one in certificate content)
+     * @param  CertificateContent  $certificateContent  The certificate content
+     * @param  array  $userData  The user data for the certificate (name, etc.)
+     * @param  string|null  $templateName  The name of the template to use (defaults to the one in certificate content)
+     * @param  Enrollment  $enrollment  The enrollment record for the user
      * @return array|null The generated certificate data or null if failed
-     * @param Enrollment $enrollment The enrollment record for the user
      */
     public function generateCertificate(CertificateContent $certificateContent, array $userData, ?string $templateName = null, ?Enrollment $enrollment = null): ?array
     {
-        if (!$this->service) {
+        if (! $this->service) {
             Log::error('Certificate generation service not configured');
+
             return null;
         }
 
@@ -460,8 +460,8 @@ class CertificateGenerationService
             // Determine which template to use
             $templateToUse = $templateName ?: $certificateContent->template->file_path ?? 'default';
 
-            Log::info('Enrollment course title: ' . ($enrollment && $enrollment->course ? $enrollment->course->title : 'No course title'));
-            Log::info('Certificate content course title: ' . $this->getTemplateTitleFromCertificateContent($certificateContent));
+            Log::info('Enrollment course title: '.($enrollment && $enrollment->course ? $enrollment->course->title : 'No course title'));
+            Log::info('Certificate content course title: '.$this->getTemplateTitleFromCertificateContent($certificateContent));
             // Everything the app can offer. What actually gets sent is decided
             // by the template, not by this list -- additionalData the caller
             // merged into $userData rides along, so a tenant template can
@@ -481,11 +481,10 @@ class CertificateGenerationService
                 // Check if the response contains the certificate URLs
                 if (isset($result['data']['certificate_url'])) {
 
-
                     // Add the access code and certificate data to the result for the client
                     $result['accessCode'] = $accessCode;
-                    
-                    if (!$enrollment) {
+
+                    if (! $enrollment) {
                         // Update the certificate content metadata (original implementation)
                         $metadata = $certificateContent->metadata ?? [];
                         $metadata['certificate_url'] = $result['data']['certificate_url'];
@@ -529,8 +528,9 @@ class CertificateGenerationService
         } catch (\Exception $e) {
             Log::error('Exception when generating certificate', [
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return null;
         }
     }
@@ -538,20 +538,21 @@ class CertificateGenerationService
     /**
      * Verify a certificate using its access code
      *
-     * @param string $accessCode The access code of the certificate
+     * @param  string  $accessCode  The access code of the certificate
      * @return array|null The verification result or null if failed
      */
     public function verifyCertificate(string $accessCode): ?array
     {
-        if (!$this->service) {
+        if (! $this->service) {
             Log::error('Certificate generation service not configured');
+
             return null;
         }
 
         try {
             $response = Http::withToken($this->service->bearer_token)
-                ->post($this->service->base_url . '/api/certificates/verify', [
-                    'accessCode' => $accessCode
+                ->post($this->service->base_url.'/api/certificates/verify', [
+                    'accessCode' => $accessCode,
                 ]);
 
             if ($response->successful()) {
@@ -560,14 +561,16 @@ class CertificateGenerationService
 
             Log::error('Failed to verify certificate', [
                 'status' => $response->status(),
-                'body' => $response->body()
+                'body' => $response->body(),
             ]);
+
             return null;
         } catch (\Exception $e) {
             Log::error('Exception when verifying certificate', [
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return null;
         }
     }
@@ -576,11 +579,11 @@ class CertificateGenerationService
      * Regenerate a certificate with a specific access code
      * This is used when the certificate URLs are no longer valid but the certificate record exists
      *
-     * @param CertificateContent $certificateContent The certificate content
-     * @param array $userData The user data for the certificate
-     * @param string $accessCode The existing access code to reuse
-     * @param string|null $templateName The name of the template to use
-     * @param Enrollment|null $enrollment The enrollment record for the user
+     * @param  CertificateContent  $certificateContent  The certificate content
+     * @param  array  $userData  The user data for the certificate
+     * @param  string  $accessCode  The existing access code to reuse
+     * @param  string|null  $templateName  The name of the template to use
+     * @param  Enrollment|null  $enrollment  The enrollment record for the user
      * @return array|null The regenerated certificate data or null if failed
      */
     public function regenerateCertificate(
@@ -590,8 +593,9 @@ class CertificateGenerationService
         ?string $templateName = null,
         ?Enrollment $enrollment = null
     ): ?array {
-        if (!$this->service) {
+        if (! $this->service) {
             Log::error('Certificate generation service not configured');
+
             return null;
         }
 
@@ -599,7 +603,7 @@ class CertificateGenerationService
             // Determine which template to use
             $templateToUse = $templateName ?: $certificateContent->template->file_path ?? 'default';
 
-            Log::info('Regenerating certificate with access code: ' . $accessCode);
+            Log::info('Regenerating certificate with access code: '.$accessCode);
 
             // Same values as generateCertificate, reusing the existing access
             // code; the template decides which of them are actually sent.
@@ -636,8 +640,9 @@ class CertificateGenerationService
         } catch (\Exception $e) {
             Log::error('Exception when regenerating certificate', [
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return null;
         }
     }
@@ -645,13 +650,14 @@ class CertificateGenerationService
     /**
      * Get the download URL for a certificate
      *
-     * @param CertificateContent $certificateContent The certificate content
+     * @param  CertificateContent  $certificateContent  The certificate content
      * @return string|null The download URL or null if failed
      */
     public function getCertificateDownloadUrl(CertificateContent $certificateContent): ?string
     {
-        if (!$this->service) {
+        if (! $this->service) {
             Log::error('Certificate generation service not configured');
+
             return null;
         }
 
@@ -666,7 +672,7 @@ class CertificateGenerationService
         // Fallback to using access code if certificate_url is not available
         $accessCode = $metadata['access_code'] ?? null;
         if ($accessCode) {
-            return $this->service->base_url . '/api/certificates/download/' . $accessCode;
+            return $this->service->base_url.'/api/certificates/download/'.$accessCode;
         }
 
         return null;
@@ -675,13 +681,14 @@ class CertificateGenerationService
     /**
      * Get the preview URL for a certificate
      *
-     * @param CertificateContent $certificateContent The certificate content
+     * @param  CertificateContent  $certificateContent  The certificate content
      * @return string|null The preview URL or null if failed
      */
     public function getCertificatePreviewUrl(CertificateContent $certificateContent): ?string
     {
-        if (!$this->service) {
+        if (! $this->service) {
             Log::error('Certificate generation service not configured');
+
             return null;
         }
 
@@ -700,13 +707,13 @@ class CertificateGenerationService
             $path = basename($url);
 
             // Return the preview URL (no need for signing)
-            return $this->service->base_url . '/api/certificates/preview/' . $path;
+            return $this->service->base_url.'/api/certificates/preview/'.$path;
         }
 
         // Fallback to using access code if certificate_url is not available
         $accessCode = $metadata['access_code'] ?? null;
         if ($accessCode) {
-            return $this->service->base_url . '/api/certificates/preview/' . $accessCode;
+            return $this->service->base_url.'/api/certificates/preview/'.$accessCode;
         }
 
         return null;
@@ -715,22 +722,23 @@ class CertificateGenerationService
     /**
      * Get a URL for the certificate service with the given path
      *
-     * @param string $path The path to append to the base URL
+     * @param  string  $path  The path to append to the base URL
      * @return string|null The full URL or null if the service is not configured
      */
     public function getServiceUrl(string $path): ?string
     {
-        if (!$this->service) {
+        if (! $this->service) {
             Log::error('Certificate generation service not configured');
+
             return null;
         }
 
-        return $this->service->base_url . $path;
+        return $this->service->base_url.$path;
     }
 
     /**
      * Generate a unique access code for certificates
-     * 
+     *
      * @return string The generated access code
      */
     protected function generateAccessCode(): string
@@ -741,12 +749,12 @@ class CertificateGenerationService
     /**
      * Create an IssuedCertificate record for a generated certificate
      *
-     * @param CertificateContent $certificateContent The certificate content
-     * @param array $userData The user data for the certificate
-     * @param string $accessCode The unique access code for the certificate
-     * @param string $certificateUrl The URL to the generated certificate
-     * @param string|null $previewUrl The URL to the certificate preview (optional)
-     * @return \App\Models\IssuedCertificate|null The created IssuedCertificate or null if failed
+     * @param  CertificateContent  $certificateContent  The certificate content
+     * @param  array  $userData  The user data for the certificate
+     * @param  string  $accessCode  The unique access code for the certificate
+     * @param  string  $certificateUrl  The URL to the generated certificate
+     * @param  string|null  $previewUrl  The URL to the certificate preview (optional)
+     * @return IssuedCertificate|null The created IssuedCertificate or null if failed
      */
     protected function createIssuedCertificate(
         CertificateContent $certificateContent,
@@ -754,13 +762,13 @@ class CertificateGenerationService
         string $accessCode,
         string $certificateUrl,
         ?string $previewUrl = null,
-    ): ?\App\Models\IssuedCertificate {
+    ): ?IssuedCertificate {
         try {
             // Import the IssuedCertificate model
             $issuedCertificateClass = '\App\Models\IssuedCertificate';
 
             // Create the IssuedCertificate record
-            $issuedCertificate = new $issuedCertificateClass();
+            $issuedCertificate = new $issuedCertificateClass;
             $issuedCertificate->user_id = $userData['user_id'] ?? null;
             $issuedCertificate->course_id = $certificateContent->course_id;
             $issuedCertificate->certificate_content_id = $certificateContent->id;
@@ -797,7 +805,7 @@ class CertificateGenerationService
                 'preview_url' => $previewUrl,
                 'recipient_name' => $userData['fullName'] ?? 'Student Name',
                 'course_title' => $certificateContent->title ?? 'Course Title',
-                'certificate_date' => $userData['certificateDate'] ?? now()->format('F j, Y')
+                'certificate_date' => $userData['certificateDate'] ?? now()->format('F j, Y'),
             ];
 
             $issuedCertificate->save();
@@ -811,71 +819,76 @@ class CertificateGenerationService
         } catch (\Exception $e) {
             Log::error('Failed to create IssuedCertificate record', [
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return null;
         }
     }
 
-
     /**
      * Get the template title from certificate content by traversing the relationship chain
      * CertificateContent -> Activity -> Block -> Template
-     *
-     * @param CertificateContent $certificateContent
-     * @return string|null
      */
     protected function getTemplateTitleFromCertificateContent(CertificateContent $certificateContent): ?string
     {
         try {
             // Get the activity by ID instead of using the morphOne relationship
-            if (!$certificateContent->activity_id) {
+            if (! $certificateContent->activity_id) {
                 Log::info('No activity_id found in certificate content');
+
                 return null;
             }
 
-            $activity = \App\Models\Activity::find($certificateContent->activity_id);
+            $activity = Activity::find($certificateContent->activity_id);
 
-            if (!$activity) {
-                Log::info('Activity not found with ID: ' . $certificateContent->activity_id);
+            if (! $activity) {
+                Log::info('Activity not found with ID: '.$certificateContent->activity_id);
+
                 return null;
             }
 
-            Log::info('Activity found: ' . ($activity->title ?? 'No title'));
+            Log::info('Activity found: '.($activity->title ?? 'No title'));
 
             // Get the block associated with the activity
-            if (!$activity->block_id) {
+            if (! $activity->block_id) {
                 Log::info('No block_id found in activity');
+
                 return null;
             }
 
-            $block = \App\Models\Block::find($activity->block_id);
+            $block = Block::find($activity->block_id);
 
-            if (!$block) {
-                Log::info('Block not found with ID: ' . $activity->block_id);
+            if (! $block) {
+                Log::info('Block not found with ID: '.$activity->block_id);
+
                 return null;
             }
 
             // Get the template associated with the block
-            if (!$block->template_id) {
+            if (! $block->template_id) {
                 Log::info('No template_id found in block');
+
                 return null;
             }
 
-            $template = \App\Models\Template::find($block->template_id);
+            $template = Template::find($block->template_id);
 
-            if (!$template) {
-                Log::info('Template not found with ID: ' . $block->template_id);
+            if (! $template) {
+                Log::info('Template not found with ID: '.$block->template_id);
+
                 return null;
             }
 
-            Log::info('Template title found: ' . ($template->title ?? 'No title'));
+            Log::info('Template title found: '.($template->title ?? 'No title'));
+
             return $template->title;
         } catch (\Exception $e) {
             Log::error('Failed to get template title from certificate content', [
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return null;
         }
     }
