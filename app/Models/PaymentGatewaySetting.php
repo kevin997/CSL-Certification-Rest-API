@@ -3,16 +3,18 @@
 namespace App\Models;
 
 use App\Traits\BelongsToEnvironment;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class PaymentGatewaySetting extends Model
 {
-    use HasFactory, SoftDeletes, BelongsToEnvironment;
+    use BelongsToEnvironment, HasFactory, SoftDeletes;
 
     /**
      * Boot the model and register event listeners.
@@ -34,8 +36,15 @@ class PaymentGatewaySetting extends Model
         // Handle is_default changes
         static::saving(function ($gateway) {
             if ($gateway->is_default && $gateway->isDirty('is_default')) {
-                // Unset any existing default gateway for this environment
-                self::query()
+                // Unset any existing default gateway for this environment.
+                //
+                // withoutGlobalScopes: EnvironmentScope filters on the session
+                // environment, so editing a gateway that belongs to another
+                // environment -- the centralized case, where an admin on the
+                // tenant manages the provider's gateways -- produced two
+                // mutually exclusive predicates. The update then matched
+                // nothing and the environment was left with two defaults.
+                self::withoutGlobalScopes()
                     ->where('environment_id', $gateway->environment_id)
                     ->where('is_default', true)
                     ->where('id', '!=', $gateway->id)
@@ -96,13 +105,19 @@ class PaymentGatewaySetting extends Model
      * Validate unique constraints for gateway code.
      * Each environment can have its own gateways with the same code.
      *
-     * @throws \Illuminate\Validation\ValidationException
+     * @throws ValidationException
      */
     protected function validateUniqueConstraints()
     {
         // Check if another gateway with the same code already exists IN THIS ENVIRONMENT
-        $existingGateway = self::query()
-            ->where('environment_id', $this->environment_id) // Scope to current environment
+        //
+        // withoutGlobalScopes for the same reason as the is_default hook above:
+        // under EnvironmentScope this guard silently matched nothing whenever
+        // the row's environment differed from the session's, so it permitted the
+        // duplicate that the composite (environment_id, code) unique index then
+        // rejected at the database with a raw QueryException.
+        $existingGateway = self::withoutGlobalScopes()
+            ->where('environment_id', $this->environment_id) // Scope to the row's own environment
             ->where('code', $this->code)
             ->when($this->exists, function ($query) {
                 // Exclude current record when updating
@@ -111,12 +126,12 @@ class PaymentGatewaySetting extends Model
             ->first();
 
         if ($existingGateway) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
+            throw ValidationException::withMessages([
                 'code' => [
-                    "A payment gateway with code '{$this->code}' already exists in this environment " .
-                    "(Gateway: {$existingGateway->gateway_name}). " .
-                    "Each gateway code must be unique within an environment."
-                ]
+                    "A payment gateway with code '{$this->code}' already exists in this environment ".
+                    "(Gateway: {$existingGateway->gateway_name}). ".
+                    'Each gateway code must be unique within an environment.',
+                ],
             ]);
         }
     }
@@ -180,8 +195,8 @@ class PaymentGatewaySetting extends Model
     /**
      * Scope a query to only include active payment gateway settings.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder  $query
-     * @return \Illuminate\Database\Eloquent\Builder
+     * @param  Builder  $query
+     * @return Builder
      */
     public function scopeActive($query)
     {
@@ -191,8 +206,8 @@ class PaymentGatewaySetting extends Model
     /**
      * Scope a query to only include default payment gateway settings.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder  $query
-     * @return \Illuminate\Database\Eloquent\Builder
+     * @param  Builder  $query
+     * @return Builder
      */
     public function scopeDefault($query)
     {
@@ -202,9 +217,9 @@ class PaymentGatewaySetting extends Model
     /**
      * Scope a query to only include payment gateway settings for a specific environment.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @param  Builder  $query
      * @param  int  $environmentId
-     * @return \Illuminate\Database\Eloquent\Builder
+     * @return Builder
      */
     public function scopeForEnvironment($query, $environmentId)
     {
@@ -215,20 +230,17 @@ class PaymentGatewaySetting extends Model
      * Calculate the fee for a given amount.
      *
      * @param  float  $amount
-     * @return float
      */
     public function calculateFee($amount): float
     {
         $percentageFee = $amount * ($this->transaction_fee_percentage / 100);
         $fixedFee = $this->transaction_fee_fixed;
-        
+
         return $percentageFee + $fixedFee;
     }
 
     /**
      * Check if the payment gateway is active.
-     *
-     * @return bool
      */
     public function isActive(): bool
     {
@@ -237,8 +249,6 @@ class PaymentGatewaySetting extends Model
 
     /**
      * Check if the payment gateway is in sandbox mode.
-     *
-     * @return bool
      */
     public function isSandbox(): bool
     {
@@ -247,8 +257,6 @@ class PaymentGatewaySetting extends Model
 
     /**
      * Check if the payment gateway is in live mode.
-     *
-     * @return bool
      */
     public function isLive(): bool
     {
@@ -257,8 +265,6 @@ class PaymentGatewaySetting extends Model
 
     /**
      * Check if the payment gateway is the default for its environment.
-     *
-     * @return bool
      */
     public function isDefault(): bool
     {
@@ -267,8 +273,6 @@ class PaymentGatewaySetting extends Model
 
     /**
      * Set this payment gateway as the default for its environment.
-     *
-     * @return bool
      */
     public function setAsDefault(): bool
     {
@@ -281,13 +285,13 @@ class PaymentGatewaySetting extends Model
 
         // Then set this one as default
         $this->is_default = true;
+
         return $this->save();
     }
 
     /**
      * Get a specific setting value.
      *
-     * @param  string  $key
      * @param  mixed  $default
      * @return mixed
      */
@@ -295,61 +299,62 @@ class PaymentGatewaySetting extends Model
     {
         // Ensure settings is properly handled regardless of its format
         $settings = $this->settings;
-        
+
         // Add detailed logging about the settings format
-        \Illuminate\Support\Facades\Log::info(
+        Log::info(
             "[PaymentGatewaySetting] Settings format for gateway '{$this->code}'", [
-            'gateway_id' => $this->id,
-            'gateway_code' => $this->code,
-            'settings_type' => gettype($settings),
-            'is_json_string' => is_string($settings) && $this->isJson($settings),
-            'environment' => $this->environment_id
-        ]);
-        
+                'gateway_id' => $this->id,
+                'gateway_code' => $this->code,
+                'settings_type' => gettype($settings),
+                'is_json_string' => is_string($settings) && $this->isJson($settings),
+                'environment' => $this->environment_id,
+            ]);
+
         // Handle different types of settings data
         if (is_string($settings) && $this->isJson($settings)) {
             // If settings is a JSON string that wasn't auto-decoded
             $settings = json_decode($settings, true) ?? [];
-        } elseif (!is_array($settings)) {
+        } elseif (! is_array($settings)) {
             // If settings is neither an array nor a valid JSON string
             $settings = [];
         }
-        
+
         $value = $settings[$key] ?? $default;
-        
+
         // Add logging for sensitive keys without exposing the actual values
         if (in_array($key, ['api_key', 'secret_key', 'webhook_secret'])) {
-            \Illuminate\Support\Facades\Log::info(
+            Log::info(
                 "[PaymentGatewaySetting] Retrieved {$key} for gateway '{$this->code}'", [
-                'gateway_id' => $this->id,
-                'gateway_code' => $this->code,
-                'key_present' => !empty($value),
-                'environment' => $this->environment_id
-            ]);
+                    'gateway_id' => $this->id,
+                    'gateway_code' => $this->code,
+                    'key_present' => ! empty($value),
+                    'environment' => $this->environment_id,
+                ]);
         }
-        
+
         return $value;
     }
-    
+
     /**
      * Check if a string is valid JSON
-     * 
-     * @param string $string
+     *
+     * @param  string  $string
      * @return bool
      */
-    private function isJson($string) {
-        if (!is_string($string)) {
+    private function isJson($string)
+    {
+        if (! is_string($string)) {
             return false;
         }
-        
+
         json_decode($string);
+
         return json_last_error() === JSON_ERROR_NONE;
     }
 
     /**
      * Set a specific setting value.
      *
-     * @param  string  $key
      * @param  mixed  $value
      * @return $this
      */
@@ -358,7 +363,7 @@ class PaymentGatewaySetting extends Model
         $settings = $this->settings ?? [];
         $settings[$key] = $value;
         $this->settings = $settings;
-        
+
         return $this;
     }
 }
