@@ -2,15 +2,18 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * @OA\Schema(
  *     schema="CertificateTemplate",
  *     type="object",
+ *
  *     @OA\Property(property="id", type="integer", format="int64", example=1),
  *     @OA\Property(property="name", type="string", example="Completion Certificate"),
  *     @OA\Property(property="description", type="string", example="Standard completion certificate template"),
@@ -37,6 +40,7 @@ class CertificateTemplate extends Model
      * @var array<int, string>
      */
     protected $fillable = [
+        'environment_id',
         'name',
         'description',
         'filename',
@@ -68,14 +72,38 @@ class CertificateTemplate extends Model
     }
 
     /**
-     * Get the default template for a specific type
-     *
-     * @param string $type
-     * @return CertificateTemplate|null
+     * The environment (tenant) that owns this template.
      */
-    public static function getDefaultTemplate(string $type = 'completion'): ?CertificateTemplate
+    public function environment(): BelongsTo
     {
-        return self::where('template_type', $type)
+        return $this->belongsTo(Environment::class);
+    }
+
+    /**
+     * Restrict to the templates one environment owns.
+     *
+     * Rows attributed to no environment stay hidden rather than shared: a
+     * template of unknown ownership is exactly the case this scope exists to
+     * stop leaking. Use certificates:attribute-template-environments to claim
+     * them.
+     */
+    public function scopeForEnvironment(Builder $query, ?int $environmentId): Builder
+    {
+        if ($environmentId === null) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where('environment_id', $environmentId);
+    }
+
+    /**
+     * Get the default template of a type, within one environment.
+     */
+    public static function getDefaultTemplate(string $type = 'completion', ?int $environmentId = null): ?CertificateTemplate
+    {
+        return self::query()
+            ->forEnvironment($environmentId ?? session('current_environment_id'))
+            ->where('template_type', $type)
             ->where('is_default', true)
             ->first();
     }
