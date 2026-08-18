@@ -61,33 +61,35 @@ class SalesFormProductCoursesTest extends TestCase
         return $form;
     }
 
-    public function test_a_reopened_form_carries_its_products_courses(): void
+    /**
+     * Serialised, not the object graph: accessing $product->courses in PHP
+     * lazily loads it, so the graph always looks right. Eloquent only
+     * serialises relations that were LOADED, and the serialised payload is
+     * what the selector actually receives.
+     */
+    private function serialisedProducts(array $with): array
     {
-        $form = $this->form();
+        $form = SalesForm::with($with)->findOrFail($this->form()->id);
 
-        $loaded = SalesForm::with(['fields', 'products.courses:id,title', 'accessBlocks'])
-            ->findOrFail($form->id);
-
-        $courses = $loaded->products->flatMap(fn ($product) => $product->courses ?? []);
-
-        $this->assertCount(
-            1,
-            $courses,
-            'The access selector renders from products[].courses; empty means it hides itself.'
-        );
-        $this->assertSame('Formation en Achat en chine', $courses->first()->title);
+        return $form->toArray()['products'] ?? [];
     }
 
-    public function test_loading_products_alone_is_what_broke_the_selector(): void
+    public function test_a_reopened_form_serialises_its_products_courses(): void
     {
-        /* Pins the defect itself, so re-dropping the nested relation fails here
-           rather than silently in the UI. */
-        $form = $this->form();
+        $products = $this->serialisedProducts(['fields', 'products.courses:id,title', 'accessBlocks']);
 
-        $loaded = SalesForm::with(['fields', 'products', 'accessBlocks'])->findOrFail($form->id);
+        $this->assertArrayHasKey('courses', $products[0]);
+        $this->assertSame('Formation en Achat en chine', $products[0]['courses'][0]['title']);
+    }
 
-        $courses = $loaded->products->flatMap(fn ($product) => $product->courses ?? []);
+    public function test_loading_products_alone_omits_courses_from_the_payload(): void
+    {
+        /* The defect itself: the selector reads products[].courses, finds it
+           absent, and hides behind "attach at least one product with a
+           course" while the products are plainly attached. */
+        $products = $this->serialisedProducts(['fields', 'products', 'accessBlocks']);
 
-        $this->assertCount(0, $courses);
+        $this->assertNotEmpty($products, 'the product is attached either way');
+        $this->assertArrayNotHasKey('courses', $products[0]);
     }
 }
