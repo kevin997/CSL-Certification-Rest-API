@@ -51,11 +51,18 @@ class SalesFormController extends Controller
     /**
      * Show a single sales form with its fields, products and access blocks.
      *
+     * products.courses is loaded, not just products: the access-control
+     * selector decides whether it can render from products[].courses, so
+     * without it a form reopened after creation reported "attach at least one
+     * product with a course" while its products were plainly attached.
+     * attachableProducts() already loads the same relation, which is why the
+     * selector worked while picking and broke only on reload.
+     *
      * GET /api/sales-forms/{id}
      */
     public function show($id)
     {
-        $form = SalesForm::with(['fields', 'products', 'accessBlocks'])->findOrFail($id);
+        $form = SalesForm::with(['fields', 'products.courses:id,title', 'accessBlocks'])->findOrFail($id);
 
         return response()->json([
             'success' => true,
@@ -104,7 +111,7 @@ class SalesFormController extends Controller
 
             DB::commit();
 
-            $form->load(['fields', 'products', 'accessBlocks']);
+            $form->load(['fields', 'products.courses:id,title', 'accessBlocks']);
 
             return response()->json([
                 'success' => true,
@@ -166,7 +173,7 @@ class SalesFormController extends Controller
 
             DB::commit();
 
-            $form->load(['fields', 'products', 'accessBlocks']);
+            $form->load(['fields', 'products.courses:id,title', 'accessBlocks']);
 
             return response()->json([
                 'success' => true,
