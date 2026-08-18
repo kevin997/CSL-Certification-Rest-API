@@ -1025,9 +1025,11 @@ class PaymentService
             return [];
         }
 
-        $gateways = PaymentGatewaySetting::where('environment_id', $environmentId)
-            ->where('active', true)
-            ->get()
+        // listFor() also corrects a second, independent bug here: this filtered
+        // on an `active` column that does not exist -- the column is `status` --
+        // so the predicate never matched and the list came back empty.
+        $gateways = app(PaymentGatewayResolver::class)
+            ->listFor($environmentId)
             ->mapWithKeys(function ($setting) {
                 return [$setting->gateway_name => $setting->gateway_name];
             })
