@@ -5,7 +5,6 @@ namespace App\Services\Payments;
 use App\Models\Enrollment;
 use App\Models\InstructorCommission;
 use App\Models\Order;
-use App\Models\PaymentGatewaySetting;
 use App\Models\Transaction;
 use App\Services\PaymentGateways\PaymentGatewayFactory;
 use Illuminate\Support\Facades\DB;
@@ -35,7 +34,7 @@ class RefundService
      * parent transaction.
      *
      * @return array{status:string, ...} status is one of: ok, unsupported,
-     *         invalid, gateway_error.
+     *                                   invalid, gateway_error.
      */
     public function initiateRefund(Transaction $parent, ?float $amount, string $reason = ''): array
     {
@@ -46,8 +45,12 @@ class RefundService
         $amount = $validation['amount'];
 
         // Resolve the gateway that settled the parent.
-        $settings = $parent->payment_gateway_setting_id
-            ? PaymentGatewaySetting::find($parent->payment_gateway_setting_id)
+        // Resolved, not found(): a scoped lookup returned null whenever the
+        // transaction's environment differed from the session's, surfacing as
+        // "Payment gateway settings not found for this transaction".
+        $settings = $parent->payment_gateway_setting_id && $parent->environment_id
+            ? app(PaymentGatewayResolver::class)
+                ->forId($parent->payment_gateway_setting_id, (int) $parent->environment_id)
             : null;
 
         if (! $settings) {
@@ -67,7 +70,7 @@ class RefundService
                 'gateway' => $parent->payment_method,
                 'manual_instructions' => $this->manualInstructions($parent),
                 'message' => ucfirst((string) $parent->payment_method)
-                    . ' does not support automatic refunds. Record the refund out-of-band via the manual refund endpoint.',
+                    .' does not support automatic refunds. Record the refund out-of-band via the manual refund endpoint.',
             ];
         }
 
@@ -223,17 +226,17 @@ class RefundService
         foreach ($commissions as $commission) {
             if (in_array($commission->status, InstructorCommission::UNSETTLED_STATUSES, true)) {
                 $commission->status = InstructorCommission::STATUS_REVERSED;
-                $commission->notes = trim(($commission->notes ? $commission->notes . "\n" : '')
-                    . 'Reversed on refund of transaction ' . $parent->transaction_id . ' at ' . now()->toDateTimeString());
+                $commission->notes = trim(($commission->notes ? $commission->notes."\n" : '')
+                    .'Reversed on refund of transaction '.$parent->transaction_id.' at '.now()->toDateTimeString());
                 $commission->save();
                 $report['reversed'][] = $commission->id;
             } elseif ($commission->status === InstructorCommission::STATUS_PAID) {
                 // Already paid out / withdrawn — do NOT touch the row. Record a
                 // negative-adjustment note and flag for manual settlement.
-                $commission->notes = trim(($commission->notes ? $commission->notes . "\n" : '')
-                    . 'NEGATIVE ADJUSTMENT REQUIRED: refund of transaction ' . $parent->transaction_id
-                    . ' (already-paid commission of ' . $commission->instructor_payout_amount . ' ' . $commission->currency
-                    . ') — reconcile out-of-band at ' . now()->toDateTimeString());
+                $commission->notes = trim(($commission->notes ? $commission->notes."\n" : '')
+                    .'NEGATIVE ADJUSTMENT REQUIRED: refund of transaction '.$parent->transaction_id
+                    .' (already-paid commission of '.$commission->instructor_payout_amount.' '.$commission->currency
+                    .') — reconcile out-of-band at '.now()->toDateTimeString());
                 $commission->save();
                 $report['flagged_paid'][] = [
                     'commission_id' => $commission->id,
@@ -270,8 +273,8 @@ class RefundService
         $order->status = $isFull
             ? Order::STATUS_REFUNDED
             : Order::STATUS_PARTIALLY_REFUNDED;
-        $order->notes = trim(($order->notes ? $order->notes . "\n" : '')
-            . ($isFull ? 'Fully refunded' : 'Partially refunded') . ' at ' . now()->toDateTimeString());
+        $order->notes = trim(($order->notes ? $order->notes."\n" : '')
+            .($isFull ? 'Fully refunded' : 'Partially refunded').' at '.now()->toDateTimeString());
         $order->save();
 
         return [
@@ -374,7 +377,7 @@ class RefundService
      */
     protected function createChildRefund(Transaction $parent, float $amount, string $reason, array $opts): Transaction
     {
-        $child = new Transaction();
+        $child = new Transaction;
         $child->environment_id = $parent->environment_id;
         $child->order_id = $parent->order_id;
         $child->invoice_id = $parent->invoice_id;
@@ -393,7 +396,7 @@ class RefundService
         $child->gateway_transaction_id = $opts['gateway_transaction_id'] ?? null;
         $child->gateway_response = $opts['gateway_response'] ?? null;
         $child->refund_reason = $reason;
-        $child->description = 'Refund for transaction ' . $parent->transaction_id . ($reason !== '' ? ': ' . $reason : '');
+        $child->description = 'Refund for transaction '.$parent->transaction_id.($reason !== '' ? ': '.$reason : '');
         if (! empty($opts['notes'])) {
             $child->notes = $opts['notes'];
         }
@@ -406,9 +409,9 @@ class RefundService
 
     protected function manualInstructions(Transaction $parent): string
     {
-        return 'Refund the ' . $parent->total_amount . ' ' . $parent->currency . ' payment directly in the '
-            . ucfirst((string) $parent->payment_method)
-            . ' dashboard, then POST /transactions/' . $parent->id
-            . '/refund/manual with the amount, reason and confirmation notes to record it in the ledger.';
+        return 'Refund the '.$parent->total_amount.' '.$parent->currency.' payment directly in the '
+            .ucfirst((string) $parent->payment_method)
+            .' dashboard, then POST /transactions/'.$parent->id
+            .'/refund/manual with the amount, reason and confirmation notes to record it in the ledger.';
     }
 }
