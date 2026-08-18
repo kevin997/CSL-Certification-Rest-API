@@ -4,6 +4,7 @@ namespace Tests\Feature\Environments;
 
 use App\Models\Branding;
 use App\Models\Environment;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -27,7 +28,7 @@ class BelongsToEnvironmentNullTest extends TestCase
         $environment = Environment::factory()->create(['is_active' => true]);
         session(['current_environment_id' => $environment->id]);
 
-        $branding = Branding::create(['company_name' => 'Detected']);
+        $branding = Branding::create(['company_name' => 'Detected', 'user_id' => User::factory()->create()->id]);
 
         $this->assertSame(
             $environment->id,
@@ -43,6 +44,7 @@ class BelongsToEnvironmentNullTest extends TestCase
 
         $branding = Branding::create([
             'company_name' => 'Platform',
+            'user_id' => User::factory()->create()->id,
             'environment_id' => null,
         ]);
 
@@ -60,6 +62,7 @@ class BelongsToEnvironmentNullTest extends TestCase
 
         $branding = Branding::create([
             'company_name' => 'Explicit',
+            'user_id' => User::factory()->create()->id,
             'environment_id' => $mine->id,
         ]);
 
