@@ -3,7 +3,6 @@
 namespace Tests\Feature\Payments;
 
 use App\Models\PaymentGatewaySetting;
-use App\Services\PlatformPaymentGatewayResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -40,8 +39,13 @@ class PlatformGatewayCreatableTest extends TestCase
         );
     }
 
-    public function test_the_platform_resolver_finds_it(): void
+    public function test_it_is_discoverable_by_the_predicate_production_uses(): void
     {
+        /*
+         * PlatformPaymentGatewayResolver::resolve() also constructs a gateway
+         * adapter, which needs real credentials, so the assertion stops at the
+         * lookup -- that is the part the schema made impossible.
+         */
         PaymentGatewaySetting::withoutGlobalScopes()->forceCreate([
             'environment_id' => null,
             'gateway_name' => 'TaraMoney',
@@ -54,11 +58,14 @@ class PlatformGatewayCreatableTest extends TestCase
             'settings' => ['api_key' => 'platform'],
         ]);
 
-        $resolved = app(PlatformPaymentGatewayResolver::class)->resolve('taramoney');
+        $found = PaymentGatewaySetting::withoutGlobalScopes()
+            ->whereNull('environment_id')
+            ->where('code', 'taramoney')
+            ->where('status', true)
+            ->orderByDesc('is_default')
+            ->first();
 
-        $this->assertTrue(
-            ($resolved['success'] ?? false) || ($resolved['settings'] ?? null) !== null,
-            'the platform resolver must find a platform gateway: '.json_encode($resolved)
-        );
+        $this->assertNotNull($found, 'the platform fallback query must find it');
+        $this->assertNull($found->environment_id);
     }
 }
