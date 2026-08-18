@@ -15,6 +15,7 @@ use App\Models\Transaction;
 use App\Services\Commission\CommissionService;
 use App\Services\PaymentGateways\PaymentGatewayFactory;
 use App\Services\PaymentGateways\PaymentGatewayInterface;
+use App\Services\Payments\PaymentGatewayResolver;
 use App\Services\Payments\RefundService;
 use App\Services\Tax\TaxZoneService;
 use Illuminate\Support\Facades\DB;
@@ -134,7 +135,12 @@ class PaymentService
                 $existingTransaction->update([
                     'transaction_id' => 'TXN_'.Str::uuid(),
                     'payment_method' => $paymentMethod,
-                    'environment_id' => $effectiveEnvironmentId,
+                    // The tenant owns the transaction; the effective environment
+                    // only owns the gateway. Gateway adapters build callback URLs
+                    // from this value, so it must match the order rather than the
+                    // gateway -- otherwise the webhook arrives naming an
+                    // environment the order does not belong to.
+                    'environment_id' => $environmentId,
                 ]);
 
                 // Initialize the payment gateway with environment-specific settings
@@ -359,14 +365,27 @@ class PaymentService
             $environmentId = session('current_environment_id');
         }
 
-        // Get effective environment ID (routes to the centralized environment if enabled)
-        $effectiveEnvironmentId = $this->environmentPaymentConfigService->getEffectiveEnvironmentId($environmentId);
+        // The environment-owned gateway, resolved against the effective
+        // environment and free of EnvironmentScope. The query this replaced
+        // filtered on the effective environment while the scope filtered on the
+        // session environment -- for a centralized tenant those are different,
+        // so the two predicates were mutually exclusive and matched nothing.
+        $settings = $environmentId === null
+            ? null
+            : app(PaymentGatewayResolver::class)->forCode($gatewayCode, (int) $environmentId, false);
 
-        return PaymentGatewaySetting::where('code', $gatewayCode)
-            ->where(function ($query) use ($effectiveEnvironmentId) {
-                $query->where('environment_id', $effectiveEnvironmentId)
-                    ->orWhereNull('environment_id');
-            })
+        if ($settings) {
+            return $settings;
+        }
+
+        // Platform gateways (environment_id IS NULL) came from the orWhereNull
+        // branch of the same query. PlatformPaymentGatewayResolver answers with
+        // an array rather than a model, so the lookup is kept inline here.
+        // Status is deliberately not filtered: the replaced query did not.
+        return PaymentGatewaySetting::withoutGlobalScopes()
+            ->whereNull('environment_id')
+            ->where('code', $gatewayCode)
+            ->orderByDesc('is_default')
             ->first();
     }
 
@@ -449,10 +468,13 @@ class PaymentService
         Log::info('Processing payment for order '.$order->id.' using '.$gatewayCode);
         try {
             // Get the payment gateway settings using effective environment ID
-            $gatewaySettings = PaymentGatewaySetting::where('code', $gatewayCode)
-                ->where('environment_id', $effectiveEnvironmentId)
-                ->where('status', true)
-                ->first();
+            // Resolved rather than queried: the explicit effective-environment
+            // filter here was ANDed with EnvironmentScope's session-environment
+            // filter, so for a centralized tenant it could never match.
+            // Falls back to the order's environment: there is no session in a
+            // queue job or console run, and the order carries the same tenant.
+            $gatewaySettings = app(PaymentGatewayResolver::class)
+                ->forCode($gatewayCode, (int) ($environmentId ?? $order->environment_id));
 
             if (! $gatewaySettings) {
                 return [
@@ -508,6 +530,8 @@ class PaymentService
 
                 $transaction = new Transaction;
                 $transaction->order_id = $order->id;
+                // Falls back to the gateway's environment only when no caller
+                // supplied one -- prefer the order's environment, the tenant.
                 $transaction->environment_id = $paymentData['environment_id'] ?? $gatewaySettings->environment_id;
                 $transaction->payment_gateway_setting_id = $gatewaySettings->id;
                 $transaction->payment_method = $gatewayCode;
@@ -570,6 +594,9 @@ class PaymentService
                 // Update the transaction with new payment details
                 $transaction->transaction_id = 'TXN_'.Str::uuid();
                 $transaction->payment_method = $gatewayCode;
+                // The requesting (tenant) environment, matching the order.
+                // Callback URLs are built from this, so it must not drift to the
+                // gateway's environment.
                 $transaction->environment_id = $environmentId;
                 $transaction->status = 'pending';
                 $transaction->save();
@@ -757,7 +784,14 @@ class PaymentService
 
         try {
             // Get the payment gateway settings
-            $gatewaySettings = PaymentGatewaySetting::where('id', $transaction->payment_gateway_setting_id)->first();
+            // Scoped find() here silently fell through to verifyLegacyPayment
+            // whenever the transaction's environment was not the session's.
+            $gatewaySettings = $transaction->environment_id === null
+                ? PaymentGatewaySetting::withoutGlobalScopes()
+                    ->whereKey($transaction->payment_gateway_setting_id)
+                    ->first()
+                : app(PaymentGatewayResolver::class)
+                    ->forId($transaction->payment_gateway_setting_id, (int) $transaction->environment_id);
 
             if (! $gatewaySettings) {
                 // Fall back to legacy verification method
