@@ -17,6 +17,33 @@ use App\Events\CertificateIssued;
 class CertificateGenerationService
 {
     /**
+     * Fields the app can supply, keyed by the template field name they fill.
+     *
+     * The v1 endpoint accepted a fixed five-key payload, so a tenant whose
+     * template declared MATRICULE/SPECIALITE/SESSION got a blank certificate:
+     * none of those names were ever sent. v2 takes an open map validated
+     * against the template's own declaration, so what is sent is now decided
+     * per template rather than per code change.
+     *
+     * Anything a caller passes through additionalData is merged on top of
+     * these, so a tenant can fill a field this list has never heard of.
+     */
+    private const CANONICAL_FIELDS = [
+        'fullName',
+        'courseTitle',
+        'certificateDate',
+        'expiryDate',
+        'accessCode',
+    ];
+
+    /**
+     * Template field names, keyed by template name, for this request.
+     *
+     * @var array<string, list<string>>
+     */
+    private array $templateFieldCache = [];
+
+    /**
      * The third-party service for certificate generation
      */
     protected ?ThirdPartyService $service;
@@ -32,6 +59,153 @@ class CertificateGenerationService
         if ($this->service && !$this->service->bearer_token && $this->service->username && $this->service->password) {
             $this->authenticate();
         }
+    }
+
+    /**
+     * The field names a template declares, as reported by the service.
+     *
+     * GET /api/v2/templates/{name}/fields is the contract for what a template
+     * can be filled with; sending anything else makes v2 reject the whole
+     * request, so this is consulted before every generation.
+     *
+     * @return list<string>|null Null when the service could not be asked.
+     */
+    private function templateFields(string $templateName): ?array
+    {
+        if (array_key_exists($templateName, $this->templateFieldCache)) {
+            return $this->templateFieldCache[$templateName];
+        }
+
+        $response = $this->makeAuthenticatedRequest(
+            'get',
+            'v2/templates/'.rawurlencode($templateName).'/fields'
+        );
+
+        if (! $response || ! $response->successful()) {
+            Log::warning('Could not read template fields from certificate service', [
+                'template' => $templateName,
+                'status' => $response?->status(),
+            ]);
+
+            return null;
+        }
+
+        $names = collect($response->json('fields') ?? [])
+            ->pluck('name')
+            ->filter(fn ($name) => is_string($name) && $name !== '')
+            ->values()
+            ->all();
+
+        return $this->templateFieldCache[$templateName] = $names;
+    }
+
+    /**
+     * Narrow the values the app holds to the ones this template declares.
+     *
+     * Matching folds case because templates disagree on it (QrCode vs QRCode,
+     * fullName vs FullName), and the value is keyed by the template's own
+     * spelling so pdftk finds the field.
+     *
+     * @param  array<string, mixed>  $values
+     * @param  list<string>  $declared
+     * @return array<string, string>
+     */
+    private function fieldsForTemplate(array $values, array $declared): array
+    {
+        $byLowerName = [];
+        foreach ($declared as $name) {
+            $byLowerName[mb_strtolower($name)] = $name;
+        }
+
+        $fields = [];
+        foreach ($values as $key => $value) {
+            $canonical = $byLowerName[mb_strtolower((string) $key)] ?? null;
+
+            // null, bool and arrays all reach the service as something it
+            // refuses (unfillableValue), so they are dropped here instead.
+            if ($canonical === null || $value === null || is_bool($value) || is_array($value) || is_object($value)) {
+                continue;
+            }
+
+            $fields[$canonical] = (string) $value;
+        }
+
+        return $fields;
+    }
+
+    /**
+     * Issue a certificate through the v2 endpoint.
+     *
+     * Returns the v1-shaped array the callers already expect
+     * (data.certificate_url / data.preview_url) so the transport change stops
+     * at this class.
+     *
+     * @param  array<string, mixed>  $values
+     * @return array<string, mixed>|null
+     */
+    private function issueViaV2(string $templateName, array $values, ?string $reference = null): ?array
+    {
+        $declared = $this->templateFields($templateName);
+
+        if ($declared === null) {
+            return null;
+        }
+
+        $payload = [
+            'template' => $templateName,
+            'fields' => $this->fieldsForTemplate($values, $declared),
+        ];
+
+        if ($reference !== null) {
+            $payload['reference'] = $reference;
+        }
+
+        // Only sent when a verification base URL is configured: the service
+        // allow-lists QR hosts, so an unconfigured deployment would have every
+        // generation rejected rather than simply going out without a QR.
+        $qrUrl = $this->qrVerificationUrl($values['accessCode'] ?? null);
+        if ($qrUrl !== null) {
+            $payload['qr'] = ['url' => $qrUrl];
+        }
+
+        $response = $this->makeAuthenticatedRequest('post', 'v2/certificates', $payload);
+
+        if (! $response || ! $response->successful()) {
+            Log::error('v2 certificate generation failed', [
+                'template' => $templateName,
+                'status' => $response?->status(),
+                'body' => $response?->body(),
+                'sent_fields' => array_keys($payload['fields']),
+                'declared_fields' => $declared,
+            ]);
+
+            return null;
+        }
+
+        $body = $response->json();
+
+        return [
+            'data' => [
+                'certificate_url' => $body['download_url'] ?? null,
+                'preview_url' => $body['preview_url'] ?? null,
+                'identifier' => $body['identifier'] ?? null,
+                'expires_at' => null,
+            ],
+        ];
+    }
+
+    /**
+     * The page a certificate's QR should point at, or null when unconfigured.
+     */
+    private function qrVerificationUrl(?string $accessCode): ?string
+    {
+        $base = config('services.certificate_generation.qr_verify_base_url');
+
+        if (! is_string($base) || trim($base) === '' || ! $accessCode) {
+            return null;
+        }
+
+        return rtrim($base, '/').'/'.$accessCode;
     }
 
     /**
@@ -288,29 +462,21 @@ class CertificateGenerationService
 
             Log::info('Enrollment course title: ' . ($enrollment && $enrollment->course ? $enrollment->course->title : 'No course title'));
             Log::info('Certificate content course title: ' . $this->getTemplateTitleFromCertificateContent($certificateContent));
-            // Prepare only the required data for the certificate microservice
-            $certificateData = [
-                'template_name' => $templateToUse,
-                'data' => [
-                    'fullName' => $userData['fullName'] ?? 'Student Name',
-                    'courseTitle' => $enrollment && $enrollment->course ? $enrollment->course->title : ($this->getTemplateTitleFromCertificateContent($certificateContent) ?: 'Certificate'),
-                    'certificateDate' => $userData['certificateDate'] ?? now()->format('F j, Y'),
-                    'expiryDate' => $userData['expiryDate'] ?? null,
-                    'accessCode' => $accessCode,
-                ]
-            ];
+            // Everything the app can offer. What actually gets sent is decided
+            // by the template, not by this list -- additionalData the caller
+            // merged into $userData rides along, so a tenant template can
+            // declare fields this code has never heard of.
+            $values = array_merge($userData, [
+                'fullName' => $userData['fullName'] ?? 'Student Name',
+                'courseTitle' => $enrollment && $enrollment->course ? $enrollment->course->title : ($this->getTemplateTitleFromCertificateContent($certificateContent) ?: 'Certificate'),
+                'certificateDate' => $userData['certificateDate'] ?? now()->format('F j, Y'),
+                'expiryDate' => $userData['expiryDate'] ?? null,
+                'accessCode' => $accessCode,
+            ]);
 
-            Log::info('Certificate data for generateCertificate before request: '.json_encode($certificateData));
+            $result = $this->issueViaV2($templateToUse, $values, $accessCode);
 
-            // Make the authenticated request to generate the certificate
-            $response = $this->makeAuthenticatedRequest(
-                'post',
-                'certificates/generate',
-                $certificateData
-            );
-
-            if ($response && $response->successful()) {
-                $result = $response->json();
+            if ($result !== null) {
 
                 // Check if the response contains the certificate URLs
                 if (isset($result['data']['certificate_url'])) {
@@ -351,13 +517,14 @@ class CertificateGenerationService
                 }
 
                 Log::error('Certificate URL not found in response', ['response' => $result]);
+
                 return null;
             }
 
-            Log::error('Failed to generate certificate', [
-                'status' => $response->status(),
-                'body' => $response->body()
-            ]);
+            // issueViaV2 has already logged the status, body and the field
+            // mismatch, which is the failure worth seeing here.
+            Log::error('Failed to generate certificate', ['template' => $templateToUse]);
+
             return null;
         } catch (\Exception $e) {
             Log::error('Exception when generating certificate', [
@@ -434,48 +601,37 @@ class CertificateGenerationService
 
             Log::info('Regenerating certificate with access code: ' . $accessCode);
 
-            // Prepare certificate data (same as generateCertificate but with existing access code)
-            $certificateData = [
-                'template_name' => $templateToUse,
-                'data' => [
-                    'fullName' => $userData['fullName'] ?? 'Student Name',
-                    'courseTitle' => $enrollment && $enrollment->course ? $enrollment->course->title : ($this->getTemplateTitleFromCertificateContent($certificateContent) ?: 'Certificate'),
-                    'certificateDate' => $userData['certificateDate'] ?? now()->format('F j, Y'),
-                    'expiryDate' => $userData['expiryDate'] ?? null,
-                    'accessCode' => $accessCode, // Reuse the existing access code
-                ]
-            ];
+            // Same values as generateCertificate, reusing the existing access
+            // code; the template decides which of them are actually sent.
+            $values = array_merge($userData, [
+                'fullName' => $userData['fullName'] ?? 'Student Name',
+                'courseTitle' => $enrollment && $enrollment->course ? $enrollment->course->title : ($this->getTemplateTitleFromCertificateContent($certificateContent) ?: 'Certificate'),
+                'certificateDate' => $userData['certificateDate'] ?? now()->format('F j, Y'),
+                'expiryDate' => $userData['expiryDate'] ?? null,
+                'accessCode' => $accessCode,
+            ]);
 
-            Log::info('Certificate data for regenerateCertificate: ' . json_encode($certificateData));
+            $result = $this->issueViaV2($templateToUse, $values, $accessCode);
 
-            // Make the authenticated request to generate the certificate
-            $response = $this->makeAuthenticatedRequest(
-                'post',
-                'certificates/generate',
-                $certificateData
-            );
-
-            if ($response && $response->successful()) {
-                $result = $response->json();
-
+            if ($result !== null) {
                 // Check if the response contains the certificate URLs
                 if (isset($result['data']['certificate_url'])) {
                     // Add the access code to the result
                     $result['accessCode'] = $accessCode;
 
-                    Log::info('Certificate regenerated successfully with URLs: ' . json_encode($result['data']));
+                    Log::info('Certificate regenerated successfully with URLs: '.json_encode($result['data']));
 
                     return $result;
                 }
 
                 Log::error('Certificate URL not found in regeneration response', ['response' => $result]);
+
                 return null;
             }
 
-            Log::error('Failed to regenerate certificate', [
-                'status' => $response ? $response->status() : 'No response',
-                'body' => $response ? $response->body() : 'No response'
-            ]);
+            // issueViaV2 logs the status, body and field mismatch.
+            Log::error('Failed to regenerate certificate', ['template' => $templateToUse]);
+
             return null;
         } catch (\Exception $e) {
             Log::error('Exception when regenerating certificate', [

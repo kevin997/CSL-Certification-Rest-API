@@ -168,4 +168,16 @@ return [
         ],
     ],
 
+    // Certificate microservice. The endpoint and credentials live on the
+    // ThirdPartyService row ('certificate_generation'), not here; this is only
+    // the QR destination, which is a deployment decision rather than a tenant one.
+    'certificate_generation' => [
+        // Base URL of the page a certificate's QR code should open. The access
+        // code is appended. Left unset, no QR is requested at all -- the
+        // certificate service allow-lists QR hosts (QR_ALLOWED_HOSTS on its
+        // side), so sending one it does not recognise fails the whole
+        // generation rather than merely omitting the code.
+        'qr_verify_base_url' => env('CERTIFICATE_QR_VERIFY_BASE_URL'),
+    ],
+
 ];
