@@ -35,17 +35,24 @@ class CentralizedWebhookTest extends TestCase
             'settings' => ['webhook_secret' => 'tenant-secret'],
         ]);
 
-        /*
-         * The plan asks for a PLATFORM gateway here (environment_id NULL) with
-         * the same code and different secrets, to prove the webhook does not
-         * fall through to it. That cannot be built under this suite:
-         * 2026_04_30_120000_allow_platform_payment_gateway_settings only runs
-         * its ALTER for mysql and pgsql, so on the SQLite test driver
-         * environment_id remains NOT NULL and platform rows are unrepresentable.
-         * The plan forbids schema changes, so the fall-through half is asserted
-         * indirectly: resolving to the provider's row means the `?:` platform
-         * branch was never reached.
-         */
+        // A PLATFORM gateway with the SAME code and DIFFERENT secrets -- the
+        // wrong answer the old fall-through produced. Representable since
+        // 2026_08_18_000002 completed the nullable ALTER for SQLite.
+        //
+        // withoutEvents: the model's validateUniqueConstraints reports a clash
+        // between a platform row and an environment row, though the database
+        // constraint is composite (environment_id, code) and permits both.
+        PaymentGatewaySetting::withoutEvents(fn () => PaymentGatewaySetting::withoutGlobalScopes()->forceCreate([
+            'environment_id' => null,
+            'gateway_name' => 'TaraMoney',
+            'code' => 'taramoney',
+            'display_name' => 'TaraMoney',
+            'status' => true,
+            'is_default' => true,
+            'mode' => 'live',
+            'sort_order' => 0,
+            'settings' => ['webhook_secret' => 'platform-secret'],
+        ]));
 
         // Webhooks carry no session; the URL carries the tenant id.
         session()->forget('current_environment_id');
@@ -54,6 +61,10 @@ class CentralizedWebhookTest extends TestCase
 
         $this->assertNotNull($resolved);
         $this->assertSame($tenantGateway->id, $resolved->id, 'must not fall through to the platform gateway');
-        $this->assertSame('tenant-secret', $resolved->settings['webhook_secret'] ?? null);
+        $this->assertSame(
+            'tenant-secret',
+            $resolved->settings['webhook_secret'] ?? null,
+            'verifying against the platform secret would reject a genuine webhook'
+        );
     }
 }
