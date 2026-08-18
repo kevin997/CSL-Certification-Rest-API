@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Sales;
 
 use App\Http\Controllers\Controller;
 use App\Models\Course;
+use App\Models\Order;
 use App\Models\Product;
 use App\Models\SalesForm;
 use Illuminate\Http\Request;
@@ -29,7 +30,7 @@ class SalesFormController extends Controller
         }
 
         if ($request->filled('search')) {
-            $query->where('title', 'like', '%' . $request->search . '%');
+            $query->where('title', 'like', '%'.$request->search.'%');
         }
 
         $query->orderBy($request->get('sort_field', 'created_at'), $request->get('sort_direction', 'desc'));
@@ -121,9 +122,10 @@ class SalesFormController extends Controller
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to create sales form: ' . $e->getMessage(),
+                'message' => 'Failed to create sales form: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -155,7 +157,7 @@ class SalesFormController extends Controller
                 'title', 'description', 'status', 'cover_image_path', 'youtube_url', 'settings', 'slug',
             ]);
 
-            if (!$request->filled('slug') && $request->filled('title')) {
+            if (! $request->filled('slug') && $request->filled('title')) {
                 $updateData['slug'] = SalesForm::generateUniqueSlug($request->title, $form->id);
             }
 
@@ -183,9 +185,10 @@ class SalesFormController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to update sales form: ' . $e->getMessage(),
+                'message' => 'Failed to update sales form: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -216,7 +219,7 @@ class SalesFormController extends Controller
         $form = SalesForm::findOrFail($id);
 
         $status = $request->get('status', SalesForm::STATUS_PUBLISHED);
-        if (!in_array($status, [SalesForm::STATUS_PUBLISHED, SalesForm::STATUS_DRAFT, SalesForm::STATUS_ARCHIVED])) {
+        if (! in_array($status, [SalesForm::STATUS_PUBLISHED, SalesForm::STATUS_DRAFT, SalesForm::STATUS_ARCHIVED])) {
             $status = SalesForm::STATUS_PUBLISHED;
         }
 
@@ -224,7 +227,7 @@ class SalesFormController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Sales form ' . $status,
+            'message' => 'Sales form '.$status,
             'data' => $form,
             'public_url' => $form->public_url,
         ]);
@@ -240,7 +243,7 @@ class SalesFormController extends Controller
         $query = Product::query()->with(['courses:id,title']);
 
         if ($request->filled('search')) {
-            $query->where('name', 'like', '%' . $request->search . '%');
+            $query->where('name', 'like', '%'.$request->search.'%');
         }
 
         $products = $query->orderBy('name')->limit(100)->get(['id', 'name', 'slug', 'price', 'discount_price', 'currency', 'thumbnail_path']);
@@ -287,11 +290,11 @@ class SalesFormController extends Controller
         $totalViews = $forms->sum('views_count');
         $totalSubmissions = $forms->sum('submissions_count');
 
-        $completedOrders = \App\Models\Order::query()
+        $completedOrders = Order::query()
             ->whereIn('sales_form_submission_id', function ($q) use ($formIds) {
                 $q->select('id')->from('sales_form_submissions')->whereIn('sales_form_id', $formIds);
             })
-            ->where('status', \App\Models\Order::STATUS_COMPLETED);
+            ->where('status', Order::STATUS_COMPLETED);
 
         return response()->json([
             'success' => true,
@@ -318,7 +321,7 @@ class SalesFormController extends Controller
         $form = SalesForm::withCount('submissions')->findOrFail($id);
 
         $submissionIds = $form->submissions()->pluck('id');
-        $ordersQuery = \App\Models\Order::query()->whereIn('sales_form_submission_id', $submissionIds);
+        $ordersQuery = Order::query()->whereIn('sales_form_submission_id', $submissionIds);
 
         return response()->json([
             'success' => true,
@@ -329,9 +332,9 @@ class SalesFormController extends Controller
                 'submissions' => $form->submissions_count,
                 'conversion_rate' => $form->views_count > 0
                     ? round(($form->submissions_count / $form->views_count) * 100, 2) : 0,
-                'pending_orders' => (clone $ordersQuery)->where('status', \App\Models\Order::STATUS_PENDING)->count(),
-                'completed_orders' => (clone $ordersQuery)->where('status', \App\Models\Order::STATUS_COMPLETED)->count(),
-                'revenue' => (clone $ordersQuery)->where('status', \App\Models\Order::STATUS_COMPLETED)->sum('total_amount'),
+                'pending_orders' => (clone $ordersQuery)->where('status', Order::STATUS_PENDING)->count(),
+                'completed_orders' => (clone $ordersQuery)->where('status', Order::STATUS_COMPLETED)->count(),
+                'revenue' => (clone $ordersQuery)->where('status', Order::STATUS_COMPLETED)->sum('total_amount'),
             ],
         ]);
     }
@@ -373,11 +376,11 @@ class SalesFormController extends Controller
         $form = SalesForm::with('fields')->findOrFail($id);
 
         $fields = $form->fields; // ordered
-        $filename = 'sales-form-' . $form->slug . '-submissions.csv';
+        $filename = 'sales-form-'.$form->slug.'-submissions.csv';
 
         $headers = [
             'Content-Type' => 'text/csv',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
         ];
 
         $callback = function () use ($form, $fields) {
@@ -409,7 +412,7 @@ class SalesFormController extends Controller
                             $line[] = is_array($value) ? implode(', ', $value) : $value;
                         }
                         $line[] = $submission->orders
-                            ->map(fn ($o) => $o->order_number . ' (' . $o->status . ')')
+                            ->map(fn ($o) => $o->order_number.' ('.$o->status.')')
                             ->implode('; ');
                         fputcsv($out, $line);
                     }
