@@ -54,6 +54,7 @@ class SalesFormProductCoursesTest extends TestCase
             'environment_id' => $environment->id,
             'title' => 'Formation en Achat Chine',
             'created_by' => $user->id,
+            'slug' => 'formation-en-achat-chine',
         ]);
         $form->products()->attach($product->id);
 
