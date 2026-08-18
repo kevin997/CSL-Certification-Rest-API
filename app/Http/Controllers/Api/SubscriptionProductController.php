@@ -2,20 +2,22 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\UserCreatedDuringCheckout;
 use App\Http\Controllers\Controller;
 use App\Models\Environment;
 use App\Models\Order;
 use App\Models\OrderItem;
-use App\Models\PaymentGatewaySetting;
 use App\Models\Product;
 use App\Models\ProductSubscription;
-use App\Models\User;
+use App\Notifications\OrderCreated;
 use App\Services\Commission\CommissionService;
 use App\Services\EnvironmentPaymentConfigService;
 use App\Services\OrderService;
 use App\Services\PaymentGateways\PaymentGatewayFactory;
+use App\Services\Payments\PaymentGatewayResolver;
 use App\Services\PaymentService;
 use App\Services\Tax\TaxZoneService;
+use App\Services\TelegramService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -47,18 +49,21 @@ class SubscriptionProductController extends Controller
             $data['payment_type'] = 'stripe';
             $data['client_secret'] = $value;
             $data['publishable_key'] = $result['publishable_key'] ?? null;
+
             return $data;
         }
 
         if ($type === 'checkout_url') {
             $data['payment_type'] = 'paypal';
             $data['redirect_url'] = $value;
+
             return $data;
         }
 
         if ($type === 'payment_url') {
             $data['payment_type'] = $result['payment_type'] ?? 'lygos';
             $data['redirect_url'] = $value;
+
             return $data;
         }
 
@@ -66,12 +71,13 @@ class SubscriptionProductController extends Controller
             $data['payment_type'] = 'taramoney';
             $data['redirect_url'] = $result['redirect_url'] ?? $result['general_link'] ?? $value;
             $data['general_link'] = $result['general_link'] ?? null;
+
             return $data;
         }
 
         if ($type === 'payment_links') {
             $data['payment_type'] = 'taramoney';
-            if (!empty($result['general_link'])) {
+            if (! empty($result['general_link'])) {
                 $data['redirect_url'] = $result['general_link'];
                 $data['general_link'] = $result['general_link'];
             } else {
@@ -81,10 +87,12 @@ class SubscriptionProductController extends Controller
                 $data['dikalo_link'] = $result['dikalo_link'] ?? null;
                 $data['sms_link'] = $result['sms_link'] ?? null;
             }
+
             return $data;
         }
 
         $data['payment_type'] = 'standard';
+
         return $data;
     }
 
@@ -92,7 +100,7 @@ class SubscriptionProductController extends Controller
     {
         $user = $request->user();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
@@ -119,11 +127,11 @@ class SubscriptionProductController extends Controller
     public function userSubscriptions(Request $request, int $userId): JsonResponse
     {
         $actor = $request->user();
-        if (!$actor) {
+        if (! $actor) {
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
-        if (!$actor->isTeacher() && !$actor->isAdmin()) {
+        if (! $actor->isTeacher() && ! $actor->isAdmin()) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -151,7 +159,7 @@ class SubscriptionProductController extends Controller
     {
         $user = $request->user();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
@@ -167,7 +175,7 @@ class SubscriptionProductController extends Controller
 
         $subscription = $query->first();
 
-        if (!$subscription) {
+        if (! $subscription) {
             return response()->json(['message' => 'Subscription not found'], 404);
         }
 
@@ -207,13 +215,13 @@ class SubscriptionProductController extends Controller
     {
         $user = $request->user();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
         $environment = Environment::find($environmentId);
 
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -249,11 +257,11 @@ class SubscriptionProductController extends Controller
         foreach ($productsInput as $item) {
             $product = $products->get($item['id']);
 
-            if (!$product || (string) $product->environment_id !== (string) $environment->id) {
+            if (! $product || (string) $product->environment_id !== (string) $environment->id) {
                 return response()->json(['message' => 'Product not found in this environment'], 404);
             }
 
-            if (!$product->is_subscription) {
+            if (! $product->is_subscription) {
                 return response()->json([
                     'message' => 'Subscription-only cart enforced: non-subscription product in cart',
                     'product_id' => $product->id,
@@ -264,7 +272,7 @@ class SubscriptionProductController extends Controller
         try {
             DB::beginTransaction();
 
-            event(new \App\Events\UserCreatedDuringCheckout($user, $environment, false));
+            event(new UserCreatedDuringCheckout($user, $environment, false));
 
             $totalAmount = 0;
             $orderItems = [];
@@ -280,10 +288,10 @@ class SubscriptionProductController extends Controller
             $firstProductInput = $productsInput[0];
             $firstProduct = $products->get($firstProductInput['id']);
 
-            $order = new Order();
+            $order = new Order;
             $order->user_id = $user->id;
             $order->environment_id = $environment->id;
-            $order->order_number = 'ORD-' . strtoupper(Str::random(8));
+            $order->order_number = 'ORD-'.strtoupper(Str::random(8));
             $order->status = Order::STATUS_PENDING;
             $order->type = Order::TYPE_SUBSCRIPTION_PRODUCT;
             $order->payment_method = $request->input('payment_method');
@@ -302,7 +310,7 @@ class SubscriptionProductController extends Controller
             $order->save();
 
             foreach ($orderItems as $item) {
-                $orderItem = new OrderItem();
+                $orderItem = new OrderItem;
                 $orderItem->order_id = $order->id;
                 $orderItem->product_id = $item['product']->id;
                 $orderItem->quantity = $item['quantity'];
@@ -312,9 +320,13 @@ class SubscriptionProductController extends Controller
                 $orderItem->save();
             }
 
-            $gatewaySettings = PaymentGatewaySetting::find($request->input('payment_method'));
-            if (!$gatewaySettings) {
+            // Resolved against the effective environment: a centralized tenant's
+            // gateway belongs to the provider, and a scoped find() cannot see it.
+            $gatewaySettings = app(PaymentGatewayResolver::class)
+                ->forId($request->input('payment_method'), (int) $environmentId);
+            if (! $gatewaySettings) {
                 DB::rollBack();
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Payment method not available',
@@ -342,10 +354,10 @@ class SubscriptionProductController extends Controller
             try {
                 $order->load(['user']);
                 if ($order->user) {
-                    $order->user->notify(new \App\Notifications\OrderCreated($order, app(\App\Services\TelegramService::class)));
+                    $order->user->notify(new OrderCreated($order, app(TelegramService::class)));
                 }
             } catch (\Exception $e) {
-                Log::error('Failed to send OrderCreated notification: ' . $e->getMessage());
+                Log::error('Failed to send OrderCreated notification: '.$e->getMessage());
             }
 
             return response()->json([
@@ -355,14 +367,14 @@ class SubscriptionProductController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Subscription product subscribe error: ' . $e->getMessage(), [
+            Log::error('Subscription product subscribe error: '.$e->getMessage(), [
                 'environment_id' => $environmentId,
                 'user_id' => $user->id,
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Checkout failed: ' . $e->getMessage(),
+                'message' => 'Checkout failed: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -371,13 +383,13 @@ class SubscriptionProductController extends Controller
     {
         $user = $request->user();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
         $subscription = ProductSubscription::with(['product', 'environment'])->find($subscriptionId);
 
-        if (!$subscription) {
+        if (! $subscription) {
             return response()->json(['message' => 'Subscription not found'], 404);
         }
 
@@ -397,26 +409,26 @@ class SubscriptionProductController extends Controller
         $product = $subscription->product;
         $environment = $subscription->environment;
 
-        if (!$product || !$environment) {
+        if (! $product || ! $environment) {
             return response()->json(['message' => 'Invalid subscription record'], 400);
         }
 
-        if (!$product->is_subscription) {
+        if (! $product->is_subscription) {
             return response()->json(['message' => 'Product is not a subscription product'], 400);
         }
 
         try {
             DB::beginTransaction();
 
-            event(new \App\Events\UserCreatedDuringCheckout($user, $environment, false));
+            event(new UserCreatedDuringCheckout($user, $environment, false));
 
             $price = $product->discount_price ?? $product->price;
             $totalAmount = $price;
 
-            $order = new Order();
+            $order = new Order;
             $order->user_id = $user->id;
             $order->environment_id = $environment->id;
-            $order->order_number = 'ORD-' . strtoupper(Str::random(8));
+            $order->order_number = 'ORD-'.strtoupper(Str::random(8));
             $order->status = Order::STATUS_PENDING;
             $order->type = Order::TYPE_SUBSCRIPTION_PRODUCT;
             $order->payment_method = $request->input('payment_method');
@@ -426,7 +438,7 @@ class SubscriptionProductController extends Controller
             $order->currency = $product->currency;
             $order->save();
 
-            $orderItem = new OrderItem();
+            $orderItem = new OrderItem;
             $orderItem->order_id = $order->id;
             $orderItem->product_id = $product->id;
             $orderItem->quantity = 1;
@@ -437,9 +449,13 @@ class SubscriptionProductController extends Controller
             $orderItem->subscription_status = $subscription->status;
             $orderItem->save();
 
-            $gatewaySettings = PaymentGatewaySetting::find($request->input('payment_method'));
-            if (!$gatewaySettings) {
+            // The subscription's environment is the tenant; the resolver converts
+            // it to whichever environment actually owns the gateway.
+            $gatewaySettings = app(PaymentGatewayResolver::class)
+                ->forId($request->input('payment_method'), (int) $subscription->environment_id);
+            if (! $gatewaySettings) {
                 DB::rollBack();
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Payment method not available',
@@ -468,10 +484,10 @@ class SubscriptionProductController extends Controller
             try {
                 $order->load(['user']);
                 if ($order->user) {
-                    $order->user->notify(new \App\Notifications\OrderCreated($order, app(\App\Services\TelegramService::class)));
+                    $order->user->notify(new OrderCreated($order, app(TelegramService::class)));
                 }
             } catch (\Exception $e) {
-                Log::error('Failed to send OrderCreated notification: ' . $e->getMessage());
+                Log::error('Failed to send OrderCreated notification: '.$e->getMessage());
             }
 
             return response()->json([
@@ -481,14 +497,14 @@ class SubscriptionProductController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Subscription product renewal error: ' . $e->getMessage(), [
+            Log::error('Subscription product renewal error: '.$e->getMessage(), [
                 'subscription_id' => $subscriptionId,
                 'user_id' => $user->id,
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Renewal failed: ' . $e->getMessage(),
+                'message' => 'Renewal failed: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -496,14 +512,22 @@ class SubscriptionProductController extends Controller
     public function cancel(Request $request, int $subscriptionId): JsonResponse
     {
         $user = $request->user();
-        if (!$user) return response()->json(['message' => 'Unauthenticated'], 401);
+        if (! $user) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
+        }
 
         $subscription = ProductSubscription::find($subscriptionId);
-        if (!$subscription) return response()->json(['message' => 'Subscription not found'], 404);
-        if ((int) $subscription->user_id !== (int) $user->id) return response()->json(['message' => 'Unauthorized'], 403);
+        if (! $subscription) {
+            return response()->json(['message' => 'Subscription not found'], 404);
+        }
+        if ((int) $subscription->user_id !== (int) $user->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
 
         $validator = Validator::make($request->all(), ['cancel_at_period_end' => 'sometimes|boolean']);
-        if ($validator->fails()) return response()->json(['errors' => $validator->errors()], 422);
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
 
         $cancelAtPeriodEnd = (bool) $request->input('cancel_at_period_end', true);
         if ($subscription->status === 'canceled') {
@@ -532,14 +556,24 @@ class SubscriptionProductController extends Controller
     public function pause(Request $request, int $subscriptionId): JsonResponse
     {
         $user = $request->user();
-        if (!$user) return response()->json(['message' => 'Unauthenticated'], 401);
+        if (! $user) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
+        }
 
         $subscription = ProductSubscription::find($subscriptionId);
-        if (!$subscription) return response()->json(['message' => 'Subscription not found'], 404);
-        if ((int) $subscription->user_id !== (int) $user->id) return response()->json(['message' => 'Unauthorized'], 403);
+        if (! $subscription) {
+            return response()->json(['message' => 'Subscription not found'], 404);
+        }
+        if ((int) $subscription->user_id !== (int) $user->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
 
-        if ($subscription->status === 'canceled') return response()->json(['success' => false, 'message' => 'Cannot pause a canceled subscription'], 400);
-        if ($subscription->paused_at) return response()->json(['success' => false, 'message' => 'Subscription already paused'], 400);
+        if ($subscription->status === 'canceled') {
+            return response()->json(['success' => false, 'message' => 'Cannot pause a canceled subscription'], 400);
+        }
+        if ($subscription->paused_at) {
+            return response()->json(['success' => false, 'message' => 'Subscription already paused'], 400);
+        }
 
         DB::transaction(function () use ($subscription) {
             $subscription->status = 'paused';
@@ -553,14 +587,24 @@ class SubscriptionProductController extends Controller
     public function resume(Request $request, int $subscriptionId): JsonResponse
     {
         $user = $request->user();
-        if (!$user) return response()->json(['message' => 'Unauthenticated'], 401);
+        if (! $user) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
+        }
 
         $subscription = ProductSubscription::find($subscriptionId);
-        if (!$subscription) return response()->json(['message' => 'Subscription not found'], 404);
-        if ((int) $subscription->user_id !== (int) $user->id) return response()->json(['message' => 'Unauthorized'], 403);
+        if (! $subscription) {
+            return response()->json(['message' => 'Subscription not found'], 404);
+        }
+        if ((int) $subscription->user_id !== (int) $user->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
 
-        if ($subscription->status === 'canceled') return response()->json(['success' => false, 'message' => 'Cannot resume a canceled subscription'], 400);
-        if (!$subscription->paused_at) return response()->json(['success' => false, 'message' => 'Subscription is not paused'], 400);
+        if ($subscription->status === 'canceled') {
+            return response()->json(['success' => false, 'message' => 'Cannot resume a canceled subscription'], 400);
+        }
+        if (! $subscription->paused_at) {
+            return response()->json(['success' => false, 'message' => 'Subscription is not paused'], 400);
+        }
 
         $pausedAt = $subscription->paused_at;
 
@@ -585,24 +629,24 @@ class SubscriptionProductController extends Controller
 
         $order = Order::find($orderId);
 
-        if (!$order) {
+        if (! $order) {
             return response()->json([
                 'success' => false,
-                'message' => 'Order not found'
+                'message' => 'Order not found',
             ], 404);
         }
 
         if ($user->id !== $order->user_id) {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthorized access to this order'
+                'message' => 'Unauthorized access to this order',
             ], 403);
         }
 
         if ($order->type !== Order::TYPE_SUBSCRIPTION_PRODUCT) {
             return response()->json([
                 'success' => false,
-                'message' => 'This order is not a subscription product order'
+                'message' => 'This order is not a subscription product order',
             ], 400);
         }
 
@@ -610,7 +654,7 @@ class SubscriptionProductController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Only pending orders can continue payment',
-                'order_status' => $order->status
+                'order_status' => $order->status,
             ], 400);
         }
 
@@ -623,7 +667,7 @@ class SubscriptionProductController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -633,18 +677,17 @@ class SubscriptionProductController extends Controller
         $paymentData = $request->input('payment_data', []);
 
         try {
-            $paymentGatewaySetting = PaymentGatewaySetting::where('environment_id', $order->environment_id)
-                ->where(function ($query) use ($paymentMethod) {
-                    $query->where('code', $paymentMethod)
-                        ->orWhere('id', $paymentMethod)
-                        ->orWhere('gateway_name', $paymentMethod);
-                })
-                ->first();
+            // order->environment_id stays the tenant, which owns no gateway when
+            // payments are centralized; the resolver converts it before lookup.
+            $resolver = app(PaymentGatewayResolver::class);
+            $paymentGatewaySetting = is_numeric($paymentMethod)
+                ? $resolver->forId($paymentMethod, (int) $order->environment_id)
+                : $resolver->forCode((string) $paymentMethod, (int) $order->environment_id);
 
-            if (!$paymentGatewaySetting) {
+            if (! $paymentGatewaySetting) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Payment method not available'
+                    'message' => 'Payment method not available',
                 ], 400);
             }
 
@@ -653,7 +696,7 @@ class SubscriptionProductController extends Controller
             $result = $paymentService->processPayment($order->id, [
                 'payment_method' => $paymentGatewaySetting->code,
                 'environment_id' => $order->environment_id,
-                ...$paymentData
+                ...$paymentData,
             ]);
 
             $order->payment_method = $paymentGatewaySetting->id;
@@ -668,19 +711,19 @@ class SubscriptionProductController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Payment processing initiated',
-                'data' => $responseData
+                'data' => $responseData,
             ]);
         } catch (\Exception $e) {
-            Log::error('Subscription product payment continuation error: ' . $e->getMessage(), [
+            Log::error('Subscription product payment continuation error: '.$e->getMessage(), [
                 'order_id' => $order->id,
                 'payment_method' => $paymentMethod,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Payment processing failed: ' . $e->getMessage()
+                'message' => 'Payment processing failed: '.$e->getMessage(),
             ], 500);
         }
     }

@@ -3,24 +3,29 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Enrollment;
+use App\Models\Environment;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\Referral;
+use App\Models\User;
+use App\Notifications\OrderCreated;
+use App\Services\Payments\PaymentGatewayResolver;
+use App\Services\TelegramService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Http\Response;
-use App\Models\Enrollment;
-use App\Models\User;
-use Illuminate\Support\Facades\Str;
-use App\Models\Environment;
 
 /**
  * @OA\Schema(
  *     schema="OrderItem",
  *     required={"order_id", "product_id", "quantity", "price"},
+ *
  *     @OA\Property(property="id", type="integer", format="int64", example=1),
  *     @OA\Property(property="order_id", type="integer", format="int64", example=1),
  *     @OA\Property(property="product_id", type="integer", format="int64", example=1),
@@ -35,6 +40,7 @@ use App\Models\Environment;
  * @OA\Schema(
  *     schema="Order",
  *     required={"user_id", "total_amount", "currency", "status"},
+ *
  *     @OA\Property(property="id", type="integer", format="int64", example=1),
  *     @OA\Property(property="user_id", type="integer", format="int64", example=1),
  *     @OA\Property(property="order_number", type="string", example="ORD-2025-0001"),
@@ -57,8 +63,10 @@ use App\Models\Environment;
  *     @OA\Property(
  *         property="items",
  *         type="array",
+ *
  *         @OA\Items(
  *             type="object",
+ *
  *             @OA\Property(property="id", type="integer", format="int64", example=1),
  *             @OA\Property(property="order_id", type="integer", format="int64", example=1),
  *             @OA\Property(property="product_id", type="integer", format="int64", example=1),
@@ -84,15 +92,13 @@ use App\Models\Environment;
  *     )
  * )
  */
-
 class OrderController extends Controller
 {
     /**
      * Display a listing of orders.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
-     * 
+     * @return JsonResponse
+     *
      * @OA\Get(
      *     path="/orders",
      *     summary="Get list of orders",
@@ -100,81 +106,104 @@ class OrderController extends Controller
      *     operationId="getOrdersList",
      *     tags={"Orders"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="search",
      *         in="query",
      *         description="Search term for order number or customer name",
      *         required=false,
+     *
      *         @OA\Schema(type="string")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="status",
      *         in="query",
      *         description="Filter by order status",
      *         required=false,
+     *
      *         @OA\Schema(type="string", enum={"pending", "processing", "completed", "cancelled", "refunded"})
      *     ),
+     *
      *     @OA\Parameter(
      *         name="user_id",
      *         in="query",
      *         description="Filter by user ID",
      *         required=false,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="min_amount",
      *         in="query",
      *         description="Minimum order amount filter",
      *         required=false,
+     *
      *         @OA\Schema(type="number", format="float")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="max_amount",
      *         in="query",
      *         description="Maximum order amount filter",
      *         required=false,
+     *
      *         @OA\Schema(type="number", format="float")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="date_from",
      *         in="query",
      *         description="Filter orders created after this date (format: Y-m-d)",
      *         required=false,
+     *
      *         @OA\Schema(type="string", format="date")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="date_to",
      *         in="query",
      *         description="Filter orders created before this date (format: Y-m-d)",
      *         required=false,
+     *
      *         @OA\Schema(type="string", format="date")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="sort_field",
      *         in="query",
      *         description="Field to sort by",
      *         required=false,
+     *
      *         @OA\Schema(type="string", enum={"created_at", "total_amount", "status"}, default="created_at")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="sort_direction",
      *         in="query",
      *         description="Sort direction",
      *         required=false,
+     *
      *         @OA\Schema(type="string", enum={"asc", "desc"}, default="desc")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="per_page",
      *         in="query",
      *         description="Number of items per page",
      *         required=false,
+     *
      *         @OA\Schema(type="integer", default=15)
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successful operation",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(
      *                 property="data",
@@ -183,13 +212,16 @@ class OrderController extends Controller
      *                 @OA\Property(
      *                     property="data",
      *                     type="array",
+     *
      *                     @OA\Items(ref="#/components/schemas/Order")
      *                 ),
+     *
      *                 @OA\Property(property="total", type="integer", example=50),
      *                 @OA\Property(property="per_page", type="integer", example=15)
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=401,
      *         description="Unauthenticated"
@@ -201,97 +233,104 @@ class OrderController extends Controller
      * )
      */
     public function index(Request $request)
-{
-    // Get the environment from the request
-    $environment = $request->environment;
+    {
+        // Get the environment from the request
+        $environment = $request->environment;
 
-    $query = Order::with(['user', 'items.product']);
-    
-    // Always filter by environment_id
-    if ($environment) {
-        $query->where('environment_id', $environment->id);
-    } elseif ($request->has('environment_id')) {
-        $query->where('environment_id', $request->environment_id);
-    }
-    
-    // Apply filters
-    if ($request->has('search')) {
-        $search = $request->search;
-        $query->where(function ($q) use ($search) {
-            $q->where('order_number', 'like', "%{$search}%")
-              ->orWhere('billing_name', 'like', "%{$search}%")
-              ->orWhere('billing_email', 'like', "%{$search}%");
-        });
-    }
-    
-    if ($request->has('status')) {
-        $query->where('status', $request->status);
-    }
-    
-    if ($request->has('user_id')) {
-        $query->where('user_id', $request->user_id);
-    }
-    
-    if ($request->has('min_amount')) {
-        $query->where('total_amount', '>=', $request->min_amount);
-    }
-    
-    if ($request->has('max_amount')) {
-        $query->where('total_amount', '<=', $request->max_amount);
-    }
-    
-    if ($request->has('from_date')) {
-        $query->whereDate('created_at', '>=', $request->from_date);
-    }
-    
-    if ($request->has('to_date')) {
-        $query->whereDate('created_at', '<=', $request->to_date);
-    }
-    
-    // Apply sorting
-    $sortField = $request->input('sort_field', 'created_at');
-    $sortDirection = $request->input('sort_direction', 'desc');
-    $allowedSortFields = ['order_number', 'total_amount', 'status', 'created_at'];
-    
-    if (in_array($sortField, $allowedSortFields)) {
-        $query->orderBy($sortField, $sortDirection === 'asc' ? 'asc' : 'desc');
-    } else {
-        $query->orderBy('created_at', 'desc');
-    }
-    
-    // Pagination
-    $perPage = $request->input('per_page', 15);
-    $orders = $query->paginate($perPage);
+        $query = Order::with(['user', 'items.product']);
 
-    // Transform orders to resolve payment method name
-    $orders->getCollection()->transform(function ($order) {
-        $order->payment_method = $this->resolvePaymentMethod($order->payment_method);
-        return $order;
-    });
-    
-    return response()->json([
-        'status' => 'success',
-        'data' => $orders,
-    ]);
-}
-
-private function resolvePaymentMethod($paymentMethod)
-{
-    if (is_numeric($paymentMethod)) {
-        $gateway = \App\Models\PaymentGatewaySetting::find($paymentMethod);
-        if ($gateway) {
-            return $gateway->gateway_name ?? $gateway->code;
+        // Always filter by environment_id
+        if ($environment) {
+            $query->where('environment_id', $environment->id);
+        } elseif ($request->has('environment_id')) {
+            $query->where('environment_id', $request->environment_id);
         }
+
+        // Apply filters
+        if ($request->has('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('order_number', 'like', "%{$search}%")
+                    ->orWhere('billing_name', 'like', "%{$search}%")
+                    ->orWhere('billing_email', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->has('user_id')) {
+            $query->where('user_id', $request->user_id);
+        }
+
+        if ($request->has('min_amount')) {
+            $query->where('total_amount', '>=', $request->min_amount);
+        }
+
+        if ($request->has('max_amount')) {
+            $query->where('total_amount', '<=', $request->max_amount);
+        }
+
+        if ($request->has('from_date')) {
+            $query->whereDate('created_at', '>=', $request->from_date);
+        }
+
+        if ($request->has('to_date')) {
+            $query->whereDate('created_at', '<=', $request->to_date);
+        }
+
+        // Apply sorting
+        $sortField = $request->input('sort_field', 'created_at');
+        $sortDirection = $request->input('sort_direction', 'desc');
+        $allowedSortFields = ['order_number', 'total_amount', 'status', 'created_at'];
+
+        if (in_array($sortField, $allowedSortFields)) {
+            $query->orderBy($sortField, $sortDirection === 'asc' ? 'asc' : 'desc');
+        } else {
+            $query->orderBy('created_at', 'desc');
+        }
+
+        // Pagination
+        $perPage = $request->input('per_page', 15);
+        $orders = $query->paginate($perPage);
+
+        // Transform orders to resolve payment method name
+        $orders->getCollection()->transform(function ($order) {
+            $order->payment_method = $this->resolvePaymentMethod($order->payment_method, (int) $order->environment_id);
+
+            return $order;
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $orders,
+        ]);
     }
-    return $paymentMethod;
-}
+
+    /**
+     * The environment must be the ORDER's, never the session's: a centralized
+     * tenant's gateway belongs to the provider, and a scoped find() here returned
+     * null so the display fell back to the raw id.
+     */
+    private function resolvePaymentMethod($paymentMethod, int $environmentId)
+    {
+        if (is_numeric($paymentMethod)) {
+            $gateway = app(PaymentGatewayResolver::class)
+                ->forId($paymentMethod, $environmentId);
+            if ($gateway) {
+                return $gateway->gateway_name ?? $gateway->code;
+            }
+        }
+
+        return $paymentMethod;
+    }
 
     /**
      * Display a listing of the current user's orders.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
-     * 
+     * @return Response
+     *
      * @OA\Get(
      *     path="/orders/my-orders",
      *     summary="Get current user's orders",
@@ -299,39 +338,50 @@ private function resolvePaymentMethod($paymentMethod)
      *     operationId="getUserOrders",
      *     tags={"Orders"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="status",
      *         in="query",
      *         description="Filter by order status",
      *         required=false,
+     *
      *         @OA\Schema(type="string", enum={"pending", "processing", "completed", "cancelled", "refunded"})
      *     ),
+     *
      *     @OA\Parameter(
      *         name="sort_field",
      *         in="query",
      *         description="Field to sort by",
      *         required=false,
+     *
      *         @OA\Schema(type="string", enum={"created_at", "total_amount", "status"}, default="created_at")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="sort_direction",
      *         in="query",
      *         description="Sort direction",
      *         required=false,
+     *
      *         @OA\Schema(type="string", enum={"asc", "desc"}, default="desc")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="per_page",
      *         in="query",
      *         description="Number of items per page",
      *         required=false,
+     *
      *         @OA\Schema(type="integer", default=15)
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successful operation",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(
      *                 property="data",
@@ -340,13 +390,16 @@ private function resolvePaymentMethod($paymentMethod)
      *                 @OA\Property(
      *                     property="data",
      *                     type="array",
+     *
      *                     @OA\Items(ref="#/components/schemas/Order")
      *                 ),
+     *
      *                 @OA\Property(property="total", type="integer", example=10),
      *                 @OA\Property(property="per_page", type="integer", example=15)
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=401,
      *         description="Unauthenticated"
@@ -357,27 +410,27 @@ private function resolvePaymentMethod($paymentMethod)
     {
         $query = Order::with(['items.product'])
             ->where('user_id', Auth::id());
-        
+
         // Apply filters
         if ($request->has('status')) {
             $query->where('status', $request->status);
         }
-        
+
         // Apply sorting
         $sortField = $request->input('sort_field', 'created_at');
         $sortDirection = $request->input('sort_direction', 'desc');
         $allowedSortFields = ['order_number', 'total_amount', 'status', 'created_at'];
-        
+
         if (in_array($sortField, $allowedSortFields)) {
             $query->orderBy($sortField, $sortDirection === 'asc' ? 'asc' : 'desc');
         } else {
             $query->orderBy('created_at', 'desc');
         }
-        
+
         // Pagination
         $perPage = $request->input('per_page', 15);
         $orders = $query->paginate($perPage);
-        
+
         return response()->json([
             'status' => 'success',
             'data' => $orders,
@@ -387,9 +440,8 @@ private function resolvePaymentMethod($paymentMethod)
     /**
      * Store a newly created order.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
-     * 
+     * @return JsonResponse
+     *
      * @OA\Post(
      *     path="/orders",
      *     summary="Create a new order",
@@ -397,17 +449,22 @@ private function resolvePaymentMethod($paymentMethod)
      *     operationId="storeOrder",
      *     tags={"Orders"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\RequestBody(
      *         required=true,
      *         description="Order data",
+     *
      *         @OA\JsonContent(
      *             required={"items"},
+     *
      *             @OA\Property(
      *                 property="items",
      *                 type="array",
+     *
      *                 @OA\Items(
      *                     type="object",
      *                     required={"product_id", "quantity"},
+     *
      *                     @OA\Property(property="product_id", type="integer", example=1),
      *                     @OA\Property(property="quantity", type="integer", example=1)
      *                 )
@@ -425,16 +482,20 @@ private function resolvePaymentMethod($paymentMethod)
      *             @OA\Property(property="payment_id", type="string", example="pay_123456789", nullable=true)
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=201,
      *         description="Order created successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Order created successfully"),
      *             @OA\Property(property="data", ref="#/components/schemas/Order")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=400,
      *         description="Invalid input data"
@@ -484,17 +545,17 @@ private function resolvePaymentMethod($paymentMethod)
 
             foreach ($request->products as $productData) {
                 $product = Product::findOrFail($productData['id']);
-                
+
                 // Skip inactive products
                 if ($product->status !== 'active') {
                     continue;
                 }
-                
+
                 $quantity = $productData['quantity'];
                 $price = $product->discount_price ?? $product->price;
                 $total = $price * $quantity;
                 $totalAmount += $total;
-                
+
                 $products[] = [
                     'product' => $product,
                     'quantity' => $quantity,
@@ -512,7 +573,7 @@ private function resolvePaymentMethod($paymentMethod)
             }
 
             // Create order
-            $order = new Order();
+            $order = new Order;
             $order->user_id = Auth::id();
             $order->order_number = $this->generateOrderNumber();
             $order->status = 'pending';
@@ -533,8 +594,8 @@ private function resolvePaymentMethod($paymentMethod)
             // Create order items
             foreach ($products as $productData) {
                 $product = $productData['product'];
-                
-                $orderItem = new OrderItem();
+
+                $orderItem = new OrderItem;
                 $orderItem->order_id = $order->id;
                 $orderItem->product_id = $product->id;
                 $orderItem->quantity = $productData['quantity'];
@@ -550,15 +611,15 @@ private function resolvePaymentMethod($paymentMethod)
             // Dispatch OrderCreated notification
             try {
                 // Ensure used is loaded
-                if (!$order->relationLoaded('user')) {
+                if (! $order->relationLoaded('user')) {
                     $order->load('user');
                 }
-                
+
                 if ($order->user) {
-                    $order->user->notify(new \App\Notifications\OrderCreated($order, app(\App\Services\TelegramService::class)));
+                    $order->user->notify(new OrderCreated($order, app(TelegramService::class)));
                 }
             } catch (\Exception $e) {
-                \Illuminate\Support\Facades\Log::error('Failed to send OrderCreated notification: ' . $e->getMessage());
+                Log::error('Failed to send OrderCreated notification: '.$e->getMessage());
             }
 
             return response()->json([
@@ -568,10 +629,10 @@ private function resolvePaymentMethod($paymentMethod)
             ], Response::HTTP_CREATED);
         } catch (\Exception $e) {
             DB::rollBack();
-            
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to create order: ' . $e->getMessage(),
+                'message' => 'Failed to create order: '.$e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
@@ -580,8 +641,8 @@ private function resolvePaymentMethod($paymentMethod)
      * Display the specified order.
      *
      * @param  int  $id
-     * @return \Illuminate\Http\JsonResponse
-     * 
+     * @return JsonResponse
+     *
      * @OA\Get(
      *     path="/orders/{id}",
      *     summary="Get order details",
@@ -589,22 +650,28 @@ private function resolvePaymentMethod($paymentMethod)
      *     operationId="getOrderById",
      *     tags={"Orders"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         description="Order ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successful operation",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="data", ref="#/components/schemas/Order")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=403,
      *         description="Forbidden - User does not have permission"
@@ -629,7 +696,7 @@ private function resolvePaymentMethod($paymentMethod)
         if ($user->isTeacher()) {
             $hasPermission = true;
         } elseif ($order->environment_id) {
-            $environment = \App\Models\Environment::find($order->environment_id);
+            $environment = Environment::find($order->environment_id);
             if ($environment && $environment->owner_id === $user->id) {
                 $hasPermission = true;
             }
@@ -639,7 +706,7 @@ private function resolvePaymentMethod($paymentMethod)
                 $hasPermission = true;
             }
         }
-        if (!$hasPermission) {
+        if (! $hasPermission) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to view this order',
@@ -647,7 +714,7 @@ private function resolvePaymentMethod($paymentMethod)
         }
 
         // Resolve payment method name
-        $order->payment_method = $this->resolvePaymentMethod($order->payment_method);
+        $order->payment_method = $this->resolvePaymentMethod($order->payment_method, (int) $order->environment_id);
 
         return response()->json([
             'status' => 'success',
@@ -658,10 +725,9 @@ private function resolvePaymentMethod($paymentMethod)
     /**
      * Update the specified order status.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $id
-     * @return \Illuminate\Http\JsonResponse
-     * 
+     * @return JsonResponse
+     *
      * @OA\Put(
      *     path="/orders/{id}/status",
      *     summary="Update order status",
@@ -669,18 +735,23 @@ private function resolvePaymentMethod($paymentMethod)
      *     operationId="updateOrderStatus",
      *     tags={"Orders"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         description="Order ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\RequestBody(
      *         required=true,
      *         description="Order status data",
+     *
      *         @OA\JsonContent(
      *             required={"status"},
+     *
      *             @OA\Property(
      *                 property="status",
      *                 type="string",
@@ -695,16 +766,20 @@ private function resolvePaymentMethod($paymentMethod)
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Order status updated successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Order status updated successfully"),
      *             @OA\Property(property="data", ref="#/components/schemas/Order")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=403,
      *         description="Forbidden - User does not have permission"
@@ -729,7 +804,7 @@ private function resolvePaymentMethod($paymentMethod)
         if ($user->isTeacher()) {
             $hasPermission = true;
         } elseif ($order->environment_id) {
-            $environment = \App\Models\Environment::find($order->environment_id);
+            $environment = Environment::find($order->environment_id);
             if ($environment && $environment->owner_id === $user->id) {
                 $hasPermission = true;
             }
@@ -739,7 +814,7 @@ private function resolvePaymentMethod($paymentMethod)
                 $hasPermission = true;
             }
         }
-        if (!$hasPermission) {
+        if (! $hasPermission) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to view this order',
@@ -765,18 +840,18 @@ private function resolvePaymentMethod($paymentMethod)
         try {
             $oldStatus = $order->status;
             $newStatus = $request->status;
-            
+
             // Update order status
             $order->status = $newStatus;
-            
+
             if ($request->has('payment_id')) {
                 $order->payment_id = $request->payment_id;
             }
-            
+
             if ($request->has('notes')) {
                 $order->notes = $request->notes;
             }
-            
+
             $order->save();
 
             // If order is completed, create enrollments for course products
@@ -793,10 +868,10 @@ private function resolvePaymentMethod($paymentMethod)
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to update order status: ' . $e->getMessage(),
+                'message' => 'Failed to update order status: '.$e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
@@ -804,13 +879,12 @@ private function resolvePaymentMethod($paymentMethod)
     /**
      * Process a completed order by creating enrollments for course products.
      *
-     * @param  \App\Models\Order  $order
      * @return void
      */
     private function processCompletedOrder(Order $order)
     {
         $user = User::findOrFail($order->user_id);
-        
+
         // Ensure the user is associated with the environment where the order was placed
         if ($order->environment_id) {
             $environment = Environment::find($order->environment_id);
@@ -819,31 +893,31 @@ private function resolvePaymentMethod($paymentMethod)
                 $existingAssociation = $user->environments()
                     ->where('environment_id', $environment->id)
                     ->exists();
-                
+
                 // If not, create the association
-                if (!$existingAssociation) {
+                if (! $existingAssociation) {
                     $user->environments()->attach($environment->id, [
                         'joined_at' => now(),
                     ]);
                 }
             }
         }
-        
+
         foreach ($order->items as $item) {
             $product = $item->product;
-            
+
             // Skip if product is not found
-            if (!$product) {
+            if (! $product) {
                 continue;
             }
-            
+
             // Create enrollments for each course in the product
             foreach ($product->courses as $course) {
                 // Check if enrollment already exists
                 $existingEnrollment = Enrollment::where('user_id', $user->id)
                     ->where('course_id', $course->id)
                     ->first();
-                
+
                 if ($existingEnrollment) {
                     // Update existing enrollment if it's expired or cancelled
                     if (in_array($existingEnrollment->status, ['expired', 'cancelled'])) {
@@ -852,18 +926,18 @@ private function resolvePaymentMethod($paymentMethod)
                     }
                 } else {
                     // Create new enrollment
-                    $enrollment = new Enrollment();
+                    $enrollment = new Enrollment;
                     $enrollment->user_id = $user->id;
                     $enrollment->course_id = $course->id;
                     $enrollment->environment_id = $order->environment_id;
                     $enrollment->status = 'active';
                     $enrollment->enrolled_at = now();
-                    
+
                     // Set expiration date for subscription products
                     if ($product->is_subscription) {
                         $interval = $product->subscription_interval;
                         $count = (int) $product->subscription_interval_count;
-                        
+
                         switch ($interval) {
                             case 'daily':
                                 $enrollment->expires_at = now()->addDays($count);
@@ -879,7 +953,7 @@ private function resolvePaymentMethod($paymentMethod)
                                 break;
                         }
                     }
-                    
+
                     $enrollment->save();
                 }
             }
@@ -896,38 +970,38 @@ private function resolvePaymentMethod($paymentMethod)
         // Get the current environment
         $environmentId = session('current_environment_id');
         $prefix = 'CSL-'; // Default prefix
-        
+
         if ($environmentId) {
             // Try to get branding from the environment
             $environment = Environment::find($environmentId);
             if ($environment) {
                 // Get the active branding for this environment
                 $branding = $environment->brandings()->where('is_active', true)->first();
-                
-                if ($branding && !empty($branding->company_name)) {
+
+                if ($branding && ! empty($branding->company_name)) {
                     // Use first letters of company name as prefix
                     $words = explode(' ', $branding->company_name);
                     $prefix = '';
-                    
+
                     foreach ($words as $word) {
-                        if (!empty($word)) {
+                        if (! empty($word)) {
                             $prefix .= strtoupper(substr($word, 0, 1));
                         }
                     }
-                    
+
                     // Ensure prefix is at least 2 characters
                     if (strlen($prefix) < 2) {
                         $prefix = strtoupper(substr($branding->company_name, 0, 2));
                     }
-                    
+
                     $prefix .= '-';
                 }
             }
         }
-        
+
         $date = now()->format('Ymd');
         $random = strtoupper(\Illuminate\Support\Str::random(4));
-        
-        return $prefix . $date . '-' . $random;
+
+        return $prefix.$date.'-'.$random;
     }
 }
