@@ -6,6 +6,8 @@ use App\Models\Course;
 use App\Models\Environment;
 use App\Models\Product;
 use App\Models\SalesForm;
+use App\Models\Template;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -26,21 +28,31 @@ class SalesFormProductCoursesTest extends TestCase
     private function form(): SalesForm
     {
         $environment = Environment::factory()->create();
+        $user = User::factory()->create();
+
+        $template = Template::create([
+            'title' => 'Achat Chine',
+            'created_by' => $user->id,
+        ]);
 
         $course = Course::create([
             'title' => 'Formation en Achat en chine',
             'environment_id' => $environment->id,
+            'template_id' => $template->id,
+            'created_by' => $user->id,
         ]);
 
         $product = Product::create([
             'name' => 'Achat Chine',
             'environment_id' => $environment->id,
+            'created_by' => $user->id,
         ]);
         $product->courses()->attach($course->id);
 
         $form = SalesForm::create([
             'environment_id' => $environment->id,
             'title' => 'Formation en Achat Chine',
+            'created_by' => $user->id,
         ]);
         $form->products()->attach($product->id);
 
