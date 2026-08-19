@@ -333,7 +333,17 @@ class CertificateGenerationService
                 ['template' => $file]
             );
 
-            if ($response && $response->successful()) {
+            // makeAuthenticatedRequest returns null when the certificate
+            // service is unreachable. Reading ->status() on that null threw an
+            // Error, which catch (\Exception) below does not catch, turning a
+            // handled outage into an uncaught 500.
+            if ($response === null) {
+                Log::error('Certificate service unreachable while uploading template');
+
+                return null;
+            }
+
+            if ($response->successful()) {
                 return $response->json();
             }
 
