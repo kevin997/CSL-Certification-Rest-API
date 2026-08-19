@@ -56,6 +56,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | HTTPS Enforcement
+    |--------------------------------------------------------------------------
+    |
+    | Whether EnforceHttps refuses requests that did not arrive over TLS.
+    | Off by default: nginx already redirects http to https at the vhost, so
+    | this only governs traffic that reaches the app some other way. Turn it
+    | on once the container port is no longer published publicly.
+    |
+    */
+
+    'enforce_https' => (bool) env('ENFORCE_HTTPS', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |
