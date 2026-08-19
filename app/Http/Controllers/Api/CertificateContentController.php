@@ -17,33 +17,28 @@ use Illuminate\Support\Facades\Validator;
 /**
  * @OA\Schema(
  *     schema="CertificateContent",
- *     required={"activity_id", "title", "description", "template_type"},
+ *     required={"activity_id", "title"},
+ *
+ *     description="Mirrors the certificate_contents table. Signatory, branding
+ *     and sharing options are properties of the uploaded PDF template, not of
+ *     this record, and have no column here.",
  *
  *     @OA\Property(property="id", type="integer", format="int64", example=1),
- *     @OA\Property(property="activity_id", type="integer", format="int64", example=1),
- *     @OA\Property(property="title", type="string", example="CSL Certification of Completion"),
- *     @OA\Property(property="description", type="string", example="This certificate is awarded for successful completion of the CSL Certification Program"),
- *     @OA\Property(property="template_type", type="string", enum={"completion", "achievement", "participation", "custom"}, example="completion"),
- *     @OA\Property(property="background_image", type="string", example="certificates/backgrounds/standard.jpg", nullable=true),
- *     @OA\Property(property="logo", type="string", example="certificates/logos/csl-logo.png", nullable=true),
- *     @OA\Property(property="signature_image", type="string", example="certificates/signatures/director.png", nullable=true),
- *     @OA\Property(property="signatory_name", type="string", example="Dr. Jane Smith", nullable=true),
- *     @OA\Property(property="signatory_title", type="string", example="Program Director", nullable=true),
- *     @OA\Property(property="accent_color", type="string", example="#336699", nullable=true),
- *     @OA\Property(
- *         property="custom_fields",
- *         type="array",
- *
- *         @OA\Items(
- *             type="object",
- *
- *             @OA\Property(property="name", type="string", example="Course Duration"),
- *             @OA\Property(property="value", type="string", example="120 Hours"),
- *             @OA\Property(property="position", type="string", enum={"header", "body", "footer"}, example="body")
- *         )
- *     ),
+ *     @OA\Property(property="activity_id", type="integer", format="int64", example=382),
+ *     @OA\Property(property="title", type="string", example="Certificate of Completion"),
+ *     @OA\Property(property="description", type="string", nullable=true, example="Certificate for course completion"),
+ *     @OA\Property(property="template_path", type="string", nullable=true, example="templates/standard.pdf"),
+ *     @OA\Property(property="certificate_template_id", type="integer", format="int64", nullable=true, example=7),
+ *     @OA\Property(property="fields_config", type="object", nullable=true),
+ *     @OA\Property(property="completion_criteria", type="object", nullable=true),
+ *     @OA\Property(property="auto_issue", type="boolean", example=true),
+ *     @OA\Property(property="expiry_period", type="integer", nullable=true, example=3),
+ *     @OA\Property(property="expiry_period_unit", type="string", enum={"days", "months", "years"}, example="years"),
+ *     @OA\Property(property="metadata", type="object", nullable=true),
+ *     @OA\Property(property="created_by", type="integer", format="int64", example=22),
  *     @OA\Property(property="created_at", type="string", format="date-time"),
- *     @OA\Property(property="updated_at", type="string", format="date-time")
+ *     @OA\Property(property="updated_at", type="string", format="date-time"),
+ *     @OA\Property(property="deleted_at", type="string", format="date-time", nullable=true)
  * )
  */
 class CertificateContentController extends Controller
@@ -173,19 +168,16 @@ class CertificateContentController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'description' => 'required|string',
-            'certificate_type' => 'required|string|in:completion,achievement,participation,custom',
-            'template_design' => 'required|string|in:standard,premium,custom',
+            // Only columns that exist on certificate_contents are validated.
+            // certificate_type, template_design, signatory_*, custom_fields,
+            // download_formats, sharing_platforms, allow_*, verification_* and
+            // the *_url fields have no column and no reader anywhere in the
+            // app: $fillable dropped them on save and certificate generation
+            // takes its values from the PDF template's own declared fields.
+            // Requiring them rejected valid requests for data the API then
+            // discarded. Persisting them would need a schema change and a
+            // generation change, not a validation rule.
             'certificate_template_id' => 'nullable|exists:certificate_templates,id',
-            'background_image_url' => 'nullable|string|url',
-            'logo_url' => 'nullable|string|url',
-            'signature_image_url' => 'nullable|string|url',
-            'signatory_name' => 'required|string|max:255',
-            'signatory_title' => 'required|string|max:255',
-            'signatory_organization' => 'nullable|string|max:255',
-            'custom_fields' => 'nullable|array',
-            'custom_fields.*.name' => 'required_with:custom_fields|string|max:100',
-            'custom_fields.*.value' => 'required_with:custom_fields|string|max:255',
-            'custom_fields.*.display_on_certificate' => 'boolean',
             'completion_criteria' => 'required|array',
             'completion_criteria.type' => 'required|string|in:all_activities,percentage,specific_activities',
             'completion_criteria.value' => 'required_if:completion_criteria.type,percentage|nullable|integer|min:1|max:100',
@@ -193,14 +185,6 @@ class CertificateContentController extends Controller
             'completion_criteria.activities.*' => 'integer|exists:activities,id',
             'expiry_period' => 'nullable|integer', // number of time units, null means never expires
             'expiry_period_unit' => 'required_with:expiry_period|string|in:days,months,years',
-            'allow_download' => 'boolean',
-            'download_formats' => 'required_if:allow_download,true|array',
-            'download_formats.*' => 'string|in:pdf,jpg,png',
-            'allow_sharing' => 'boolean',
-            'sharing_platforms' => 'required_if:allow_sharing,true|array',
-            'sharing_platforms.*' => 'string|in:linkedin,facebook,twitter,email',
-            'verification_enabled' => 'boolean',
-            'verification_method' => 'required_if:verification_enabled,true|string|in:qr,link,code',
         ]);
 
         if ($validator->fails()) {
@@ -233,20 +217,8 @@ class CertificateContentController extends Controller
         }
 
         // Handle arrays that need to be stored as JSON
-        if ($request->has('custom_fields')) {
-            $data['custom_fields'] = json_encode($request->custom_fields);
-        }
-
         if ($request->has('completion_criteria')) {
             $data['completion_criteria'] = json_encode($request->completion_criteria);
-        }
-
-        if ($request->has('download_formats')) {
-            $data['download_formats'] = json_encode($request->download_formats);
-        }
-
-        if ($request->has('sharing_platforms')) {
-            $data['sharing_platforms'] = json_encode($request->sharing_platforms);
         }
 
         // Add activity_id to data
@@ -453,18 +425,15 @@ class CertificateContentController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'string|max:255',
             'description' => 'string',
-            'certificate_type' => 'string|in:completion,achievement,participation,custom',
-            'template_design' => 'string|in:standard,premium,custom',
-            'background_image_url' => 'nullable|string|url',
-            'logo_url' => 'nullable|string|url',
-            'signature_image_url' => 'nullable|string|url',
-            'signatory_name' => 'string|max:255',
-            'signatory_title' => 'string|max:255',
-            'signatory_organization' => 'nullable|string|max:255',
-            'custom_fields' => 'nullable|array',
-            'custom_fields.*.name' => 'required_with:custom_fields|string|max:100',
-            'custom_fields.*.value' => 'required_with:custom_fields|string|max:255',
-            'custom_fields.*.display_on_certificate' => 'boolean',
+            // Only columns that exist on certificate_contents are validated.
+            // certificate_type, template_design, signatory_*, custom_fields,
+            // download_formats, sharing_platforms, allow_*, verification_* and
+            // the *_url fields have no column and no reader anywhere in the
+            // app: $fillable dropped them on save and certificate generation
+            // takes its values from the PDF template's own declared fields.
+            // Requiring them rejected valid requests for data the API then
+            // discarded. Persisting them would need a schema change and a
+            // generation change, not a validation rule.
             'completion_criteria' => 'array',
             'completion_criteria.type' => 'string|in:all_activities,percentage,specific_activities',
             'completion_criteria.value' => 'required_if:completion_criteria.type,percentage|nullable|integer|min:1|max:100',
@@ -472,14 +441,6 @@ class CertificateContentController extends Controller
             'completion_criteria.activities.*' => 'integer|exists:activities,id',
             'expiry_period' => 'nullable|integer',
             'expiry_period_unit' => 'required_with:expiry_period|string|in:days,months,years',
-            'allow_download' => 'boolean',
-            'download_formats' => 'required_if:allow_download,true|array',
-            'download_formats.*' => 'string|in:pdf,jpg,png',
-            'allow_sharing' => 'boolean',
-            'sharing_platforms' => 'required_if:allow_sharing,true|array',
-            'sharing_platforms.*' => 'string|in:linkedin,facebook,twitter,email',
-            'verification_enabled' => 'boolean',
-            'verification_method' => 'required_if:verification_enabled,true|string|in:qr,link,code',
         ]);
 
         if ($validator->fails()) {
@@ -506,20 +467,8 @@ class CertificateContentController extends Controller
         }
 
         // Handle arrays that need to be stored as JSON
-        if ($request->has('custom_fields')) {
-            $updateData['custom_fields'] = json_encode($request->custom_fields);
-        }
-
         if ($request->has('completion_criteria')) {
             $updateData['completion_criteria'] = json_encode($request->completion_criteria);
-        }
-
-        if ($request->has('download_formats')) {
-            $updateData['download_formats'] = json_encode($request->download_formats);
-        }
-
-        if ($request->has('sharing_platforms')) {
-            $updateData['sharing_platforms'] = json_encode($request->sharing_platforms);
         }
 
         $certificateContent->update($updateData);
