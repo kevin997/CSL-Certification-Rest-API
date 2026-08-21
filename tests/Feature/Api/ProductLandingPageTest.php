@@ -3,6 +3,7 @@
 namespace Tests\Feature\Api;
 
 use App\Models\Environment;
+use App\Models\EnvironmentUser;
 use App\Models\Product;
 use App\Models\ProductLandingPage;
 use App\Models\User;
@@ -12,6 +13,26 @@ use Tests\TestCase;
 class ProductLandingPageTest extends TestCase
 {
     use RefreshDatabase;
+
+    /**
+     * A user who may manage the environment's products.
+     *
+     * These endpoints authorise on environment membership and role, not on
+     * being signed in: learners are members too. A bare User::factory() user
+     * is now correctly refused.
+     */
+    private function manager(Environment $environment): User
+    {
+        $user = User::factory()->create();
+
+        EnvironmentUser::create([
+            'environment_id' => $environment->id,
+            'user_id' => $user->id,
+            'role' => 'owner',
+        ]);
+
+        return $user;
+    }
 
     private function product(Environment $environment): Product
     {
@@ -47,7 +68,7 @@ class ProductLandingPageTest extends TestCase
     {
         $environment = Environment::factory()->create();
         $product = $this->product($environment);
-        $user = User::factory()->create();
+        $user = $this->manager($environment);
 
         $response = $this->actingAs($user)
             ->withSession(['current_environment_id' => $environment->id])
@@ -63,7 +84,7 @@ class ProductLandingPageTest extends TestCase
     {
         $environment = Environment::factory()->create();
         $product = $this->product($environment);
-        $user = User::factory()->create();
+        $user = $this->manager($environment);
 
         $payload = [
             'page_data' => ['content' => [], 'root' => ['props' => []]],
@@ -92,7 +113,7 @@ class ProductLandingPageTest extends TestCase
     {
         $environment = Environment::factory()->create();
         $product = $this->product($environment);
-        $user = User::factory()->create();
+        $user = $this->manager($environment);
 
         $pageData = ['content' => [['type' => 'Heading']], 'root' => ['props' => []]];
 
@@ -160,7 +181,7 @@ class ProductLandingPageTest extends TestCase
     {
         $environment = Environment::factory()->create();
         $product = $this->product($environment);
-        $user = User::factory()->create();
+        $user = $this->manager($environment);
 
         $this->actingAs($user)
             ->withSession(['current_environment_id' => $environment->id])
@@ -175,7 +196,8 @@ class ProductLandingPageTest extends TestCase
         $mine = Environment::factory()->create();
         $theirs = Environment::factory()->create();
         $product = $this->product($theirs);
-        $user = User::factory()->create();
+        // A manager of my own environment, reaching for theirs.
+        $user = $this->manager($mine);
 
         $this->actingAs($user)
             ->withSession(['current_environment_id' => $mine->id])

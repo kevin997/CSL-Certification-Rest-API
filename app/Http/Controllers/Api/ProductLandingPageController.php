@@ -4,16 +4,105 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Environment;
+use App\Models\EnvironmentUser;
 use App\Models\Product;
 use App\Models\ProductLandingPage;
 use App\Scopes\EnvironmentScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 
 class ProductLandingPageController extends Controller
 {
+    /**
+     * Environment membership roles that may manage a product's marketing page.
+     *
+     * Learners are environment members too (`learner`, `company_learner`), so
+     * membership alone is not authorisation.
+     *
+     * @var list<string>
+     */
+    private const MANAGING_ROLES = ['owner', 'company_team_member'];
+
+    /**
+     * Platform-wide roles that may manage any product's page.
+     *
+     * @var list<string>
+     */
+    private const PLATFORM_ROLES = ['super_admin', 'admin'];
+
+    /**
+     * The product this request is allowed to manage, or the response to send.
+     *
+     * EnvironmentScope is deliberately not relied on for this. It applies only
+     * when the session carries a current_environment_id -- a bearer-token
+     * client on a host DetectEnvironment cannot resolve gets no filtering at
+     * all -- and even when it does apply it matches rows whose environment_id
+     * is null. Membership is therefore established here rather than inferred
+     * from a query scope.
+     *
+     * A product outside the caller's environments is reported as missing, so
+     * this does not confirm which products another tenant owns. Insufficient
+     * role inside their own environment is a 403, which is the honest answer.
+     */
+    private function manageableProduct(int $id): Product|JsonResponse
+    {
+        $user = Auth::user();
+
+        $missing = response()->json([
+            'status' => 'error',
+            'message' => 'Product not found',
+        ], Response::HTTP_NOT_FOUND);
+
+        if (! $user) {
+            return $missing;
+        }
+
+        $product = Product::withoutGlobalScope(EnvironmentScope::class)->find($id);
+
+        // A product belonging to no environment has no membership to check
+        // against, so nobody but platform staff can manage its page.
+        if (! $product) {
+            return $missing;
+        }
+
+        // Null-safe: role is nullable on users, and a user without one is not
+        // platform staff rather than a 500.
+        if (in_array($user->role?->value, self::PLATFORM_ROLES, true)) {
+            return $product;
+        }
+
+        if (! $product->environment_id) {
+            return $missing;
+        }
+
+        $environment = Environment::withoutGlobalScope(EnvironmentScope::class)
+            ->find($product->environment_id);
+
+        if ($environment && (int) $environment->owner_id === (int) $user->id) {
+            return $product;
+        }
+
+        $membership = EnvironmentUser::where('environment_id', $product->environment_id)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if (! $membership) {
+            return $missing;
+        }
+
+        if (! in_array($membership->role, self::MANAGING_ROLES, true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You do not have permission to manage this product.',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        return $product;
+    }
+
     /**
      * The page for a product, or an empty one.
      *
@@ -22,15 +111,10 @@ class ProductLandingPageController extends Controller
      */
     public function show(int $id): JsonResponse
     {
-        // Product::find applies the environment global scope, so another
-        // tenant's product is simply absent.
-        $product = Product::find($id);
+        $product = $this->manageableProduct($id);
 
-        if (! $product) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Product not found',
-            ], Response::HTTP_NOT_FOUND);
+        if ($product instanceof JsonResponse) {
+            return $product;
         }
 
         $page = ProductLandingPage::where('product_id', $product->id)->first();
@@ -52,13 +136,10 @@ class ProductLandingPageController extends Controller
 
     public function update(Request $request, int $id): JsonResponse
     {
-        $product = Product::find($id);
+        $product = $this->manageableProduct($id);
 
-        if (! $product) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Product not found',
-            ], Response::HTTP_NOT_FOUND);
+        if ($product instanceof JsonResponse) {
+            return $product;
         }
 
         $validator = Validator::make($request->all(), [
@@ -94,13 +175,10 @@ class ProductLandingPageController extends Controller
 
     public function toggle(Request $request, int $id): JsonResponse
     {
-        $product = Product::find($id);
+        $product = $this->manageableProduct($id);
 
-        if (! $product) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Product not found',
-            ], Response::HTTP_NOT_FOUND);
+        if ($product instanceof JsonResponse) {
+            return $product;
         }
 
         $validator = Validator::make($request->all(), [
