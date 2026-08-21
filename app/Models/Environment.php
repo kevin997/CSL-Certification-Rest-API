@@ -129,8 +129,8 @@ class Environment extends Model
 
     /**
      * Resolve an environment from the identifier the storefront carries in its
-     * `{domain}` URL segment: a numeric id, a primary domain, a subdomain, or
-     * one of the additional domains.
+     * `{domain}` URL segment: a numeric id, a primary domain, or one of the
+     * additional domains.
      *
      * Unlike findByDomain() this is not cached and does not filter on
      * is_active, because the storefront routes rely on it to resolve
