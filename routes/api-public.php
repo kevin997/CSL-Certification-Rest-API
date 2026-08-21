@@ -1,12 +1,14 @@
 <?php
 
+use App\Http\Controllers\Api\AnalyticsWidgetsController;
 use App\Http\Controllers\Api\BrandingController;
 use App\Http\Controllers\Api\CampaignFunderController;
-use App\Http\Controllers\Api\AnalyticsWidgetsController;
 use App\Http\Controllers\Api\EnvironmentController;
 use App\Http\Controllers\Api\LandingPagePopupController;
 use App\Http\Controllers\Api\LegalPageController;
 use App\Http\Controllers\Api\MarketingUnsubscribeController;
+use App\Http\Controllers\Api\ProductLandingPageController;
+use App\Http\Controllers\Api\Sales\SalesFormSubmissionController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\ThirdPartyServiceController;
 use App\Http\Controllers\Api\TokenController;
@@ -39,6 +41,9 @@ Route::get('/legal-pages/public/{pageType}', [LegalPageController::class, 'getPu
 // Public landing page - returns landing page configuration based on domain
 Route::get('/branding/public/landing-page', [BrandingController::class, 'getPublicLandingPage']);
 
+// Public product landing page - resolved by request domain and product slug
+Route::get('/products/public/landing-page', [ProductLandingPageController::class, 'publicShow']);
+
 // Public landing page popups - returns active popups based on domain
 Route::get('/branding/public/popups', [LandingPagePopupController::class, 'publicPopups']);
 
@@ -53,8 +58,8 @@ Route::post('/funders/webhooks/tara', [CampaignFunderController::class, 'handleT
 Route::post('/webhooks/media/processing', [MediaAssetController::class, 'processingWebhook']);
 
 // Public Sales Forms (render + submit). No authentication required.
-Route::get('/sales-forms/public/{slug}', [\App\Http\Controllers\Api\Sales\SalesFormSubmissionController::class, 'publicShow']);
-Route::post('/sales-forms/public/{slug}/submit', [\App\Http\Controllers\Api\Sales\SalesFormSubmissionController::class, 'submit']);
+Route::get('/sales-forms/public/{slug}', [SalesFormSubmissionController::class, 'publicShow']);
+Route::post('/sales-forms/public/{slug}/submit', [SalesFormSubmissionController::class, 'submit']);
 
 // Public WhatsApp config - returns WhatsApp button config based on domain
 Route::get('/integrations/whatsapp/config', [ThirdPartyServiceController::class, 'getWhatsAppConfig']);

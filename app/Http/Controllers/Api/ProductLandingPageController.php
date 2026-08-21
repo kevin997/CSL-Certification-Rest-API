@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Environment;
 use App\Models\Product;
 use App\Models\ProductLandingPage;
+use App\Scopes\EnvironmentScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -122,6 +124,71 @@ class ProductLandingPageController extends Controller
         return response()->json([
             'status' => 'success',
             'data' => $page,
+        ]);
+    }
+
+    /**
+     * The published page for a product, resolved by request domain.
+     *
+     * Public requests carry no session, so EnvironmentScope -- which reads
+     * session('current_environment_id') -- would match nothing. The scope is
+     * dropped and the environment filtered explicitly, as
+     * BrandingController::getPublicLandingPage does.
+     */
+    public function publicShow(Request $request): JsonResponse
+    {
+        $domain = $request->header('X-Frontend-Domain')
+            ?? $request->header('X-Forwarded-Host')
+            ?? $request->query('domain')
+            ?? $request->getHost();
+
+        $domain = preg_replace('/:\d+$/', '', $domain);
+
+        $environment = Environment::where('primary_domain', $domain)
+            ->orWhere('primary_domain', 'LIKE', '%'.$domain.'%')
+            ->first();
+
+        if (! $environment) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Environment not found for domain',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        $product = Product::withoutGlobalScope(EnvironmentScope::class)
+            ->where('environment_id', $environment->id)
+            ->where('slug', (string) $request->query('slug'))
+            ->first();
+
+        if (! $product) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Product not found',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        $page = ProductLandingPage::withoutGlobalScope(EnvironmentScope::class)
+            ->where('product_id', $product->id)
+            ->where('enabled', true)
+            ->first();
+
+        if (! $page) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Landing page not published',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        // Only what the page renders. The product row is not public.
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'product_id' => $product->id,
+                'product_name' => $product->name,
+                'page_data' => $page->page_data,
+                'seo_title' => $page->seo_title,
+                'seo_description' => $page->seo_description,
+            ],
         ]);
     }
 }
