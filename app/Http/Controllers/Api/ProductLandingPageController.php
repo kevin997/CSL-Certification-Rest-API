@@ -168,6 +168,7 @@ class ProductLandingPageController extends Controller
         }
 
         $page = ProductLandingPage::withoutGlobalScope(EnvironmentScope::class)
+            ->where('environment_id', $environment->id)
             ->where('product_id', $product->id)
             ->where('enabled', true)
             ->first();
