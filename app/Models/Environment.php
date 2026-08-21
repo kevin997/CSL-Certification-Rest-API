@@ -144,8 +144,12 @@ class Environment extends Model
 
         $domain = strtolower(trim($identifier));
 
+        // No subdomain clause: environments has primary_domain and
+        // additional_domains, and never had a subdomain column. The clause this
+        // replaces raised SQLSTATE[42S22] on every non-numeric identifier, so
+        // /api/storefront/{domain}/... has been returning 500 since at least
+        // 2026-08-10 while numeric ids worked.
         return static::whereRaw('LOWER(primary_domain) = ?', [$domain])
-            ->orWhereRaw('LOWER(subdomain) = ?', [$domain])
             ->orWhere(function ($query) use ($domain) {
                 $query->whereNotNull('additional_domains')
                     ->whereJsonContains('additional_domains', $domain);
