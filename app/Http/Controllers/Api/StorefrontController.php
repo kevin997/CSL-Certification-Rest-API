@@ -67,19 +67,7 @@ class StorefrontController extends Controller
      */
     protected function getEnvironmentById(string $environmentId)
     {
-        if (is_numeric($environmentId)) {
-            return Environment::find($environmentId);
-        }
-
-        $domain = strtolower(trim($environmentId));
-
-        return Environment::whereRaw('LOWER(primary_domain) = ?', [$domain])
-            ->orWhereRaw('LOWER(subdomain) = ?', [$domain])
-            ->orWhere(function ($query) use ($domain) {
-                $query->whereNotNull('additional_domains')
-                    ->whereJsonContains('additional_domains', $domain);
-            })
-            ->first();
+        return Environment::resolveByIdentifier($environmentId);
     }
 
     /**

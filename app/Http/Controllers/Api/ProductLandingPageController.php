@@ -74,14 +74,15 @@ class ProductLandingPageController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+        // Only the keys the client actually sent. The editor saves the built
+        // page and the SEO fields through separate requests, so writing every
+        // column unconditionally made each save null the other one's work.
+        $attributes = $validator->validated();
+        $attributes['environment_id'] = $product->environment_id;
+
         $page = ProductLandingPage::updateOrCreate(
             ['product_id' => $product->id],
-            [
-                'environment_id' => $product->environment_id,
-                'page_data' => $request->input('page_data'),
-                'seo_title' => $request->input('seo_title'),
-                'seo_description' => $request->input('seo_description'),
-            ]
+            $attributes
         );
 
         return response()->json([
@@ -128,7 +129,7 @@ class ProductLandingPageController extends Controller
     }
 
     /**
-     * The published page for a product, resolved by request domain.
+     * The published page for a product, resolved by storefront identifier.
      *
      * Public requests carry no session, so EnvironmentScope -- which reads
      * session('current_environment_id') -- would match nothing. The scope is
@@ -137,16 +138,7 @@ class ProductLandingPageController extends Controller
      */
     public function publicShow(Request $request): JsonResponse
     {
-        $domain = $request->header('X-Frontend-Domain')
-            ?? $request->header('X-Forwarded-Host')
-            ?? $request->query('domain')
-            ?? $request->getHost();
-
-        $domain = preg_replace('/:\d+$/', '', $domain);
-
-        $environment = Environment::where('primary_domain', $domain)
-            ->orWhere('primary_domain', 'LIKE', '%'.$domain.'%')
-            ->first();
+        $environment = $this->resolveEnvironment($request);
 
         if (! $environment) {
             return response()->json([
@@ -167,10 +159,15 @@ class ProductLandingPageController extends Controller
             ], Response::HTTP_NOT_FOUND);
         }
 
+        // enabled and page_data move independently -- the switch can be turned
+        // on before anything has been built -- and a row with no page_data
+        // renders as an error, which is exactly what the redirect exists to
+        // avoid. Treat it as unpublished.
         $page = ProductLandingPage::withoutGlobalScope(EnvironmentScope::class)
             ->where('environment_id', $environment->id)
             ->where('product_id', $product->id)
             ->where('enabled', true)
+            ->whereNotNull('page_data')
             ->first();
 
         if (! $page) {
@@ -191,5 +188,35 @@ class ProductLandingPageController extends Controller
                 'seo_description' => $page->seo_description,
             ],
         ]);
+    }
+
+    /**
+     * Resolve the tenant for a public request.
+     *
+     * The storefront passes the `{domain}` segment of its own URL, which is the
+     * identifier the sibling catalog route resolves with: a numeric id, a
+     * primary domain, a subdomain or an additional domain. Resolving from the
+     * request Host instead only ever matched a custom primary domain, so on a
+     * subdomain or the shared host the page redirected forever.
+     *
+     * The Host is kept as a fallback for callers that send no identifier.
+     */
+    private function resolveEnvironment(Request $request): ?Environment
+    {
+        $identifier = trim((string) $request->query('domain'));
+
+        if ($identifier !== '') {
+            return Environment::resolveByIdentifier($identifier);
+        }
+
+        $host = $request->header('X-Frontend-Domain')
+            ?? $request->header('X-Forwarded-Host')
+            ?? $request->getHost();
+
+        $host = preg_replace('/:\d+$/', '', $host);
+
+        return Environment::where('primary_domain', $host)
+            ->orWhere('primary_domain', 'LIKE', '%'.$host.'%')
+            ->first();
     }
 }

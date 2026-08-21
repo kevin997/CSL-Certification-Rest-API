@@ -128,6 +128,32 @@ class Environment extends Model
     }
 
     /**
+     * Resolve an environment from the identifier the storefront carries in its
+     * `{domain}` URL segment: a numeric id, a primary domain, a subdomain, or
+     * one of the additional domains.
+     *
+     * Unlike findByDomain() this is not cached and does not filter on
+     * is_active, because the storefront routes rely on it to resolve
+     * environments that are still being set up.
+     */
+    public static function resolveByIdentifier(string $identifier): ?self
+    {
+        if (is_numeric($identifier)) {
+            return static::find($identifier);
+        }
+
+        $domain = strtolower(trim($identifier));
+
+        return static::whereRaw('LOWER(primary_domain) = ?', [$domain])
+            ->orWhereRaw('LOWER(subdomain) = ?', [$domain])
+            ->orWhere(function ($query) use ($domain) {
+                $query->whereNotNull('additional_domains')
+                    ->whereJsonContains('additional_domains', $domain);
+            })
+            ->first();
+    }
+
+    /**
      * Get the owner of the environment.
      */
     public function owner(): BelongsTo
