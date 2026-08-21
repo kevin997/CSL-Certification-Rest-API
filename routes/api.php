@@ -80,6 +80,7 @@ use App\Http\Controllers\Api\PlatformPaymentController;
 use App\Http\Controllers\Api\ProductAssetController;
 use App\Http\Controllers\Api\ProductCategoryController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\ProductLandingPageController;
 use App\Http\Controllers\Api\ProductReviewController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\PushSubscriptionController;
@@ -806,6 +807,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/branding/{id}/landing-page', [BrandingController::class, 'getLandingPageConfig'])->where('id', '[0-9]+');
     Route::put('/branding/{id}/landing-page', [BrandingController::class, 'updateLandingPageConfig'])->where('id', '[0-9]+');
     Route::post('/branding/{id}/landing-page/toggle', [BrandingController::class, 'toggleLandingPage'])->where('id', '[0-9]+');
+    Route::get('/products/{id}/landing-page', [ProductLandingPageController::class, 'show'])->where('id', '[0-9]+');
+    Route::put('/products/{id}/landing-page', [ProductLandingPageController::class, 'update'])->where('id', '[0-9]+');
+    Route::post('/products/{id}/landing-page/toggle', [ProductLandingPageController::class, 'toggle'])->where('id', '[0-9]+');
 
     // Landing Page Popup Routes
     Route::get('/branding/{brandingId}/popups', [LandingPagePopupController::class, 'index'])->where('brandingId', '[0-9]+');

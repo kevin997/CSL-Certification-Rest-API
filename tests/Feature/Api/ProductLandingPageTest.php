@@ -42,4 +42,76 @@ class ProductLandingPageTest extends TestCase
         $this->assertSame($product->id, $page->product->id);
         $this->assertIsArray($page->fresh()->page_data);
     }
+
+    public function test_show_returns_an_empty_page_without_creating_a_row(): void
+    {
+        $environment = Environment::factory()->create();
+        $product = $this->product($environment);
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)
+            ->withSession(['current_environment_id' => $environment->id])
+            ->getJson("/api/products/{$product->id}/landing-page");
+
+        $response->assertOk();
+        $response->assertJsonPath('data.enabled', false);
+        $response->assertJsonPath('data.page_data', null);
+        $this->assertDatabaseCount('product_landing_pages', 0);
+    }
+
+    public function test_update_creates_then_updates_the_same_row(): void
+    {
+        $environment = Environment::factory()->create();
+        $product = $this->product($environment);
+        $user = User::factory()->create();
+
+        $payload = [
+            'page_data' => ['content' => [], 'root' => ['props' => []]],
+            'seo_title' => 'Buy Pro Course',
+            'seo_description' => 'The best course',
+        ];
+
+        $this->actingAs($user)
+            ->withSession(['current_environment_id' => $environment->id])
+            ->putJson("/api/products/{$product->id}/landing-page", $payload)
+            ->assertOk();
+
+        $this->actingAs($user)
+            ->withSession(['current_environment_id' => $environment->id])
+            ->putJson("/api/products/{$product->id}/landing-page", [
+                'page_data' => ['content' => [], 'root' => ['props' => []]],
+                'seo_title' => 'Buy It Now',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseCount('product_landing_pages', 1);
+        $this->assertSame('Buy It Now', ProductLandingPage::withoutGlobalScopes()->first()->seo_title);
+    }
+
+    public function test_toggle_publishes_the_page(): void
+    {
+        $environment = Environment::factory()->create();
+        $product = $this->product($environment);
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->withSession(['current_environment_id' => $environment->id])
+            ->postJson("/api/products/{$product->id}/landing-page/toggle", ['enabled' => true])
+            ->assertOk();
+
+        $this->assertTrue(ProductLandingPage::withoutGlobalScopes()->first()->enabled);
+    }
+
+    public function test_another_environments_product_is_not_found(): void
+    {
+        $mine = Environment::factory()->create();
+        $theirs = Environment::factory()->create();
+        $product = $this->product($theirs);
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->withSession(['current_environment_id' => $mine->id])
+            ->getJson("/api/products/{$product->id}/landing-page")
+            ->assertNotFound();
+    }
 }
