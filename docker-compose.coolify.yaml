@@ -1,0 +1,68 @@
+# Deployment descriptor for Coolify.
+#
+# Three containers, where the previous deployment ran seven. That is deliberate.
+#
+# CONTAINER_ROLE does not select a workload. supervisord.conf declares every
+# program in one file: laravel-queue (twice), laravel-scheduler, kafka-consumer,
+# kafka-outbox-processor, nightwatch-agent and order-regularizer. Any role whose
+# entrypoint branch execs supervisord therefore starts all of them.
+#
+# Five roles did (queue, scheduler, kafka-consumer, outbox-processor,
+# nightwatch), so FIVE Laravel schedulers ran concurrently and every scheduled
+# task in this service fired five times. One worker container gives one of each.
+#
+# Two roles do not exec supervisord and still need their own container:
+#   app    - nginx and php-fpm, listening on 80
+#   reverb - artisan reverb:start, listening on 8080 inside the container
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      CONTAINER_ROLE: app
+    ports:
+      - "${APP_HOST_PORT:-8080}:80"
+    networks:
+      - csl-shared-network
+
+  reverb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      CONTAINER_ROLE: reverb
+    # Reverb listens on 8080 inside and has always been published as 8085.
+    # certificationnotify.csl-brands.com proxies to it, and returns 404 to a
+    # plain GET by design: it only answers websocket upgrades at /app/{key}.
+    ports:
+      - "${REVERB_HOST_PORT:-8085}:8080"
+    networks:
+      - csl-shared-network
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # Any supervisord role starts every program, for the reason above.
+      CONTAINER_ROLE: queue
+    # The image healthcheck curls a web port this container does not serve.
+    # Check the supervisor that owns these processes instead.
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x supervisord >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - csl-shared-network
+
+networks:
+  # Owned by the CSL-DevOps stack, which holds csl-mysql-certification and
+  # csl-kafka. External means join it, never create it.
+  csl-shared-network:
+    external: true
