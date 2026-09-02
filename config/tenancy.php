@@ -43,6 +43,18 @@ return [
 
     'domain_probe' => [
         'http_timeout_seconds' => (int) env('TENANCY_DOMAIN_PROBE_TIMEOUT', 5),
+
+        /*
+         * A domain counts as live only when it serves the KURSA frontend, not
+         * merely when something answers on it: a customer's existing site or a
+         * parking page would otherwise capture every link for that tenant.
+         * Recognised by this response header, or failing that by any of these
+         * strings in the body.
+         */
+        'body_markers' => array_values(array_filter(explode(
+            ',',
+            env('TENANCY_DOMAIN_PROBE_BODY_MARKERS', '__NEXT_DATA__,/_next/static')
+        ))),
     ],
 
     // Lifetime of the one-time sign-in token minted at onboarding.

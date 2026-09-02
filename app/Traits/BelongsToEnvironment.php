@@ -3,6 +3,7 @@
 namespace App\Traits;
 
 use App\Models\Environment;
+use App\Models\EnvironmentUser;
 use App\Scopes\EnvironmentScope;
 use App\Support\Tenancy\EnvironmentContext;
 use App\Support\Tenancy\EnvironmentResolver;
@@ -76,8 +77,14 @@ trait BelongsToEnvironment
 
     /**
      * The environment new rows are stamped with: the resolved request context
-     * first, then an explicit environment_id input (console and queue callers
-     * pass one), else null. There is deliberately no fallback tenant.
+     * first, then an explicit environment_id the caller supplied, then the
+     * session, else null. There is deliberately no fallback tenant.
+     *
+     * The supplied value is membership-checked. Several endpoints pass their
+     * environment in the request rather than relying on the host, so the path
+     * has to stay; unchecked, it let any authenticated caller stamp a row into
+     * another tenant simply by naming it. A caller with no authenticated user
+     * (console, queue) is trusted as before.
      */
     public static function detectEnvironmentId()
     {
@@ -89,7 +96,14 @@ trait BelongsToEnvironment
         }
 
         if ($request && $request->has('environment_id')) {
-            return $request->input('environment_id');
+            $requested = $request->input('environment_id');
+            $user = $request->user();
+
+            if (! $user || self::userBelongsToEnvironment($user, (int) $requested)) {
+                return $requested;
+            }
+
+            return null;
         }
 
         if (session()->has('current_environment_id')) {
@@ -97,5 +111,22 @@ trait BelongsToEnvironment
         }
 
         return null;
+    }
+
+    /**
+     * Owner or member of the environment they named.
+     */
+    private static function userBelongsToEnvironment($user, int $environmentId): bool
+    {
+        $userId = (int) $user->getAuthIdentifier();
+
+        if (Environment::query()->whereKey($environmentId)->where('owner_id', $userId)->exists()) {
+            return true;
+        }
+
+        return EnvironmentUser::query()
+            ->where('environment_id', $environmentId)
+            ->where('user_id', $userId)
+            ->exists();
     }
 }

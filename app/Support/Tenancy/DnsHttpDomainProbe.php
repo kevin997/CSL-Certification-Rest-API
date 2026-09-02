@@ -37,15 +37,42 @@ final class DnsHttpDomainProbe implements DomainProbe
         try {
             $response = Http::timeout((int) config('tenancy.domain_probe.http_timeout_seconds', 5))
                 ->withoutRedirecting()
-                ->head('https://'.$host.'/');
+                ->get('https://'.$host.'/');
 
-            // Anything below 500 means a server is answering for this host; a 404
-            // or a redirect still proves the domain is wired up.
-            return $response->status() < 500;
+            // "Something answers" is not enough. A customer's existing site, a
+            // parking page or a registrar redirect all answer, and stamping the
+            // flag on one of those moves every link for that tenant to the wrong
+            // place permanently. Require a 2xx that carries the frontend's own
+            // marker, so the domain is only live once it serves KURSA.
+            if (! $response->successful()) {
+                return false;
+            }
+
+            return $this->looksLikeTheFrontend($response->header('X-Kursa-App'), (string) $response->body());
         } catch (Throwable $e) {
             Log::info('tenancy.domain_probe_failed', ['host' => $host, 'reason' => $e->getMessage()]);
 
             return false;
         }
+    }
+
+    /**
+     * The frontend is recognised by a response header it sets, falling back to
+     * the marker its HTML carries. Both are cheap and neither matches a parking
+     * page. A tenant domain stays pending until one of them appears.
+     */
+    private function looksLikeTheFrontend(?string $header, string $body): bool
+    {
+        if (filled($header)) {
+            return true;
+        }
+
+        foreach ((array) config('tenancy.domain_probe.body_markers', []) as $marker) {
+            if ($marker !== '' && str_contains($body, (string) $marker)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

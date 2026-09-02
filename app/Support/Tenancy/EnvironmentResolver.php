@@ -3,8 +3,6 @@
 namespace App\Support\Tenancy;
 
 use App\Models\Environment;
-use App\Models\EnvironmentUser;
-use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -158,11 +156,15 @@ final class EnvironmentResolver
      * The sanctum guard is asked explicitly: the default guard is `web`
      * (config/auth.php), which cannot see a bearer token from global middleware.
      *
-     * The ability path is trusted as it stands, because minting the token
-     * checked membership. The session path re-checks membership here, because
-     * `current_environment_id` is not only written by SessionAuthController
-     * after its own check — DetectEnvironment also writes it from whatever host
-     * the request arrived on, so on its own the key proves nothing.
+     * The ability is trusted as it stands, because minting the token checked
+     * membership at every site that issues one.
+     *
+     * There is deliberately no session fallback. The shared host is bearer-only
+     * by design (spec D5: it cannot share cookies with the API host), and this
+     * runs as global middleware, before StartSession, so a session branch here
+     * could never execute in a real request even if one were wanted. The
+     * `current_environment_id` key would also prove nothing on its own, since
+     * DetectEnvironment writes it from whatever host the request arrived on.
      */
     private function bindingEnvironment(): ?Environment
     {
@@ -180,29 +182,6 @@ final class EnvironmentResolver
             return $id ? Environment::findActive($id) : null;
         }
 
-        if (session()->isStarted() && session()->has('current_environment_id')) {
-            $environment = Environment::findActive((int) session('current_environment_id'));
-
-            return $environment && $this->isMember($user, $environment) ? $environment : null;
-        }
-
         return null;
-    }
-
-    /**
-     * Whether the user owns the environment or holds a membership row in it.
-     */
-    private function isMember(Authenticatable $user, Environment $environment): bool
-    {
-        $userId = (int) $user->getAuthIdentifier();
-
-        if ((int) $environment->owner_id === $userId) {
-            return true;
-        }
-
-        return EnvironmentUser::query()
-            ->where('environment_id', $environment->id)
-            ->where('user_id', $userId)
-            ->exists();
     }
 }

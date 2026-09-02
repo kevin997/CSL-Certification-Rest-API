@@ -331,12 +331,21 @@ sentence is dropped when the domain is live.
   they are reachable today by definition and a null would silently move their emails to the shared
   host on deploy. Wrapped in the repo's `MigrationHelper::columnExists` guard like its siblings.
 - `App\Support\Tenancy\DomainProbe` interface with `isLive(string $host): bool`; the production
-  implementation resolves an `A` or `CNAME` record with `dns_get_record` and issues an HTTPS `HEAD`
-  to `https://{host}/` with the configured timeout, treating any response below 500 as live.
-  Tests bind a fake.
+  implementation resolves an `A` or `CNAME` record with `dns_get_record`, then fetches
+  `https://{host}/` with the configured timeout and requires a 2xx that carries the frontend's
+  own marker (an `X-Kursa-App` response header, or one of `tenancy.domain_probe.body_markers` in
+  the body). "Something answers" is deliberately not enough: a customer's existing site, a parking
+  page or a registrar redirect all answer, and stamping the flag on one of those would move every
+  link for that tenant to the wrong place. Tests bind a fake.
 - Command `environments:verify-domains`: for every active environment with a null
-  `domain_verified_at`, ask the probe; on success set the timestamp and log. Never clears.
-  Scheduled `hourly()` in `routes/console.php` next to `ProcessAbandonedOrdersCommand`.
+  `domain_verified_at`, ask the probe; on success set the timestamp and log. The hourly run never
+  clears. Scheduled `hourly()` in `routes/console.php` next to `ProcessAbandonedOrdersCommand`.
+- `environments:verify-domains --recheck` additionally probes already-verified environments and
+  CLEARS the flag on any that no longer serve. The backfill below marks every pre-existing
+  environment verified, which is right for the ones that work and wrong for exactly the customers
+  this design exists for — those provisioned with a domain that never resolved. Without a recheck
+  pass they would keep their dead links forever, because the hourly run only looks at null rows.
+  Run it once after deploy, and only once the probe's marker check is in place.
 - Admin override: `PUT /admin/environments/{id}/domain-verification { "verified": true|false }`
   in the existing `admin` group, sets or clears the timestamp, writes an audit-log entry using the
   existing audit mechanism the admin app reads. `GET /environments/{id}` and the admin customers
@@ -526,9 +535,22 @@ shows neutral branding and the "Find your academy" panel instead of environment 
 
 ## 8. Security considerations
 
-- **Client-chosen environment.** `X-Frontend-Domain`, `environment_id` inputs, and the URL param
-  are client-controlled. Under D6 they only ever select public data; the binding for authenticated
-  requests comes from a token minted after a membership check, or from the login session.
+- **What the resolver is, and is not.** `EnvironmentResolver` is the single place that answers
+  "which tenant is this request for". It is NOT a tenant boundary, and must not be read as one.
+  On a **shared host** the answer comes from the bearer token's `environment_id:{id}` ability,
+  which every minting site issues only after a membership check, so there the binding is
+  authoritative. On a **tenant host** the answer comes from `X-Frontend-Domain`, which the client
+  sends and nothing verifies; the token's ability is not consulted and nothing anywhere enforces
+  it as a scope. An authenticated caller can therefore still name any tenant host and be resolved
+  into it, exactly as before this work — see §11, where that trust and `DetectEnvironment`'s
+  auto-attach are recorded as the follow-up that actually closes it.
+- **What that means for the enforce flip (D7).** Enforcing can only refuse requests that would
+  otherwise have run with no environment scope at all, so flipping it cannot widen anything. But
+  it buys no isolation against the header, and must not be announced as closing that hole.
+- **Client-supplied identifiers.** `environment_id` inputs and the URL parameter select public
+  data only, on the public endpoints that opt into them. An endpoint returning anything
+  owner-scoped must not accept one: `GET /subscription/current` returns an owner's subscription
+  and payment rows and therefore resolves by host alone.
 - **Fail closed.** D7 turns the pre-existing unscoped path into a refusal. The `log` phase exists
   to find legitimate binding-less routes before enforcing.
 - **Auto sign-in with an unverified email (D2).** Someone can already provision an environment
@@ -576,9 +598,15 @@ existing tenant host (login, branding, storefront, switch).
 ## 10. Rollout
 
 1. DNS and Vercel for `app.getkursa.space` and `www.app` (§5.6). Independent of code.
-2. API on `main` via the git-flow release, deployed with `TENANCY_ENVIRONMENT_GUARD=log`. The
-   migration backfills existing tenants as live, so no email changes host on deploy.
-3. Frontend to Vercel production. Must precede step 4.
+2. **Frontend to Vercel production first.** Step 1 is already done, which changes the ordering
+   this section originally gave: `app.getkursa.space` resolves NOW and currently serves the old
+   frontend, which resolves tenancy by host, ignores `environment_id`, and has no `/academies`
+   page. If the API ships first, every newly provisioned tenant is sent to a shared host that
+   cannot serve them — the dead link is relocated, not fixed. The new frontend is backward
+   compatible against the old API on tenant hosts, so shipping it first is safe.
+3. API on `main` via the git-flow release, deployed with `TENANCY_ENVIRONMENT_GUARD=log`. The
+   migration backfills existing tenants as live, so no email changes host on deploy. Ship steps 2
+   and 3 in one window if they cannot be ordered.
 4. Sales website. From here new signups land on the shared host signed in.
 5. System admin badge and toggle.
 6. After at least a week of clean `tenancy.environment_required` logs, set

@@ -9,7 +9,6 @@ use App\Models\Subscription;
 use App\Services\PlatformPaymentService;
 use App\Services\SubscriptionManager;
 use App\Services\Tax\TaxZoneService;
-use App\Support\Tenancy\EnvironmentContext;
 use App\Support\Tenancy\EnvironmentResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -43,10 +42,11 @@ class SubscriptionController extends Controller
 
             // If no authenticated user, try to find user via environment domain
             if (! $user) {
-                $resolver = app(EnvironmentResolver::class);
-                $context = $resolver->resolve($request);
-                $environment = $context->environment
-                    ?? ($context->source === EnvironmentContext::SOURCE_NONE ? $resolver->explicitEnvironment($request) : null);
+                // Deliberately NOT explicitEnvironment(): this endpoint returns an
+                // owner's subscription and payment rows, so honouring a client-supplied
+                // environment_id would make another tenant's billing data enumerable.
+                // Public endpoints that accept an identifier return public data only.
+                $environment = app(EnvironmentResolver::class)->resolve($request)->environment;
 
                 if ($environment) {
                     $user = $environment->user;

@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Cache;
 
 class TenantDomainRegistry
 {
-    protected const CACHE_KEY = 'tenant_domains:all_hosts_v2';
+    protected const CACHE_KEY = 'tenant_domains:all_hosts_v3';
 
     /**
      * @return array<int, string> hosts (no scheme), may include ports

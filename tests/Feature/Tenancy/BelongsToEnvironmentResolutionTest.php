@@ -3,6 +3,8 @@
 namespace Tests\Feature\Tenancy;
 
 use App\Models\Environment;
+use App\Models\EnvironmentUser;
+use App\Models\User;
 use App\Traits\BelongsToEnvironment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
@@ -33,5 +35,50 @@ class BelongsToEnvironmentResolutionTest extends TestCase
         $this->getJson('/api/_echo?environment_id='.$other->id, ['X-Frontend-Domain' => 'acme.test']);
 
         $this->assertSame($host->id, BelongsToEnvironment::detectEnvironmentId());
+    }
+
+    /**
+     * Several endpoints name their environment in the request rather than
+     * relying on the host. Unchecked, that let any authenticated caller stamp a
+     * row into a tenant they do not belong to.
+     */
+    public function test_a_request_supplied_environment_id_is_accepted_for_a_member(): void
+    {
+        $environment = Environment::factory()->create();
+        $user = User::factory()->create();
+        EnvironmentUser::create([
+            'environment_id' => $environment->id,
+            'user_id' => $user->id,
+            'role' => 'learner',
+        ]);
+
+        $this->actingAs($user)
+            ->postJson('/api/integration-interests', [
+                'integration_id' => 'zoom',
+                'environment_id' => $environment->id,
+            ])
+            ->assertCreated();
+
+        $this->assertDatabaseHas('integration_interests', [
+            'user_id' => $user->id,
+            'environment_id' => $environment->id,
+        ]);
+    }
+
+    public function test_a_request_supplied_environment_id_is_refused_for_a_non_member(): void
+    {
+        $victim = Environment::factory()->create();
+        $stranger = User::factory()->create();
+
+        $this->actingAs($stranger)
+            ->postJson('/api/integration-interests', [
+                'integration_id' => 'zoom',
+                'environment_id' => $victim->id,
+            ]);
+
+        $this->assertDatabaseMissing('integration_interests', [
+            'user_id' => $stranger->id,
+            'environment_id' => $victim->id,
+        ]);
     }
 }
