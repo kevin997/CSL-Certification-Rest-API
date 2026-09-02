@@ -7,6 +7,8 @@ use App\Models\Branding;
 use App\Models\Environment;
 use App\Scopes\EnvironmentScope;
 use App\Services\Licensing\EntitlementService;
+use App\Support\Tenancy\EnvironmentContext;
+use App\Support\Tenancy\EnvironmentResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -663,45 +665,29 @@ class BrandingController extends Controller
      */
     public function getPublicBranding(Request $request)
     {
-        // Try to get domain from headers in priority order, matching DetectEnvironment middleware
-        $domain = null;
-        $apiDomain = $request->getHost(); // The API server domain
+        $resolver = app(EnvironmentResolver::class);
+        $context = $resolver->resolve($request);
+        $domain = $context->host;
+        $environment = $context->environment ?? ($context->source === EnvironmentContext::SOURCE_NONE
+            ? $resolver->explicitEnvironment($request)
+            : null);
 
-        // First check for the explicit X-Frontend-Domain header
-        $frontendDomainHeader = $request->header('X-Frontend-Domain');
+        // explicitEnvironment() collapses "no such identifier" and "identifier
+        // names an inactive environment" to the same null, so an inactive
+        // environment is not distinguishable from an unknown one below without
+        // this check. An unknown domain still falls through to the legacy
+        // default-branding response; a real but inactive environment refuses.
+        if (! $environment && $context->source === EnvironmentContext::SOURCE_NONE) {
+            foreach (['environment_id', 'domain'] as $name) {
+                $identifier = trim((string) $request->query($name, ''));
 
-        // Then try Origin or Referer as fallbacks
-        $origin = $request->header('Origin');
-        $referer = $request->header('Referer');
-
-        if ($frontendDomainHeader) {
-            // Use the explicit frontend domain header if provided
-            $domain = $frontendDomainHeader;
-        } elseif ($origin) {
-            // Extract domain from Origin
-            $parsedOrigin = parse_url($origin);
-            $domain = $parsedOrigin['host'] ?? null;
-        } elseif ($referer) {
-            // Extract domain from Referer as fallback
-            $parsedReferer = parse_url($referer);
-            $domain = $parsedReferer['host'] ?? null;
-        }
-
-        // If still no domain, fall back to the API domain or query parameter
-        if (! $domain) {
-            $domain = $request->query('domain') ?: $apiDomain;
-        }
-
-        // First try to find environment by domain
-        $environment = null;
-        if ($domain) {
-            $environment = Environment::where('primary_domain', $domain)
-                ->orWhere(function ($query) use ($domain) {
-                    $query->whereNotNull('additional_domains')
-                        ->whereJsonContains('additional_domains', $domain);
-                })
-                ->where('is_active', true)
-                ->first();
+                if ($identifier !== '' && Environment::resolveByIdentifier($identifier)) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Environment not found or inactive',
+                    ], 404);
+                }
+            }
         }
 
         // If environment found, get branding by environment_id.
@@ -1222,19 +1208,12 @@ class BrandingController extends Controller
      */
     public function getPublicLandingPage(Request $request)
     {
-        // Get domain from request header or query parameter
-        $domain = $request->header('X-Frontend-Domain')
-            ?? $request->header('X-Forwarded-Host')
-            ?? $request->query('domain')
-            ?? $request->getHost();
-
-        // Clean the domain
-        $domain = preg_replace('/:\d+$/', '', $domain);
-
-        // Find environment by domain
-        $environment = Environment::where('primary_domain', $domain)
-            ->orWhere('primary_domain', 'LIKE', '%'.$domain.'%')
-            ->first();
+        $resolver = app(EnvironmentResolver::class);
+        $context = $resolver->resolve($request);
+        $domain = $context->host;
+        $environment = $context->environment ?? ($context->source === EnvironmentContext::SOURCE_NONE
+            ? $resolver->explicitEnvironment($request)
+            : null);
 
         if (! $environment) {
             return response()->json([

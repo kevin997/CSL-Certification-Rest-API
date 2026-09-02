@@ -4,6 +4,8 @@ namespace App\Traits;
 
 use App\Models\Environment;
 use App\Scopes\EnvironmentScope;
+use App\Support\Tenancy\EnvironmentContext;
+use App\Support\Tenancy\EnvironmentResolver;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Log;
@@ -73,97 +75,27 @@ trait BelongsToEnvironment
     }
 
     /**
-     * Detect the current environment ID from various sources.
-     *
-     * @return int|null
+     * The environment new rows are stamped with: the resolved request context
+     * first, then an explicit environment_id input (console and queue callers
+     * pass one), else null. There is deliberately no fallback tenant.
      */
     public static function detectEnvironmentId()
     {
-        // Priority 1: Check request parameter (from API)
         $request = request();
+        $context = $request?->attributes->get(EnvironmentResolver::REQUEST_ATTRIBUTE);
+
+        if ($context instanceof EnvironmentContext && $context->resolved()) {
+            return $context->environment->id;
+        }
+
         if ($request && $request->has('environment_id')) {
             return $request->input('environment_id');
         }
 
-        // Priority 2: Check session
         if (session()->has('current_environment_id')) {
             return session('current_environment_id');
         }
 
-        // Priority 3: Try to detect from domain
-        $environment = self::detectEnvironmentFromDomain();
-        if ($environment) {
-            // Store in session for future use
-            session(['current_environment_id' => $environment->id]);
-
-            return $environment->id;
-        }
-
-        // Priority 4: Fallback to first active environment
-        $fallbackEnvironment = Environment::where('is_active', true)->first();
-        if ($fallbackEnvironment) {
-            Log::info('BelongsToEnvironment: Using fallback environment', [
-                'environment_id' => $fallbackEnvironment->id,
-            ]);
-            session(['current_environment_id' => $fallbackEnvironment->id]);
-
-            return $fallbackEnvironment->id;
-        }
-
         return null;
-    }
-
-    /**
-     * Detect environment from the current domain.
-     *
-     * @return Environment|null
-     */
-    private static function detectEnvironmentFromDomain()
-    {
-        $request = request();
-        if (! $request) {
-            return null;
-        }
-
-        // Try to get domain from headers in priority order
-        $domain = null;
-        $apiDomain = $request->getHost();
-
-        // First check for the explicit X-Frontend-Domain header
-        $frontendDomainHeader = $request->header('X-Frontend-Domain');
-
-        // Then try Origin or Referer as fallbacks
-        $origin = $request->header('Origin');
-        $referer = $request->header('Referer');
-
-        if ($frontendDomainHeader) {
-            $domain = $frontendDomainHeader;
-        } elseif ($origin) {
-            $parsedOrigin = parse_url($origin);
-            $domain = $parsedOrigin['host'] ?? null;
-        } elseif ($referer) {
-            $parsedReferer = parse_url($referer);
-            $domain = $parsedReferer['host'] ?? null;
-        }
-
-        // If still no domain, fall back to the API domain
-        if (! $domain) {
-            $domain = $apiDomain;
-        }
-
-        // Find the environment that matches the domain
-        $environment = Environment::where('primary_domain', $domain)
-            ->orWhereJsonContains('additional_domains', $domain)
-            ->where('is_active', true)
-            ->first();
-
-        if ($environment) {
-            Log::info('BelongsToEnvironment: Environment detected from domain', [
-                'domain' => $domain,
-                'environment_id' => $environment->id,
-            ]);
-        }
-
-        return $environment;
     }
 }
