@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\Admin\AuditLogController;
 use App\Http\Controllers\Api\Admin\CentralizedTransactionController;
 use App\Http\Controllers\Api\Admin\CommissionController;
+use App\Http\Controllers\Api\Admin\DomainVerificationController;
 use App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController;
 use App\Http\Controllers\Api\Admin\PasswordLinkController;
 use App\Http\Controllers\Api\Admin\SystemDashboardController;
@@ -1267,6 +1268,9 @@ Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
     // is bcrypt-hashed and therefore unrecoverable. This issues a fresh one.
     Route::post('/environments/{environmentId}/resend-password-link', [PasswordLinkController::class, 'resend'])
         ->middleware('throttle:20,1');
+
+    // Operator override for domain liveness (the hourly probe only ever sets it).
+    Route::put('/environments/{environmentId}/domain-verification', [DomainVerificationController::class, 'update']);
 
     // System Dashboard
     Route::prefix('system-dashboard')->group(function () {
