@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\LegalPage;
 use App\Services\LegalPageService;
+use App\Support\Tenancy\EnvironmentContext;
+use App\Support\Tenancy\EnvironmentResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
@@ -14,6 +16,7 @@ use Illuminate\Support\Facades\Validator;
  * @OA\Schema(
  *     schema="LegalPage",
  *     required={"environment_id", "user_id", "page_type"},
+ *
  *     @OA\Property(property="id", type="integer", format="int64", example=1),
  *     @OA\Property(property="environment_id", type="integer", format="int64", example=1),
  *     @OA\Property(property="user_id", type="integer", format="int64", example=1),
@@ -47,11 +50,14 @@ class LegalPageController extends Controller
      *     operationId="getLegalPageTypes",
      *     tags={"Legal Pages"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successful operation",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(
      *                 property="data",
@@ -59,8 +65,10 @@ class LegalPageController extends Controller
      *                 @OA\Property(
      *                     property="page_types",
      *                     type="array",
+     *
      *                     @OA\Items(
      *                         type="object",
+     *
      *                         @OA\Property(property="type", type="string", example="privacy_policy"),
      *                         @OA\Property(property="name", type="string", example="Privacy Policy"),
      *                         @OA\Property(property="description", type="string"),
@@ -72,8 +80,10 @@ class LegalPageController extends Controller
      *                 @OA\Property(
      *                     property="dynamic_tags",
      *                     type="array",
+     *
      *                     @OA\Items(
      *                         type="object",
+     *
      *                         @OA\Property(property="name", type="string"),
      *                         @OA\Property(property="tag", type="string")
      *                     )
@@ -81,6 +91,7 @@ class LegalPageController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Unauthenticated")
      * )
      */
@@ -88,7 +99,7 @@ class LegalPageController extends Controller
     {
         $environmentId = $request->input('environment_id') ?? session('current_environment_id');
 
-        if (!$environmentId) {
+        if (! $environmentId) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Environment ID is required',
@@ -117,21 +128,27 @@ class LegalPageController extends Controller
      *     operationId="getLegalPageById",
      *     tags={"Legal Pages"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successful operation",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="data", ref="#/components/schemas/LegalPage")
      *         )
      *     ),
+     *
      *     @OA\Response(response=404, description="Page not found")
      * )
      */
@@ -139,7 +156,7 @@ class LegalPageController extends Controller
     {
         $page = $this->legalPageService->getPageById($id);
 
-        if (!$page) {
+        if (! $page) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Legal page not found',
@@ -162,27 +179,33 @@ class LegalPageController extends Controller
      *     operationId="getLegalPageByType",
      *     tags={"Legal Pages"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="pageType",
      *         in="path",
      *         required=true,
+     *
      *         @OA\Schema(type="string", enum={"about_us", "privacy_policy", "legal_notice", "terms_of_service"})
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successful operation",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="data", ref="#/components/schemas/LegalPage")
      *         )
      *     ),
+     *
      *     @OA\Response(response=404, description="Page not found")
      * )
      */
     public function showByType(Request $request, string $pageType)
     {
-        if (!LegalPage::isValidPageType($pageType)) {
+        if (! LegalPage::isValidPageType($pageType)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Invalid page type',
@@ -191,7 +214,7 @@ class LegalPageController extends Controller
 
         $environmentId = $request->input('environment_id') ?? session('current_environment_id');
 
-        if (!$environmentId) {
+        if (! $environmentId) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Environment ID is required',
@@ -201,7 +224,7 @@ class LegalPageController extends Controller
         $page = $this->legalPageService->getPageByType($environmentId, $pageType);
 
         // Return empty page structure if not found (for editor)
-        if (!$page) {
+        if (! $page) {
             return response()->json([
                 'status' => 'success',
                 'data' => [
@@ -238,10 +261,13 @@ class LegalPageController extends Controller
      *     operationId="storeLegalPage",
      *     tags={"Legal Pages"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\RequestBody(
      *         required=true,
+     *
      *         @OA\JsonContent(
      *             required={"page_type"},
+     *
      *             @OA\Property(property="page_type", type="string", enum={"about_us", "privacy_policy", "legal_notice", "terms_of_service"}),
      *             @OA\Property(property="title", type="string"),
      *             @OA\Property(property="content", type="string"),
@@ -250,16 +276,20 @@ class LegalPageController extends Controller
      *             @OA\Property(property="is_published", type="boolean")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Page saved successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string"),
      *             @OA\Property(property="data", ref="#/components/schemas/LegalPage")
      *         )
      *     ),
+     *
      *     @OA\Response(response=422, description="Validation error")
      * )
      */
@@ -276,7 +306,7 @@ class LegalPageController extends Controller
 
         $environmentId = $request->input('environment_id') ?? session('current_environment_id');
 
-        if (!$environmentId) {
+        if (! $environmentId) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Environment ID is required',
@@ -306,15 +336,20 @@ class LegalPageController extends Controller
      *     operationId="updateLegalPage",
      *     tags={"Legal Pages"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\RequestBody(
      *         required=true,
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="title", type="string"),
      *             @OA\Property(property="content", type="string"),
      *             @OA\Property(property="seo_title", type="string"),
@@ -322,16 +357,20 @@ class LegalPageController extends Controller
      *             @OA\Property(property="is_published", type="boolean")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Page updated successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string"),
      *             @OA\Property(property="data", ref="#/components/schemas/LegalPage")
      *         )
      *     ),
+     *
      *     @OA\Response(response=404, description="Page not found")
      * )
      */
@@ -339,7 +378,7 @@ class LegalPageController extends Controller
     {
         $page = $this->legalPageService->getPageById($id);
 
-        if (!$page) {
+        if (! $page) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Legal page not found',
@@ -380,12 +419,15 @@ class LegalPageController extends Controller
      *     operationId="publishLegalPage",
      *     tags={"Legal Pages"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Page published successfully"
@@ -421,12 +463,15 @@ class LegalPageController extends Controller
      *     operationId="unpublishLegalPage",
      *     tags={"Legal Pages"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Page unpublished successfully"
@@ -462,12 +507,15 @@ class LegalPageController extends Controller
      *     operationId="deleteLegalPage",
      *     tags={"Legal Pages"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Page deleted successfully"
@@ -479,7 +527,7 @@ class LegalPageController extends Controller
     {
         $deleted = $this->legalPageService->deletePage($id);
 
-        if (!$deleted) {
+        if (! $deleted) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Legal page not found',
@@ -501,17 +549,22 @@ class LegalPageController extends Controller
      *     description="Returns a published legal page for public viewing",
      *     operationId="getPublicLegalPage",
      *     tags={"Legal Pages"},
+     *
      *     @OA\Parameter(
      *         name="pageType",
      *         in="path",
      *         required=true,
+     *
      *         @OA\Schema(type="string", enum={"about_us", "privacy_policy", "legal_notice", "terms_of_service"})
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successful operation",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(
      *                 property="data",
@@ -524,12 +577,13 @@ class LegalPageController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(response=404, description="Page not found or not published")
      * )
      */
     public function getPublicPage(Request $request, string $pageType)
     {
-        if (!LegalPage::isValidPageType($pageType)) {
+        if (! LegalPage::isValidPageType($pageType)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Invalid page type',
@@ -539,7 +593,7 @@ class LegalPageController extends Controller
         // Detect environment from domain
         $environmentId = $this->detectEnvironmentFromRequest($request);
 
-        if (!$environmentId) {
+        if (! $environmentId) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Could not determine environment',
@@ -548,7 +602,7 @@ class LegalPageController extends Controller
 
         $page = $this->legalPageService->getPublishedPageByType($environmentId, $pageType);
 
-        if (!$page) {
+        if (! $page) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Page not found or not published',
@@ -572,35 +626,10 @@ class LegalPageController extends Controller
      */
     private function detectEnvironmentFromRequest(Request $request): ?int
     {
-        $domain = null;
-
-        // Try to get domain from headers
-        $frontendDomainHeader = $request->header('X-Frontend-Domain');
-        $origin = $request->header('Origin');
-        $referer = $request->header('Referer');
-
-        if ($frontendDomainHeader) {
-            $domain = $frontendDomainHeader;
-        } elseif ($origin) {
-            $parsedOrigin = parse_url($origin);
-            $domain = $parsedOrigin['host'] ?? null;
-        } elseif ($referer) {
-            $parsedReferer = parse_url($referer);
-            $domain = $parsedReferer['host'] ?? null;
-        }
-
-        if (!$domain) {
-            $domain = $request->query('domain') ?: $request->getHost();
-        }
-
-        // Find environment by domain
-        $environment = \App\Models\Environment::where('primary_domain', $domain)
-            ->orWhere(function ($query) use ($domain) {
-                $query->whereNotNull('additional_domains')
-                    ->whereJsonContains('additional_domains', $domain);
-            })
-            ->where('is_active', true)
-            ->first();
+        $resolver = app(EnvironmentResolver::class);
+        $context = $resolver->resolve($request);
+        $environment = $context->environment
+            ?? ($context->source === EnvironmentContext::SOURCE_NONE ? $resolver->explicitEnvironment($request) : null);
 
         return $environment?->id;
     }

@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Environment;
 use App\Models\ThirdPartyService;
 use App\Services\CertificateGenerationService;
+use App\Support\Tenancy\EnvironmentContext;
+use App\Support\Tenancy\EnvironmentResolver;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -15,7 +17,7 @@ class ThirdPartyServiceController extends Controller
     /**
      * Display a listing of third party services.
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function index(Request $request)
     {
@@ -33,7 +35,7 @@ class ThirdPartyServiceController extends Controller
 
         // Search by name
         if ($request->has('search')) {
-            $query->where('name', 'like', '%' . $request->search . '%');
+            $query->where('name', 'like', '%'.$request->search.'%');
         }
 
         $services = $query->orderBy('created_at', 'desc')->get();
@@ -47,8 +49,7 @@ class ThirdPartyServiceController extends Controller
     /**
      * Store a newly created third party service.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function store(Request $request)
     {
@@ -93,13 +94,13 @@ class ThirdPartyServiceController extends Controller
      * Display the specified third party service.
      *
      * @param  int  $id
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function show($id)
     {
         $service = ThirdPartyService::find($id);
 
-        if (!$service) {
+        if (! $service) {
             return response()->json([
                 'success' => false,
                 'message' => 'Third party service not found',
@@ -115,15 +116,14 @@ class ThirdPartyServiceController extends Controller
     /**
      * Update the specified third party service.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $id
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function update(Request $request, $id)
     {
         $service = ThirdPartyService::find($id);
 
-        if (!$service) {
+        if (! $service) {
             return response()->json([
                 'success' => false,
                 'message' => 'Third party service not found',
@@ -171,13 +171,13 @@ class ThirdPartyServiceController extends Controller
      * Remove the specified third party service.
      *
      * @param  int  $id
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function destroy($id)
     {
         $service = ThirdPartyService::find($id);
 
-        if (!$service) {
+        if (! $service) {
             return response()->json([
                 'success' => false,
                 'message' => 'Third party service not found',
@@ -201,13 +201,13 @@ class ThirdPartyServiceController extends Controller
      * Refresh the authentication token for a service.
      *
      * @param  int  $id
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function refreshToken($id)
     {
         $service = ThirdPartyService::find($id);
 
-        if (!$service) {
+        if (! $service) {
             return response()->json([
                 'success' => false,
                 'message' => 'Third party service not found',
@@ -217,7 +217,7 @@ class ThirdPartyServiceController extends Controller
         // Handle different service types
         switch ($service->service_type) {
             case 'certificate_generation':
-                $certificateService = new CertificateGenerationService();
+                $certificateService = new CertificateGenerationService;
                 $success = $certificateService->authenticate();
 
                 if ($success) {
@@ -248,13 +248,13 @@ class ThirdPartyServiceController extends Controller
      * Test the connection to a third party service.
      *
      * @param  int  $id
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function testConnection($id)
     {
         $service = ThirdPartyService::find($id);
 
-        if (!$service) {
+        if (! $service) {
             return response()->json([
                 'success' => false,
                 'message' => 'Third party service not found',
@@ -265,7 +265,7 @@ class ThirdPartyServiceController extends Controller
             // Handle different service types
             switch ($service->service_type) {
                 case 'certificate_generation':
-                    $certificateService = new CertificateGenerationService();
+                    $certificateService = new CertificateGenerationService;
                     $success = $certificateService->authenticate();
 
                     return response()->json([
@@ -288,7 +288,7 @@ class ThirdPartyServiceController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Connection test failed: ' . $e->getMessage(),
+                'message' => 'Connection test failed: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -296,7 +296,7 @@ class ThirdPartyServiceController extends Controller
     /**
      * Get available service types.
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getServiceTypes()
     {
@@ -353,42 +353,16 @@ class ThirdPartyServiceController extends Controller
      * Get public WhatsApp configuration for the current environment.
      * Used by learners to see the WhatsApp button in the study room.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function getWhatsAppConfig(Request $request)
     {
-        // Detect environment from domain headers (same pattern as BrandingController::getPublicBranding)
-        $domain = null;
+        $resolver = app(EnvironmentResolver::class);
+        $context = $resolver->resolve($request);
+        $environment = $context->environment
+            ?? ($context->source === EnvironmentContext::SOURCE_NONE ? $resolver->explicitEnvironment($request) : null);
 
-        $frontendDomainHeader = $request->header('X-Frontend-Domain');
-        $origin = $request->header('Origin');
-        $referer = $request->header('Referer');
-
-        if ($frontendDomainHeader) {
-            $domain = $frontendDomainHeader;
-        } elseif ($origin) {
-            $parsedOrigin = parse_url($origin);
-            $domain = $parsedOrigin['host'] ?? null;
-        } elseif ($referer) {
-            $parsedReferer = parse_url($referer);
-            $domain = $parsedReferer['host'] ?? null;
-        }
-
-        if (!$domain) {
-            $domain = $request->getHost();
-        }
-
-        // Find environment by domain
-        $environment = Environment::where('primary_domain', $domain)
-            ->orWhere(function ($query) use ($domain) {
-                $query->whereNotNull('additional_domains')
-                    ->whereJsonContains('additional_domains', $domain);
-            })
-            ->where('is_active', true)
-            ->first();
-
-        if (!$environment) {
+        if (! $environment) {
             return response()->json([
                 'success' => true,
                 'data' => null,
@@ -402,7 +376,7 @@ class ThirdPartyServiceController extends Controller
             ->where('is_active', true)
             ->first();
 
-        if (!$service) {
+        if (! $service) {
             return response()->json([
                 'success' => true,
                 'data' => null,
