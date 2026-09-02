@@ -115,6 +115,7 @@ use App\Mail\QueueFailureNotification;
 use App\Models\Environment;
 use App\Models\EnvironmentUser;
 use App\Support\EffectiveAuthContext;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
@@ -296,6 +297,8 @@ Route::get('/user', function (Request $request) {
             'id' => $ownedEnv->id,
             'name' => $ownedEnv->name,
             'primary_domain' => $ownedEnv->primary_domain,
+            // The address the academy actually answers on today (see TenantUrl).
+            'url' => TenantUrl::base($ownedEnv),
             'logo_url' => $ownedEnv->logo_url,
         ] : null;
     }

@@ -44,6 +44,13 @@ class TenantDomainRegistry
     protected static function getDevHosts(): array
     {
         return [
+            // Hosts that serve every tenant. They belong to no single environment,
+            // so they never come from the domain query above, but the admin-login
+            // gate and the CORS narrowing must still recognise them.
+            ...array_map(
+                static fn ($host): string => strtolower(trim((string) $host)),
+                (array) config('tenancy.shared_hosts', [])
+            ),
             'kursa.csl-brands.com',
             'sales.csl-brands.com',
             'manager.getkursa.space',
@@ -69,7 +76,7 @@ class TenantDomainRegistry
 
     protected static function normalizeHost(?string $value): ?string
     {
-        if (!$value) {
+        if (! $value) {
             return null;
         }
 
@@ -79,13 +86,13 @@ class TenantDomainRegistry
         if (str_starts_with($value, 'http://') || str_starts_with($value, 'https://')) {
             $parsed = parse_url($value);
             $host = $parsed['host'] ?? null;
-            if (!$host) {
+            if (! $host) {
                 return null;
             }
 
             $port = $parsed['port'] ?? null;
 
-            return $port ? ($host . ':' . $port) : $host;
+            return $port ? ($host.':'.$port) : $host;
         }
 
         // Assume already host[:port]

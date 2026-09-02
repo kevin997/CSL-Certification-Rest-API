@@ -11,6 +11,7 @@ use App\Support\EffectiveAuthContext;
 use App\Support\Tenancy\EnvironmentResolver;
 use App\Support\Tenancy\LoginBindingResolver;
 use App\Support\Tenancy\NoEnvironmentException;
+use App\Support\Tenancy\TenantUrl;
 use App\Support\TenantDomainRegistry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -439,6 +440,10 @@ class SessionAuthController extends Controller
                 'id' => $environment->id,
                 'name' => $environment->name,
                 'primary_domain' => $environment->primary_domain,
+                // Where the academy actually answers today: its own domain once
+                // verified, the shared host until then. primary_domain alone is a
+                // dead address for a tenant whose DNS is still pending.
+                'url' => TenantUrl::base($environment),
                 'logo_url' => $environment->logo_url,
             ] : null,
         ]);
