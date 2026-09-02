@@ -96,7 +96,6 @@ class EnvironmentSetupMail extends Mailable implements ShouldQueue
      */
     private function generateLoginUrl(): string
     {
-        $protocol = app()->environment('production') ? 'https' : 'http';
 
         return TenantUrl::to($this->environment, '/auth/login');
     }

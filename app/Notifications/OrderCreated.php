@@ -61,7 +61,6 @@ class OrderCreated extends Notification implements ShouldQueue
         $customerEmail = $this->telegramService->escapeMarkdownV2($this->order->billing_email);
 
         // Construct Continue Payment URL
-        $protocol = app()->environment('production') ? 'https' : 'http';
         // Use environment's primary domain for the link
         $continuePaymentUrl = TenantUrl::to($environment, '/checkout/continue-payment/'.$this->order->id);
         $escapedUrl = $this->telegramService->escapeMarkdownV2($continuePaymentUrl);

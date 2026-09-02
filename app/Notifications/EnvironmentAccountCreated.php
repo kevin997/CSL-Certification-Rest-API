@@ -76,8 +76,6 @@ class EnvironmentAccountCreated extends Notification implements ShouldQueue
         $userEmail = $this->telegramService->escapeMarkdownV2($this->user->email);
         $createdAt = $this->telegramService->escapeMarkdownV2(now()->format('Y-m-d H:i:s'));
 
-        // Generate login URL with appropriate protocol
-        $protocol = app()->environment('production') ? 'https' : 'http';
         $loginUrl = TenantUrl::to($this->environment, '/auth/login');
         $escapedLoginUrl = $this->telegramService->escapeMarkdownV2($loginUrl);
 
