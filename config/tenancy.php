@@ -36,8 +36,9 @@ return [
         'csl-certification-git-develop-kevin997s-projects.vercel.app' => 'learning.csl-brands.com',
     ],
 
-    // 'log' records would-be refusals and lets the request through;
-    // 'enforce' returns 403 { code: environment_required }.
+    // 'log' records would-be refusals and lets the request through; any other
+    // value, including an unrecognised one, returns 403 { code:
+    // environment_required } -- a typo here must not reopen the tenant routes.
     'environment_guard' => env('TENANCY_ENVIRONMENT_GUARD', 'log'),
 
     'domain_probe' => [

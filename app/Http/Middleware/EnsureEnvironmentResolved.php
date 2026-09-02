@@ -42,10 +42,22 @@ class EnsureEnvironmentResolved
             return $next($request);
         }
 
-        if (config('tenancy.environment_guard') !== 'enforce') {
+        // Fail closed: only the exact string 'log' lets an unresolved request
+        // through. A typo in TENANCY_ENVIRONMENT_GUARD ('Enforce', 'enforced',
+        // a stray space) must not silently reopen every tenant's rows.
+        $mode = strtolower(trim((string) config('tenancy.environment_guard', 'log')));
+
+        if ($mode !== 'log' && $mode !== 'enforce') {
+            Log::error('tenancy.environment_guard_invalid', [
+                'value' => config('tenancy.environment_guard'),
+            ]);
+        }
+
+        if ($mode === 'log') {
             Log::warning('tenancy.environment_required', [
                 'method' => $request->method(),
-                'route' => $request->path(),
+                // The route pattern, not the path: identifiers stay out of logs.
+                'route' => $request->route()?->uri(),
                 'host' => $context instanceof EnvironmentContext ? $context->host : null,
                 'user_id' => $user?->id,
             ]);
