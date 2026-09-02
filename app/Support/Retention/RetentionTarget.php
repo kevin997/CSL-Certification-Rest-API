@@ -6,7 +6,7 @@ namespace App\Support\Retention;
  * One eligible recipient for one retention scenario. Plain data — phone/email
  * are raw here (phone gets normalised to E.164 at send time). `context` holds
  * values for message placeholders (e.g. name, course, progress) plus routing
- * hints (`environment_id`, `environment_domain`) used by RetentionLinks and by
+ * hints (`environment_id`, `environment_url`) used by RetentionLinks and by
  * the job to target push notifications / resolve email branding.
  *
  * Ported from shopikat's RetentionTarget. Unlike shopikat (WhatsApp-only,

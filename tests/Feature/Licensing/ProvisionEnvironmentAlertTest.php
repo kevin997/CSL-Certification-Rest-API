@@ -2,6 +2,9 @@
 
 namespace Tests\Feature\Licensing;
 
+use App\Models\Environment;
+use App\Models\User;
+use App\Notifications\EnvironmentCreatedNotification;
 use App\Services\Licensing\LicenceService;
 use App\Services\TelegramService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -70,9 +73,9 @@ class ProvisionEnvironmentAlertTest extends TestCase
     }
 
     /**
-     * KURSA issues *.csl-brands.com subdomains, but the alert only recognised the
-     * legacy .cfpcsl.com suffix, so every KURSA academy was labelled
-     * "Custom Domain".
+     * KURSA issues *.getkursa.space subdomains (legacy environments live under
+     * .csl-brands.com or .cfpcsl.com), and the alert must recognise all of them
+     * so no KURSA academy is mislabelled "Custom Domain".
      */
     public function test_a_csl_brands_subdomain_is_labelled_a_subdomain(): void
     {
@@ -90,9 +93,30 @@ class ProvisionEnvironmentAlertTest extends TestCase
 
         $environment = app(LicenceService::class)->provisionEnvironmentFromPayload($this->payload());
 
-        $this->assertStringEndsWith('.csl-brands.com', $environment->primary_domain);
+        $this->assertStringEndsWith('.getkursa.space', $environment->primary_domain);
         $this->assertStringContainsString('Type: `Subdomain`', $captured);
         $this->assertStringNotContainsString('Custom Domain', $captured);
+    }
+
+    /**
+     * The docblock above claims the alert recognises the legacy bases too. This
+     * proves it: an environment still living under .csl-brands.com must not be
+     * mislabelled a custom domain now that new academies compose elsewhere.
+     */
+    public function test_a_legacy_base_subdomain_is_still_labelled_a_subdomain(): void
+    {
+        foreach (['legacy.csl-brands.com', 'legacy.cfpcsl.com'] as $domain) {
+            $environment = Environment::factory()->create(['primary_domain' => $domain]);
+            $notification = new EnvironmentCreatedNotification(
+                $environment,
+                User::factory()->create(),
+                'admin@example.com',
+                'secret',
+                app(TelegramService::class),
+            );
+
+            $this->assertSame('subdomain', $notification->toArray($environment)['domain_type']);
+        }
     }
 
     /**
@@ -118,8 +142,10 @@ class ProvisionEnvironmentAlertTest extends TestCase
         );
 
         $this->assertStringContainsString('Set', $captured);
+        // A freshly provisioned academy has no verified domain yet, so its
+        // password-set link points at the shared host and carries the id.
         $this->assertStringContainsString(
-            'https://'.$environment->primary_domain.'/auth/reset-password',
+            'https://app.getkursa.space/auth/reset-password',
             $captured
         );
         $this->assertStringContainsString('environment_id='.$environment->id, $captured);

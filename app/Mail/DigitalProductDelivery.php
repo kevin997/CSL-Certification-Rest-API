@@ -5,6 +5,7 @@ namespace App\Mail;
 use App\Helpers\EmailBrandingHelper;
 use App\Models\Order;
 use App\Models\Product;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
@@ -32,7 +33,7 @@ class DigitalProductDelivery extends Mailable implements ShouldQueue
 
         return new Envelope(
             from: new Address(config('mail.from.address'), $branding['company_name']),
-            subject: '📦 Your Digital Product: ' . $this->product->name,
+            subject: '📦 Your Digital Product: '.$this->product->name,
         );
     }
 
@@ -44,7 +45,7 @@ class DigitalProductDelivery extends Mailable implements ShouldQueue
         $branding = $this->resolveBranding();
 
         $dashboardUrl = $this->order->environment
-            ? 'https://' . $this->order->environment->primary_domain . '/learners/dashboard'
+            ? TenantUrl::to($this->order->environment, '/learners/dashboard')
             : '#';
 
         return new Content(

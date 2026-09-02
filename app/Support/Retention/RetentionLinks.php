@@ -46,9 +46,9 @@ class RetentionLinks
      */
     private function instructorLink(array $context, string $default): string
     {
-        $domain = $context['environment_domain'] ?? null;
+        $url = $context['environment_url'] ?? null;
 
-        return $domain ? 'https://'.$domain.'/dashboard' : $default;
+        return $url ? $this->withPath((string) $url, '/dashboard') : $default;
     }
 
     /**
@@ -60,9 +60,22 @@ class RetentionLinks
      */
     private function learnerLink(array $context, string $default): string
     {
-        $domain = $context['environment_domain'] ?? null;
+        $url = $context['environment_url'] ?? null;
 
-        return $domain ? 'https://'.$domain : $default;
+        return $url ? (string) $url : $default;
+    }
+
+    /**
+     * Insert a path before the query string of a TenantUrl base link, so a
+     * shared-host link keeps its environment_id while gaining /dashboard.
+     */
+    private function withPath(string $url, string $path): string
+    {
+        $parts = parse_url($url);
+        $base = ($parts['scheme'] ?? 'https').'://'.($parts['host'] ?? '')
+            .(isset($parts['port']) ? ':'.$parts['port'] : '');
+
+        return $base.$path.(isset($parts['query']) ? '?'.$parts['query'] : '');
     }
 
     private function wa(string $number, string $text): string

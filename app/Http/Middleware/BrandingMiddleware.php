@@ -3,7 +3,8 @@
 namespace App\Http\Middleware;
 
 use App\Models\Branding;
-use App\Models\Environment;
+use App\Support\Tenancy\EnvironmentContext;
+use App\Support\Tenancy\EnvironmentResolver;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -26,29 +27,8 @@ class BrandingMiddleware
         }
 
         // Get the current environment from the request
-        $environmentId = null;
-
-        // If no environment found in token, try to get it from the domain
-        if (! $environmentId) {
-            $domain = $request->headers->get('X-Frontend-Domain');
-
-            // Validate and sanitize domain input
-            if ($domain && $this->isValidDomain($domain)) {
-                $environment = Environment::where('primary_domain', $domain)
-                    ->orWhere(function ($query) use ($domain) {
-                        $query->whereNotNull('additional_domains')
-                            ->whereJsonContains('additional_domains', $domain);
-                    })
-                    ->where('is_active', true)
-                    ->first();
-            } else {
-                $environment = null;
-            }
-
-            if ($environment) {
-                $environmentId = $environment->id;
-            }
-        }
+        $context = $request->attributes->get(EnvironmentResolver::REQUEST_ATTRIBUTE);
+        $environmentId = $context instanceof EnvironmentContext ? $context->environment?->id : null;
 
         // Get branding based on environment
         $branding = null;
@@ -96,17 +76,6 @@ class BrandingMiddleware
     protected function isJsonResponse($response)
     {
         return $response->headers->get('Content-Type') === 'application/json';
-    }
-
-    /**
-     * Validate domain format
-     *
-     * @param  string  $domain
-     * @return bool
-     */
-    protected function isValidDomain($domain)
-    {
-        return filter_var('http://'.$domain, FILTER_VALIDATE_URL) !== false;
     }
 
     /**

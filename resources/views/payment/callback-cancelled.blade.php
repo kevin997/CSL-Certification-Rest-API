@@ -66,7 +66,7 @@
 <body class="antialiased bg-gray-50"
     @if(isset($branding) && $branding->primary_color) data-primary-color="{{ $branding->primary_color }}" @endif
     @if(isset($branding) && $branding->secondary_color) data-secondary-color="{{ $branding->secondary_color }}" @endif
-    @if(isset($environment) && $environment->primary_domain) data-primary-domain="{{ $protocol }}://{{$environment->primary_domain }}" @endif
+    @if(isset($environment) && $environment->primary_domain) data-primary-domain="{{ \App\Support\Tenancy\TenantUrl::base($environment) }}" @endif
     @if(isset($environment) && $environment->id) data-environment-id="{{ $environment->id }}" @endif
     @if(isset($transaction) && $transaction->transaction_id) data-transaction-id="{{ $transaction->transaction_id }}" @endif
     @if(isset($transaction) && $transaction->product_id) data-product-id="{{ $transaction->product_id }}" @endif
@@ -119,10 +119,10 @@
 
                 <!-- Retry button -->
                 <div class="mt-6 flex justify-center space-x-4">
-                    <a href="{{ $protocol }}://{{ $environment->primary_domain }}/storefront/{{ $environment->id }}" class="inline-flex items-center px-4 py-2 bg-primary text-white font-medium rounded-md hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
+                    <a href="{{ \App\Support\Tenancy\TenantUrl::base($environment) }}/storefront/{{ $environment->id }}" class="inline-flex items-center px-4 py-2 bg-primary text-white font-medium rounded-md hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
                         Try Again
                     </a>
-                    <a href="{{ $protocol }}://{{ $environment->primary_domain }}/learners" class="inline-flex items-center px-4 py-2 bg-gray-200 text-gray-800 font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                    <a href="{{ \App\Support\Tenancy\TenantUrl::base($environment) }}/learners" class="inline-flex items-center px-4 py-2 bg-gray-200 text-gray-800 font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
                         Go to Dashboard
                     </a>
                 </div>

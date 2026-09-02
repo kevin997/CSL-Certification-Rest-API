@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Tenancy\TenantUrl;
 use App\Traits\BelongsToEnvironment;
 use App\Traits\HasCreatedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -13,10 +14,12 @@ use Illuminate\Support\Str;
 
 class SalesForm extends Model
 {
-    use HasFactory, SoftDeletes, BelongsToEnvironment, HasCreatedBy;
+    use BelongsToEnvironment, HasCreatedBy, HasFactory, SoftDeletes;
 
     const STATUS_DRAFT = 'draft';
+
     const STATUS_PUBLISHED = 'published';
+
     const STATUS_ARCHIVED = 'archived';
 
     protected $fillable = [
@@ -55,7 +58,7 @@ class SalesForm extends Model
             ->where('slug', $slug)
             ->when($ignoreId, fn ($query) => $query->where('id', '!=', $ignoreId))
             ->exists()) {
-            $slug = $base . '-' . $i;
+            $slug = $base.'-'.$i;
             $i++;
         }
 
@@ -88,7 +91,7 @@ class SalesForm extends Model
     public function getPublicUrlAttribute(): ?string
     {
         if ($this->environment && $this->environment->primary_domain) {
-            return 'https://' . $this->environment->primary_domain . '/forms/' . $this->slug;
+            return TenantUrl::to($this->environment, '/forms/'.$this->slug);
         }
 
         return null;

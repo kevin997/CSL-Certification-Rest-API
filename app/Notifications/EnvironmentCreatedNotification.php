@@ -5,6 +5,8 @@ namespace App\Notifications;
 use App\Models\Environment;
 use App\Models\User;
 use App\Services\TelegramService;
+use App\Support\Tenancy\TenantDomain;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
@@ -15,9 +17,13 @@ class EnvironmentCreatedNotification extends Notification implements ShouldQueue
     use Queueable;
 
     private Environment $environment;
+
     private User $user;
+
     private string $adminEmail;
+
     private string $adminPassword;
+
     private TelegramService $telegramService;
 
     /**
@@ -57,18 +63,19 @@ class EnvironmentCreatedNotification extends Notification implements ShouldQueue
 
         Log::info('Running EnvironmentCreatedNotification notification');
 
-        if (!$chatId) {
+        if (! $chatId) {
             Log::error('Could not determine Telegram chat ID for environment creation notification');
+
             return null;
         }
 
         try {
             $message = $this->formatTelegramMessage();
             $loginUrl = $this->generateLoginUrl();
-            
+
             $buttons = [
                 'text' => 'Access Environment',
-                'url' => $loginUrl
+                'url' => $loginUrl,
             ];
 
             $this->telegramService->sendMessage($chatId, $message, $buttons);
@@ -76,13 +83,13 @@ class EnvironmentCreatedNotification extends Notification implements ShouldQueue
             Log::info('Environment created Telegram notification sent', [
                 'environment_id' => $this->environment->id,
                 'user_id' => $this->user->id,
-                'environment_name' => $this->environment->name
+                'environment_name' => $this->environment->name,
             ]);
         } catch (\Exception $e) {
-            Log::error('Failed to send environment created Telegram notification: ' . $e->getMessage(), [
+            Log::error('Failed to send environment created Telegram notification: '.$e->getMessage(), [
                 'environment_id' => $this->environment->id,
                 'user_id' => $this->user->id,
-                'exception' => $e->getTraceAsString()
+                'exception' => $e->getTraceAsString(),
             ]);
         }
     }
@@ -94,7 +101,7 @@ class EnvironmentCreatedNotification extends Notification implements ShouldQueue
     {
         $loginUrl = $this->generateLoginUrl();
         $domainType = $this->isSubdomain() ? 'Subdomain' : 'Custom Domain';
-        
+
         // Escape special characters for MarkdownV2
         $environmentName = $this->telegramService->escapeMarkdownV2($this->environment->name);
         $userName = $this->telegramService->escapeMarkdownV2($this->user->name);
@@ -115,20 +122,20 @@ class EnvironmentCreatedNotification extends Notification implements ShouldQueue
                 ."{$escapedSetUrl}\n\n";
         }
 
-        return "🚀 *New Environment Created*\n\n" .
-            "**Environment Details:**\n" .
-            "Name: `{$environmentName}`\n" .
-            "Type: `{$domainType}`\n" .
-            "Domain: `{$domain}`\n" .
-            "URL: [Access Environment]({$escapedLoginUrl})\n\n" .
-            "**Owner Information:**\n" .
-            "Name: `{$userName}`\n" .
-            "Email: `{$userEmail}`\n\n" .
-            "**Admin Credentials:**\n" .
-            "Email: `{$adminEmail}`\n" .
-            "Password: `{$adminPassword}`\n\n" .
-            $passwordSetBlock .
-            "**Created:** {$createdAt}\n\n" .
+        return "🚀 *New Environment Created*\n\n".
+            "**Environment Details:**\n".
+            "Name: `{$environmentName}`\n".
+            "Type: `{$domainType}`\n".
+            "Domain: `{$domain}`\n".
+            "URL: [Access Environment]({$escapedLoginUrl})\n\n".
+            "**Owner Information:**\n".
+            "Name: `{$userName}`\n".
+            "Email: `{$userEmail}`\n\n".
+            "**Admin Credentials:**\n".
+            "Email: `{$adminEmail}`\n".
+            "Password: `{$adminPassword}`\n\n".
+            $passwordSetBlock.
+            "**Created:** {$createdAt}\n\n".
             "The environment is ready for use and setup instructions have been sent to the owner\.";
     }
 
@@ -139,7 +146,7 @@ class EnvironmentCreatedNotification extends Notification implements ShouldQueue
     private function generateLoginUrl(): string
     {
         // Always use HTTPS protocol for security and Telegram compatibility
-        return "https://{$this->environment->primary_domain}/auth/login";
+        return TenantUrl::to($this->environment, '/auth/login');
     }
 
     /**
@@ -147,17 +154,7 @@ class EnvironmentCreatedNotification extends Notification implements ShouldQueue
      */
     private function isSubdomain(): bool
     {
-        // Platform-owned subdomain suffixes. csl-brands.com is what
-        // LicenceService::formatDomain() issues for KURSA academies; cfpcsl.com
-        // is the legacy suffix. Without the former, every KURSA environment was
-        // mislabelled "Custom Domain" in the alert.
-        foreach (['.csl-brands.com', '.cfpcsl.com'] as $suffix) {
-            if (str_ends_with($this->environment->primary_domain, $suffix)) {
-                return true;
-            }
-        }
-
-        return false;
+        return TenantDomain::isKursaSubdomain((string) $this->environment->primary_domain);
     }
 
     /**

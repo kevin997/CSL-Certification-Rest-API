@@ -3,11 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Subscription;
 use App\Models\Payment;
+use App\Models\Plan;
+use App\Models\Subscription;
 use App\Services\PlatformPaymentService;
 use App\Services\SubscriptionManager;
+use App\Services\Tax\TaxZoneService;
+use App\Support\Tenancy\EnvironmentResolver;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -15,6 +20,7 @@ use Illuminate\Support\Facades\Validator;
 class SubscriptionController extends Controller
 {
     protected $subscriptionManager;
+
     protected $platformPaymentService;
 
     public function __construct(SubscriptionManager $subscriptionManager, PlatformPaymentService $platformPaymentService)
@@ -26,7 +32,7 @@ class SubscriptionController extends Controller
     /**
      * Get current user's subscription
      *
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function current(Request $request)
     {
@@ -35,44 +41,23 @@ class SubscriptionController extends Controller
             $user = Auth::user();
 
             // If no authenticated user, try to find user via environment domain
-            if (!$user) {
-                // Try to get domain from headers (same logic as EnvironmentController::status)
-                $domain = null;
-                $frontendDomainHeader = $request->header('X-Frontend-Domain');
-                $origin = $request->header('Origin');
-                $referer = $request->header('Referer');
+            if (! $user) {
+                // Deliberately NOT explicitEnvironment(): this endpoint returns an
+                // owner's subscription and payment rows, so honouring a client-supplied
+                // environment_id would make another tenant's billing data enumerable.
+                // Public endpoints that accept an identifier return public data only.
+                $environment = app(EnvironmentResolver::class)->resolve($request)->environment;
 
-                if ($frontendDomainHeader) {
-                    $domain = $frontendDomainHeader;
-                } elseif ($origin) {
-                    $parsedOrigin = parse_url($origin);
-                    $domain = $parsedOrigin['host'] ?? null;
-                } elseif ($referer) {
-                    $parsedReferer = parse_url($referer);
-                    $domain = $parsedReferer['host'] ?? null;
-                }
-
-                if ($domain) {
-                    // Find environment by domain
-                    $environment = \App\Models\Environment::where('primary_domain', $domain)
-                        ->orWhere(function ($query) use ($domain) {
-                            $query->whereNotNull('additional_domains')
-                                ->whereJsonContains('additional_domains', $domain);
-                        })
-                        ->first();
-
-                    if ($environment) {
-                        // Get the environment owner
-                        $user = $environment->user;
-                    }
+                if ($environment) {
+                    $user = $environment->user;
                 }
             }
 
-            if (!$user) {
+            if (! $user) {
                 return response()->json([
                     'status' => 'success',
                     'data' => null,
-                    'message' => 'No subscription found'
+                    'message' => 'No subscription found',
                 ], 200);
             }
 
@@ -81,23 +66,24 @@ class SubscriptionController extends Controller
                 ->orderBy('created_at', 'desc')
                 ->first();
 
-            if (!$subscription) {
+            if (! $subscription) {
                 return response()->json([
                     'status' => 'success',
                     'data' => null,
-                    'message' => 'No subscription found'
+                    'message' => 'No subscription found',
                 ], 200);
             }
 
             return response()->json([
                 'status' => 'success',
-                'data' => $subscription
+                'data' => $subscription,
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error fetching current subscription: ' . $e->getMessage());
+            Log::error('Error fetching current subscription: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to fetch subscription'
+                'message' => 'Failed to fetch subscription',
             ], 500);
         }
     }
@@ -106,16 +92,16 @@ class SubscriptionController extends Controller
      * Get subscription by ID
      *
      * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function show($id)
     {
         try {
             $user = Auth::user();
-            if (!$user) {
+            if (! $user) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
@@ -124,22 +110,23 @@ class SubscriptionController extends Controller
                 ->with(['plan', 'payments'])
                 ->first();
 
-            if (!$subscription) {
+            if (! $subscription) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Subscription not found'
+                    'message' => 'Subscription not found',
                 ], 404);
             }
 
             return response()->json([
                 'status' => 'success',
-                'data' => $subscription
+                'data' => $subscription,
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error fetching subscription: ' . $e->getMessage());
+            Log::error('Error fetching subscription: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to fetch subscription'
+                'message' => 'Failed to fetch subscription',
             ], 500);
         }
     }
@@ -148,16 +135,16 @@ class SubscriptionController extends Controller
      * Get payments for a subscription
      *
      * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function payments($id)
     {
         try {
             $user = Auth::user();
-            if (!$user) {
+            if (! $user) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
@@ -165,10 +152,10 @@ class SubscriptionController extends Controller
                 ->where('user_id', $user->id)
                 ->first();
 
-            if (!$subscription) {
+            if (! $subscription) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Subscription not found'
+                    'message' => 'Subscription not found',
                 ], 404);
             }
 
@@ -178,13 +165,14 @@ class SubscriptionController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'data' => $payments
+                'data' => $payments,
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error fetching subscription payments: ' . $e->getMessage());
+            Log::error('Error fetching subscription payments: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to fetch payments'
+                'message' => 'Failed to fetch payments',
             ], 500);
         }
     }
@@ -192,18 +180,17 @@ class SubscriptionController extends Controller
     /**
      * Retry payment for a subscription
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function retryPayment(Request $request, $id)
     {
         try {
             $user = Auth::user();
-            if (!$user) {
+            if (! $user) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
@@ -216,7 +203,7 @@ class SubscriptionController extends Controller
             if ($validator->fails()) {
                 return response()->json([
                     'status' => 'error',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
@@ -225,10 +212,10 @@ class SubscriptionController extends Controller
                 ->where('user_id', $user->id)
                 ->first();
 
-            if (!$subscription) {
+            if (! $subscription) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Subscription not found'
+                    'message' => 'Subscription not found',
                 ], 404);
             }
 
@@ -243,10 +230,10 @@ class SubscriptionController extends Controller
             // Use SubscriptionManager to retry payment
             $result = $this->subscriptionManager->retryPayment($subscription, $paymentData);
 
-            if (!$result['success']) {
+            if (! $result['success']) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => $result['message']
+                    'message' => $result['message'],
                 ], 422);
             }
 
@@ -257,19 +244,19 @@ class SubscriptionController extends Controller
                     'subscription_id' => $subscription->id,
                     'payment_id' => $result['payment']->id,
                     'payment_type' => $request->payment_method,
-                    'payment_data' => $result['payment_data'] ?? null
-                ]
+                    'payment_data' => $result['payment_data'] ?? null,
+                ],
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error retrying subscription payment: ' . $e->getMessage(), [
+            Log::error('Error retrying subscription payment: '.$e->getMessage(), [
                 'subscription_id' => $id,
                 'user_id' => Auth::id(),
-                'payment_method' => $request->payment_method ?? 'unknown'
+                'payment_method' => $request->payment_method ?? 'unknown',
             ]);
 
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to retry payment'
+                'message' => 'Failed to retry payment',
             ], 500);
         }
     }
@@ -278,16 +265,16 @@ class SubscriptionController extends Controller
      * Cancel subscription
      *
      * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function cancel($id)
     {
         try {
             $user = Auth::user();
-            if (!$user) {
+            if (! $user) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
@@ -295,10 +282,10 @@ class SubscriptionController extends Controller
                 ->where('user_id', $user->id)
                 ->first();
 
-            if (!$subscription) {
+            if (! $subscription) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Subscription not found'
+                    'message' => 'Subscription not found',
                 ], 404);
             }
 
@@ -306,18 +293,19 @@ class SubscriptionController extends Controller
             $subscription->update([
                 'status' => Subscription::STATUS_CANCELED,
                 'canceled_at' => now(),
-                'updated_at' => now()
+                'updated_at' => now(),
             ]);
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Subscription cancelled successfully'
+                'message' => 'Subscription cancelled successfully',
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error cancelling subscription: ' . $e->getMessage());
+            Log::error('Error cancelling subscription: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to cancel subscription'
+                'message' => 'Failed to cancel subscription',
             ], 500);
         }
     }
@@ -325,18 +313,17 @@ class SubscriptionController extends Controller
     /**
      * Update subscription
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function update(Request $request, $id)
     {
         try {
             $user = Auth::user();
-            if (!$user) {
+            if (! $user) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
@@ -344,10 +331,10 @@ class SubscriptionController extends Controller
                 ->where('user_id', $user->id)
                 ->first();
 
-            if (!$subscription) {
+            if (! $subscription) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Subscription not found'
+                    'message' => 'Subscription not found',
                 ], 404);
             }
 
@@ -355,35 +342,33 @@ class SubscriptionController extends Controller
             $allowedFields = ['billing_cycle', 'status'];
             $updateData = $request->only($allowedFields);
 
-            if (!empty($updateData)) {
+            if (! empty($updateData)) {
                 $subscription->update($updateData);
             }
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Subscription updated successfully',
-                'data' => $subscription->fresh()
+                'data' => $subscription->fresh(),
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error updating subscription: ' . $e->getMessage());
+            Log::error('Error updating subscription: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to update subscription'
+                'message' => 'Failed to update subscription',
             ], 500);
         }
     }
 
     /**
      * Upgrade to a new plan (for demo environments)
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
      */
-    public function upgrade(Request $request): \Illuminate\Http\JsonResponse
+    public function upgrade(Request $request): JsonResponse
     {
         try {
             $user = Auth::user();
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['status' => 'error', 'message' => 'User not authenticated'], 401);
             }
 
@@ -399,7 +384,7 @@ class SubscriptionController extends Controller
             }
 
             // Get the selected plan
-            $plan = \App\Models\Plan::findOrFail($request->plan_id);
+            $plan = Plan::findOrFail($request->plan_id);
 
             // Check if user already has an active subscription
             $existingSubscription = Subscription::where('user_id', $user->id)
@@ -409,7 +394,7 @@ class SubscriptionController extends Controller
             if ($existingSubscription) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'User already has an active subscription. Use update endpoint instead.'
+                    'message' => 'User already has an active subscription. Use update endpoint instead.',
                 ], 422);
             }
 
@@ -444,10 +429,10 @@ class SubscriptionController extends Controller
 
             $result = $this->subscriptionManager->retryPayment($subscription, $paymentData);
 
-            if (!$result['success']) {
+            if (! $result['success']) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => $result['message']
+                    'message' => $result['message'],
                 ], 422);
             }
 
@@ -465,18 +450,19 @@ class SubscriptionController extends Controller
                     'converted_amount' => $result['payment_data']['converted_amount'] ?? null,
                     'converted_currency' => $result['payment_data']['converted_currency'] ?? null,
                     'total_amount' => $totalAmount,
-                    'currency' => 'USD'
-                ]
+                    'currency' => 'USD',
+                ],
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error upgrading plan: ' . $e->getMessage(), [
+            Log::error('Error upgrading plan: '.$e->getMessage(), [
                 'user_id' => Auth::id(),
                 'plan_id' => $request->plan_id ?? 'unknown',
-                'payment_method' => $request->payment_method ?? 'unknown'
+                'payment_method' => $request->payment_method ?? 'unknown',
             ]);
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to upgrade plan'
+                'message' => 'Failed to upgrade plan',
             ], 500);
         }
     }
@@ -484,15 +470,14 @@ class SubscriptionController extends Controller
     /**
      * Calculate proration for plan change
      *
-     * @param Request $request
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function calculateProration(Request $request, $id)
     {
         try {
             $user = Auth::user();
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['status' => 'error', 'message' => 'User not authenticated'], 401);
             }
 
@@ -506,17 +491,17 @@ class SubscriptionController extends Controller
             }
 
             $subscription = Subscription::where('id', $id)->where('user_id', $user->id)->first();
-            if (!$subscription) {
+            if (! $subscription) {
                 return response()->json(['status' => 'error', 'message' => 'Subscription not found'], 404);
             }
 
-            $newPlan = \App\Models\Plan::findOrFail($request->new_plan_id);
+            $newPlan = Plan::findOrFail($request->new_plan_id);
             $currentPlan = $subscription->plan;
 
             // Calculate proration based on remaining days in current period
             $currentPeriodStart = new \DateTime($subscription->current_period_start);
             $currentPeriodEnd = new \DateTime($subscription->current_period_end);
-            $now = new \DateTime();
+            $now = new \DateTime;
 
             $totalDays = $currentPeriodEnd->diff($currentPeriodStart)->days;
             $remainingDays = $currentPeriodEnd->diff($now)->days;
@@ -542,11 +527,12 @@ class SubscriptionController extends Controller
                 'data' => [
                     'prorated_amount' => max(0, $proratedAmount),
                     'remaining_days' => $remainingDays,
-                    'total_days' => $totalDays
-                ]
+                    'total_days' => $totalDays,
+                ],
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error calculating proration: ' . $e->getMessage());
+            Log::error('Error calculating proration: '.$e->getMessage());
+
             return response()->json(['status' => 'error', 'message' => 'Failed to calculate proration'], 500);
         }
     }
@@ -554,15 +540,14 @@ class SubscriptionController extends Controller
     /**
      * Change subscription plan
      *
-     * @param Request $request
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function changePlan(Request $request, $id)
     {
         try {
             $user = Auth::user();
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['status' => 'error', 'message' => 'User not authenticated'], 401);
             }
 
@@ -579,17 +564,17 @@ class SubscriptionController extends Controller
             }
 
             $subscription = Subscription::where('id', $id)->where('user_id', $user->id)->first();
-            if (!$subscription) {
+            if (! $subscription) {
                 return response()->json(['status' => 'error', 'message' => 'Subscription not found'], 404);
             }
 
-            $newPlan = \App\Models\Plan::findOrFail($request->new_plan_id);
+            $newPlan = Plan::findOrFail($request->new_plan_id);
             $billingCycle = $request->input('billing_cycle', $subscription->billing_cycle ?: 'monthly');
             $amountDue = $this->calculatePlanChangeAmount($subscription, $newPlan, $billingCycle);
 
-            if ($amountDue > 0 && !$request->filled('transaction_id') && !$request->filled('payment_id')) {
+            if ($amountDue > 0 && ! $request->filled('transaction_id') && ! $request->filled('payment_id')) {
                 $paymentMethod = $request->input('payment_method', 'taramoney');
-                $taxInfo = app(\App\Services\Tax\TaxZoneService::class)->calculateTaxByEnvironment(
+                $taxInfo = app(TaxZoneService::class)->calculateTaxByEnvironment(
                     $amountDue,
                     $subscription->environment_id
                 );
@@ -641,8 +626,9 @@ class SubscriptionController extends Controller
                     'cancel_url' => $request->input('cancel_url'),
                 ]);
 
-                if (!($paymentResult['success'] ?? false)) {
+                if (! ($paymentResult['success'] ?? false)) {
                     $payment->markAsFailed(null, 'failed', $paymentResult);
+
                     return response()->json([
                         'status' => 'error',
                         'message' => $paymentResult['message'] ?? 'Failed to initiate plan change payment',
@@ -674,7 +660,7 @@ class SubscriptionController extends Controller
                     })
                     ->first();
 
-                if (!$completedPayment) {
+                if (! $completedPayment) {
                     return response()->json([
                         'status' => 'error',
                         'message' => 'A completed platform payment is required before this plan can be changed',
@@ -705,18 +691,19 @@ class SubscriptionController extends Controller
                 'status' => 'success',
                 'requires_payment' => false,
                 'data' => $subscription,
-                'message' => 'Plan changed successfully'
+                'message' => 'Plan changed successfully',
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error changing subscription plan: ' . $e->getMessage());
+            Log::error('Error changing subscription plan: '.$e->getMessage());
+
             return response()->json(['status' => 'error', 'message' => 'Failed to change plan'], 500);
         }
     }
 
-    private function calculatePlanChangeAmount(Subscription $subscription, \App\Models\Plan $newPlan, string $billingCycle): float
+    private function calculatePlanChangeAmount(Subscription $subscription, Plan $newPlan, string $billingCycle): float
     {
         $currentPlan = $subscription->plan;
-        if (!$currentPlan) {
+        if (! $currentPlan) {
             return 0.0;
         }
 
@@ -735,7 +722,7 @@ class SubscriptionController extends Controller
         return round(($priceDifference * $remainingRatio) + $setupFeeDifference, 2);
     }
 
-    private function applyPlanChange(Subscription $subscription, \App\Models\Plan $newPlan, string $billingCycle): void
+    private function applyPlanChange(Subscription $subscription, Plan $newPlan, string $billingCycle): void
     {
         $subscription->plan_id = $newPlan->id;
         $subscription->billing_cycle = $billingCycle;
@@ -746,19 +733,19 @@ class SubscriptionController extends Controller
     /**
      * Get failed or pending payment for subscription
      *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function getFailedPayment($id)
     {
         try {
             $user = Auth::user();
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['status' => 'error', 'message' => 'User not authenticated'], 401);
             }
 
             $subscription = Subscription::where('id', $id)->where('user_id', $user->id)->first();
-            if (!$subscription) {
+            if (! $subscription) {
                 return response()->json(['status' => 'error', 'message' => 'Subscription not found'], 404);
             }
 
@@ -769,10 +756,11 @@ class SubscriptionController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'data' => $failedPayment
+                'data' => $failedPayment,
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error fetching failed payment: ' . $e->getMessage());
+            Log::error('Error fetching failed payment: '.$e->getMessage());
+
             return response()->json(['status' => 'error', 'message' => 'Failed to fetch failed payment'], 500);
         }
     }
@@ -780,19 +768,19 @@ class SubscriptionController extends Controller
     /**
      * Renew subscription
      *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function renew($id)
     {
         try {
             $user = Auth::user();
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['status' => 'error', 'message' => 'User not authenticated'], 401);
             }
 
             $subscription = Subscription::where('id', $id)->where('user_id', $user->id)->first();
-            if (!$subscription) {
+            if (! $subscription) {
                 return response()->json(['status' => 'error', 'message' => 'Subscription not found'], 404);
             }
 
@@ -822,10 +810,11 @@ class SubscriptionController extends Controller
             return response()->json([
                 'status' => 'success',
                 'data' => $subscription,
-                'message' => 'Subscription renewed successfully'
+                'message' => 'Subscription renewed successfully',
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error renewing subscription: ' . $e->getMessage());
+            Log::error('Error renewing subscription: '.$e->getMessage());
+
             return response()->json(['status' => 'error', 'message' => 'Failed to renew subscription'], 500);
         }
     }
@@ -833,15 +822,14 @@ class SubscriptionController extends Controller
     /**
      * Cancel subscription with options
      *
-     * @param Request $request
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function cancelSubscription(Request $request, $id)
     {
         try {
             $user = Auth::user();
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['status' => 'error', 'message' => 'User not authenticated'], 401);
             }
 
@@ -854,7 +842,7 @@ class SubscriptionController extends Controller
             }
 
             $subscription = Subscription::where('id', $id)->where('user_id', $user->id)->first();
-            if (!$subscription) {
+            if (! $subscription) {
                 return response()->json(['status' => 'error', 'message' => 'Subscription not found'], 404);
             }
 
@@ -877,10 +865,11 @@ class SubscriptionController extends Controller
             return response()->json([
                 'status' => 'success',
                 'data' => $subscription,
-                'message' => $cancelAtPeriodEnd ? 'Subscription will cancel at period end' : 'Subscription cancelled immediately'
+                'message' => $cancelAtPeriodEnd ? 'Subscription will cancel at period end' : 'Subscription cancelled immediately',
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error cancelling subscription: ' . $e->getMessage());
+            Log::error('Error cancelling subscription: '.$e->getMessage());
+
             return response()->json(['status' => 'error', 'message' => 'Failed to cancel subscription'], 500);
         }
     }
@@ -888,8 +877,7 @@ class SubscriptionController extends Controller
     /**
      * Get all subscriptions (admin endpoint)
      *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function index(Request $request)
     {
@@ -915,13 +903,14 @@ class SubscriptionController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'data' => $subscriptions
+                'data' => $subscriptions,
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error fetching subscriptions: ' . $e->getMessage());
+            Log::error('Error fetching subscriptions: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to fetch subscriptions'
+                'message' => 'Failed to fetch subscriptions',
             ], 500);
         }
     }
@@ -929,8 +918,7 @@ class SubscriptionController extends Controller
     /**
      * Create new subscription (admin endpoint)
      *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function store(Request $request)
     {
@@ -942,17 +930,17 @@ class SubscriptionController extends Controller
                 'status' => 'required|in:active,trial,pending,suspended,canceled',
                 'trial_days' => 'nullable|integer|min:0',
                 'start_date' => 'nullable|date',
-                'notes' => 'nullable|string|max:1000'
+                'notes' => 'nullable|string|max:1000',
             ]);
 
             if ($validator->fails()) {
                 return response()->json([
                     'status' => 'error',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
-            $plan = \App\Models\Plan::findOrFail($request->plan_id);
+            $plan = Plan::findOrFail($request->plan_id);
             $startDate = $request->start_date ? new \DateTime($request->start_date) : now();
 
             // Calculate billing dates
@@ -983,13 +971,14 @@ class SubscriptionController extends Controller
             return response()->json([
                 'status' => 'success',
                 'data' => $subscription,
-                'message' => 'Subscription created successfully'
+                'message' => 'Subscription created successfully',
             ], 201);
         } catch (\Exception $e) {
-            Log::error('Error creating subscription: ' . $e->getMessage());
+            Log::error('Error creating subscription: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to create subscription'
+                'message' => 'Failed to create subscription',
             ], 500);
         }
     }
@@ -997,8 +986,8 @@ class SubscriptionController extends Controller
     /**
      * Show subscription details (admin endpoint)
      *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function adminShow($id)
     {
@@ -1008,13 +997,14 @@ class SubscriptionController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'data' => $subscription
+                'data' => $subscription,
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error fetching subscription: ' . $e->getMessage());
+            Log::error('Error fetching subscription: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Subscription not found'
+                'message' => 'Subscription not found',
             ], 404);
         }
     }
@@ -1022,9 +1012,8 @@ class SubscriptionController extends Controller
     /**
      * Update subscription (admin endpoint)
      *
-     * @param Request $request
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function adminUpdate(Request $request, $id)
     {
@@ -1036,13 +1025,13 @@ class SubscriptionController extends Controller
                 'billing_cycle' => 'sometimes|in:monthly,annual',
                 'status' => 'sometimes|in:active,trial,pending,suspended,canceled',
                 'trial_days' => 'nullable|integer|min:0',
-                'notes' => 'nullable|string|max:1000'
+                'notes' => 'nullable|string|max:1000',
             ]);
 
             if ($validator->fails()) {
                 return response()->json([
                     'status' => 'error',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
@@ -1051,7 +1040,7 @@ class SubscriptionController extends Controller
                 'billing_cycle',
                 'status',
                 'trial_days',
-                'notes'
+                'notes',
             ]));
 
             $subscription->load(['user', 'plan']);
@@ -1059,13 +1048,14 @@ class SubscriptionController extends Controller
             return response()->json([
                 'status' => 'success',
                 'data' => $subscription,
-                'message' => 'Subscription updated successfully'
+                'message' => 'Subscription updated successfully',
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error updating subscription: ' . $e->getMessage());
+            Log::error('Error updating subscription: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to update subscription'
+                'message' => 'Failed to update subscription',
             ], 500);
         }
     }
@@ -1073,8 +1063,8 @@ class SubscriptionController extends Controller
     /**
      * Delete subscription (admin endpoint)
      *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function destroy($id)
     {
@@ -1084,13 +1074,14 @@ class SubscriptionController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Subscription deleted successfully'
+                'message' => 'Subscription deleted successfully',
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error deleting subscription: ' . $e->getMessage());
+            Log::error('Error deleting subscription: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to delete subscription'
+                'message' => 'Failed to delete subscription',
             ], 500);
         }
     }
@@ -1098,8 +1089,8 @@ class SubscriptionController extends Controller
     /**
      * Suspend subscription (admin endpoint)
      *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function suspend($id)
     {
@@ -1111,13 +1102,14 @@ class SubscriptionController extends Controller
             return response()->json([
                 'status' => 'success',
                 'data' => $subscription,
-                'message' => 'Subscription suspended successfully'
+                'message' => 'Subscription suspended successfully',
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error suspending subscription: ' . $e->getMessage());
+            Log::error('Error suspending subscription: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to suspend subscription'
+                'message' => 'Failed to suspend subscription',
             ], 500);
         }
     }
@@ -1125,8 +1117,8 @@ class SubscriptionController extends Controller
     /**
      * Reactivate subscription (admin endpoint)
      *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function reactivate($id)
     {
@@ -1138,13 +1130,14 @@ class SubscriptionController extends Controller
             return response()->json([
                 'status' => 'success',
                 'data' => $subscription,
-                'message' => 'Subscription reactivated successfully'
+                'message' => 'Subscription reactivated successfully',
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error reactivating subscription: ' . $e->getMessage());
+            Log::error('Error reactivating subscription: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to reactivate subscription'
+                'message' => 'Failed to reactivate subscription',
             ], 500);
         }
     }

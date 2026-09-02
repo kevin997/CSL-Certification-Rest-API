@@ -7,7 +7,11 @@ use App\Mail\EnvironmentResetPasswordMail;
 use App\Models\Environment;
 use App\Models\EnvironmentUser;
 use App\Models\User;
+use App\Notifications\EnvironmentPasswordReset;
+use App\Services\TelegramService;
+use App\Support\Tenancy\AccountSetupMarker;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -22,8 +26,7 @@ class EnvironmentUserController extends Controller
     /**
      * Send a reset link for environment-specific credentials.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function forgotPassword(Request $request)
     {
@@ -38,7 +41,7 @@ class EnvironmentUserController extends Controller
 
         // Get the environment details for branding in the email
         $environment = Environment::find($request->environment_id);
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -53,7 +56,7 @@ class EnvironmentUserController extends Controller
         }
 
         // If not an owner, check the environment_user table
-        if (!$user) {
+        if (! $user) {
             $environmentUser = DB::table('environment_user')
                 ->where('environment_id', $request->environment_id)
                 ->where('environment_email', $request->email)
@@ -66,10 +69,10 @@ class EnvironmentUserController extends Controller
         }
 
         // If no user found in either case, return generic message for security
-        if (!$user) {
+        if (! $user) {
             // Don't reveal that the user doesn't exist for security reasons
             return response()->json([
-                'message' => 'If your email exists in our system, you will receive a password reset link shortly.'
+                'message' => 'If your email exists in our system, you will receive a password reset link shortly.',
             ]);
         }
 
@@ -94,7 +97,7 @@ class EnvironmentUserController extends Controller
                 'metadata' => json_encode([
                     'environment_id' => $request->environment_id,
                     'environment_email' => $request->email,
-                    'is_environment_reset' => true
+                    'is_environment_reset' => true,
                 ]),
                 'created_at' => now(),
             ]
@@ -103,7 +106,7 @@ class EnvironmentUserController extends Controller
         // Send the password reset email using Laravel's Mail facade directly
         try {
             // Create a new instance of the mailable
-            $mailable = new \App\Mail\EnvironmentResetPasswordMail(
+            $mailable = new EnvironmentResetPasswordMail(
                 $token,
                 $environment,
                 $request->email,
@@ -111,12 +114,12 @@ class EnvironmentUserController extends Controller
             );
 
             // Send the email to the user's actual email address
-            \Illuminate\Support\Facades\Mail::to($user->email)->send($mailable);
+            Mail::to($user->email)->send($mailable);
 
             // Send Telegram notification
             try {
-                $telegramService = app(\App\Services\TelegramService::class);
-                $notification = new \App\Notifications\EnvironmentPasswordReset(
+                $telegramService = app(TelegramService::class);
+                $notification = new EnvironmentPasswordReset(
                     $token,
                     $environment,
                     $request->email,
@@ -125,16 +128,16 @@ class EnvironmentUserController extends Controller
                 );
                 $notification->send();
 
-                \Illuminate\Support\Facades\Log::info('Password reset Telegram notification sent', [
+                Log::info('Password reset Telegram notification sent', [
                     'user_id' => $user->id,
-                    'environment_id' => $environment->id
+                    'environment_id' => $environment->id,
                 ]);
             } catch (\Exception $telegramEx) {
                 // Log the error but continue execution
-                \Illuminate\Support\Facades\Log::error('Failed to send password reset Telegram notification', [
+                Log::error('Failed to send password reset Telegram notification', [
                     'error' => $telegramEx->getMessage(),
                     'user_id' => $user->id,
-                    'environment_id' => $environment->id
+                    'environment_id' => $environment->id,
                 ]);
             }
 
@@ -149,28 +152,27 @@ class EnvironmentUserController extends Controller
                         'primary_domain' => $environment->primary_domain,
                         'user_email' => $user->email,
                         'environment_email' => $request->email,
-                    ]
+                    ],
                 ]);
             }
         } catch (\Exception $e) {
             // Log the error but don't expose it to the user
-            \Illuminate\Support\Facades\Log::error('Failed to send password reset email', [
+            Log::error('Failed to send password reset email', [
                 'error' => $e->getMessage(),
                 'user_id' => $user->id,
-                'environment_id' => $environment->id
+                'environment_id' => $environment->id,
             ]);
         }
 
         return response()->json([
-            'message' => 'If your email exists in our system, you will receive a password reset link shortly.'
+            'message' => 'If your email exists in our system, you will receive a password reset link shortly.',
         ]);
     }
 
     /**
      * Reset the environment user's password.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function resetPassword(Request $request)
     {
@@ -190,7 +192,7 @@ class EnvironmentUserController extends Controller
             ->where('token', $request->token)
             ->first();
 
-        if (!$metadata) {
+        if (! $metadata) {
             return response()->json(['message' => 'Invalid token'], 400);
         }
 
@@ -198,8 +200,8 @@ class EnvironmentUserController extends Controller
 
         // Verify this is an environment reset and matches the requested environment
         if (
-            !isset($metadataArray['is_environment_reset']) ||
-            !$metadataArray['is_environment_reset'] ||
+            ! isset($metadataArray['is_environment_reset']) ||
+            ! $metadataArray['is_environment_reset'] ||
             $metadataArray['environment_id'] != $request->environment_id
         ) {
             return response()->json(['message' => 'Invalid token for this environment'], 400);
@@ -207,7 +209,7 @@ class EnvironmentUserController extends Controller
 
         // Find the user by email
         $user = User::where('email', $request->email)->first();
-        if (!$user) {
+        if (! $user) {
             return response()->json(['message' => 'User not found'], 404);
         }
 
@@ -216,7 +218,7 @@ class EnvironmentUserController extends Controller
             ->where('email', $user->email)
             ->first();
 
-        if (!$resetRecord) {
+        if (! $resetRecord) {
             return response()->json(['message' => 'Invalid token'], 400);
         }
 
@@ -224,7 +226,7 @@ class EnvironmentUserController extends Controller
         // check any superseded link kept working, because password_reset_metadata
         // rows survive until the token is used and only the hashed row in
         // password_reset_tokens is rotated when a new link is issued.
-        if (!Hash::check($request->token, $resetRecord->token)) {
+        if (! Hash::check($request->token, $resetRecord->token)) {
             return response()->json(['message' => 'Invalid token'], 400);
         }
 
@@ -240,7 +242,7 @@ class EnvironmentUserController extends Controller
 
         // Get the environment to check if this is the owner
         $environment = Environment::find($request->environment_id);
-        if (!$environment) {
+        if (! $environment) {
             return response()->json(['message' => 'Environment not found'], 404);
         }
 
@@ -252,9 +254,13 @@ class EnvironmentUserController extends Controller
         $user->password = Hash::make($request->password);
         $updated = $user->save();
 
-        if (!$updated) {
+        if (! $updated) {
             return response()->json(['message' => 'Failed to update password'], 500);
         }
+
+        // The password is global, so a completed reset means every
+        // membership of this user now has a usable password too.
+        AccountSetupMarker::markAllMemberships($user);
 
         // Delete the token
         DB::table('password_reset_tokens')
@@ -270,12 +276,11 @@ class EnvironmentUserController extends Controller
 
     /**
      * Set up the user's account by changing password and marking account as set up.
-     * 
+     *
      * IDENTITY UNIFICATION: This now updates the global users.password,
      * not the environment_user.environment_password.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function setupAccount(Request $request)
     {
@@ -293,7 +298,7 @@ class EnvironmentUserController extends Controller
             ->where('user_id', $request->user()->id)
             ->first();
 
-        if (!$environmentUser) {
+        if (! $environmentUser) {
             return response()->json(['error' => 'Environment user record not found'], 404);
         }
 
@@ -309,7 +314,7 @@ class EnvironmentUserController extends Controller
 
         return response()->json([
             'message' => 'Account setup completed successfully',
-            'is_account_setup' => true
+            'is_account_setup' => true,
         ]);
     }
 }

@@ -2,18 +2,22 @@
 
 namespace App\Providers;
 
+use App\Listeners\MailBackupWithAttachment;
+use App\Mail\PHPMailerTransport;
 use App\Models\Environment;
 use App\Models\User;
+use App\Support\Tenancy\DnsHttpDomainProbe;
+use App\Support\Tenancy\DomainProbe;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Auth\Notifications\ResetPassword;
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\ServiceProvider;
 use Spatie\Backup\Events\BackupZipWasCreated;
-use App\Listeners\MailBackupWithAttachment;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -22,7 +26,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(DomainProbe::class, DnsHttpDomainProbe::class);
     }
 
     /**
@@ -37,7 +41,7 @@ class AppServiceProvider extends ServiceProvider
 
         // Register PHPMailer transport
         Mail::extend('phpmailer', function (array $config = []) {
-            return new \App\Mail\PHPMailerTransport($config);
+            return new PHPMailerTransport($config);
         });
 
         // Register backup email with attachment listener
@@ -51,13 +55,13 @@ class AppServiceProvider extends ServiceProvider
 
         // Dynamically configure Sanctum stateful domains for multi-tenancy
         // This must be done here (not config file) to avoid CLI crashes when request() is unavailable
-        if (!$this->app->runningInConsole() && request()->hasHeader('Origin')) {
+        if (! $this->app->runningInConsole() && request()->hasHeader('Origin')) {
             $origin = request()->header('Origin');
             $host = parse_url($origin, PHP_URL_HOST);
-            
+
             if ($host && str_ends_with($host, 'csl-brands.com')) {
                 $currentStateful = config('sanctum.stateful', []);
-                if (!in_array($host, $currentStateful)) {
+                if (! in_array($host, $currentStateful)) {
                     $currentStateful[] = $host;
                     config(['sanctum.stateful' => $currentStateful]);
                 }
@@ -88,7 +92,7 @@ class AppServiceProvider extends ServiceProvider
 
         // Password reset rate limiter - 3 attempts per minute per email/IP
         RateLimiter::for('reset', function (Request $request) {
-            return Limit::perMinute(3)->by($request->input('email') . '|' . $request->ip());
+            return Limit::perMinute(3)->by($request->input('email').'|'.$request->ip());
         });
     }
 
@@ -106,20 +110,14 @@ class AppServiceProvider extends ServiceProvider
         ResetPassword::createUrlUsing(function (object $notifiable, string $token): string {
             $environment = $this->resolveEnvironmentForReset($notifiable);
 
-            if ($environment === null || blank($environment->primary_domain)) {
+            if ($environment === null) {
                 return url(route('password.reset', [
                     'token' => $token,
                     'email' => $notifiable->getEmailForPasswordReset(),
                 ], false));
             }
 
-            $domain = $environment->primary_domain;
-
-            if (! str_starts_with($domain, 'http')) {
-                $domain = 'https://' . $domain;
-            }
-
-            return $domain . '/auth/reset-password?' . http_build_query([
+            return TenantUrl::to($environment, '/auth/reset-password', [
                 'token' => $token,
                 'email' => $notifiable->getEmailForPasswordReset(),
                 'environment_id' => $environment->id,

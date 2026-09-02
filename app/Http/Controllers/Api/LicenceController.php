@@ -29,9 +29,7 @@ class LicenceController extends Controller
 
     private const GATEWAYS = ['stripe', 'lygos', 'paypal', 'monetbill', 'taramoney', 'moneroo'];
 
-    public function __construct(private LicenceService $licenceService)
-    {
-    }
+    public function __construct(private LicenceService $licenceService) {}
 
     // ---------------------------------------------------------------------
     // A. GET /environment-licences/current  (auth, owner/admin)
@@ -54,7 +52,7 @@ class LicenceController extends Controller
     public function createCheckout(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'plan_type' => 'required|in:' . implode(',', self::PURCHASABLE),
+            'plan_type' => 'required|in:'.implode(',', self::PURCHASABLE),
         ]);
         if ($validator->fails()) {
             return response()->json(['status' => 'error', 'errors' => $validator->errors()], 422);
@@ -132,7 +130,7 @@ class LicenceController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'payment_method' => 'required|in:' . implode(',', self::GATEWAYS),
+            'payment_method' => 'required|in:'.implode(',', self::GATEWAYS),
         ]);
         if ($validator->fails()) {
             return response()->json(['status' => 'error', 'errors' => $validator->errors()], 422);
@@ -178,6 +176,37 @@ class LicenceController extends Controller
         }
 
         return response()->json($body);
+    }
+
+    // ---------------------------------------------------------------------
+    // D2. POST /licence-checkouts/{uuid}/sign-in-link  (public, throttled)
+    // ---------------------------------------------------------------------
+    /**
+     * A one-time sign-in link for the owner of a paid checkout's environment.
+     * Separate from the polled status endpoint so no one-time secret is
+     * minted on every poll.
+     */
+    public function signInLink(string $uuid): JsonResponse
+    {
+        $checkout = LicenceCheckout::where('uuid', $uuid)->first();
+        if (! $checkout) {
+            return response()->json(['status' => 'error', 'message' => 'Checkout not found'], 404);
+        }
+
+        $environment = $checkout->status === LicenceCheckout::STATUS_PAID && $checkout->environment_id
+            ? Environment::find($checkout->environment_id)
+            : null;
+
+        if (! $environment) {
+            return response()->json([
+                'code' => 'checkout_not_ready',
+                'message' => 'The checkout has not been paid or the academy is not provisioned yet.',
+            ], 409);
+        }
+
+        return response()->json([
+            'redirect_url' => $this->licenceService->onboardingSignInUrl($environment),
+        ]);
     }
 
     // ---------------------------------------------------------------------
@@ -267,6 +296,7 @@ class LicenceController extends Controller
             'environment_id' => $environment->id,
             'domain' => $environment->primary_domain,
             'password_set_link_sent' => true,
+            'redirect_url' => $this->licenceService->onboardingSignInUrl($environment),
         ];
         if ($trial) {
             $body['trial_ends_at'] = optional($licence->trial_ends_at)->toIso8601String();

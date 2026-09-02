@@ -31,7 +31,7 @@
     redirect. This fixes §9.11 "renders success when the status request fails".
 --}}
 <body class="antialiased bg-gray-50"
-    @if(isset($environment) && $environment->primary_domain) data-primary-domain="{{ $protocol }}://{{ $environment->primary_domain }}" @endif
+    @if(isset($environment) && $environment->primary_domain) data-primary-domain="{{ \App\Support\Tenancy\TenantUrl::base($environment) }}" @endif
     @if(isset($environment) && $environment->id) data-environment-id="{{ $environment->id }}" @endif
     @if(isset($transaction) && $transaction->transaction_id) data-transaction-id="{{ $transaction->transaction_id }}" @endif
     @if(isset($transaction) && $transaction->order_id) data-order-id="{{ $transaction->order_id }}" @endif
