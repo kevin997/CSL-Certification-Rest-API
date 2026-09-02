@@ -3,19 +3,19 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
-use App\Models\User;
 use App\Models\Environment;
+use App\Models\User;
+use App\Support\Tenancy\TenantDomain;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Validator;
 
 class ValidationController extends Controller
 {
     /**
      * Validate if a subdomain is available.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function validateSubdomain(Request $request)
     {
@@ -32,14 +32,19 @@ class ValidationController extends Controller
         }
 
         $subdomain = $request->subdomain;
-        
-        // Check if the subdomain is already in use
-        $exists = Environment::where('primary_domain', 'LIKE', $subdomain . '.%')
-            ->orWhere('additional_domains', 'LIKE', '%' . $subdomain . '.%')
+
+        try {
+            $host = TenantDomain::compose('subdomain', $subdomain);
+        } catch (\RuntimeException $e) {
+            return response()->json(['available' => false, 'message' => $e->getMessage()], Response::HTTP_OK);
+        }
+
+        $exists = Environment::where('primary_domain', $host)
+            ->orWhereJsonContains('additional_domains', $host)
             ->exists();
 
         return response()->json([
-            'available' => !$exists,
+            'available' => ! $exists,
             'message' => $exists ? 'This subdomain is already taken.' : 'Subdomain is available.',
         ]);
     }
@@ -47,8 +52,7 @@ class ValidationController extends Controller
     /**
      * Validate if a custom domain is available.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function validateDomain(Request $request)
     {
@@ -65,14 +69,14 @@ class ValidationController extends Controller
         }
 
         $domain = $request->domain;
-        
+
         // Check if the domain is already in use
         $exists = Environment::where('primary_domain', $domain)
-            ->orWhere('additional_domains', 'LIKE', '%' . $domain . '%')
+            ->orWhereJsonContains('additional_domains', $domain)
             ->exists();
 
         return response()->json([
-            'available' => !$exists,
+            'available' => ! $exists,
             'message' => $exists ? 'This domain is already in use.' : 'Domain is available.',
         ]);
     }
@@ -80,8 +84,7 @@ class ValidationController extends Controller
     /**
      * Validate if an email is available (not already registered).
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function validateEmail(Request $request)
     {
@@ -98,12 +101,12 @@ class ValidationController extends Controller
         }
 
         $email = $request->email;
-        
+
         // Check if the email is already registered
         $exists = User::where('email', $email)->exists();
 
         return response()->json([
-            'available' => !$exists,
+            'available' => ! $exists,
             'message' => $exists ? 'This email is already registered.' : 'Email is available.',
         ]);
     }

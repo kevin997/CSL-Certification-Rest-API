@@ -70,9 +70,9 @@ class ProvisionEnvironmentAlertTest extends TestCase
     }
 
     /**
-     * KURSA issues *.csl-brands.com subdomains, but the alert only recognised the
-     * legacy .cfpcsl.com suffix, so every KURSA academy was labelled
-     * "Custom Domain".
+     * KURSA issues *.getkursa.space subdomains (legacy environments live under
+     * .csl-brands.com or .cfpcsl.com), and the alert must recognise all of them
+     * so no KURSA academy is mislabelled "Custom Domain".
      */
     public function test_a_csl_brands_subdomain_is_labelled_a_subdomain(): void
     {
@@ -90,7 +90,7 @@ class ProvisionEnvironmentAlertTest extends TestCase
 
         $environment = app(LicenceService::class)->provisionEnvironmentFromPayload($this->payload());
 
-        $this->assertStringEndsWith('.csl-brands.com', $environment->primary_domain);
+        $this->assertStringEndsWith('.getkursa.space', $environment->primary_domain);
         $this->assertStringContainsString('Type: `Subdomain`', $captured);
         $this->assertStringNotContainsString('Custom Domain', $captured);
     }

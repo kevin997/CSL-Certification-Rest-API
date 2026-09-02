@@ -5,10 +5,12 @@ namespace App\Mail;
 use App\Helpers\EmailBrandingHelper;
 use App\Models\Environment;
 use App\Models\User;
+use App\Support\Tenancy\TenantDomain;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Address;
+use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
@@ -66,7 +68,7 @@ class EnvironmentSetupMail extends Mailable implements ShouldQueue
     /**
      * Get the attachments for the message.
      *
-     * @return array<int, \Illuminate\Mail\Mailables\Attachment>
+     * @return array<int, Attachment>
      */
     public function attachments(): array
     {
@@ -78,8 +80,7 @@ class EnvironmentSetupMail extends Mailable implements ShouldQueue
      */
     private function isSubdomain(): bool
     {
-        return str_contains($this->environment->primary_domain, '.csl-brands.com')
-            || str_contains($this->environment->primary_domain, '.cfpcsl.com');
+        return TenantDomain::isKursaSubdomain((string) $this->environment->primary_domain);
     }
 
     /**
@@ -88,6 +89,7 @@ class EnvironmentSetupMail extends Mailable implements ShouldQueue
     private function generateLoginUrl(): string
     {
         $protocol = app()->environment('production') ? 'https' : 'http';
+
         return "{$protocol}://{$this->environment->primary_domain}/auth/login";
     }
 }

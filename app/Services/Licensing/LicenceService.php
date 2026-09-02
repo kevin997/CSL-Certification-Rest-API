@@ -17,6 +17,7 @@ use App\Services\Tax\TaxZoneService;
 use App\Services\TelegramService;
 use App\Support\PhoneNumber;
 use App\Support\Tenancy\SwitchTokenIssuer;
+use App\Support\Tenancy\TenantDomain;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -755,19 +756,10 @@ class LicenceService
     }
 
     /**
-     * Compose a full host from a RAW subdomain (copied verbatim from the legacy
-     * onboarding controllers).
+     * Compose a full host from a raw domain type and value.
      */
     private function formatDomain(string $domainType, string $domain): string
     {
-        if ($domainType === 'subdomain') {
-            $domain = preg_replace('#^https?://#', '', $domain);
-            $domain = strtolower($domain);
-            $domain = preg_replace('/[^a-z0-9.-]/', '-', $domain);
-
-            return $domain.'.csl-brands.com';
-        }
-
-        return preg_replace('#^https?://#', '', $domain);
+        return TenantDomain::compose($domainType, $domain);
     }
 }

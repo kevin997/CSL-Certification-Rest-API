@@ -27,7 +27,7 @@ class LicenceCheckoutTest extends TestCase
 
         return Environment::create([
             'name' => 'Checkout Env',
-            'primary_domain' => 'checkout-' . uniqid() . '.example.com',
+            'primary_domain' => 'checkout-'.uniqid().'.example.com',
             'owner_id' => $user->id,
         ]);
     }
@@ -88,7 +88,7 @@ class LicenceCheckoutTest extends TestCase
             'succeeded',
             ['amount' => 20.00, 'currency' => 'USD'],
             null,
-            ['gateway' => 'stripe', 'provider_event_id' => 'evt_' . uniqid(), 'signature_valid' => true]
+            ['gateway' => 'stripe', 'provider_event_id' => 'evt_'.uniqid(), 'signature_valid' => true]
         );
 
         $this->assertSame('processed', $result);
@@ -124,7 +124,7 @@ class LicenceCheckoutTest extends TestCase
             'succeeded',
             ['amount' => 999.00, 'currency' => 'USD'],
             null,
-            ['gateway' => 'stripe', 'provider_event_id' => 'evt_' . uniqid()]
+            ['gateway' => 'stripe', 'provider_event_id' => 'evt_'.uniqid()]
         );
 
         $this->assertSame('failed', $result);
@@ -144,11 +144,11 @@ class LicenceCheckoutTest extends TestCase
 
         $env = $this->service()->provisionEnvironmentFromPayload([
             'name' => 'Ada Founder',
-            'email' => 'ada-' . uniqid() . '@example.com',
+            'email' => 'ada-'.uniqid().'@example.com',
             'whatsapp_number' => '+237600000000',
             'environment_name' => 'Ada Academy',
             'domain_type' => 'subdomain',
-            'domain' => 'ada' . substr(uniqid(), -6),
+            'domain' => 'ada'.substr(uniqid(), -6),
             'country_code' => 'CM',
             'organization_type' => 'independent',
             'niche' => 'tech',
@@ -156,7 +156,7 @@ class LicenceCheckoutTest extends TestCase
 
         $licence = $this->service()->startFreeForever($env);
 
-        $this->assertStringEndsWith('.csl-brands.com', $env->primary_domain);
+        $this->assertStringEndsWith('.getkursa.space', $env->primary_domain);
         $this->assertDatabaseHas('environment_licences', [
             'environment_id' => $env->id,
             'plan_type' => EnvironmentLicence::PLAN_FREE,

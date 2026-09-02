@@ -9,37 +9,39 @@ use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\User;
 use App\Notifications\EnvironmentCreatedNotification;
-use App\Services\Tax\TaxZoneService;
+use App\Services\Licensing\LicenceService;
 use App\Services\TelegramService;
+use App\Support\Tenancy\TenantDomain;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Log;
-
-use Illuminate\Support\Str;
 
 class DemoOnboardingController extends Controller
 {
     /**
      * Onboard a new user with the demo plan.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
-     * 
+     * @return JsonResponse
+     *
      * @OA\Post(
      *     path="/api/onboarding/demo",
      *     summary="Onboard a new user with the demo plan",
      *     description="Create a new user account, environment, and subscription for the demo plan",
      *     operationId="onboardDemo",
      *     tags={"Onboarding"},
+     *
      *     @OA\RequestBody(
      *         required=true,
+     *
      *         @OA\JsonContent(
      *             required={"name", "email", "password", "environment_name", "domain_type", "domain"},
+     *
      *             @OA\Property(property="name", type="string", example="John Doe"),
      *             @OA\Property(property="email", type="string", format="email", example="john@example.com"),
      *             @OA\Property(property="password", type="string", format="password", example="password123"),
@@ -50,10 +52,13 @@ class DemoOnboardingController extends Controller
      *             @OA\Property(property="referral_code", type="string", example="FRIEND50")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=201,
      *         description="User onboarded successfully",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Your demo environment has been created successfully!"),
      *             @OA\Property(
@@ -67,6 +72,7 @@ class DemoOnboardingController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=422,
      *         description="Validation error"
@@ -99,7 +105,7 @@ class DemoOnboardingController extends Controller
         if ($validator->fails()) {
             return response()->json([
                 'status' => 'error',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -108,18 +114,18 @@ class DemoOnboardingController extends Controller
             return DB::transaction(function () use ($request) {
                 // Get the demo plan
                 $plan = Plan::where('type', 'demo')->firstOrFail();
-                
+
                 // Format the domain based on domain_type
                 $primaryDomain = $this->formatDomain($request->domain_type, $request->domain);
-                
+
                 // Check if the domain is already taken
                 if (Environment::where('primary_domain', $primaryDomain)->exists()) {
                     return response()->json([
                         'status' => 'error',
-                        'errors' => ['domain' => 'This domain is already taken']
+                        'errors' => ['domain' => 'This domain is already taken'],
                     ], 422);
                 }
-                
+
                 // Create the user
                 $user = User::create([
                     'name' => $request->name,
@@ -129,7 +135,7 @@ class DemoOnboardingController extends Controller
                     'role' => 'company_teacher',
                     'email_verified_at' => now(),
                 ]);
-                
+
                 // Create the environment
                 $environment = Environment::create([
                     'name' => $request->environment_name,
@@ -144,10 +150,10 @@ class DemoOnboardingController extends Controller
                     'organization_type' => $request->organization_type,
                     'niche' => $request->niche,
                 ]);
-                
+
                 // Calculate expiration date (14 days from now)
                 $expiresAt = Carbon::now()->addDays(14);
-                
+
                 // Create the subscription
                 $subscription = Subscription::create([
                     'user_id' => $user->id,
@@ -162,12 +168,12 @@ class DemoOnboardingController extends Controller
 
                 // KURSA licensing (Phase 4): dual-write the authoritative environment
                 // licence — a 14-day White Label trial (doc §5).
-                app(\App\Services\Licensing\LicenceService::class)->startWhiteLabelTrial($environment);
+                app(LicenceService::class)->startWhiteLabelTrial($environment);
 
                 // Generate admin credentials for the environment
                 $adminEmail = $user->email;
                 $adminPassword = $request->password;
-                
+
                 // Send environment setup mail
                 Mail::to($user->email)->send(new EnvironmentSetupMail(
                     $environment,
@@ -175,7 +181,7 @@ class DemoOnboardingController extends Controller
                     $adminEmail,
                     $adminPassword
                 ));
-                
+
                 // Send Telegram notification
                 try {
                     $telegramService = app(TelegramService::class);
@@ -190,9 +196,9 @@ class DemoOnboardingController extends Controller
                     $notification->toTelegram($notification);
                 } catch (\Exception $e) {
                     // Log the error but don't fail the entire process
-                    Log::error('Failed to send Telegram notification for demo environment creation: ' . $e->getMessage());
+                    Log::error('Failed to send Telegram notification for demo environment creation: '.$e->getMessage());
                 }
-                
+
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Your demo environment has been created successfully!',
@@ -202,18 +208,23 @@ class DemoOnboardingController extends Controller
                         'subscription_id' => $subscription->id,
                         'domain' => $primaryDomain,
                         'expires_at' => $expiresAt->toISOString(),
-                    ]
+                    ],
                 ], 201);
             });
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'An error occurred while creating your demo environment',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
-    
+
     /**
      * Format the domain based on the domain type.
      *
@@ -223,21 +234,6 @@ class DemoOnboardingController extends Controller
      */
     private function formatDomain($domainType, $domain)
     {
-        if ($domainType === 'subdomain') {
-            // Remove http:// or https:// if present
-            $domain = preg_replace('#^https?://#', '', $domain);
-            
-            // Convert to lowercase
-            $domain = strtolower($domain);
-            
-            // Remove any special characters not allowed in domains
-            $domain = preg_replace('/[^a-z0-9.-]/', '-', $domain);
-            
-            // Append the domain suffix
-            return $domain . '.csl-brands.com';
-        } else {
-            // For custom domains, return as is after removing protocol
-            return preg_replace('#^https?://#', '', $domain);
-        }
+        return TenantDomain::compose($domainType, $domain);
     }
 }
