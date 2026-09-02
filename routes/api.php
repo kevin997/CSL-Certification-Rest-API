@@ -113,6 +113,7 @@ use App\Http\Controllers\MediaAssetController;
 use App\Http\Controllers\QuizSubmissionController;
 use App\Mail\QueueFailureNotification;
 use App\Models\Environment;
+use App\Models\EnvironmentUser;
 use App\Support\EffectiveAuthContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
@@ -268,12 +269,22 @@ Route::get('/user', function (Request $request) {
     }
 
     $authContext = EffectiveAuthContext::for($user, $environmentId);
+
+    $isAccountSetup = null;
+    if ($environmentId) {
+        $pivotValue = EnvironmentUser::where('environment_id', $environmentId)
+            ->where('user_id', $user->id)
+            ->value('is_account_setup');
+        $isAccountSetup = $pivotValue === null ? null : (bool) $pivotValue;
+    }
+
     $responseUser = $user->toArray();
     $responseUser['role'] = $authContext['role'];
 
     $response = array_merge($responseUser, [
         'user' => $responseUser,
         'environment_id' => $environmentId,
+        'is_account_setup' => $isAccountSetup,
     ], $authContext);
 
     // For marketplace tokens, include the user's owned environment details
