@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Tenancy\TenantUrl;
 use App\Traits\BelongsToEnvironment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Order extends Model
 {
-    use HasFactory, SoftDeletes, BelongsToEnvironment;
+    use BelongsToEnvironment, HasFactory, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -45,15 +46,23 @@ class Order extends Model
      * Order statuses
      */
     const STATUS_PENDING = 'pending';
+
     const STATUS_PROCESSING = 'processing';
+
     const STATUS_COMPLETED = 'completed';
+
     const STATUS_FAILED = 'failed';
+
     const STATUS_REFUNDED = 'refunded';
+
     const STATUS_PARTIALLY_REFUNDED = 'partially_refunded';
 
     const TYPE_STOREFRONT = 'storefront';
+
     const TYPE_SUBSCRIPTION_PRODUCT = 'subscription_product';
+
     const TYPE_ENROLLMENT_CODE = 'enrollment_code';
+
     const TYPE_SALES_FORM = 'sales_form';
 
     /**
@@ -114,8 +123,9 @@ class Order extends Model
     public function getContinuePaymentUrlAttribute()
     {
         if ($this->status === 'pending' && $this->environment) {
-            return 'https://' . $this->environment->primary_domain . '/checkout/continue-payment/' . $this->id;
+            return TenantUrl::to($this->environment, '/checkout/continue-payment/'.$this->id);
         }
+
         return null;
     }
 

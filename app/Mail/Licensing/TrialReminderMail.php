@@ -4,6 +4,7 @@ namespace App\Mail\Licensing;
 
 use App\Helpers\EmailBrandingHelper;
 use App\Models\EnvironmentLicence;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
@@ -57,7 +58,7 @@ class TrialReminderMail extends Mailable implements ShouldQueue
                 'branding' => $branding,
                 'trialEndsAt' => $this->licence->trial_ends_at,
                 'manageUrl' => $environment
-                    ? 'https://' . $environment->primary_domain . '/billing'
+                    ? TenantUrl::to($environment, '/billing')
                     : '#',
             ],
         );

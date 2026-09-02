@@ -8,6 +8,7 @@ use App\Models\EnvironmentUser;
 use App\Models\Product;
 use App\Models\ProductLandingPage;
 use App\Scopes\EnvironmentScope;
+use App\Support\Tenancy\EnvironmentResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -287,14 +288,6 @@ class ProductLandingPageController extends Controller
             return Environment::resolveByIdentifier($identifier);
         }
 
-        $host = $request->header('X-Frontend-Domain')
-            ?? $request->header('X-Forwarded-Host')
-            ?? $request->getHost();
-
-        $host = preg_replace('/:\d+$/', '', $host);
-
-        return Environment::where('primary_domain', $host)
-            ->orWhere('primary_domain', 'LIKE', '%'.$host.'%')
-            ->first();
+        return app(EnvironmentResolver::class)->resolve($request)->environment;
     }
 }

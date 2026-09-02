@@ -26,6 +26,8 @@ class PasswordResetUrlTest extends TestCase
     private function environmentOwnedBy(User $user, string $domain): Environment
     {
         $environment = Environment::factory()->create([
+            // Verified: these tests assert the tenant-domain form of the link.
+            'domain_verified_at' => now(),
             'owner_id' => $user->id,
             'primary_domain' => $domain,
         ]);
@@ -80,14 +82,20 @@ class PasswordResetUrlTest extends TestCase
         $this->assertStringNotContainsString('/auth/reset-password?', $url);
     }
 
-    public function test_an_environment_with_a_blank_domain_falls_back_to_the_central_host(): void
+    /**
+     * A blank domain is the extreme case of "not live yet". The link goes to the
+     * shared host carrying the environment id, which actually serves the app —
+     * it used to fall back to the central API host, which has no reset page.
+     */
+    public function test_an_environment_with_a_blank_domain_uses_the_shared_host(): void
     {
         $user = User::factory()->create();
-        $this->environmentOwnedBy($user, '');
+        $environment = $this->environmentOwnedBy($user, '');
 
         $url = $this->resetUrlFor($user);
 
-        $this->assertStringNotContainsString('/auth/reset-password?', $url);
+        $this->assertStringStartsWith('https://app.getkursa.space/auth/reset-password?', $url);
+        $this->assertStringContainsString('environment_id='.($environment->id ?? ''), $url);
     }
 
     public function test_the_forgot_password_endpoint_sends_a_link_to_the_environment_domain(): void

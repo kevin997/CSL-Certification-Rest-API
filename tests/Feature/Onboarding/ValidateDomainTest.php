@@ -77,13 +77,13 @@ class ValidateDomainTest extends TestCase
 
         Environment::create([
             'name' => 'Taken Academy',
-            'primary_domain' => 'maclassedechant.csl-brands.com',
+            'primary_domain' => 'maclassedechant.getkursa.space',
             'owner_id' => $owner->id,
             'is_active' => true,
         ]);
 
         $response = $this->postJson('/api/onboarding/validate-domain', [
-            'domain' => 'maclassedechant.csl-brands.com',
+            'domain' => 'maclassedechant',
             'type' => 'subdomain',
         ]);
 

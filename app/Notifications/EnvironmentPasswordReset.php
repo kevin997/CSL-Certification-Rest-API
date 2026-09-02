@@ -4,6 +4,7 @@ namespace App\Notifications;
 
 use App\Models\Environment;
 use App\Services\TelegramService;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
@@ -23,7 +24,7 @@ class EnvironmentPasswordReset extends Notification implements ShouldQueue
     /**
      * The environment.
      *
-     * @var \App\Models\Environment
+     * @var Environment
      */
     protected $environment;
 
@@ -44,18 +45,13 @@ class EnvironmentPasswordReset extends Notification implements ShouldQueue
     /**
      * The Telegram service.
      *
-     * @var \App\Services\TelegramService
+     * @var TelegramService
      */
     protected $telegramService;
 
     /**
      * Create a new notification instance.
      *
-     * @param string $token
-     * @param \App\Models\Environment $environment
-     * @param string $environmentEmail
-     * @param string $userEmail
-     * @param \App\Services\TelegramService $telegramService
      * @return void
      */
     public function __construct(
@@ -91,8 +87,9 @@ class EnvironmentPasswordReset extends Notification implements ShouldQueue
     {
         try {
             $chatId = $this->telegramService->getChatId();
-            if (!$chatId) {
+            if (! $chatId) {
                 Log::error('Could not determine Telegram chat ID for password reset notification');
+
                 return;
             }
 
@@ -102,7 +99,7 @@ class EnvironmentPasswordReset extends Notification implements ShouldQueue
             // Create button for reset URL
             $buttons = [
                 'text' => 'Reset Password',
-                'url' => $resetUrl
+                'url' => $resetUrl,
             ];
 
             $message = $this->formatTelegramMessage();
@@ -110,22 +107,20 @@ class EnvironmentPasswordReset extends Notification implements ShouldQueue
 
             Log::info('Password reset Telegram notification sent', [
                 'user_id' => $this->userEmail,
-                'environment_id' => $this->environment->id
+                'environment_id' => $this->environment->id,
             ]);
         } catch (\Exception $e) {
-            Log::error('Failed to send password reset Telegram notification: ' . $e->getMessage(), [
+            Log::error('Failed to send password reset Telegram notification: '.$e->getMessage(), [
                 'environment_id' => $this->environment->id,
                 'user_email' => $this->userEmail,
                 'environment_email' => $this->environmentEmail,
-                'exception' => $e->getTraceAsString()
+                'exception' => $e->getTraceAsString(),
             ]);
         }
     }
 
     /**
      * Format the Telegram message.
-     *
-     * @return string
      */
     private function formatTelegramMessage(): string
     {
@@ -133,25 +128,23 @@ class EnvironmentPasswordReset extends Notification implements ShouldQueue
         $resetUrl = $this->generateResetUrl();
 
         // Escape special characters for MarkdownV2
-        $environmentName =  $this->telegramService->escapeMarkdownV2($this->environment->name);
-        $userEmail =  $this->telegramService->escapeMarkdownV2($this->userEmail);
-        $environmentEmail =  $this->telegramService->escapeMarkdownV2($this->environmentEmail);
-        $escapedResetUrl =  $this->telegramService->escapeMarkdownV2($resetUrl);
+        $environmentName = $this->telegramService->escapeMarkdownV2($this->environment->name);
+        $userEmail = $this->telegramService->escapeMarkdownV2($this->userEmail);
+        $environmentEmail = $this->telegramService->escapeMarkdownV2($this->environmentEmail);
+        $escapedResetUrl = $this->telegramService->escapeMarkdownV2($resetUrl);
         $expireTime = config('auth.passwords.users.expire', 60);
 
-        return "🔐 *Password Reset Requested*\n\n" .
-            "Environment: *{$environmentName}*\n" .
-            "User Email: *{$userEmail}*\n" .
-            "Environment Email: *{$environmentEmail}*\n\n" .
-            "Reset Password URL: [Click here to reset password]({$escapedResetUrl})\n\n" .
-            "This link will expire in {$expireTime} minutes\.\n\n" .
+        return "🔐 *Password Reset Requested*\n\n".
+            "Environment: *{$environmentName}*\n".
+            "User Email: *{$userEmail}*\n".
+            "Environment Email: *{$environmentEmail}*\n\n".
+            "Reset Password URL: [Click here to reset password]({$escapedResetUrl})\n\n".
+            "This link will expire in {$expireTime} minutes\.\n\n".
             "If you did not request this password reset, please ignore this message\.";
     }
 
     /**
      * Generate the reset URL.
-     *
-     * @return string
      */
     private function generateResetUrl(): string
     {
@@ -163,8 +156,10 @@ class EnvironmentPasswordReset extends Notification implements ShouldQueue
 
         // If environment has a primary domain, use that for the reset URL
         if ($this->environment->primary_domain) {
-            $protocol = app()->environment('production') ? 'https' : 'http';
-            $resetUrl = "{$protocol}://{$this->environment->primary_domain}/auth/reset-password?token={$this->token}&email={$this->userEmail}";
+            $resetUrl = TenantUrl::to($this->environment, '/auth/reset-password', [
+                'token' => $this->token,
+                'email' => $this->userEmail,
+            ]);
         }
 
         return $resetUrl;

@@ -4,6 +4,7 @@ namespace App\Mail\Licensing;
 
 use App\Helpers\EmailBrandingHelper;
 use App\Models\EnvironmentLicence;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
@@ -44,7 +45,7 @@ class LicenceRenewalWarningMail extends Mailable implements ShouldQueue
                 'branding' => $branding,
                 'graceEndsAt' => $this->licence->grace_ends_at,
                 'manageUrl' => $environment
-                    ? 'https://' . $environment->primary_domain . '/billing'
+                    ? TenantUrl::to($environment, '/billing')
                     : '#',
             ],
         );

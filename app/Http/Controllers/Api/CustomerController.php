@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -12,8 +14,7 @@ class CustomerController extends Controller
     /**
      * Get all customers for admin subscription management
      *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function index(Request $request)
     {
@@ -40,13 +41,14 @@ class CustomerController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'data' => $customers
+                'data' => $customers,
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error fetching customers: ' . $e->getMessage());
+            Log::error('Error fetching customers: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to fetch customers'
+                'message' => 'Failed to fetch customers',
             ], 500);
         }
     }
@@ -54,8 +56,8 @@ class CustomerController extends Controller
     /**
      * Get customer details with comprehensive environment information
      *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function show($id)
     {
@@ -68,7 +70,7 @@ class CustomerController extends Controller
                         'users' => function ($userQuery) {
                             $userQuery->select('users.id', 'users.name', 'users.email')
                                 ->withPivot('role', 'permissions');
-                        }
+                        },
                     ])
                         ->withCount(['courses', 'products', 'teams', 'orders', 'issuedCertificates', 'users'])
                         ->select(
@@ -79,6 +81,7 @@ class CustomerController extends Controller
                             'theme_color',
                             'logo_url',
                             'is_active',
+                            'domain_verified_at',
                             'is_demo',
                             'owner_id',
                             'description',
@@ -91,7 +94,7 @@ class CustomerController extends Controller
                 'environments' => function ($query) {
                     $query->with([
                         'owner:id,name,email',
-                        'subscription.plan'
+                        'subscription.plan',
                     ])
                         ->withCount(['courses', 'products', 'teams', 'orders', 'issuedCertificates', 'users'])
                         ->select(
@@ -102,6 +105,7 @@ class CustomerController extends Controller
                             'environments.theme_color',
                             'environments.logo_url',
                             'environments.is_active',
+                            'environments.domain_verified_at',
                             'environments.is_demo',
                             'environments.owner_id',
                             'environments.description',
@@ -111,7 +115,7 @@ class CustomerController extends Controller
                             'environments.updated_at'
                         )
                         ->withPivot('role', 'permissions', 'environment_email', 'use_environment_credentials');
-                }
+                },
             ])
                 ->findOrFail($id);
 
@@ -140,20 +144,21 @@ class CustomerController extends Controller
                 'demo_owned_environments' => $customer->ownedEnvironments->where('is_demo', true)->count(),
                 'environments_with_active_subscriptions' => $customer->ownedEnvironments->filter(function ($env) {
                     return $env->hasActiveSubscription();
-                })->count()
+                })->count(),
             ];
 
             $customer->environment_stats = $environmentStats;
 
             return response()->json([
                 'status' => 'success',
-                'data' => $customer
+                'data' => $customer,
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error fetching customer: ' . $e->getMessage());
+            Log::error('Error fetching customer: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Customer not found'
+                'message' => 'Customer not found',
             ], 404);
         }
     }
@@ -161,9 +166,8 @@ class CustomerController extends Controller
     /**
      * Update customer information
      *
-     * @param Request $request
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function update(Request $request, $id)
     {
@@ -173,7 +177,7 @@ class CustomerController extends Controller
             // Validate request data
             $request->validate([
                 'name' => 'sometimes|string|max:255',
-                'email' => 'sometimes|email|unique:users,email,' . $id,
+                'email' => 'sometimes|email|unique:users,email,'.$id,
                 'role' => 'sometimes|in:learner,individual_teacher,company_teacher',
                 'company_name' => 'sometimes|nullable|string|max:255',
                 'whatsapp_number' => 'sometimes|nullable|string|max:20',
@@ -184,19 +188,21 @@ class CustomerController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'data' => $customer->fresh()
+                'data' => $customer->fresh(),
             ], 200);
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            Log::error('Customer not found: ' . $e->getMessage());
+        } catch (ModelNotFoundException $e) {
+            Log::error('Customer not found: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Customer not found'
+                'message' => 'Customer not found',
             ], 404);
         } catch (\Exception $e) {
-            Log::error('Error updating customer: ' . $e->getMessage());
+            Log::error('Error updating customer: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to update customer'
+                'message' => 'Failed to update customer',
             ], 500);
         }
     }
@@ -204,8 +210,7 @@ class CustomerController extends Controller
     /**
      * Create a new customer
      *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function store(Request $request)
     {
@@ -232,13 +237,14 @@ class CustomerController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'data' => $customer
+                'data' => $customer,
             ], 201);
         } catch (\Exception $e) {
-            Log::error('Error creating customer: ' . $e->getMessage());
+            Log::error('Error creating customer: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to create customer'
+                'message' => 'Failed to create customer',
             ], 500);
         }
     }
@@ -246,8 +252,8 @@ class CustomerController extends Controller
     /**
      * Delete a customer
      *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function destroy($id)
     {
@@ -257,19 +263,21 @@ class CustomerController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Customer deleted successfully'
+                'message' => 'Customer deleted successfully',
             ], 200);
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            Log::error('Customer not found: ' . $e->getMessage());
+        } catch (ModelNotFoundException $e) {
+            Log::error('Customer not found: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Customer not found'
+                'message' => 'Customer not found',
             ], 404);
         } catch (\Exception $e) {
-            Log::error('Error deleting customer: ' . $e->getMessage());
+            Log::error('Error deleting customer: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to delete customer'
+                'message' => 'Failed to delete customer',
             ], 500);
         }
     }

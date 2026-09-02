@@ -4,6 +4,7 @@ namespace App\Mail;
 
 use App\Helpers\EmailBrandingHelper;
 use App\Models\ProductSubscription;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
@@ -30,7 +31,7 @@ class ProductSubscriptionExpiringReminder extends Mailable implements ShouldQueu
 
         return new Envelope(
             from: new Address(config('mail.from.address'), $branding['company_name']),
-            subject: $prefix . ': ' . ($this->subscription->product->name ?? 'Subscription'),
+            subject: $prefix.': '.($this->subscription->product->name ?? 'Subscription'),
         );
     }
 
@@ -41,7 +42,7 @@ class ProductSubscriptionExpiringReminder extends Mailable implements ShouldQueu
         $branding = $this->resolveBranding();
 
         $manageUrl = $this->subscription->environment
-            ? 'https://' . $this->subscription->environment->primary_domain . '/learners/subscriptions'
+            ? TenantUrl::to($this->subscription->environment, '/learners/subscriptions')
             : '#';
 
         return new Content(

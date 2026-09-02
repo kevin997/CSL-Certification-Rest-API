@@ -5,6 +5,7 @@ namespace App\Mail;
 use App\Helpers\EmailBrandingHelper;
 use App\Models\Environment;
 use App\Models\User;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
@@ -44,7 +45,7 @@ class LearnerWeeklyDigest extends Mailable implements ShouldQueue
                 'environment' => $this->environment,
                 'stats' => $this->stats,
                 'branding' => $branding,
-                'loginUrl' => 'https://' . $this->environment->primary_domain . '/auth/login',
+                'loginUrl' => TenantUrl::to($this->environment, '/auth/login'),
             ],
         );
     }

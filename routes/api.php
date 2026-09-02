@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\Admin\AuditLogController;
 use App\Http\Controllers\Api\Admin\CentralizedTransactionController;
 use App\Http\Controllers\Api\Admin\CommissionController;
+use App\Http\Controllers\Api\Admin\DomainVerificationController;
 use App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController;
 use App\Http\Controllers\Api\Admin\PasswordLinkController;
 use App\Http\Controllers\Api\Admin\SystemDashboardController;
@@ -113,7 +114,9 @@ use App\Http\Controllers\MediaAssetController;
 use App\Http\Controllers\QuizSubmissionController;
 use App\Mail\QueueFailureNotification;
 use App\Models\Environment;
+use App\Models\EnvironmentUser;
 use App\Support\EffectiveAuthContext;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
@@ -181,10 +184,12 @@ Route::prefix('licence-checkouts')->group(function () {
         ->middleware('throttle:30,1');
     Route::get('/{uuid}/status', [LicenceController::class, 'checkoutStatus'])
         ->middleware('throttle:60,1');
+    Route::post('/{uuid}/sign-in-link', [LicenceController::class, 'signInLink'])
+        ->middleware('throttle:30,1');
 });
 
 // KURSA licensing (Phase 4): owner/admin-gated environment licence management.
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
     Route::get('/environment-licences/current', [LicenceController::class, 'current']);
     Route::post('/environment-licences/trial', [LicenceController::class, 'startTrial']);
     Route::post('/environment-licences/cancel', [LicenceController::class, 'cancel']);
@@ -268,12 +273,22 @@ Route::get('/user', function (Request $request) {
     }
 
     $authContext = EffectiveAuthContext::for($user, $environmentId);
+
+    $isAccountSetup = null;
+    if ($environmentId) {
+        $pivotValue = EnvironmentUser::where('environment_id', $environmentId)
+            ->where('user_id', $user->id)
+            ->value('is_account_setup');
+        $isAccountSetup = $pivotValue === null ? null : (bool) $pivotValue;
+    }
+
     $responseUser = $user->toArray();
     $responseUser['role'] = $authContext['role'];
 
     $response = array_merge($responseUser, [
         'user' => $responseUser,
         'environment_id' => $environmentId,
+        'is_account_setup' => $isAccountSetup,
     ], $authContext);
 
     // For marketplace tokens, include the user's owned environment details
@@ -283,6 +298,8 @@ Route::get('/user', function (Request $request) {
             'id' => $ownedEnv->id,
             'name' => $ownedEnv->name,
             'primary_domain' => $ownedEnv->primary_domain,
+            // The address the academy actually answers on today (see TenantUrl).
+            'url' => TenantUrl::base($ownedEnv),
             'logo_url' => $ownedEnv->logo_url,
         ] : null;
     }
@@ -359,10 +376,14 @@ Route::middleware(['throttle:login'])->group(function () {
 Route::delete('/tokens', [TokenController::class, 'revokeTokens'])->middleware('auth:sanctum');
 
 // Environment Membership Routes (Identity Unification - Story 3)
+// Unguarded: these decide which environment the caller belongs to, so they run
+// before any environment is bound. Setup-account is the same -- an invited user
+// sets their password from a link, with no binding yet.
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/environments/{id}/join', [EnvironmentMembershipController::class, 'join']);
     Route::delete('/environments/{id}/leave', [EnvironmentMembershipController::class, 'leave']);
     Route::get('/user/environments', [EnvironmentMembershipController::class, 'myEnvironments']);
+    Route::put('/environment-users/setup-account', [EnvironmentUserController::class, 'setupAccount']);
 });
 
 // Academy Switch Routes (Cross-domain authentication for academy switching)
@@ -390,7 +411,7 @@ Route::post('/public/plans/compare', [PlanController::class, 'compare']);
 // Public Tax Rate route (for onboarding)
 Route::post('/public/tax-rate', [OnboardingController::class, 'getTaxRate']);
 // Environment management routes
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
     Route::apiResource('environments', EnvironmentController::class);
     Route::get('environments/{id}/users', [EnvironmentController::class, 'getUsers']);
     Route::post('environments/{id}/users', [EnvironmentController::class, 'addUser'])->middleware('licence.limit:admin_seats');
@@ -406,13 +427,13 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 // Dashboard Routes
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
     // Dashboard data
     Route::get('/dashboard', [DashboardController::class, 'getDashboardData']);
 });
 
 // Sales Dashboard Routes
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
     // Admin dashboard stats
     Route::get('/sales/admin/stats', [SalesDashboardController::class, 'getAdminStats']);
 
@@ -446,7 +467,7 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 // Sales Agent Management Routes
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
     // Sales agent listing and creation
     Route::get('/sales/admin/agents', [SalesAgentController::class, 'index']);
     Route::post('/sales/admin/agents', [SalesAgentController::class, 'store']);
@@ -458,7 +479,7 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 // Template Management Routes
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
 
     // Invoice routes
     Route::get('/invoices', [InvoiceController::class, 'index']);
@@ -953,8 +974,8 @@ Route::get('/certificates/preview/{path}', [CertificateController::class, 'previ
 
 // Certificate routes
 Route::post('/certificates/verify', [CertificateController::class, 'verify']);
-Route::post('/certificate-content/{certificateContentId}/issue', [CertificateController::class, 'issueCertificate'])->middleware('auth:sanctum');
-Route::get('/user/certificates', [CertificateController::class, 'getUserCertificates'])->middleware('auth:sanctum');
+Route::post('/certificate-content/{certificateContentId}/issue', [CertificateController::class, 'issueCertificate'])->middleware(['auth:sanctum', 'environment.required']);
+Route::get('/user/certificates', [CertificateController::class, 'getUserCertificates'])->middleware(['auth:sanctum', 'environment.required']);
 
 Route::group(['prefix' => 'storefront'], function () {
     // Public storefront routes that don't require authentication
@@ -1011,9 +1032,9 @@ Route::group(['prefix' => 'storefront'], function () {
 });
 
 // Continue payment for a pending order
-Route::post('/storefront/orders/{orderId}/continue-payment', [StorefrontController::class, 'continuePayment'])->middleware('auth:sanctum');
+Route::post('/storefront/orders/{orderId}/continue-payment', [StorefrontController::class, 'continuePayment'])->middleware(['auth:sanctum', 'environment.required']);
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
     Route::get('/subscription-products/subscriptions', [SubscriptionProductController::class, 'index']);
     Route::get('/subscription-products/subscriptions/{subscriptionId}', [SubscriptionProductController::class, 'show']);
     Route::get('/subscription-products/users/{userId}/subscriptions', [SubscriptionProductController::class, 'userSubscriptions']);
@@ -1041,7 +1062,7 @@ Route::group(['prefix' => 'payments'], function () {
 });
 
 // Team Management Routes
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
     // Team routes
     Route::get('/teams', [TeamController::class, 'index']);
     Route::post('/teams', [TeamController::class, 'store']);
@@ -1057,11 +1078,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/teams/update-member-role', [TeamController::class, 'updateMemberRole']);
 });
 
-// Environment User Routes
-Route::middleware('auth:sanctum')->group(function () {
-    // Account setup route
-    Route::put('/environment-users/setup-account', [EnvironmentUserController::class, 'setupAccount']);
-});
 // Include the environment authentication routes
 require __DIR__.'/environment-auth.php';
 
@@ -1069,7 +1085,7 @@ require __DIR__.'/environment-auth.php';
 require __DIR__.'/learner.php';
 
 // Enrollment Analytics Routes
-Route::middleware('auth:sanctum')->prefix('analytics')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required'])->prefix('analytics')->group(function () {
     // Track activity analytics
     Route::post('/activity/track', [EnrollmentAnalyticsController::class, 'trackActivityAnalytics']);
 
@@ -1097,10 +1113,10 @@ Route::prefix('lessons/{lessonId}/discussions')
         Route::post('/', 'store');
         Route::post('{discussionId}/reply', 'reply');
         Route::delete('{discussionId}', 'destroy');
-    })->middleware('auth:sanctum');
+    })->middleware(['auth:sanctum', 'environment.required']);
 
 // Chat System Routes
-Route::middleware('auth:sanctum')->prefix('chat')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required'])->prefix('chat')->group(function () {
     // Discussion routes
     Route::post('discussions', [DiscussionController::class, 'store']);
     Route::get('discussions/{discussion}', [DiscussionController::class, 'show']);
@@ -1121,7 +1137,7 @@ Route::middleware('auth:sanctum')->prefix('chat')->group(function () {
 });
 
 // Chat Analytics Routes
-Route::middleware('auth:sanctum')->prefix('chat/analytics')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required'])->prefix('chat/analytics')->group(function () {
     // Course engagement reports
     Route::get('course/{courseId}/engagement', [ChatAnalyticsController::class, 'getCourseEngagementReport']);
 
@@ -1142,7 +1158,9 @@ Route::middleware('auth:sanctum')->prefix('chat/analytics')->group(function () {
 });
 
 // Chat Archival Routes
-Route::prefix('chat/archival')->group(function () {
+// auth:sanctum comes from ChatArchivalController::middleware(); it is repeated
+// here so the guard runs after authentication rather than before it.
+Route::middleware(['auth:sanctum', 'environment.required'])->prefix('chat/archival')->group(function () {
     // Get archival status for a course
     Route::get('courses/{courseId}/status', [ChatArchivalController::class, 'getArchivalStatus']);
 
@@ -1160,7 +1178,8 @@ Route::prefix('chat/archival')->group(function () {
 });
 
 // Chat Search Routes
-Route::prefix('chat/search')->group(function () {
+// auth:sanctum comes from ChatSearchController::middleware(); see above.
+Route::middleware(['auth:sanctum', 'environment.required'])->prefix('chat/search')->group(function () {
     // Search chat messages
     Route::get('messages', [ChatSearchController::class, 'searchMessages']);
 
@@ -1183,7 +1202,8 @@ Route::prefix('chat/search')->group(function () {
 });
 
 // Chat Instructor Routes
-Route::prefix('chat/instructor')->group(function () {
+// auth:sanctum comes from DiscussionController::middleware(); see above.
+Route::middleware(['auth:sanctum', 'environment.required'])->prefix('chat/instructor')->group(function () {
     // Get all discussions for instructor (across all their courses)
     Route::get('discussions', [DiscussionController::class, 'instructorDiscussions']);
 
@@ -1195,7 +1215,7 @@ Route::prefix('chat/instructor')->group(function () {
 });
 
 // Third Party Service Management Routes
-Route::middleware('auth:sanctum')->prefix('third-party-services')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required'])->prefix('third-party-services')->group(function () {
     // CRUD operations
     Route::get('/', [ThirdPartyServiceController::class, 'index']);
     Route::post('/', [ThirdPartyServiceController::class, 'store']);
@@ -1249,6 +1269,9 @@ Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
     Route::post('/environments/{environmentId}/resend-password-link', [PasswordLinkController::class, 'resend'])
         ->middleware('throttle:20,1');
 
+    // Operator override for domain liveness (the hourly probe only ever sets it).
+    Route::put('/environments/{environmentId}/domain-verification', [DomainVerificationController::class, 'update']);
+
     // System Dashboard
     Route::prefix('system-dashboard')->group(function () {
         Route::get('/overview', [SystemDashboardController::class, 'overview']);
@@ -1292,7 +1315,7 @@ Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
 });
 
 // Instructor API Endpoints for Earnings and Withdrawals
-Route::middleware(['auth:sanctum'])->prefix('instructor')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required'])->prefix('instructor')->group(function () {
     // Earnings Management
     Route::prefix('earnings')->group(function () {
         Route::get('/', [EarningsController::class, 'index']);
@@ -1332,7 +1355,7 @@ Route::middleware(['auth:sanctum'])->prefix('instructor')->group(function () {
 });
 
 // Live Sessions Routes
-Route::middleware(['auth:sanctum'])->prefix('live-sessions')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required'])->prefix('live-sessions')->group(function () {
     Route::get('/', [LiveSessionController::class, 'index']);
     Route::post('/', [LiveSessionController::class, 'store'])->middleware('licence.feature:live_sessions,full');
     Route::get('/stats', [LiveSessionController::class, 'stats']);
@@ -1348,7 +1371,7 @@ Route::middleware(['auth:sanctum'])->prefix('live-sessions')->group(function () 
 Route::post('/webhooks/livekit', [LiveKitWebhookController::class, 'handle']);
 
 // Live Settings Routes
-Route::middleware(['auth:sanctum'])->prefix('live-settings')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required'])->prefix('live-settings')->group(function () {
     Route::get('/', [EnvironmentLiveSettingsController::class, 'show']);
     Route::put('/', [EnvironmentLiveSettingsController::class, 'update']);
     Route::get('/usage', [EnvironmentLiveSettingsController::class, 'usage']);

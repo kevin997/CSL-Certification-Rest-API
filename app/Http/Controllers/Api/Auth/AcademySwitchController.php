@@ -7,11 +7,11 @@ use App\Models\Environment;
 use App\Models\EnvironmentUser;
 use App\Models\User;
 use App\Support\EffectiveAuthContext;
+use App\Support\Tenancy\SwitchTokenIssuer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
 /**
  * @OA\Tag(
@@ -91,28 +91,18 @@ class AcademySwitchController extends Controller
             ], 403);
         }
 
-        // Generate a unique, short-lived token
-        $switchToken = Str::random(64);
-        $expiresIn = 60; // 60 seconds
-
-        // Store token in cache with user and environment info
-        $tokenData = [
-            'user_id' => $user->id,
-            'target_environment_id' => $targetEnvironmentId,
-            'source_environment_id' => $request->header('X-Environment-Id'),
-            'created_at' => now()->toIso8601String(),
-        ];
-
-        Cache::put(
-            "academy_switch_token:{$switchToken}",
-            $tokenData,
-            now()->addSeconds($expiresIn)
+        $expiresIn = 60;
+        $issuer = app(SwitchTokenIssuer::class);
+        $switchToken = $issuer->issue(
+            $user,
+            $targetEnvironment,
+            $expiresIn,
+            $request->header('X-Environment-Id'),
         );
 
-        // Build redirect URL
-        $targetDomain = $targetEnvironment->primary_domain;
-        $protocol = config('app.env') === 'production' ? 'https' : 'http';
-        $redirectUrl = "{$protocol}://{$targetDomain}/auth/switch?token={$switchToken}";
+        // A pending domain lands on the shared host; a live one on the tenant domain.
+        $redirectUrl = $issuer->redirectUrl($targetEnvironment, $switchToken);
+        $targetDomain = parse_url($redirectUrl, PHP_URL_HOST);
 
         Log::info('Academy switch token generated', [
             'user_id' => $user->id,
@@ -184,7 +174,7 @@ class AcademySwitchController extends Controller
         $deviceName = $request->device_name ?? 'web-client';
 
         // Retrieve token data from cache
-        $tokenData = Cache::get("academy_switch_token:{$switchToken}");
+        $tokenData = Cache::get(SwitchTokenIssuer::CACHE_PREFIX.$switchToken);
 
         if (! $tokenData) {
             return response()->json([
@@ -193,7 +183,7 @@ class AcademySwitchController extends Controller
         }
 
         // Immediately invalidate the token (one-time use)
-        Cache::forget("academy_switch_token:{$switchToken}");
+        Cache::forget(SwitchTokenIssuer::CACHE_PREFIX.$switchToken);
 
         $userId = $tokenData['user_id'];
         $targetEnvironmentId = $tokenData['target_environment_id'];
@@ -254,6 +244,7 @@ class AcademySwitchController extends Controller
             'token' => $authToken,
             'user' => $responseUser,
             'environment_id' => $targetEnvironmentId,
+            'is_account_setup' => $environmentUser ? (bool) $environmentUser->is_account_setup : null,
             ...$authContext,
             'environment' => [
                 'id' => $targetEnvironment->id,

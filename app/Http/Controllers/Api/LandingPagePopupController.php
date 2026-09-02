@@ -4,11 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Branding;
-use App\Models\LandingPagePopup;
+use App\Support\Tenancy\EnvironmentContext;
+use App\Support\Tenancy\EnvironmentResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Http\Response;
 
 class LandingPagePopupController extends Controller
 {
@@ -19,7 +19,7 @@ class LandingPagePopupController extends Controller
     {
         $branding = Branding::where('user_id', Auth::id())->find($brandingId);
 
-        if (!$branding) {
+        if (! $branding) {
             // Try finding by environment owner
             $branding = Branding::whereHas('environment', function ($query) {
                 $query->where('owner_id', Auth::id());
@@ -36,7 +36,7 @@ class LandingPagePopupController extends Controller
     {
         $branding = $this->findBranding($brandingId);
 
-        if (!$branding) {
+        if (! $branding) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Branding not found',
@@ -58,7 +58,7 @@ class LandingPagePopupController extends Controller
     {
         $branding = $this->findBranding($brandingId);
 
-        if (!$branding) {
+        if (! $branding) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Branding not found',
@@ -109,7 +109,7 @@ class LandingPagePopupController extends Controller
     {
         $branding = $this->findBranding($brandingId);
 
-        if (!$branding) {
+        if (! $branding) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Branding not found',
@@ -118,7 +118,7 @@ class LandingPagePopupController extends Controller
 
         $popup = $branding->popups()->find($popupId);
 
-        if (!$popup) {
+        if (! $popup) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Popup not found',
@@ -138,7 +138,7 @@ class LandingPagePopupController extends Controller
     {
         $branding = $this->findBranding($brandingId);
 
-        if (!$branding) {
+        if (! $branding) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Branding not found',
@@ -147,7 +147,7 @@ class LandingPagePopupController extends Controller
 
         $popup = $branding->popups()->find($popupId);
 
-        if (!$popup) {
+        if (! $popup) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Popup not found',
@@ -198,7 +198,7 @@ class LandingPagePopupController extends Controller
     {
         $branding = $this->findBranding($brandingId);
 
-        if (!$branding) {
+        if (! $branding) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Branding not found',
@@ -207,7 +207,7 @@ class LandingPagePopupController extends Controller
 
         $popup = $branding->popups()->find($popupId);
 
-        if (!$popup) {
+        if (! $popup) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Popup not found',
@@ -229,7 +229,7 @@ class LandingPagePopupController extends Controller
     {
         $branding = $this->findBranding($brandingId);
 
-        if (!$branding) {
+        if (! $branding) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Branding not found',
@@ -238,7 +238,7 @@ class LandingPagePopupController extends Controller
 
         $popup = $branding->popups()->find($popupId);
 
-        if (!$popup) {
+        if (! $popup) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Popup not found',
@@ -272,20 +272,12 @@ class LandingPagePopupController extends Controller
      */
     public function publicPopups(Request $request)
     {
-        // Get domain from request
-        $domain = $request->header('X-Frontend-Domain')
-            ?? $request->header('X-Forwarded-Host')
-            ?? $request->query('domain')
-            ?? $request->getHost();
+        $resolver = app(EnvironmentResolver::class);
+        $context = $resolver->resolve($request);
+        $environment = $context->environment
+            ?? ($context->source === EnvironmentContext::SOURCE_NONE ? $resolver->explicitEnvironment($request) : null);
 
-        $domain = preg_replace('/:\d+$/', '', $domain);
-
-        // Find environment by domain
-        $environment = \App\Models\Environment::where('primary_domain', $domain)
-            ->orWhere('primary_domain', 'LIKE', '%' . $domain . '%')
-            ->first();
-
-        if (!$environment) {
+        if (! $environment) {
             return response()->json([
                 'status' => 'success',
                 'data' => [],
@@ -298,7 +290,7 @@ class LandingPagePopupController extends Controller
             ->where('is_active', true)
             ->first();
 
-        if (!$branding) {
+        if (! $branding) {
             return response()->json([
                 'status' => 'success',
                 'data' => [],

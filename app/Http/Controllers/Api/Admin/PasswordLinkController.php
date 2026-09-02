@@ -9,6 +9,7 @@ use App\Models\Environment;
 use App\Models\User;
 use App\Services\TelegramService;
 use App\Support\PhoneNumber;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -273,7 +274,7 @@ class PasswordLinkController extends Controller
             ]
         );
 
-        return 'https://'.$environment->primary_domain.'/auth/reset-password?'.http_build_query([
+        return TenantUrl::to($environment, '/auth/reset-password', [
             'token' => $token,
             'email' => $owner->email,
             'environment_id' => $environment->id,

@@ -4,6 +4,7 @@ namespace App\Mail;
 
 use App\Helpers\EmailBrandingHelper;
 use App\Models\Environment;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
@@ -82,6 +83,13 @@ class EnvironmentResetPasswordMail extends Mailable implements ShouldQueue
                 'environmentName' => $this->environment->name,
                 'environmentEmail' => $this->environmentEmail,
                 'branding' => $branding,
+                'pendingDomainNotice' => TenantUrl::isLive($this->environment)
+                    ? null
+                    : sprintf(
+                        'Your academy is available at %s now. Once %s is live it will open there.',
+                        TenantUrl::base($this->environment),
+                        $this->environment->primary_domain,
+                    ),
             ],
         );
     }
@@ -91,11 +99,7 @@ class EnvironmentResetPasswordMail extends Mailable implements ShouldQueue
      */
     protected function generateResetUrl(): string
     {
-        $domain = preg_replace('#^https?://#i', '', trim($this->environment->primary_domain));
-        $domain = 'https://'.rtrim($domain, '/');
-
-        // Build the reset URL with the token and email parameters
-        return $domain.'/auth/reset-password?'.http_build_query([
+        return TenantUrl::to($this->environment, '/auth/reset-password', [
             'token' => $this->token,
             'email' => $this->userEmail,
             'environment_id' => $this->environment->id,

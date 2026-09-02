@@ -2,8 +2,13 @@
 
 namespace App\Traits;
 
+use App\Enums\UserRole;
 use App\Models\Environment;
+use App\Models\EnvironmentUser;
 use App\Scopes\EnvironmentScope;
+use App\Support\Tenancy\EnvironmentContext;
+use App\Support\Tenancy\EnvironmentResolver;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Log;
@@ -30,7 +35,10 @@ trait BelongsToEnvironment
         // reads them queries exactly whereNull('environment_id').
         static::creating(function ($model) {
             if (! array_key_exists('environment_id', $model->getAttributes())) {
-                $model->environment_id = self::detectEnvironmentId();
+                // Strict on the write path: a caller who names a tenant they do
+                // not belong to gets a deliberate 403 rather than a NOT NULL
+                // constraint violation surfacing as a 500.
+                $model->environment_id = self::detectEnvironmentId(true);
 
                 if ($model->environment_id) {
                     Log::info('BelongsToEnvironment: Auto-set environment_id', [
@@ -73,97 +81,71 @@ trait BelongsToEnvironment
     }
 
     /**
-     * Detect the current environment ID from various sources.
+     * The environment new rows are stamped with: the resolved request context
+     * first, then an explicit environment_id the caller supplied, then the
+     * session, else null. There is deliberately no fallback tenant.
      *
-     * @return int|null
+     * The supplied value is membership-checked. Several endpoints pass their
+     * environment in the request rather than relying on the host, so the path
+     * has to stay; unchecked, it let any authenticated caller stamp a row into
+     * another tenant simply by naming it. A caller with no authenticated user
+     * (console, queue) is trusted as before.
      */
-    public static function detectEnvironmentId()
+    public static function detectEnvironmentId(bool $throwWhenRefused = false)
     {
-        // Priority 1: Check request parameter (from API)
         $request = request();
-        if ($request && $request->has('environment_id')) {
-            return $request->input('environment_id');
+        $context = $request?->attributes->get(EnvironmentResolver::REQUEST_ATTRIBUTE);
+
+        if ($context instanceof EnvironmentContext && $context->resolved()) {
+            return $context->environment->id;
         }
 
-        // Priority 2: Check session
+        if ($request && $request->has('environment_id')) {
+            $requested = $request->input('environment_id');
+            $user = $request->user();
+
+            if (! $user || self::userBelongsToEnvironment($user, (int) $requested)) {
+                return $requested;
+            }
+
+            if ($throwWhenRefused) {
+                throw new AuthorizationException('You are not a member of the environment you named.');
+            }
+
+            // Reads fall through unscoped rather than throwing: an admin filter
+            // that carries an environment_id must not become a 403 mid-listing.
+            return null;
+        }
+
         if (session()->has('current_environment_id')) {
             return session('current_environment_id');
-        }
-
-        // Priority 3: Try to detect from domain
-        $environment = self::detectEnvironmentFromDomain();
-        if ($environment) {
-            // Store in session for future use
-            session(['current_environment_id' => $environment->id]);
-
-            return $environment->id;
-        }
-
-        // Priority 4: Fallback to first active environment
-        $fallbackEnvironment = Environment::where('is_active', true)->first();
-        if ($fallbackEnvironment) {
-            Log::info('BelongsToEnvironment: Using fallback environment', [
-                'environment_id' => $fallbackEnvironment->id,
-            ]);
-            session(['current_environment_id' => $fallbackEnvironment->id]);
-
-            return $fallbackEnvironment->id;
         }
 
         return null;
     }
 
     /**
-     * Detect environment from the current domain.
-     *
-     * @return Environment|null
+     * Owner or member of the environment they named. Platform staff pass: they
+     * act across tenants by definition, and admin screens routinely filter by an
+     * environment nobody has a membership row in.
      */
-    private static function detectEnvironmentFromDomain()
+    private static function userBelongsToEnvironment($user, int $environmentId): bool
     {
-        $request = request();
-        if (! $request) {
-            return null;
+        $role = $user->role instanceof UserRole ? $user->role->value : $user->role;
+
+        if (in_array($role, [UserRole::ADMIN->value, UserRole::SUPER_ADMIN->value, UserRole::SALES_AGENT->value], true)) {
+            return true;
         }
 
-        // Try to get domain from headers in priority order
-        $domain = null;
-        $apiDomain = $request->getHost();
+        $userId = (int) $user->getAuthIdentifier();
 
-        // First check for the explicit X-Frontend-Domain header
-        $frontendDomainHeader = $request->header('X-Frontend-Domain');
-
-        // Then try Origin or Referer as fallbacks
-        $origin = $request->header('Origin');
-        $referer = $request->header('Referer');
-
-        if ($frontendDomainHeader) {
-            $domain = $frontendDomainHeader;
-        } elseif ($origin) {
-            $parsedOrigin = parse_url($origin);
-            $domain = $parsedOrigin['host'] ?? null;
-        } elseif ($referer) {
-            $parsedReferer = parse_url($referer);
-            $domain = $parsedReferer['host'] ?? null;
+        if (Environment::query()->whereKey($environmentId)->where('owner_id', $userId)->exists()) {
+            return true;
         }
 
-        // If still no domain, fall back to the API domain
-        if (! $domain) {
-            $domain = $apiDomain;
-        }
-
-        // Find the environment that matches the domain
-        $environment = Environment::where('primary_domain', $domain)
-            ->orWhereJsonContains('additional_domains', $domain)
-            ->where('is_active', true)
-            ->first();
-
-        if ($environment) {
-            Log::info('BelongsToEnvironment: Environment detected from domain', [
-                'domain' => $domain,
-                'environment_id' => $environment->id,
-            ]);
-        }
-
-        return $environment;
+        return EnvironmentUser::query()
+            ->where('environment_id', $environmentId)
+            ->where('user_id', $userId)
+            ->exists();
     }
 }

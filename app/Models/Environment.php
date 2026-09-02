@@ -49,6 +49,7 @@ class Environment extends Model
         'logo_url',
         'favicon_url',
         'is_active',
+        'domain_verified_at',
         'is_demo',
         'is_centralized_payment_provider',
         'owner_id',
@@ -68,6 +69,7 @@ class Environment extends Model
     protected $casts = [
         'additional_domains' => 'array',
         'is_active' => 'boolean',
+        'domain_verified_at' => 'datetime',
         'is_demo' => 'boolean',
         'is_centralized_payment_provider' => 'boolean',
         'payment_settings' => 'array',
@@ -85,7 +87,7 @@ class Environment extends Model
 
         $clearDomainCaches = function (Environment $env): void {
             foreach ($env->getAllDomains() as $domain) {
-                Cache::forget("env_by_domain:{$domain}");
+                Cache::forget('env_by_domain:'.strtolower((string) $domain));
             }
         };
 
@@ -94,7 +96,7 @@ class Environment extends Model
 
             // Also clear any previously registered domains that may have changed.
             if ($env->isDirty('primary_domain') && $env->getOriginal('primary_domain')) {
-                Cache::forget('env_by_domain:'.$env->getOriginal('primary_domain'));
+                Cache::forget('env_by_domain:'.strtolower((string) $env->getOriginal('primary_domain')));
             }
 
             if ($env->isDirty('additional_domains')) {
@@ -103,7 +105,7 @@ class Environment extends Model
                     $old = json_decode($old, true) ?? [];
                 }
                 foreach ((array) $old as $domain) {
-                    Cache::forget("env_by_domain:{$domain}");
+                    Cache::forget('env_by_domain:'.strtolower((string) $domain));
                 }
             }
         });
@@ -115,16 +117,49 @@ class Environment extends Model
 
     /**
      * Resolve an active environment by any of its registered domains.
-     * Result is cached to avoid a DB hit on every request.
+     *
+     * The is_active predicate wraps the whole domain disjunction. The previous
+     * query evaluated as (primary_domain = d) OR (additional ⊇ d AND active),
+     * so an inactive environment still matched on its primary domain.
+     */
+    public static function findActiveByDomain(string $domain): ?self
+    {
+        $domain = strtolower(trim($domain));
+
+        if ($domain === '') {
+            return null;
+        }
+
+        return Cache::remember("env_by_domain:{$domain}", self::DOMAIN_CACHE_TTL, function () use ($domain): ?self {
+            return static::where('is_active', true)
+                ->where(function ($query) use ($domain) {
+                    $query->whereRaw('LOWER(primary_domain) = ?', [$domain])
+                        ->orWhereJsonContains('additional_domains', $domain);
+                })
+                ->first();
+        });
+    }
+
+    /**
+     * @deprecated Kept for existing callers; delegates to findActiveByDomain().
      */
     public static function findByDomain(string $domain): ?self
     {
-        return Cache::remember("env_by_domain:{$domain}", self::DOMAIN_CACHE_TTL, function () use ($domain): ?self {
-            return static::where('primary_domain', $domain)
-                ->orWhereJsonContains('additional_domains', $domain)
-                ->where('is_active', true)
-                ->first();
-        });
+        return static::findActiveByDomain($domain);
+    }
+
+    public static function findActive(int $id): ?self
+    {
+        return static::where('id', $id)->where('is_active', true)->first();
+    }
+
+    /**
+     * Whether the environment's own domain has been confirmed reachable. Links
+     * go to the shared host until then (see App\Support\Tenancy\TenantUrl).
+     */
+    public function isDomainLive(): bool
+    {
+        return $this->domain_verified_at !== null;
     }
 
     /**

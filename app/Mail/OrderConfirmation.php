@@ -4,6 +4,7 @@ namespace App\Mail;
 
 use App\Helpers\EmailBrandingHelper;
 use App\Models\Order;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
@@ -28,7 +29,7 @@ class OrderConfirmation extends Mailable implements ShouldQueue
 
         return new Envelope(
             from: new Address(config('mail.from.address'), $branding['company_name']),
-            subject: '✅ Order Confirmation #' . $this->order->order_number,
+            subject: '✅ Order Confirmation #'.$this->order->order_number,
         );
     }
 
@@ -39,7 +40,7 @@ class OrderConfirmation extends Mailable implements ShouldQueue
         $branding = $this->resolveBranding();
 
         $orderUrl = $this->order->environment
-            ? 'https://' . $this->order->environment->primary_domain . '/learners/orders/' . $this->order->id
+            ? TenantUrl::to($this->order->environment, '/learners/orders/'.$this->order->id)
             : '#';
 
         return new Content(

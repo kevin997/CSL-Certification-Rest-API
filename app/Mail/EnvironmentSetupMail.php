@@ -5,10 +5,13 @@ namespace App\Mail;
 use App\Helpers\EmailBrandingHelper;
 use App\Models\Environment;
 use App\Models\User;
+use App\Support\Tenancy\TenantDomain;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Address;
+use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
@@ -59,6 +62,13 @@ class EnvironmentSetupMail extends Mailable implements ShouldQueue
                 'loginUrl' => $loginUrl,
                 'domainType' => $this->isSubdomain() ? 'Subdomain' : 'Custom Domain',
                 'branding' => $branding,
+                'pendingDomainNotice' => TenantUrl::isLive($this->environment)
+                    ? null
+                    : sprintf(
+                        'Your academy is available at %s now. Once %s is live it will open there.',
+                        TenantUrl::base($this->environment),
+                        $this->environment->primary_domain,
+                    ),
             ],
         );
     }
@@ -66,7 +76,7 @@ class EnvironmentSetupMail extends Mailable implements ShouldQueue
     /**
      * Get the attachments for the message.
      *
-     * @return array<int, \Illuminate\Mail\Mailables\Attachment>
+     * @return array<int, Attachment>
      */
     public function attachments(): array
     {
@@ -78,8 +88,7 @@ class EnvironmentSetupMail extends Mailable implements ShouldQueue
      */
     private function isSubdomain(): bool
     {
-        return str_contains($this->environment->primary_domain, '.csl-brands.com')
-            || str_contains($this->environment->primary_domain, '.cfpcsl.com');
+        return TenantDomain::isKursaSubdomain((string) $this->environment->primary_domain);
     }
 
     /**
@@ -87,7 +96,7 @@ class EnvironmentSetupMail extends Mailable implements ShouldQueue
      */
     private function generateLoginUrl(): string
     {
-        $protocol = app()->environment('production') ? 'https' : 'http';
-        return "{$protocol}://{$this->environment->primary_domain}/auth/login";
+
+        return TenantUrl::to($this->environment, '/auth/login');
     }
 }

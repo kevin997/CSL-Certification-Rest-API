@@ -64,7 +64,7 @@
 <body class="antialiased bg-gray-50"
     @if(isset($branding) && $branding->primary_color) data-primary-color="{{ $branding->primary_color }}" @endif
     @if(isset($branding) && $branding->secondary_color) data-secondary-color="{{ $branding->secondary_color }}" @endif
-    @if(isset($environment) && $environment->primary_domain) data-primary-domain="{{ $protocol }}://{{ $environment->primary_domain }}" @endif
+    @if(isset($environment) && $environment->primary_domain) data-primary-domain="{{ \App\Support\Tenancy\TenantUrl::base($environment) }}" @endif
     @if(isset($environment) && $environment->id) data-environment-id="{{ $environment->id }}" @endif
     @if(isset($transaction) && $transaction->transaction_id) data-transaction-id="{{ $transaction->transaction_id }}" @endif
     @if(isset($transaction) && $transaction->product_id) data-product-id="{{ $transaction->product_id }}" @endif

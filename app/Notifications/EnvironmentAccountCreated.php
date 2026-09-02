@@ -5,25 +5,28 @@ namespace App\Notifications;
 use App\Models\Environment;
 use App\Models\User;
 use App\Services\TelegramService;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\Log;
 
-
 class EnvironmentAccountCreated extends Notification implements ShouldQueue
 {
     use Queueable;
 
     private User $user;
+
     private Environment $environment;
+
     private ?string $plainPassword;
+
     private TelegramService $telegramService;
 
     /**
      * Create a new notification instance.
-     * 
+     *
      * IDENTITY UNIFICATION: Password is now optional.
      * When null, indicates user uses their existing global password.
      */
@@ -62,8 +65,9 @@ class EnvironmentAccountCreated extends Notification implements ShouldQueue
 
         Log::info('Running EnvironmentAccountCreated notification');
 
-        if (!$chatId) {
+        if (! $chatId) {
             Log::error('Could not determine Telegram chat ID');
+
             return null;
         }
 
@@ -72,9 +76,7 @@ class EnvironmentAccountCreated extends Notification implements ShouldQueue
         $userEmail = $this->telegramService->escapeMarkdownV2($this->user->email);
         $createdAt = $this->telegramService->escapeMarkdownV2(now()->format('Y-m-d H:i:s'));
 
-        // Generate login URL with appropriate protocol
-        $protocol = app()->environment('production') ? 'https' : 'http';
-        $loginUrl = "{$protocol}://{$this->environment->primary_domain}/auth/login";
+        $loginUrl = TenantUrl::to($this->environment, '/auth/login');
         $escapedLoginUrl = $this->telegramService->escapeMarkdownV2($loginUrl);
 
         $message = "🆕 *Environment Account Created*\n\n";
@@ -94,7 +96,7 @@ class EnvironmentAccountCreated extends Notification implements ShouldQueue
 
         $buttons = [
             'text' => 'Go to Login',
-            'url' => $loginUrl
+            'url' => $loginUrl,
         ];
 
         $this->telegramService->sendMessage(
@@ -113,7 +115,7 @@ class EnvironmentAccountCreated extends Notification implements ShouldQueue
     {
         return [
             'environment_id' => $this->environment->id,
-            'user_id'        => $this->user->id,
+            'user_id' => $this->user->id,
         ];
     }
 }

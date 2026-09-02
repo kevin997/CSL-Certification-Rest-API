@@ -2,21 +2,24 @@
 
 namespace App\Notifications;
 
+use App\Models\Environment;
+use App\Models\User;
+use App\Services\TelegramService;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
-use App\Services\TelegramService;
 use Illuminate\Support\Facades\Log;
-use App\Models\User;
-use App\Models\Environment;
 
 class CertificateIsuued extends Notification implements ShouldQueue
 {
     use Queueable;
 
     private User $user;
+
     private Environment $environment;
+
     private TelegramService $telegramService;
 
     /**
@@ -50,26 +53,24 @@ class CertificateIsuued extends Notification implements ShouldQueue
             ->line('Thank you for using our application!');
     }
 
-
     public function toTelegram($notifiable)
     {
         $chatId = $this->telegramService->getChatId();
 
         Log::info('Running EnvironmentAccountCreated notification');
 
-        if (!$chatId) {
+        if (! $chatId) {
             Log::error('Could not determine Telegram chat ID');
+
             return null;
         }
-        
+
         // Escape special characters for MarkdownV2
         $environmentName = $this->telegramService->escapeMarkdownV2($this->environment->name);
         $userEmail = $this->telegramService->escapeMarkdownV2($this->user->email);
         $createdAt = $this->telegramService->escapeMarkdownV2(now()->format('Y-m-d H:i:s'));
-        
-        // Generate login URL with appropriate protocol
-        $protocol = app()->environment('production') ? 'https' : 'http';
-        $loginUrl = "{$protocol}://{$this->environment->primary_domain}/auth/login";
+
+        $loginUrl = TenantUrl::to($this->environment, '/auth/login');
         $escapedLoginUrl = $this->telegramService->escapeMarkdownV2($loginUrl);
 
         $message = "🆕 *Certificate Issued*\n\n";
@@ -80,7 +81,7 @@ class CertificateIsuued extends Notification implements ShouldQueue
 
         $buttons = [
             'text' => 'Go to Certificate',
-            'url' => $loginUrl
+            'url' => $loginUrl,
         ];
 
         $this->telegramService->sendMessage(

@@ -8,6 +8,9 @@ use App\Models\Environment;
 use App\Models\EnvironmentUser;
 use App\Models\User;
 use App\Support\EffectiveAuthContext;
+use App\Support\Tenancy\EnvironmentResolver;
+use App\Support\Tenancy\LoginBindingResolver;
+use App\Support\Tenancy\NoEnvironmentException;
 use App\Support\TenantDomainRegistry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -143,6 +146,49 @@ class TokenController extends Controller
             }
         }
 
+        $binding = null;
+
+        try {
+            $binding = app(LoginBindingResolver::class)->resolve(
+                $user,
+                $environmentId ? (int) $environmentId : null,
+                app(EnvironmentResolver::class)->frontendHost($request),
+            );
+        } catch (NoEnvironmentException $e) {
+            return response()->json([
+                'code' => NoEnvironmentException::CODE,
+                'message' => $e->getMessage(),
+            ], 403);
+        }
+
+        if ($binding?->requiresSelection) {
+            $userRoleValue = $user->role instanceof UserRole ? $user->role->value : $user->role;
+            $abilities = $userRoleValue ? ['role:'.$userRoleValue] : [];
+            $token = $user->createToken($request->device_name, $abilities)->plainTextToken;
+
+            if ($authenticatedViaEnvironment) {
+                $this->autoHealPassword($user, $request->password);
+            }
+
+            $authContext = EffectiveAuthContext::for($user, null);
+            $responseUser = $user->toArray();
+            $responseUser['role'] = $authContext['role'];
+
+            return response()->json([
+                'token' => $token,
+                'user' => $responseUser,
+                'environment_id' => null,
+                ...$authContext,
+                'is_account_setup' => null,
+                'requires_environment_selection' => true,
+                'environments' => $binding->environments,
+            ]);
+        }
+
+        if ($binding !== null) {
+            $environmentId = $binding->environmentId;
+        }
+
         // Check if environment ID is provided and verify user access
         if ($environmentId) {
             // Check if user is the owner of the environment or exists in environment_user table
@@ -232,6 +278,7 @@ class TokenController extends Controller
             'environment_id' => $environmentId,
             ...$authContext,
             'is_account_setup' => $isAccountSetup,
+            'requires_environment_selection' => false,
         ]);
     }
 
