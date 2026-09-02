@@ -3,6 +3,8 @@
 namespace App\Support\Tenancy;
 
 use App\Models\Environment;
+use App\Models\EnvironmentUser;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -127,15 +129,23 @@ final class EnvironmentResolver
     }
 
     /**
+     * The environment a token is bound to, from its `environment_id:{id}`
+     * ability. A malformed ability is skipped rather than treated as the
+     * answer, so one bad entry cannot mask a well-formed one behind it.
+     *
      * @param  array<int, string>  $abilities
      */
     public static function environmentIdFromAbilities(array $abilities): ?int
     {
         foreach ($abilities as $ability) {
-            if (is_string($ability) && str_starts_with($ability, self::ABILITY_PREFIX)) {
-                $id = substr($ability, strlen(self::ABILITY_PREFIX));
+            if (! is_string($ability) || ! str_starts_with($ability, self::ABILITY_PREFIX)) {
+                continue;
+            }
 
-                return ctype_digit($id) ? (int) $id : null;
+            $id = substr($ability, strlen(self::ABILITY_PREFIX));
+
+            if (ctype_digit($id)) {
+                return (int) $id;
             }
         }
 
@@ -143,8 +153,16 @@ final class EnvironmentResolver
     }
 
     /**
+     * The environment the authenticated principal is bound to.
+     *
      * The sanctum guard is asked explicitly: the default guard is `web`
      * (config/auth.php), which cannot see a bearer token from global middleware.
+     *
+     * The ability path is trusted as it stands, because minting the token
+     * checked membership. The session path re-checks membership here, because
+     * `current_environment_id` is not only written by SessionAuthController
+     * after its own check — DetectEnvironment also writes it from whatever host
+     * the request arrived on, so on its own the key proves nothing.
      */
     private function bindingEnvironment(): ?Environment
     {
@@ -163,9 +181,28 @@ final class EnvironmentResolver
         }
 
         if (session()->isStarted() && session()->has('current_environment_id')) {
-            return Environment::findActive((int) session('current_environment_id'));
+            $environment = Environment::findActive((int) session('current_environment_id'));
+
+            return $environment && $this->isMember($user, $environment) ? $environment : null;
         }
 
         return null;
+    }
+
+    /**
+     * Whether the user owns the environment or holds a membership row in it.
+     */
+    private function isMember(Authenticatable $user, Environment $environment): bool
+    {
+        $userId = (int) $user->getAuthIdentifier();
+
+        if ((int) $environment->owner_id === $userId) {
+            return true;
+        }
+
+        return EnvironmentUser::query()
+            ->where('environment_id', $environment->id)
+            ->where('user_id', $userId)
+            ->exists();
     }
 }

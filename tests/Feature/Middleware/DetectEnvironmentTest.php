@@ -4,6 +4,7 @@ namespace Tests\Feature\Middleware;
 
 use App\Models\Environment;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
@@ -87,14 +88,38 @@ class DetectEnvironmentTest extends TestCase
         $this->getJson('/api/_echo?environment_id='.$environment->id, [
             'X-Frontend-Domain' => 'www.app.getkursa.space',
             'X-Environment-Id' => (string) $environment->id,
-        ])->assertJsonPath('environment.source', 'none');
+        ])->assertJsonPath('environment.source', 'none')
+            ->assertJsonMissingPath('environment.id');
     }
 
     public function test_the_response_carries_domain_verified_at(): void
     {
-        $environment = Environment::factory()->create(['primary_domain' => 'acme.test']);
+        // Asserting null would also pass with the key absent, which is how this
+        // test passed against the old middleware. Freeze a real timestamp so the
+        // assertion fails unless the key is present and serialised as ISO-8601.
+        $verifiedAt = Carbon::parse('2026-03-04 05:06:07', 'UTC');
+        $this->travelTo($verifiedAt);
+
+        Environment::factory()->create([
+            'primary_domain' => 'acme.test',
+            'domain_verified_at' => $verifiedAt,
+        ]);
 
         $this->getJson('/api/_echo', ['X-Frontend-Domain' => 'acme.test'])
-            ->assertJsonPath('environment.domain_verified_at', null);
+            ->assertOk()
+            ->assertJsonPath('environment.domain_verified_at', $verifiedAt->toIso8601String());
+    }
+
+    public function test_an_unverified_domain_is_reported_as_null(): void
+    {
+        Environment::factory()->create([
+            'primary_domain' => 'acme.test',
+            'domain_verified_at' => null,
+        ]);
+
+        $this->getJson('/api/_echo', ['X-Frontend-Domain' => 'acme.test'])
+            ->assertOk()
+            ->assertJsonPath('environment.domain_verified_at', null)
+            ->assertJsonStructure(['environment' => ['domain_verified_at']]);
     }
 }
