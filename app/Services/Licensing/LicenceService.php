@@ -2,6 +2,7 @@
 
 namespace App\Services\Licensing;
 
+use App\Jobs\SendWhatsAppNotification;
 use App\Mail\EnvironmentResetPasswordMail;
 use App\Models\Environment;
 use App\Models\EnvironmentLicence;
@@ -10,12 +11,12 @@ use App\Models\PaymentAttempt;
 use App\Models\Plan;
 use App\Models\Transaction;
 use App\Models\User;
-use App\Jobs\SendWhatsAppNotification;
 use App\Notifications\EnvironmentCreatedNotification;
 use App\Services\PlatformPaymentService;
-use App\Services\TelegramService;
 use App\Services\Tax\TaxZoneService;
+use App\Services\TelegramService;
 use App\Support\PhoneNumber;
+use App\Support\Tenancy\SwitchTokenIssuer;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -42,8 +43,7 @@ class LicenceService
     public function __construct(
         private PlatformPaymentService $platformPaymentService,
         private TaxZoneService $taxZoneService,
-    ) {
-    }
+    ) {}
 
     // ---------------------------------------------------------------------
     // Free & trial
@@ -202,8 +202,8 @@ class LicenceService
      * plumbing. Creates an immutable PaymentAttempt (retries = new attempt).
      *
      * @return array Gateway-shaped payload:
-     *   stripe → ['payment_type'=>'stripe','client_secret'=>..,'publishable_key'=>..]
-     *   hosted → ['payment_type'=>..,'redirect_url'=>..,'general_link'=>..]
+     *               stripe → ['payment_type'=>'stripe','client_secret'=>..,'publishable_key'=>..]
+     *               hosted → ['payment_type'=>..,'redirect_url'=>..,'general_link'=>..]
      *
      * @throws \RuntimeException on gateway initiation failure.
      */
@@ -232,7 +232,7 @@ class LicenceService
             'tax_rate' => (float) ($checkout->tax_snapshot['tax_rate'] ?? 0),
             'tax_zone' => $checkout->tax_snapshot['zone_name'] ?? null,
             'currency' => $checkout->quoted_currency,
-            'description' => 'KURSA ' . $this->planLabel($checkout->plan_type) . ' licence',
+            'description' => 'KURSA '.$this->planLabel($checkout->plan_type).' licence',
             'source_type' => 'licence_checkout',
             'source_id' => (string) $checkout->id,
             'customer_email' => $customer['email'] ?? ($payload['email'] ?? null),
@@ -367,7 +367,7 @@ class LicenceService
         if ($checkout->return_url) {
             $glue = str_contains($checkout->return_url, '?') ? '&' : '?';
 
-            return $checkout->return_url . $glue . 'checkout_id=' . $checkout->uuid;
+            return $checkout->return_url.$glue.'checkout_id='.$checkout->uuid;
         }
 
         return null;
@@ -483,7 +483,7 @@ class LicenceService
         ]);
 
         $environment = Environment::create([
-            'name' => $payload['environment_name'] ?? ($payload['name'] . "'s Academy"),
+            'name' => $payload['environment_name'] ?? ($payload['name']."'s Academy"),
             'primary_domain' => $primaryDomain,
             'description' => $payload['description'] ?? null,
             'owner_id' => $user->id,
@@ -506,6 +506,24 @@ class LicenceService
         $this->whatsAppEnvironmentCreated($environment, $user, $passwordSetUrl);
 
         return $environment;
+    }
+
+    /**
+     * One-time sign-in link for the environment owner, landing wherever
+     * TenantUrl says the environment lives (the shared host until its own
+     * domain is verified). The token is single-use and short-lived.
+     */
+    public function onboardingSignInUrl(Environment $environment): string
+    {
+        $owner = $environment->owner()->firstOrFail();
+        $issuer = app(SwitchTokenIssuer::class);
+        $token = $issuer->issue(
+            $owner,
+            $environment,
+            (int) config('tenancy.onboarding_switch_token_ttl_seconds', 300),
+        );
+
+        return $issuer->redirectUrl($environment, $token);
     }
 
     /**
@@ -536,7 +554,7 @@ class LicenceService
 
             $notification->toTelegram($notification);
         } catch (\Throwable $e) {
-            Log::error('Failed to send Telegram notification for provisioned environment: ' . $e->getMessage(), [
+            Log::error('Failed to send Telegram notification for provisioned environment: '.$e->getMessage(), [
                 'environment_id' => $environment->id,
                 'user_id' => $user->id,
             ]);
@@ -610,7 +628,7 @@ class LicenceService
         } catch (\Throwable $e) {
             // Same contract as the Telegram alert: the academy already exists,
             // so a notification failure must never fail provisioning.
-            Log::error('Failed to queue owner WhatsApp notification for provisioned environment: ' . $e->getMessage(), [
+            Log::error('Failed to queue owner WhatsApp notification for provisioned environment: '.$e->getMessage(), [
                 'environment_id' => $environment->id,
                 'user_id' => $user->id,
             ]);
@@ -648,11 +666,11 @@ class LicenceService
                     new EnvironmentResetPasswordMail($token, $environment, $user->email, $user->email)
                 );
             } catch (\Throwable $e) {
-                Log::warning('Licence onboarding: password-set link email failed: ' . $e->getMessage());
+                Log::warning('Licence onboarding: password-set link email failed: '.$e->getMessage());
             }
         });
 
-        return 'https://' . $environment->primary_domain . '/auth/reset-password?' . http_build_query([
+        return 'https://'.$environment->primary_domain.'/auth/reset-password?'.http_build_query([
             'token' => $token,
             'email' => $user->email,
             'environment_id' => $environment->id,
@@ -747,7 +765,7 @@ class LicenceService
             $domain = strtolower($domain);
             $domain = preg_replace('/[^a-z0-9.-]/', '-', $domain);
 
-            return $domain . '.csl-brands.com';
+            return $domain.'.csl-brands.com';
         }
 
         return preg_replace('#^https?://#', '', $domain);

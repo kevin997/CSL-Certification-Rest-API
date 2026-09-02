@@ -182,6 +182,8 @@ Route::prefix('licence-checkouts')->group(function () {
         ->middleware('throttle:30,1');
     Route::get('/{uuid}/status', [LicenceController::class, 'checkoutStatus'])
         ->middleware('throttle:60,1');
+    Route::post('/{uuid}/sign-in-link', [LicenceController::class, 'signInLink'])
+        ->middleware('throttle:30,1');
 });
 
 // KURSA licensing (Phase 4): owner/admin-gated environment licence management.
