@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Environment;
 use App\Models\EnvironmentUser;
+use App\Support\Tenancy\MembershipList;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -18,7 +20,7 @@ class EnvironmentMembershipController extends Controller
 {
     /**
      * Join an environment.
-     * 
+     *
      * Creates a membership record linking the authenticated user to the specified environment.
      * No credentials are required - the user uses their global password.
      *
@@ -27,29 +29,38 @@ class EnvironmentMembershipController extends Controller
      *     summary="Join an environment",
      *     tags={"Environment Membership"},
      *     security={{"sanctum":{}}},
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         required=true,
      *         description="Environment ID to join",
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Already a member of this environment",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="message", type="string", example="Already a member of this environment"),
      *             @OA\Property(property="environment_user", type="object")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=201,
      *         description="Successfully joined the environment",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="message", type="string", example="Successfully joined the environment"),
      *             @OA\Property(property="environment_user", type="object")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=404,
      *         description="Environment not found"
@@ -60,9 +71,7 @@ class EnvironmentMembershipController extends Controller
      *     )
      * )
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  int  $id
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function join(Request $request, int $id)
     {
@@ -70,7 +79,7 @@ class EnvironmentMembershipController extends Controller
 
         // Check if environment exists
         $environment = Environment::find($id);
-        if (!$environment) {
+        if (! $environment) {
             return response()->json([
                 'message' => 'Environment not found',
             ], 404);
@@ -118,20 +127,26 @@ class EnvironmentMembershipController extends Controller
      *     summary="Leave an environment",
      *     tags={"Environment Membership"},
      *     security={{"sanctum":{}}},
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         required=true,
      *         description="Environment ID to leave",
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successfully left the environment",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="message", type="string", example="Successfully left the environment")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=404,
      *         description="Not a member of this environment"
@@ -142,9 +157,7 @@ class EnvironmentMembershipController extends Controller
      *     )
      * )
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  int  $id
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function leave(Request $request, int $id)
     {
@@ -152,7 +165,7 @@ class EnvironmentMembershipController extends Controller
 
         // Check if environment exists
         $environment = Environment::find($id);
-        if (!$environment) {
+        if (! $environment) {
             return response()->json([
                 'message' => 'Environment not found',
             ], 404);
@@ -170,7 +183,7 @@ class EnvironmentMembershipController extends Controller
             ->where('user_id', $user->id)
             ->first();
 
-        if (!$membership) {
+        if (! $membership) {
             return response()->json([
                 'message' => 'Not a member of this environment',
             ], 404);
@@ -196,73 +209,24 @@ class EnvironmentMembershipController extends Controller
      *     summary="Get user's environments",
      *     tags={"Environment Membership"},
      *     security={{"sanctum":{}}},
+     *
      *     @OA\Response(
      *         response=200,
      *         description="List of environments",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="environments", type="array", @OA\Items(type="object"))
      *         )
      *     )
      * )
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function myEnvironments(Request $request)
     {
-        $user = $request->user();
-
-        // Get environments where user is a member (with branding)
-        $memberEnvironments = EnvironmentUser::where('user_id', $user->id)
-            ->with(['environment.branding'])
-            ->get()
-            ->map(function ($membership) {
-                $environment = $membership->environment;
-                return [
-                    'environment' => $environment,
-                    'role' => $membership->role,
-                    'joined_at' => $membership->joined_at,
-                    'is_owner' => false,
-                    'branding' => $environment->branding ? [
-                        'logo_path' => $environment->branding->logo_path,
-                        'favicon_path' => $environment->branding->favicon_path,
-                        'primary_color' => $environment->branding->primary_color,
-                    ] : null,
-                ];
-            });
-
-        // Get environments where user is the owner (with branding)
-        $ownedEnvironments = Environment::where('owner_id', $user->id)
-            ->with('branding')
-            ->get()
-            ->map(function ($environment) {
-                return [
-                    'environment' => $environment,
-                    'role' => 'owner',
-                    'joined_at' => $environment->created_at,
-                    'is_owner' => true,
-                    'branding' => $environment->branding ? [
-                        'logo_path' => $environment->branding->logo_path,
-                        'favicon_path' => $environment->branding->favicon_path,
-                        'primary_color' => $environment->branding->primary_color,
-                    ] : null,
-                ];
-            });
-
-        // Merge and deduplicate (in case owner is also in environment_user).
-        // Both sides are collections of plain arrays (from ->map()). ->get()
-        // returns an Eloquent collection, whose ::merge() treats each item as a
-        // model and calls getKey() on it — which fatals on an array. toBase()
-        // drops to a plain Support collection whose merge() is a simple concat.
-        $allEnvironments = $ownedEnvironments->toBase()
-            ->merge($memberEnvironments->toBase())
-            ->unique(function ($item) {
-                return $item['environment']->id;
-            })
-            ->values();
-
         return response()->json([
-            'environments' => $allEnvironments,
+            'environments' => MembershipList::for($request->user()),
         ], 200);
     }
 }

@@ -8,6 +8,9 @@ use App\Models\Environment;
 use App\Models\EnvironmentUser;
 use App\Models\User;
 use App\Support\EffectiveAuthContext;
+use App\Support\Tenancy\EnvironmentResolver;
+use App\Support\Tenancy\LoginBindingResolver;
+use App\Support\Tenancy\NoEnvironmentException;
 use App\Support\TenantDomainRegistry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -139,6 +142,51 @@ class SessionAuthController extends Controller
             }
         }
 
+        $binding = null;
+
+        try {
+            $binding = app(LoginBindingResolver::class)->resolve(
+                $user,
+                $environmentId ? (int) $environmentId : null,
+                app(EnvironmentResolver::class)->frontendHost($request),
+            );
+        } catch (NoEnvironmentException $e) {
+            return response()->json([
+                'success' => false,
+                'code' => NoEnvironmentException::CODE,
+                'message' => $e->getMessage(),
+            ], 403);
+        }
+
+        if ($binding?->requiresSelection) {
+            if ($authenticatedViaEnvironment) {
+                $this->autoHealPassword($user, $request->password);
+            }
+
+            Auth::login($user);
+            $request->session()->regenerate();
+            $request->session()->forget('current_environment_id');
+
+            $authContext = EffectiveAuthContext::for($user, null);
+            $responseUser = $user->toArray();
+            $responseUser['role'] = $authContext['role'];
+
+            return response()->json([
+                'success' => true,
+                'user' => $responseUser,
+                'environment_id' => null,
+                ...$authContext,
+                'is_account_setup' => null,
+                'api_token' => null,
+                'requires_environment_selection' => true,
+                'environments' => $binding->environments,
+            ]);
+        }
+
+        if ($binding !== null) {
+            $environmentId = $binding->environmentId;
+        }
+
         if ($environmentId) {
             $environment = Environment::find($environmentId);
 
@@ -229,6 +277,7 @@ class SessionAuthController extends Controller
             ...$authContext,
             'is_account_setup' => $isAccountSetup,
             'api_token' => $apiToken,
+            'requires_environment_selection' => false,
         ]);
     }
 
