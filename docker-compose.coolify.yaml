@@ -2,14 +2,16 @@
 #
 # Three containers, where the previous deployment ran seven. That is deliberate.
 #
-# CONTAINER_ROLE does not select a workload. supervisord.conf declares every
-# program in one file: laravel-queue (twice), laravel-scheduler, kafka-consumer,
-# kafka-outbox-processor, nightwatch-agent and order-regularizer. Any role whose
-# entrypoint branch execs supervisord therefore starts all of them.
+# CONTAINER_ROLE selects the workload. Each role copies its own supervisor
+# config in before starting supervisord, so a role starts its programs and no
+# others. The `worker` role exists for this topology: it carries the queue
+# workers, the scheduler and the order regularizer together, which is what one
+# background container has to run when there is only one.
 #
-# Five roles did (queue, scheduler, kafka-consumer, outbox-processor,
-# nightwatch), so FIVE Laravel schedulers ran concurrently and every scheduled
-# task in this service fired five times. One worker container gives one of each.
+# It used to be `queue`, back when supervisord.conf declared every program and
+# any role started all of them. That is no longer true, and a `queue` container
+# here would run queue workers and nothing else: no scheduler, so no backups
+# and no scheduled task at all.
 #
 # Two roles do not exec supervisord and still need their own container:
 #   app    - nginx and php-fpm, listening on 80
@@ -48,12 +50,17 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      # Any supervisord role starts every program, for the reason above.
-      CONTAINER_ROLE: queue
-    # The image healthcheck curls a web port this container does not serve.
-    # Check the supervisor that owns these processes instead.
+      CONTAINER_ROLE: worker
+    # The image healthcheck curls a web port this container does not serve, so
+    # check the work instead. Not supervisord itself: it stays up and reports
+    # healthy with zero programs configured, which is exactly how this container
+    # ran for nine days without a queue worker or a scheduler.
+    #
+    # The bracketed first letter keeps the pattern from matching the shell that
+    # runs this check: its own command line contains the literal "[q]ueue:work",
+    # which the regex does not match.
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -x supervisord >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "pgrep -f 'artisan [q]ueue:work' >/dev/null && pgrep -f 'artisan [s]chedule:work' >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

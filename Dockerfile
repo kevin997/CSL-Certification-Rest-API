@@ -164,7 +164,10 @@ RUN echo "memory_limit = 512M" > /usr/local/etc/php/conf.d/99-laravel.ini \
 COPY docker/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY docker/nginx/conf.d/app.conf /etc/nginx/sites-available/default
 COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY docker/supervisor/*.conf /etc/supervisor/conf.d/
+# Deliberately NOT copied: docker/supervisor/*.conf
+# supervisord.conf includes conf.d/*.conf, so baking every role config in
+# there made each role start every program. The entrypoint copies the one
+# role file it needs at run time, from docker/supervisor/ in the app source.
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/start-scheduler.sh /usr/local/bin/start-scheduler.sh
 
