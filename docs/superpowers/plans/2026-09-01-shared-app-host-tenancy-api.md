@@ -3582,3 +3582,121 @@ Run: `php artisan test --compact --filter=test_every_authenticated_route_is_guar
 - [ ] **Step 3: Format everything once more**
 
 Run: `vendor/bin/pint --format agent` and commit any formatting-only change as `style: pint`.
+
+---
+
+### Task 14: A completed password reset marks the account as set up
+
+Added after the LMS final review: `environment_user.is_account_setup` defaults to `false` and only `PUT /environment-users/setup-account` ever set it to `true`, so every owner who set their password through the emailed link still reads as "not set up". The LMS now shows a password prompt to such owners on the shared host, so the flag must mean "has a usable password". The password is global (`users.password`, unified identity), so a successful reset marks every membership of that user.
+
+**Files:**
+- Modify: `app/Http/Controllers/Api/Auth/ResetPasswordController.php` (the `reset` action behind `POST /api/reset-password`), `app/Http/Controllers/Api/EnvironmentUserController.php:175-270` (`resetPassword` behind `POST /api/environment-auth/reset-password`)
+- Create: `app/Support/Tenancy/AccountSetupMarker.php`
+- Test: `tests/Feature/Auth/PasswordResetMarksAccountSetupTest.php`
+
+**Interfaces:**
+- Produces: `AccountSetupMarker::markAllMemberships(User $user): int` — sets `is_account_setup = true` and `use_environment_credentials = false` on every `environment_user` row of the user, returns the number of rows updated.
+
+- [ ] **Step 1: Write the failing test**
+
+```php
+<?php
+
+namespace Tests\Feature\Auth;
+
+use App\Models\Environment;
+use App\Models\EnvironmentUser;
+use App\Models\User;
+use App\Support\Tenancy\AccountSetupMarker;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+/**
+ * is_account_setup only ever became true through PUT /environment-users/setup-account,
+ * so owners who set their password via the emailed reset link stayed "not set up"
+ * and were prompted again. A completed reset now marks every membership, because
+ * the password is global.
+ */
+class PasswordResetMarksAccountSetupTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_the_marker_sets_every_membership_of_the_user(): void
+    {
+        $user = User::factory()->create();
+        $other = User::factory()->create();
+        $a = Environment::factory()->create();
+        $b = Environment::factory()->create();
+        EnvironmentUser::create(['environment_id' => $a->id, 'user_id' => $user->id, 'role' => 'owner', 'is_account_setup' => false, 'use_environment_credentials' => true]);
+        EnvironmentUser::create(['environment_id' => $b->id, 'user_id' => $user->id, 'role' => 'learner', 'is_account_setup' => false]);
+        EnvironmentUser::create(['environment_id' => $a->id, 'user_id' => $other->id, 'role' => 'learner', 'is_account_setup' => false]);
+
+        $this->assertSame(2, AccountSetupMarker::markAllMemberships($user));
+
+        $this->assertTrue((bool) EnvironmentUser::where('user_id', $user->id)->where('environment_id', $a->id)->value('is_account_setup'));
+        $this->assertFalse((bool) EnvironmentUser::where('user_id', $user->id)->where('environment_id', $a->id)->value('use_environment_credentials'));
+        $this->assertTrue((bool) EnvironmentUser::where('user_id', $user->id)->where('environment_id', $b->id)->value('is_account_setup'));
+        $this->assertFalse((bool) EnvironmentUser::where('user_id', $other->id)->value('is_account_setup'));
+    }
+}
+```
+
+Then add one feature test per reset endpoint that performs a real reset with a valid token and asserts the pivot flips. Mirror the token set-up used by `tests/Feature/PasswordResetTest.php` for `POST /api/reset-password` and by `tests/Feature/Auth/EnvironmentResetTokenValidationTest.php` for `POST /api/environment-auth/reset-password` (both files show how a valid token and, for the environment flow, the `password_reset_metadata` row are created). Each test: create the user with a membership whose `is_account_setup` is `false`, perform the reset, assert the response is successful and the pivot now reads `true`.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `php artisan test --compact tests/Feature/Auth/PasswordResetMarksAccountSetupTest.php`
+Expected: FAIL — class not found; pivot stays false after a reset.
+
+- [ ] **Step 3: Create the marker and call it from both handlers**
+
+`app/Support/Tenancy/AccountSetupMarker.php`:
+
+```php
+<?php
+
+namespace App\Support\Tenancy;
+
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Once a user has set a real password, every academy they belong to may stop
+ * asking. The password is global, so this marks all memberships at once.
+ */
+final class AccountSetupMarker
+{
+    public static function markAllMemberships(User $user): int
+    {
+        return DB::table('environment_user')
+            ->where('user_id', $user->id)
+            ->update([
+                'is_account_setup' => true,
+                'use_environment_credentials' => false,
+            ]);
+    }
+}
+```
+
+In `ResetPasswordController::reset`, immediately after the password is saved successfully (inside the success path, before the response), call `AccountSetupMarker::markAllMemberships($user)`; if the controller uses Laravel's `Password::reset()` closure, place the call inside that closure after `$user->save()`. In `EnvironmentUserController::resetPassword`, after `$user->password = Hash::make(...)` and its save (around line 252), call the same. Import the class in both.
+
+- [ ] **Step 4: Run the tests**
+
+Run: `php artisan test --compact tests/Feature/Auth/PasswordResetMarksAccountSetupTest.php tests/Feature/PasswordResetTest.php tests/Feature/Auth/EnvironmentResetTokenValidationTest.php tests/Feature/Auth/PasswordSetAuthorizationTest.php`
+Expected: PASS
+
+- [ ] **Step 5: Format and commit**
+
+```bash
+vendor/bin/pint --dirty --format agent
+git add app/Support/Tenancy/AccountSetupMarker.php app/Http/Controllers/Api/Auth/ResetPasswordController.php app/Http/Controllers/Api/EnvironmentUserController.php tests/Feature/Auth/PasswordResetMarksAccountSetupTest.php docs/superpowers/plans/2026-09-01-shared-app-host-tenancy-api.md
+git commit -m "fix(auth): mark every membership as set up once a password reset completes
+
+is_account_setup only became true through the setup-account endpoint, so an
+owner who set their password through the emailed link stayed 'not set up'
+and the LMS prompted them again. The password is global, so a completed
+reset now marks all of the user's memberships.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01GdsYLasvsZ1zMvK7aKzVqP"
+```
