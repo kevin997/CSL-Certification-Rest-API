@@ -60,7 +60,7 @@ touch /var/www/html/storage/logs/laravel.log
 chmod 777 /var/www/html/storage/logs/laravel.log
 
 # Check MySQL database connection (CSL-DevOps Infrastructure)
-if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ] || [ "$CONTAINER_ROLE" = "scheduler" ] || [ "$CONTAINER_ROLE" = "nightwatch" ] || [ "$CONTAINER_ROLE" = "outbox-processor" ] || [ "$CONTAINER_ROLE" = "kafka-consumer" ]; then
+if [ "$CONTAINER_ROLE" = "app" ] || [ "$CONTAINER_ROLE" = "queue" ] || [ "$CONTAINER_ROLE" = "worker" ] || [ "$CONTAINER_ROLE" = "scheduler" ] || [ "$CONTAINER_ROLE" = "nightwatch" ] || [ "$CONTAINER_ROLE" = "outbox-processor" ] || [ "$CONTAINER_ROLE" = "kafka-consumer" ]; then
     echo "Checking MySQL database connection (CSL-DevOps)..."
     RETRY_COUNT=0
     MAX_RETRIES=15
@@ -113,7 +113,7 @@ echo "Clearing specific caches..."
 php artisan config:clear
 php artisan route:clear
 php artisan cache:clear
-php artisan cache:forget tenant_domains:all_hosts_v2
+php artisan cache:forget tenant_domains:all_hosts_v3
 
 # Clear and optimize for better performance
 echo "Clearing and optimizing cache..."
@@ -136,6 +136,20 @@ mkdir -p /var/log/supervisor
 # Determine container role
 if [ "$CONTAINER_ROLE" = "queue" ]; then
   echo "Starting queue worker..."
+  cp /var/www/html/docker/supervisor/queue.conf /etc/supervisor/conf.d/
+  exec supervisord -c /etc/supervisor/conf.d/supervisord.conf
+elif [ "$CONTAINER_ROLE" = "worker" ]; then
+  # The Coolify deployment runs one background container, not the six that
+  # docker-compose.yml describes, so this role carries every program that
+  # deployment still needs: the queue workers, the scheduler and the order
+  # regularizer. Kafka and Nightwatch are deliberately absent - they are
+  # unconfigured in production and would crash-loop; deploy their own roles
+  # when they are wanted.
+  echo "Starting combined worker (queue, scheduler, order regularizer)..."
+  chown -R www-data:www-data /var/www/html/storage/logs
+  chmod -R 777 /var/www/html/storage/logs
+  cp /var/www/html/docker/supervisor/queue.conf /etc/supervisor/conf.d/
+  cp /var/www/html/docker/supervisor/scheduler.conf /etc/supervisor/conf.d/
   exec supervisord -c /etc/supervisor/conf.d/supervisord.conf
 elif [ "$CONTAINER_ROLE" = "scheduler" ]; then
   echo "Starting scheduler service..."
