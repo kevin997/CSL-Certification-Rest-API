@@ -18,6 +18,7 @@ use App\Services\TelegramService;
 use App\Support\PhoneNumber;
 use App\Support\Tenancy\SwitchTokenIssuer;
 use App\Support\Tenancy\TenantDomain;
+use App\Support\Tenancy\TenantUrl;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -603,7 +604,7 @@ class LicenceService
                 "🎉 Bienvenue sur KURSA, {$user->name} !",
                 '',
                 "Votre académie *{$environment->name}* est prête :",
-                "https://{$environment->primary_domain}",
+                TenantUrl::to($environment, '/'),
                 '',
             ];
 
@@ -617,7 +618,7 @@ class LicenceService
             $lines[] = "🎉 Welcome to KURSA, {$user->name}!";
             $lines[] = '';
             $lines[] = "Your academy *{$environment->name}* is ready:";
-            $lines[] = "https://{$environment->primary_domain}";
+            $lines[] = TenantUrl::to($environment, '/');
 
             if ($passwordSetUrl !== null && $passwordSetUrl !== '') {
                 $lines[] = '';
@@ -671,7 +672,7 @@ class LicenceService
             }
         });
 
-        return 'https://'.$environment->primary_domain.'/auth/reset-password?'.http_build_query([
+        return TenantUrl::to($environment, '/auth/reset-password', [
             'token' => $token,
             'email' => $user->email,
             'environment_id' => $environment->id,

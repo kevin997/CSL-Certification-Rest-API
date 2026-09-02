@@ -66,7 +66,7 @@
 <body class="antialiased bg-gray-50"
     @if(isset($branding) && $branding->primary_color) data-primary-color="{{ $branding->primary_color }}" @endif
     @if(isset($branding) && $branding->secondary_color) data-secondary-color="{{ $branding->secondary_color }}" @endif
-    @if(isset($environment) && $environment->primary_domain) data-primary-domain="{{ $protocol }}://{{ $environment->primary_domain }}" @endif
+    @if(isset($environment) && $environment->primary_domain) data-primary-domain="{{ \App\Support\Tenancy\TenantUrl::base($environment) }}" @endif
     @if(isset($environment) && $environment->id) data-environment-id="{{ $environment->id }}" @endif
     @if(isset($transaction) && $transaction->transaction_id) data-transaction-id="{{ $transaction->transaction_id }}" @endif
     @if(isset($transaction) && $transaction->product_id) data-product-id="{{ $transaction->product_id }}" @endif
@@ -121,7 +121,7 @@
 
                 <!-- Retry button -->
                 <div class="mt-6">
-                    <a href="{{ $protocol }}://{{ $environment->primary_domain }}/storefront/{{ $environment->id }}" class="inline-flex items-center px-4 py-2 bg-primary text-white font-medium rounded-md hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
+                    <a href="{{ \App\Support\Tenancy\TenantUrl::base($environment) }}/storefront/{{ $environment->id }}" class="inline-flex items-center px-4 py-2 bg-primary text-white font-medium rounded-md hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
                         Try Again
                     </a>
                 </div>
@@ -131,7 +131,7 @@
         <!-- Footer -->
         <div class="mt-8 text-center text-sm text-gray-500">
             <p>&copy; {{ date('Y') }} {{ isset($branding) && $branding->company_name ? $branding->company_name : (isset($environment) ? $environment->name : 'CSL Brands Learning') }}. All rights reserved.</p>
-            <p class="mt-2">If you continue to experience issues, please <a href="{{ $protocol }}://{{ $environment->primary_domain }}/support" class="text-primary hover:underline">contact support</a>.</p>
+            <p class="mt-2">If you continue to experience issues, please <a href="{{ \App\Support\Tenancy\TenantUrl::base($environment) }}/support" class="text-primary hover:underline">contact support</a>.</p>
         </div>
     </div>
 

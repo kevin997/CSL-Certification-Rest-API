@@ -118,8 +118,10 @@ class ProvisionEnvironmentAlertTest extends TestCase
         );
 
         $this->assertStringContainsString('Set', $captured);
+        // A freshly provisioned academy has no verified domain yet, so its
+        // password-set link points at the shared host and carries the id.
         $this->assertStringContainsString(
-            'https://'.$environment->primary_domain.'/auth/reset-password',
+            'https://app.getkursa.space/auth/reset-password',
             $captured
         );
         $this->assertStringContainsString('environment_id='.$environment->id, $captured);

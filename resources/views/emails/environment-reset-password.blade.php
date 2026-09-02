@@ -101,6 +101,10 @@
             <p style="color: #666;">If you're having trouble clicking the "Reset Password" button, copy and paste the URL below into your web browser:</p>
             
             <p>{{ $resetUrl }}</p>
+
+            @if(!empty($pendingDomainNotice))
+            <p style="margin-top: 16px; color: #717882;">{{ $pendingDomainNotice }}</p>
+            @endif
         </div>
         
         <div class="footer">

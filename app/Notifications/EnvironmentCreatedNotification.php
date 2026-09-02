@@ -6,6 +6,7 @@ use App\Models\Environment;
 use App\Models\User;
 use App\Services\TelegramService;
 use App\Support\Tenancy\TenantDomain;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
@@ -145,7 +146,7 @@ class EnvironmentCreatedNotification extends Notification implements ShouldQueue
     private function generateLoginUrl(): string
     {
         // Always use HTTPS protocol for security and Telegram compatibility
-        return "https://{$this->environment->primary_domain}/auth/login";
+        return TenantUrl::to($this->environment, '/auth/login');
     }
 
     /**

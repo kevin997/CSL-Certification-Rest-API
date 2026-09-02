@@ -16,6 +16,7 @@ use App\Models\SalesForm;
 use App\Models\SalesFormSubmission;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -38,7 +39,7 @@ class SalesFormSubmissionController extends Controller
             ->where('status', SalesForm::STATUS_PUBLISHED)
             ->first();
 
-        if (!$form) {
+        if (! $form) {
             return response()->json([
                 'success' => false,
                 'message' => 'Form not found or not published.',
@@ -67,7 +68,7 @@ class SalesFormSubmissionController extends Controller
             ->where('status', SalesForm::STATUS_PUBLISHED)
             ->first();
 
-        if (!$form) {
+        if (! $form) {
             return response()->json([
                 'success' => false,
                 'message' => 'Form not found or not published.',
@@ -77,7 +78,7 @@ class SalesFormSubmissionController extends Controller
         // Build dynamic validation rules from the form fields.
         $rules = ['answers' => 'required|array'];
         foreach ($form->fields as $field) {
-            $key = 'answers.' . $field->field_key;
+            $key = 'answers.'.$field->field_key;
             $fieldRules = $field->is_required ? ['required'] : ['nullable'];
             if ($field->type === 'email') {
                 $fieldRules[] = 'email';
@@ -116,7 +117,7 @@ class SalesFormSubmissionController extends Controller
 
         $environmentId = $form->environment_id;
         $environment = Environment::find($environmentId);
-        if (!$environment) {
+        if (! $environment) {
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid environment.',
@@ -129,7 +130,7 @@ class SalesFormSubmissionController extends Controller
             // 1. Find-or-create the learner by email, using the password they set.
             $userExisted = false;
             $user = User::where('email', $request->email)->first();
-            if (!$user) {
+            if (! $user) {
                 $user = User::create([
                     'name' => $request->name,
                     'email' => $request->email,
@@ -171,7 +172,7 @@ class SalesFormSubmissionController extends Controller
                         ->whereNull('deleted_at')
                         ->first();
 
-                    if (!$existing) {
+                    if (! $existing) {
                         Enrollment::create([
                             'user_id' => $user->id,
                             'course_id' => $course->id,
@@ -194,7 +195,7 @@ class SalesFormSubmissionController extends Controller
                 $order = Order::create([
                     'user_id' => $user->id,
                     'environment_id' => $environmentId,
-                    'order_number' => 'ORD-' . strtoupper(Str::random(8)),
+                    'order_number' => 'ORD-'.strtoupper(Str::random(8)),
                     'status' => Order::STATUS_PENDING,
                     'type' => Order::TYPE_SALES_FORM,
                     'total_amount' => $price,
@@ -229,7 +230,7 @@ class SalesFormSubmissionController extends Controller
 
             DB::commit();
 
-            if (!$userExisted) {
+            if (! $userExisted) {
                 event(new UserCreatedDuringCheckout($user, $environment, true));
             }
 
@@ -243,7 +244,7 @@ class SalesFormSubmissionController extends Controller
                     : 'Your account has been created. Log in to access your course.',
                 'user_existed' => $userExisted,
                 'email' => $user->email,
-                'login_url' => 'https://' . $environment->primary_domain . '/auth/login',
+                'login_url' => TenantUrl::to($environment, '/auth/login'),
                 'access_code' => $submission->access_code,
                 'submission_id' => $submission->id,
                 'orders' => $orders,
@@ -254,9 +255,10 @@ class SalesFormSubmissionController extends Controller
                 'slug' => $slug,
                 'error' => $e->getMessage(),
             ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to submit form: ' . $e->getMessage(),
+                'message' => 'Failed to submit form: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -317,7 +319,7 @@ class SalesFormSubmissionController extends Controller
                 'currency' => $order->currency,
                 'status' => Transaction::STATUS_COMPLETED,
                 'payment_method' => 'sales_form_manual',
-                'description' => 'Sales form order manual completion: ' . $order->order_number,
+                'description' => 'Sales form order manual completion: '.$order->order_number,
                 'paid_at' => now(),
                 'purpose' => Transaction::PURPOSE_MANUAL_RECEIPT,
                 'source_type' => 'order',
@@ -338,7 +340,7 @@ class SalesFormSubmissionController extends Controller
                 ->unique()
                 ->all();
 
-            if (!empty($courseIds)) {
+            if (! empty($courseIds)) {
                 Enrollment::withoutGlobalScopes()
                     ->where('user_id', $order->user_id)
                     ->where('environment_id', $order->environment_id)
@@ -369,9 +371,10 @@ class SalesFormSubmissionController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to complete order: ' . $e->getMessage(),
+                'message' => 'Failed to complete order: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -387,11 +390,12 @@ class SalesFormSubmissionController extends Controller
                 if (is_array($value)) {
                     return array_map('intval', $value);
                 }
-                if (!empty($value)) {
+                if (! empty($value)) {
                     return [(int) $value];
                 }
             }
         }
+
         return [];
     }
 
@@ -403,9 +407,11 @@ class SalesFormSubmissionController extends Controller
         foreach ($form->fields as $field) {
             if ($field->type === $type) {
                 $value = $answers[$field->field_key] ?? null;
+
                 return is_scalar($value) ? (string) $value : null;
             }
         }
+
         return null;
     }
 }

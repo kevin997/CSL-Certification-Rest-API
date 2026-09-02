@@ -80,7 +80,10 @@ class ResendPasswordLinkTest extends TestCase
             ->assertJsonPath('data.owner_email', $owner->email);
 
         $url = $response->json('data.password_set_url');
-        $this->assertStringStartsWith("https://{$environment->primary_domain}/auth/reset-password", $url);
+        // The environment's own domain is not verified in this fixture, so the
+        // re-sent link points at the shared host and names the environment.
+        $this->assertStringStartsWith('https://app.getkursa.space/auth/reset-password', $url);
+        $this->assertStringContainsString('environment_id='.$environment->id, $url);
 
         Mail::assertQueued(EnvironmentResetPasswordMail::class);
         Queue::assertPushed(SendWhatsAppNotification::class);

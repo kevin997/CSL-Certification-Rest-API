@@ -62,10 +62,14 @@
                                     <span style="font-size: 13px; font-weight: 600; color: #717882; text-transform: uppercase; letter-spacing: 0.05em;">URL</span>
                                 </td>
                                 <td style="padding: 8px 0; text-align: right;">
-                                    <a href="{{ $loginUrl }}" style="font-size: 14px; font-weight: 600; color: {{ $branding['primary_color'] }}; text-decoration: none;">{{ $environment->primary_domain }}</a>
+                                    <a href="{{ $loginUrl }}" style="font-size: 14px; font-weight: 600; color: {{ $branding['primary_color'] }}; text-decoration: none;">{{ parse_url($loginUrl, PHP_URL_HOST) }}</a>
                                 </td>
                             </tr>
                         </table>
+
+            @if(!empty($pendingDomainNotice))
+            <p style="margin-top: 16px; color: #717882;">{{ $pendingDomainNotice }}</p>
+            @endif
                     </td>
                 </tr>
             </table>

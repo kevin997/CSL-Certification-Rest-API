@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Tenancy\TenantUrl;
 use App\Traits\BelongsToEnvironment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class LegalPage extends Model
 {
-    use HasFactory, SoftDeletes, BelongsToEnvironment;
+    use BelongsToEnvironment, HasFactory, SoftDeletes;
 
     /**
      * Valid page types
@@ -104,7 +105,7 @@ class LegalPage extends Model
      */
     public function getProcessedContentAttribute(): string
     {
-        if (!$this->content) {
+        if (! $this->content) {
             return '';
         }
 
@@ -115,7 +116,7 @@ class LegalPage extends Model
 
         $replacements = [
             '{{storeName}}' => $branding?->company_name ?? $environment?->name ?? 'Our Company',
-            '{{storeUrl}}' => $environment?->primary_domain ? 'https://' . $environment->primary_domain : url('/'),
+            '{{storeUrl}}' => $environment?->primary_domain ? TenantUrl::base($environment) : url('/'),
             '{{ownerName}}' => $user?->name ?? 'Owner',
             '{{lastUpdatedDate}}' => $this->updated_at?->format('F j, Y') ?? now()->format('F j, Y'),
             '{{companyEmail}}' => $user?->email ?? '',
@@ -163,6 +164,7 @@ class LegalPage extends Model
                 'description' => self::PAGE_DESCRIPTIONS[$key] ?? '',
             ];
         }
+
         return $types;
     }
 }

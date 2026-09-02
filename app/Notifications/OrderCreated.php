@@ -4,6 +4,7 @@ namespace App\Notifications;
 
 use App\Models\Order;
 use App\Services\TelegramService;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
@@ -14,6 +15,7 @@ class OrderCreated extends Notification implements ShouldQueue
     use Queueable;
 
     private Order $order;
+
     private TelegramService $telegramService;
 
     /**
@@ -41,14 +43,15 @@ class OrderCreated extends Notification implements ShouldQueue
 
         Log::info('Running OrderCreated notification', ['order_id' => $this->order->id]);
 
-        if (!$chatId) {
+        if (! $chatId) {
             Log::error('Could not determine Telegram chat ID');
+
             return null;
         }
 
         // Get environment details
         $environment = $this->order->environment;
-        
+
         // Escape content
         $environmentName = $this->telegramService->escapeMarkdownV2($environment->name);
         $orderNumber = $this->telegramService->escapeMarkdownV2($this->order->order_number);
@@ -56,11 +59,11 @@ class OrderCreated extends Notification implements ShouldQueue
         $currency = $this->telegramService->escapeMarkdownV2($this->order->currency);
         $customerName = $this->telegramService->escapeMarkdownV2($this->order->billing_name);
         $customerEmail = $this->telegramService->escapeMarkdownV2($this->order->billing_email);
-        
+
         // Construct Continue Payment URL
         $protocol = app()->environment('production') ? 'https' : 'http';
         // Use environment's primary domain for the link
-        $continuePaymentUrl = "{$protocol}://{$environment->primary_domain}/checkout/continue-payment/{$this->order->id}";
+        $continuePaymentUrl = TenantUrl::to($environment, '/checkout/continue-payment/'.$this->order->id);
         $escapedUrl = $this->telegramService->escapeMarkdownV2($continuePaymentUrl);
 
         $message = "🛒 *New Order Created*\n\n";
@@ -72,7 +75,7 @@ class OrderCreated extends Notification implements ShouldQueue
 
         $buttons = [
             'text' => 'Continue Payment',
-            'url' => $continuePaymentUrl
+            'url' => $continuePaymentUrl,
         ];
 
         $this->telegramService->sendMessage(

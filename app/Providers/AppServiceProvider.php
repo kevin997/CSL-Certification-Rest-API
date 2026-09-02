@@ -8,6 +8,7 @@ use App\Models\Environment;
 use App\Models\User;
 use App\Support\Tenancy\DnsHttpDomainProbe;
 use App\Support\Tenancy\DomainProbe;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -109,20 +110,14 @@ class AppServiceProvider extends ServiceProvider
         ResetPassword::createUrlUsing(function (object $notifiable, string $token): string {
             $environment = $this->resolveEnvironmentForReset($notifiable);
 
-            if ($environment === null || blank($environment->primary_domain)) {
+            if ($environment === null) {
                 return url(route('password.reset', [
                     'token' => $token,
                     'email' => $notifiable->getEmailForPasswordReset(),
                 ], false));
             }
 
-            $domain = $environment->primary_domain;
-
-            if (! str_starts_with($domain, 'http')) {
-                $domain = 'https://'.$domain;
-            }
-
-            return $domain.'/auth/reset-password?'.http_build_query([
+            return TenantUrl::to($environment, '/auth/reset-password', [
                 'token' => $token,
                 'email' => $notifiable->getEmailForPasswordReset(),
                 'environment_id' => $environment->id,

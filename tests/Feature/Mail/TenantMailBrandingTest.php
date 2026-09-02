@@ -170,6 +170,8 @@ class TenantMailBrandingTest extends TestCase
             'owner_id' => $owner->id,
             'name' => 'Environment Name',
             'primary_domain' => 'tenant.example.test',
+            // Verified: these fixtures exist to prove tenant-domain links.
+            'domain_verified_at' => now(),
             'logo_url' => 'https://cdn.example.test/environment-logo.svg',
         ]);
 
@@ -198,6 +200,8 @@ class TenantMailBrandingTest extends TestCase
             'owner_id' => $owner->id,
             'name' => 'Fallback Academy',
             'primary_domain' => 'fallback.example.test',
+            // Verified: these fixtures exist to prove tenant-domain links.
+            'domain_verified_at' => now(),
             'logo_url' => 'https://cdn.example.test/fallback-logo.svg',
         ]);
     }

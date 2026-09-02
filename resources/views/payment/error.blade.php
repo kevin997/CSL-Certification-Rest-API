@@ -118,7 +118,7 @@
                     @endif
 
                     <div class="flex flex-col space-y-3">
-                        <a href="{{ $protocol }}://{{ $environment->primary_domain }}/auth/login" class="btn-primary inline-block text-center">
+                        <a href="{{ \App\Support\Tenancy\TenantUrl::base($environment) }}/auth/login" class="btn-primary inline-block text-center">
                             Return to Home
                         </a>
                     </div>

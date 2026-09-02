@@ -10,6 +10,7 @@ use App\Models\Order;
 use App\Models\Subscription;
 use App\Models\User;
 use App\Scopes\EnvironmentScope;
+use App\Support\Tenancy\TenantUrl;
 use Illuminate\Contracts\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -174,11 +175,11 @@ class RetentionScenarioRegistry
         $env = Environment::query()
             ->where('owner_id', $userId)
             ->where('is_active', true)
-            ->first(['id', 'primary_domain']);
+            ->first(['id', 'primary_domain', 'domain_verified_at']);
 
         return [
             'environment_id' => $env?->id,
-            'environment_domain' => $env?->primary_domain,
+            'environment_url' => $env ? TenantUrl::to($env, '/') : null,
         ];
     }
 
@@ -286,7 +287,9 @@ class RetentionScenarioRegistry
                 'users.email as user_email',
                 'users.whatsapp_number as user_whatsapp',
                 'courses.title as course_title',
+                'environments.id as env_id',
                 'environments.primary_domain as env_domain',
+                'environments.domain_verified_at as env_domain_verified_at',
             ]);
     }
 
@@ -314,7 +317,13 @@ class RetentionScenarioRegistry
                     'course' => (string) $row->course_title,
                     'progress' => (string) round((float) $row->progress_percentage),
                     'environment_id' => $row->environment_id,
-                    'environment_domain' => $row->env_domain,
+                    'environment_url' => $row->env_domain
+                        ? TenantUrl::to((new Environment)->forceFill([
+                            'id' => (int) $row->env_id,
+                            'primary_domain' => $row->env_domain,
+                            'domain_verified_at' => $row->env_domain_verified_at,
+                        ]), '/')
+                        : null,
                 ],
             ))
             ->values();
@@ -343,7 +352,9 @@ class RetentionScenarioRegistry
                 'users.email as user_email',
                 'users.whatsapp_number as user_whatsapp',
                 'courses.title as course_title',
+                'environments.id as env_id',
                 'environments.primary_domain as env_domain',
+                'environments.domain_verified_at as env_domain_verified_at',
             ])
             ->orderByDesc('issued_certificates.issued_date')
             ->get()
@@ -360,7 +371,13 @@ class RetentionScenarioRegistry
                     'course' => (string) $row->course_title,
                     'progress' => '100',
                     'environment_id' => $row->environment_id,
-                    'environment_domain' => $row->env_domain,
+                    'environment_url' => $row->env_domain
+                        ? TenantUrl::to((new Environment)->forceFill([
+                            'id' => (int) $row->env_id,
+                            'primary_domain' => $row->env_domain,
+                            'domain_verified_at' => $row->env_domain_verified_at,
+                        ]), '/')
+                        : null,
                 ],
             ))
             ->values();
