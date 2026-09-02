@@ -40,9 +40,11 @@ class SubdomainCompositionTest extends TestCase
 
     public function test_free_onboarding_rejects_a_reserved_or_malformed_label(): void
     {
-        foreach (['app', 'a b'] as $label) {
+        // Each case needs a valid, distinct email: an address carrying the label
+        // would fail email validation first and never reach the label check.
+        foreach (['app', 'a b', 'ap', '-acme'] as $i => $label) {
             $this->postJson('/api/onboarding/free', [
-                'name' => 'Owner', 'email' => $label.'@example.com', 'environment_name' => 'Academy',
+                'name' => 'Owner', 'email' => 'owner-'.$i.'-'.uniqid().'@example.com', 'environment_name' => 'Academy',
                 'domain_type' => 'subdomain', 'domain' => $label,
             ])->assertStatus(422);
         }
@@ -66,9 +68,16 @@ class SubdomainCompositionTest extends TestCase
         $this->assertStringEndsWith('.getkursa.space', $response->json('suggestions.0'));
     }
 
+    /**
+     * Asserting on the reason matters: under the old suffix regex a bare label
+     * was rejected too, but for being malformed rather than reserved, so a
+     * status-only assertion could not tell the two implementations apart.
+     */
     public function test_validate_domain_rejects_reserved_labels(): void
     {
-        $this->postJson('/api/onboarding/validate-domain', ['domain' => 'www', 'type' => 'subdomain'])
+        $response = $this->postJson('/api/onboarding/validate-domain', ['domain' => 'www', 'type' => 'subdomain'])
             ->assertStatus(422);
+
+        $this->assertStringContainsString('reserved', strtolower((string) $response->json('message')));
     }
 }

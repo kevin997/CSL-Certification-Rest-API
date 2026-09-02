@@ -2,6 +2,9 @@
 
 namespace Tests\Feature\Licensing;
 
+use App\Models\Environment;
+use App\Models\User;
+use App\Notifications\EnvironmentCreatedNotification;
 use App\Services\Licensing\LicenceService;
 use App\Services\TelegramService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -93,6 +96,27 @@ class ProvisionEnvironmentAlertTest extends TestCase
         $this->assertStringEndsWith('.getkursa.space', $environment->primary_domain);
         $this->assertStringContainsString('Type: `Subdomain`', $captured);
         $this->assertStringNotContainsString('Custom Domain', $captured);
+    }
+
+    /**
+     * The docblock above claims the alert recognises the legacy bases too. This
+     * proves it: an environment still living under .csl-brands.com must not be
+     * mislabelled a custom domain now that new academies compose elsewhere.
+     */
+    public function test_a_legacy_base_subdomain_is_still_labelled_a_subdomain(): void
+    {
+        foreach (['legacy.csl-brands.com', 'legacy.cfpcsl.com'] as $domain) {
+            $environment = Environment::factory()->create(['primary_domain' => $domain]);
+            $notification = new EnvironmentCreatedNotification(
+                $environment,
+                User::factory()->create(),
+                'admin@example.com',
+                'secret',
+                app(TelegramService::class),
+            );
+
+            $this->assertSame('subdomain', $notification->toArray($environment)['domain_type']);
+        }
     }
 
     /**

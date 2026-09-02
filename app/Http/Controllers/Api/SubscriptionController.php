@@ -45,7 +45,6 @@ class SubscriptionController extends Controller
             if (! $user) {
                 $resolver = app(EnvironmentResolver::class);
                 $context = $resolver->resolve($request);
-                $domain = $context->host;
                 $environment = $context->environment
                     ?? ($context->source === EnvironmentContext::SOURCE_NONE ? $resolver->explicitEnvironment($request) : null);
 
