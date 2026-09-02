@@ -70,15 +70,37 @@ class BelongsToEnvironmentResolutionTest extends TestCase
         $victim = Environment::factory()->create();
         $stranger = User::factory()->create();
 
+        // Pin the response, not just the absent row: refusing by letting a NOT
+        // NULL constraint fail would satisfy assertDatabaseMissing while
+        // answering 500 and leaking the schema under debug.
         $this->actingAs($stranger)
             ->postJson('/api/integration-interests', [
                 'integration_id' => 'zoom',
                 'environment_id' => $victim->id,
-            ]);
+            ])
+            ->assertForbidden();
 
         $this->assertDatabaseMissing('integration_interests', [
             'user_id' => $stranger->id,
             'environment_id' => $victim->id,
         ]);
+    }
+
+    /**
+     * Platform staff administer tenants they hold no membership row in, and
+     * admin screens filter by environment, so the membership rule must not
+     * turn those into refusals.
+     */
+    public function test_platform_staff_may_name_an_environment_they_do_not_belong_to(): void
+    {
+        $environment = Environment::factory()->create();
+        $admin = User::factory()->create(['role' => 'super_admin']);
+
+        $this->actingAs($admin)
+            ->postJson('/api/integration-interests', [
+                'integration_id' => 'zoom',
+                'environment_id' => $environment->id,
+            ])
+            ->assertCreated();
     }
 }

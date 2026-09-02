@@ -2,11 +2,13 @@
 
 namespace App\Traits;
 
+use App\Enums\UserRole;
 use App\Models\Environment;
 use App\Models\EnvironmentUser;
 use App\Scopes\EnvironmentScope;
 use App\Support\Tenancy\EnvironmentContext;
 use App\Support\Tenancy\EnvironmentResolver;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Log;
@@ -33,7 +35,10 @@ trait BelongsToEnvironment
         // reads them queries exactly whereNull('environment_id').
         static::creating(function ($model) {
             if (! array_key_exists('environment_id', $model->getAttributes())) {
-                $model->environment_id = self::detectEnvironmentId();
+                // Strict on the write path: a caller who names a tenant they do
+                // not belong to gets a deliberate 403 rather than a NOT NULL
+                // constraint violation surfacing as a 500.
+                $model->environment_id = self::detectEnvironmentId(true);
 
                 if ($model->environment_id) {
                     Log::info('BelongsToEnvironment: Auto-set environment_id', [
@@ -86,7 +91,7 @@ trait BelongsToEnvironment
      * another tenant simply by naming it. A caller with no authenticated user
      * (console, queue) is trusted as before.
      */
-    public static function detectEnvironmentId()
+    public static function detectEnvironmentId(bool $throwWhenRefused = false)
     {
         $request = request();
         $context = $request?->attributes->get(EnvironmentResolver::REQUEST_ATTRIBUTE);
@@ -103,6 +108,12 @@ trait BelongsToEnvironment
                 return $requested;
             }
 
+            if ($throwWhenRefused) {
+                throw new AuthorizationException('You are not a member of the environment you named.');
+            }
+
+            // Reads fall through unscoped rather than throwing: an admin filter
+            // that carries an environment_id must not become a 403 mid-listing.
             return null;
         }
 
@@ -114,10 +125,18 @@ trait BelongsToEnvironment
     }
 
     /**
-     * Owner or member of the environment they named.
+     * Owner or member of the environment they named. Platform staff pass: they
+     * act across tenants by definition, and admin screens routinely filter by an
+     * environment nobody has a membership row in.
      */
     private static function userBelongsToEnvironment($user, int $environmentId): bool
     {
+        $role = $user->role instanceof UserRole ? $user->role->value : $user->role;
+
+        if (in_array($role, [UserRole::ADMIN->value, UserRole::SUPER_ADMIN->value, UserRole::SALES_AGENT->value], true)) {
+            return true;
+        }
+
         $userId = (int) $user->getAuthIdentifier();
 
         if (Environment::query()->whereKey($environmentId)->where('owner_id', $userId)->exists()) {

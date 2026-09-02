@@ -48,8 +48,11 @@ return [
          * A domain counts as live only when it serves the KURSA frontend, not
          * merely when something answers on it: a customer's existing site or a
          * parking page would otherwise capture every link for that tenant.
-         * Recognised by this response header, or failing that by any of these
-         * strings in the body.
+         * Recognised primarily by the X-Kursa-App response header, which the
+         * frontend sets. These body markers are only a fallback for a build that
+         * predates the header; they are generic Next.js strings, so a customer
+         * site built on Next.js could match them too. Empty this list once every
+         * deployment sets the header.
          */
         'body_markers' => array_values(array_filter(explode(
             ',',
