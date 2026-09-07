@@ -85,6 +85,27 @@ class SalesFormWorkflowTest extends TestCase
     }
 
     /** @test */
+    public function public_form_lists_the_courses_and_blocks_in_each_product(): void
+    {
+        $form = $this->makePublishedForm();
+        \App\Models\Block::create([
+            'title' => 'First steps',
+            'order' => 1,
+            'template_id' => $this->course->template_id,
+            'created_by' => $this->trainer->id,
+        ]);
+
+        $this->getJson("/api/sales-forms/public/{$form->slug}")
+            ->assertOk()
+            ->assertJsonPath('data.products.0.name', 'Sample Product')
+            ->assertJsonPath('data.products.0.courses.0.title', 'Sample Course')
+            ->assertJsonPath(
+                'data.products.0.courses.0.template.blocks.0.title',
+                'First steps'
+            );
+    }
+
+    /** @test */
     public function public_submission_runs_pre_enrollment_workflow(): void
     {
         $form = $this->makePublishedForm();
