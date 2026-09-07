@@ -34,7 +34,13 @@ class SalesFormSubmissionController extends Controller
     public function publicShow($slug)
     {
         $form = SalesForm::withoutGlobalScopes()
-            ->with(['fields', 'products:id,name,slug,price,discount_price,currency,thumbnail_path'])
+            ->with([
+                'fields',
+                'products:id,name,slug,price,discount_price,currency,thumbnail_path',
+                'products.courses:id,title,template_id',
+                'products.courses.template:id',
+                'products.courses.template.blocks:id,template_id,title,order',
+            ])
             ->where('slug', $slug)
             ->where('status', SalesForm::STATUS_PUBLISHED)
             ->first();
