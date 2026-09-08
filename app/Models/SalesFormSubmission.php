@@ -11,6 +11,8 @@ use Illuminate\Support\Str;
 
 class SalesFormSubmission extends Model
 {
+    public const MARKETING_TERMS_VERSION = '2026-09';
+
     use BelongsToEnvironment, HasFactory;
 
     const STATUS_PENDING = 'pending';
@@ -28,6 +30,7 @@ class SalesFormSubmission extends Model
         'name',
         'email',
         'phone',
+        'marketing_terms_version',
         'status',
     ];
 

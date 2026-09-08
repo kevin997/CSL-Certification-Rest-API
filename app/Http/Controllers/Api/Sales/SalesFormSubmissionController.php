@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Enrollment;
 use App\Models\Environment;
 use App\Models\EnvironmentUser;
+use App\Models\MarketingConsent;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
@@ -23,6 +24,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class SalesFormSubmissionController extends Controller
 {
@@ -96,8 +98,28 @@ class SalesFormSubmissionController extends Controller
         $rules['email'] = 'required|email|max:255';
         $rules['name'] = 'required|string|max:255';
         $rules['password'] = 'required|string|min:8';
+        $rules['marketing_consent'] = 'nullable|array';
+        $rules['marketing_consent.email'] = 'nullable|boolean';
+        $rules['marketing_consent.whatsapp'] = 'nullable|boolean';
+        $rules['marketing_terms_version'] = [
+            'nullable',
+            'string',
+            Rule::in([SalesFormSubmission::MARKETING_TERMS_VERSION]),
+        ];
 
         $validator = Validator::make($request->all(), $rules);
+        $validator->after(function ($validator) use ($request): void {
+            $consent = $request->input('marketing_consent', []);
+            $hasGrantedChannel = (bool) ($consent['email'] ?? false)
+                || (bool) ($consent['whatsapp'] ?? false);
+
+            if ($hasGrantedChannel && ! $request->filled('marketing_terms_version')) {
+                $validator->errors()->add(
+                    'marketing_terms_version',
+                    'A server-approved marketing terms version is required when granting marketing consent.'
+                );
+            }
+        });
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -150,6 +172,8 @@ class SalesFormSubmissionController extends Controller
 
             // 2. Generate access code + persist submission.
             $phone = $this->extractFieldValue($form, $request->input('answers', []), 'phone');
+            $marketingConsent = $request->input('marketing_consent', []);
+            $termsVersion = $request->input('marketing_terms_version');
             $submission = SalesFormSubmission::create([
                 'sales_form_id' => $form->id,
                 'environment_id' => $environmentId,
@@ -159,8 +183,21 @@ class SalesFormSubmissionController extends Controller
                 'name' => $request->name,
                 'email' => $request->email,
                 'phone' => $phone,
+                'marketing_terms_version' => $termsVersion,
                 'status' => SalesFormSubmission::STATUS_PENDING,
             ]);
+
+            foreach (['email', 'whatsapp'] as $channel) {
+                if ((bool) ($marketingConsent[$channel] ?? false)) {
+                    MarketingConsent::grant(
+                        $submission,
+                        $channel,
+                        'sales_form',
+                        $termsVersion,
+                        now()
+                    );
+                }
+            }
 
             $form->increment('submissions_count');
 
