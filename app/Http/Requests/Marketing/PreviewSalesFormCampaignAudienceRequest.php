@@ -39,8 +39,7 @@ class PreviewSalesFormCampaignAudienceRequest extends FormRequest
             return true;
         }
 
-        if ((int) $environment->owner_id === (int) $user->id
-            || (int) $form->created_by === (int) $user->id) {
+        if ((int) $environment->owner_id === (int) $user->id) {
             return true;
         }
 

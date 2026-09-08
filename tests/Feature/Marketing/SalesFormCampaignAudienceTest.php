@@ -146,6 +146,32 @@ class SalesFormCampaignAudienceTest extends TestCase
             ->assertJsonPath('data.channels.email.submission_ids', [$matching->id]);
     }
 
+    public function test_preview_treats_name_search_wildcards_and_escape_characters_as_literals(): void
+    {
+        $percent = $this->submission('percent@example.test', name: 'Save 100% Today');
+        $percentOther = $this->submission('percent-other@example.test', name: 'Save 1000 Today');
+        $underscore = $this->submission('underscore@example.test', name: 'A_B');
+        $underscoreOther = $this->submission('underscore-other@example.test', name: 'A1B');
+        $backslash = $this->submission('backslash@example.test', name: 'A\\B');
+        $backslashOther = $this->submission('backslash-other@example.test', name: 'AXB');
+
+        foreach ([$percent, $percentOther, $underscore, $underscoreOther, $backslash, $backslashOther] as $submission) {
+            $this->grant($submission, 'email');
+        }
+
+        $this->preview(['mode' => 'filtered', 'filters' => ['name' => '%']], ['email'])
+            ->assertOk()
+            ->assertJsonPath('data.channels.email.submission_ids', [$percent->id]);
+
+        $this->preview(['mode' => 'filtered', 'filters' => ['name' => '_']], ['email'])
+            ->assertOk()
+            ->assertJsonPath('data.channels.email.submission_ids', [$underscore->id]);
+
+        $this->preview(['mode' => 'filtered', 'filters' => ['name' => '\\']], ['email'])
+            ->assertOk()
+            ->assertJsonPath('data.channels.email.submission_ids', [$backslash->id]);
+    }
+
     public function test_preview_requires_an_authenticated_authorized_caller_for_the_form_environment(): void
     {
         $this->postJson("/api/sales-forms/{$this->form->id}/campaigns/audience-preview", [
@@ -191,6 +217,22 @@ class SalesFormCampaignAudienceTest extends TestCase
                 'channels' => ['email'],
             ], ['X-Frontend-Domain' => $this->environment->primary_domain])
             ->assertOk();
+    }
+
+    public function test_preview_denies_a_creator_after_membership_removal_and_role_demotion(): void
+    {
+        $creator = User::factory()->create(['role' => 'individual_teacher']);
+        $this->form->update(['created_by' => $creator->id]);
+        $creator->environments()->attach($this->environment->id, ['role' => 'instructor']);
+        $creator->environments()->detach($this->environment->id);
+        $creator->update(['role' => 'learner']);
+
+        $this->actingAs($creator)
+            ->postJson("/api/sales-forms/{$this->form->id}/campaigns/audience-preview", [
+                'selection' => ['mode' => 'all'],
+                'channels' => ['email'],
+            ], ['X-Frontend-Domain' => $this->environment->primary_domain])
+            ->assertForbidden();
     }
 
     public function test_preview_batches_latest_consent_queries_when_processing_many_submissions(): void
