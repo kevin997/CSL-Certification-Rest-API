@@ -28,9 +28,15 @@ class MarketingConsentCheckController extends Controller
             return $this->json(['message' => 'The recipient reference is invalid.'], 422);
         }
 
-        return $this->json([
-            'granted' => MarketingConsent::isGranted($submission, $validated['channel']),
-        ]);
+        $state = MarketingConsent::withoutGlobalScopes()
+            ->where('environment_id', $submission->environment_id)
+            ->where('sales_form_submission_id', $submission->id)
+            ->where('channel', $validated['channel'])
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->first();
+
+        return $this->json(['granted' => $state?->status === MarketingConsent::STATUS_GRANTED]);
     }
 
     /**

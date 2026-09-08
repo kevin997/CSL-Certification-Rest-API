@@ -21,6 +21,10 @@ class BrandingMiddleware
     {
         $response = $next($request);
 
+        if ($request->attributes->get(MarkMarketingServiceRequest::ATTRIBUTE) === true) {
+            return $response;
+        }
+
         // Only process JSON responses
         if (! $this->isJsonResponse($response)) {
             return $response;

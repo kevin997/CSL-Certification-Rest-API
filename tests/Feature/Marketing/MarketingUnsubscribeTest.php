@@ -10,6 +10,7 @@ use App\Models\SalesFormSubmission;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
@@ -66,6 +67,54 @@ class MarketingUnsubscribeTest extends TestCase
         $this->assertArrayHasKey('signature', $query);
     }
 
+    public function test_an_ambient_tenant_cannot_hide_an_existing_revocation(): void
+    {
+        $submission = $this->submission();
+        MarketingConsent::grant($submission, 'email', 'sales_form', '2026-09', CarbonImmutable::now());
+        $url = $this->unsubscribeUrl($submission, 'email');
+        $foreignOwner = User::factory()->create();
+        $foreignEnvironment = Environment::factory()->create([
+            'owner_id' => $foreignOwner->id,
+            'primary_domain' => 'foreign-unsubscribe.example.test',
+        ]);
+
+        $this->get($url, ['X-Frontend-Domain' => $foreignEnvironment->primary_domain])->assertOk();
+        $this->get($url, ['X-Frontend-Domain' => $foreignEnvironment->primary_domain])->assertOk();
+
+        $this->assertDatabaseCount('marketing_consents', 2);
+    }
+
+    public function test_an_unsubscribe_fails_safely_when_its_recipient_channel_operation_is_locked(): void
+    {
+        $submission = $this->submission();
+        MarketingConsent::grant($submission, 'email', 'sales_form', '2026-09', CarbonImmutable::now());
+        $lock = Cache::lock($this->unsubscribeLockKey($submission, 'email'), 10);
+        $this->assertTrue($lock->get());
+
+        try {
+            $this->get($this->unsubscribeUrl($submission, 'email'))->assertServiceUnavailable();
+        } finally {
+            $lock->release();
+        }
+
+        $this->assertDatabaseCount('marketing_consents', 1);
+    }
+
+    public function test_an_unsubscribe_carries_forward_the_existing_channel_terms_version(): void
+    {
+        $submission = $this->submission();
+        MarketingConsent::grant($submission, 'email', 'legacy_sales_form', 'legacy-sales-form-v1', CarbonImmutable::now());
+
+        $this->get($this->unsubscribeUrl($submission, 'email'))->assertOk();
+
+        $this->assertDatabaseHas('marketing_consents', [
+            'sales_form_submission_id' => $submission->id,
+            'channel' => 'email',
+            'status' => MarketingConsent::STATUS_REVOKED,
+            'terms_version' => 'legacy-sales-form-v1',
+        ]);
+    }
+
     private function unsubscribeUrl(SalesFormSubmission $submission, string $channel): string
     {
         $recipientReference = Crypt::encryptString(json_encode([
@@ -97,5 +146,14 @@ class MarketingUnsubscribeTest extends TestCase
             'answers' => [],
             'status' => SalesFormSubmission::STATUS_PENDING,
         ]);
+    }
+
+    private function unsubscribeLockKey(SalesFormSubmission $submission, string $channel): string
+    {
+        return 'marketing-unsubscribe:'.hash('sha256', implode(':', [
+            $submission->environment_id,
+            $submission->id,
+            $channel,
+        ]));
     }
 }

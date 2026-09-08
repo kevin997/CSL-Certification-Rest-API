@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Marketing;
 
+use App\Models\Branding;
 use App\Models\Environment;
 use App\Models\SalesForm;
 use App\Models\SalesFormSubmission;
@@ -38,8 +39,15 @@ class MarketingServiceSignatureTest extends TestCase
 
     public function test_a_wrong_signature_is_rejected(): void
     {
-        $this->signedRequest($this->payload(), signature: 'not-a-valid-signature')
-            ->assertUnauthorized();
+        Branding::factory()->create(['environment_id' => $this->environment->id]);
+
+        $this->signedRequest(
+            $this->payload(),
+            signature: 'not-a-valid-signature',
+            frontendDomain: $this->environment->primary_domain,
+        )
+            ->assertUnauthorized()
+            ->assertExactJson(['message' => 'Unauthenticated.']);
     }
 
     public function test_an_expired_timestamp_is_rejected(): void
@@ -98,19 +106,30 @@ class MarketingServiceSignatureTest extends TestCase
         ];
     }
 
-    private function signedRequest(array $payload, ?int $timestamp = null, ?string $nonce = null, ?string $signature = null)
-    {
+    private function signedRequest(
+        array $payload,
+        ?int $timestamp = null,
+        ?string $nonce = null,
+        ?string $signature = null,
+        ?string $frontendDomain = null,
+    ) {
         $body = json_encode($payload, JSON_THROW_ON_ERROR);
         $timestamp ??= now()->getTimestamp();
         $nonce ??= 'nonce-'.bin2hex(random_bytes(12));
         $signature ??= $this->signature($body, $timestamp, $nonce);
 
-        return $this->call('POST', '/api/private/marketing/consent-check', [], [], [], [
+        $headers = [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_MARKETING_TIMESTAMP' => (string) $timestamp,
             'HTTP_X_MARKETING_NONCE' => $nonce,
             'HTTP_X_MARKETING_SIGNATURE' => $signature,
-        ], $body);
+        ];
+
+        if ($frontendDomain !== null) {
+            $headers['HTTP_X_FRONTEND_DOMAIN'] = $frontendDomain;
+        }
+
+        return $this->call('POST', '/api/private/marketing/consent-check', [], [], [], $headers, $body);
     }
 
     private function signature(string $body, int $timestamp, string $nonce): string

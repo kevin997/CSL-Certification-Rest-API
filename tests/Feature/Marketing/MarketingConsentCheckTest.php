@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Marketing;
 
+use App\Models\Branding;
 use App\Models\Environment;
 use App\Models\MarketingConsent;
 use App\Models\SalesForm;
@@ -47,19 +48,37 @@ class MarketingConsentCheckTest extends TestCase
             ->assertExactJson(['granted' => true]);
     }
 
+    public function test_a_private_recheck_ignores_an_ambient_tenant_and_never_decorates_its_response(): void
+    {
+        $submission = $this->submission($this->environment);
+        MarketingConsent::grant($submission, 'email', 'sales_form', '2026-09', CarbonImmutable::now());
+
+        $foreignOwner = User::factory()->create();
+        $foreignEnvironment = Environment::factory()->create([
+            'owner_id' => $foreignOwner->id,
+            'primary_domain' => 'foreign-consent.example.test',
+        ]);
+        Branding::factory()->create(['environment_id' => $foreignEnvironment->id]);
+
+        $this->consentCheck($this->environment, $submission, 'email', $foreignEnvironment->primary_domain)
+            ->assertOk()
+            ->assertExactJson(['granted' => true]);
+    }
+
     public function test_a_reference_cannot_be_used_for_a_different_environment(): void
     {
+        Branding::factory()->create(['environment_id' => $this->environment->id]);
         $foreignOwner = User::factory()->create();
         $foreignEnvironment = Environment::factory()->create(['owner_id' => $foreignOwner->id]);
         $foreignSubmission = $this->submission($foreignEnvironment);
         MarketingConsent::grant($foreignSubmission, 'email', 'sales_form', '2026-09', CarbonImmutable::now());
 
-        $this->consentCheck($this->environment, $foreignSubmission, 'email')
+        $this->consentCheck($this->environment, $foreignSubmission, 'email', $this->environment->primary_domain)
             ->assertUnprocessable()
             ->assertExactJson(['message' => 'The recipient reference is invalid.']);
     }
 
-    private function consentCheck(Environment $environment, SalesFormSubmission $submission, string $channel)
+    private function consentCheck(Environment $environment, SalesFormSubmission $submission, string $channel, ?string $frontendDomain = null)
     {
         $payload = [
             'environment_id' => $environment->id,
@@ -80,12 +99,18 @@ class MarketingConsentCheckTest extends TestCase
             hash('sha256', $body),
         ]), 'marketing-service-test-secret');
 
-        return $this->call('POST', '/api/private/marketing/consent-check', [], [], [], [
+        $headers = [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_MARKETING_TIMESTAMP' => (string) $timestamp,
             'HTTP_X_MARKETING_NONCE' => $nonce,
             'HTTP_X_MARKETING_SIGNATURE' => $signature,
-        ], $body);
+        ];
+
+        if ($frontendDomain !== null) {
+            $headers['HTTP_X_FRONTEND_DOMAIN'] = $frontendDomain;
+        }
+
+        return $this->call('POST', '/api/private/marketing/consent-check', [], [], [], $headers, $body);
     }
 
     private function submission(Environment $environment): SalesFormSubmission

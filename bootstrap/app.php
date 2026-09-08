@@ -10,6 +10,7 @@ use App\Http\Middleware\EnforceHttps;
 use App\Http\Middleware\EnsureEnvironmentResolved;
 use App\Http\Middleware\FixXsrfCookieDomain;
 use App\Http\Middleware\IsolateSession;
+use App\Http\Middleware\MarkMarketingServiceRequest;
 use App\Http\Middleware\PreventIndexing;
 use App\Http\Middleware\VerifyMarketingServiceSignature;
 use App\Providers\EnvironmentAuthServiceProvider;
@@ -85,6 +86,7 @@ return Application::configure(basePath: dirname(__DIR__))
             // HMAC service authentication for the private Marketing Service
             // endpoint; aliases keep it off browser-facing API routes.
             'marketing.service' => VerifyMarketingServiceSignature::class,
+            'marketing.private' => MarkMarketingServiceRequest::class,
         ]);
 
         // Rate limiters are configured in FortifyServiceProvider

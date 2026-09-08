@@ -7,8 +7,10 @@ use App\Models\MarketingConsent;
 use App\Models\SalesFormSubmission;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 
 /**
@@ -31,17 +33,7 @@ class MarketingUnsubscribeController extends Controller
         $submission = $this->submissionFromReference($user);
 
         if ($submission) {
-            $latestState = MarketingConsent::latestStateFor($submission, $channel);
-
-            if ($latestState?->status !== MarketingConsent::STATUS_REVOKED) {
-                MarketingConsent::revoke(
-                    $submission,
-                    $channel,
-                    'unsubscribe',
-                    SalesFormSubmission::MARKETING_TERMS_VERSION,
-                    CarbonImmutable::now(),
-                );
-            }
+            $this->revokeChannelOnce($submission, $channel);
         } elseif (ctype_digit($user)) {
             // Keep pre-existing platform campaign links functional while new
             // form-campaign links use the opaque, tenant-bound reference above.
@@ -89,5 +81,45 @@ HTML;
             ->where('environment_id', $payload['environment_id'])
             ->whereKey($payload['submission_id'])
             ->first();
+    }
+
+    private function revokeChannelOnce(SalesFormSubmission $submission, string $channel): void
+    {
+        try {
+            Cache::lock($this->lockKey($submission, $channel), 10)->block(3, function () use ($submission, $channel): void {
+                $latestState = MarketingConsent::withoutGlobalScopes()
+                    ->where('environment_id', $submission->environment_id)
+                    ->where('sales_form_submission_id', $submission->id)
+                    ->where('channel', $channel)
+                    ->orderByDesc('created_at')
+                    ->orderByDesc('id')
+                    ->first();
+
+                if ($latestState?->status === MarketingConsent::STATUS_REVOKED) {
+                    return;
+                }
+
+                MarketingConsent::revoke(
+                    $submission,
+                    $channel,
+                    'unsubscribe',
+                    $latestState?->terms_version
+                        ?: $submission->marketing_terms_version
+                        ?: SalesFormSubmission::MARKETING_TERMS_VERSION,
+                    CarbonImmutable::now(),
+                );
+            });
+        } catch (LockTimeoutException) {
+            abort(503);
+        }
+    }
+
+    private function lockKey(SalesFormSubmission $submission, string $channel): string
+    {
+        return 'marketing-unsubscribe:'.hash('sha256', implode(':', [
+            $submission->environment_id,
+            $submission->id,
+            $channel,
+        ]));
     }
 }

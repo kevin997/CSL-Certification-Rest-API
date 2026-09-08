@@ -74,7 +74,7 @@ Route::post('/admin/token-login', [TokenController::class, 'createToken'])->midd
 // Private service-to-service consent recheck. It intentionally returns only
 // the current boolean state for an opaque, tenant-bound recipient reference.
 Route::post('/private/marketing/consent-check', MarketingConsentCheckController::class)
-    ->middleware('marketing.service');
+    ->middleware(['marketing.private', 'marketing.service']);
 
 // Marketing campaign one-click unsubscribe (signed link emailed with every campaign)
 Route::get('/marketing/unsubscribe/{user}', [MarketingUnsubscribeController::class, '__invoke'])->name('marketing.unsubscribe')->middleware('signed');
