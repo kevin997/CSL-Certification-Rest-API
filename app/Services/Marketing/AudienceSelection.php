@@ -6,7 +6,7 @@ final class AudienceSelection
 {
     /**
      * @param  array<int, int>  $submissionIds
-     * @param  array{status?: string}  $filters
+     * @param  array{name?: string, status?: string}  $filters
      */
     private function __construct(
         public readonly string $mode,
@@ -15,7 +15,7 @@ final class AudienceSelection
     ) {}
 
     /**
-     * @param  array{mode: string, submission_ids?: array<int, int>, filters?: array{status?: string}}  $selection
+     * @param  array{mode: string, submission_ids?: array<int, int>, filters?: array{name?: string, status?: string}}  $selection
      */
     public static function fromArray(array $selection): self
     {

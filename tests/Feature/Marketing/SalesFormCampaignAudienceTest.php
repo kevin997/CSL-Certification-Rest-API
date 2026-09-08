@@ -8,7 +8,9 @@ use App\Models\SalesForm;
 use App\Models\SalesFormSubmission;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class SalesFormCampaignAudienceTest extends TestCase
@@ -122,11 +124,93 @@ class SalesFormCampaignAudienceTest extends TestCase
             ['mode' => 'selected', 'submission_ids' => [1], 'filters' => ['status' => 'pending']],
             ['mode' => 'filtered', 'filters' => ['created_after' => '2026-09-01']],
             ['mode' => 'filtered', 'filters' => ['status' => 'unknown']],
+            ['mode' => 'filtered', 'filters' => ['status' => null]],
+            ['mode' => 'filtered', 'filters' => []],
+            ['mode' => 'filtered', 'filters' => ['name' => null]],
         ] as $selection) {
             $this->preview($selection, ['email'])->assertUnprocessable();
         }
 
         $this->preview(['mode' => 'all'], ['email', 'sms'])->assertUnprocessable();
+    }
+
+    public function test_preview_recomputes_the_current_name_search_filter(): void
+    {
+        $matching = $this->submission('match@example.test', name: 'Jane Learner');
+        $other = $this->submission('other@example.test', name: 'John Instructor');
+        $this->grant($matching, 'email');
+        $this->grant($other, 'email');
+
+        $this->preview(['mode' => 'filtered', 'filters' => ['name' => 'jane']], ['email'])
+            ->assertOk()
+            ->assertJsonPath('data.channels.email.submission_ids', [$matching->id]);
+    }
+
+    public function test_preview_requires_an_authenticated_authorized_caller_for_the_form_environment(): void
+    {
+        $this->postJson("/api/sales-forms/{$this->form->id}/campaigns/audience-preview", [
+            'selection' => ['mode' => 'all'],
+            'channels' => ['email'],
+        ], ['X-Frontend-Domain' => $this->environment->primary_domain])->assertUnauthorized();
+
+        $otherOwner = User::factory()->create(['role' => 'company_teacher']);
+        Environment::factory()->create(['owner_id' => $otherOwner->id]);
+
+        $this->actingAs($otherOwner)
+            ->postJson("/api/sales-forms/{$this->form->id}/campaigns/audience-preview", [
+                'selection' => ['mode' => 'all'],
+                'channels' => ['email'],
+            ], ['X-Frontend-Domain' => $this->environment->primary_domain])
+            ->assertForbidden();
+
+        $learner = User::factory()->create(['role' => 'learner']);
+        $this->actingAs($learner)
+            ->postJson("/api/sales-forms/{$this->form->id}/campaigns/audience-preview", [
+                'selection' => ['mode' => 'all'],
+                'channels' => ['email'],
+            ], ['X-Frontend-Domain' => $this->environment->primary_domain])
+            ->assertForbidden();
+    }
+
+    public function test_preview_allows_an_environment_instructor_and_platform_role(): void
+    {
+        $instructor = User::factory()->create(['role' => 'individual_teacher']);
+        $instructor->environments()->attach($this->environment->id, ['role' => 'instructor']);
+
+        $this->actingAs($instructor)
+            ->postJson("/api/sales-forms/{$this->form->id}/campaigns/audience-preview", [
+                'selection' => ['mode' => 'all'],
+                'channels' => ['email'],
+            ], ['X-Frontend-Domain' => $this->environment->primary_domain])
+            ->assertOk();
+
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->actingAs($admin)
+            ->postJson("/api/sales-forms/{$this->form->id}/campaigns/audience-preview", [
+                'selection' => ['mode' => 'all'],
+                'channels' => ['email'],
+            ], ['X-Frontend-Domain' => $this->environment->primary_domain])
+            ->assertOk();
+    }
+
+    public function test_preview_batches_latest_consent_queries_when_processing_many_submissions(): void
+    {
+        foreach (range(1, 5) as $number) {
+            $submission = $this->submission("batch{$number}@example.test", name: "Batch {$number}");
+            $this->grant($submission, 'email');
+            $this->grant($submission, 'whatsapp');
+        }
+
+        $consentQueries = 0;
+        DB::listen(function (QueryExecuted $query) use (&$consentQueries): void {
+            if (str_contains(strtolower($query->sql), 'marketing_consents')) {
+                $consentQueries++;
+            }
+        });
+
+        $this->preview(['mode' => 'all'], ['email', 'whatsapp'])->assertOk();
+
+        $this->assertLessThanOrEqual(2, $consentQueries);
     }
 
     private function preview(array $selection, array $channels)
@@ -138,7 +222,7 @@ class SalesFormCampaignAudienceTest extends TestCase
             ], ['X-Frontend-Domain' => $this->environment->primary_domain]);
     }
 
-    private function submission(?string $email, string $status = SalesFormSubmission::STATUS_PENDING, ?string $phone = null): SalesFormSubmission
+    private function submission(?string $email, string $status = SalesFormSubmission::STATUS_PENDING, ?string $phone = null, ?string $name = null): SalesFormSubmission
     {
         return SalesFormSubmission::withoutGlobalScopes()->create([
             'sales_form_id' => $this->form->id,
@@ -146,6 +230,7 @@ class SalesFormCampaignAudienceTest extends TestCase
             'access_code' => 'AUD'.str_pad((string) SalesFormSubmission::withoutGlobalScopes()->count(), 5, '0', STR_PAD_LEFT),
             'email' => $email,
             'phone' => $phone,
+            'name' => $name,
             'answers' => [],
             'status' => $status,
         ]);

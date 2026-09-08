@@ -9,6 +9,8 @@ use App\Support\PhoneNumber;
 
 class SalesFormCampaignAudience
 {
+    private const CHUNK_SIZE = 500;
+
     private const EXCLUSION_REASONS = [
         'missing_address',
         'invalid_address',
@@ -26,6 +28,19 @@ class SalesFormCampaignAudience
      */
     public function preview(SalesForm $form, AudienceSelection $selection, array $channels): AudiencePreview
     {
+        $preview = [];
+        $seenCoordinates = [];
+
+        foreach ($channels as $channel) {
+            $preview[$channel] = [
+                'eligible_count' => 0,
+                'exclusion_counts' => array_fill_keys(self::EXCLUSION_REASONS, 0),
+                'submission_ids' => [],
+            ];
+            $seenCoordinates[$channel] = [];
+        }
+
+        $countryCode = $form->environment?->country_code;
         $submissions = SalesFormSubmission::withoutGlobalScopes()
             ->where('sales_form_id', $form->id)
             ->where('environment_id', $form->environment_id)
@@ -35,78 +50,106 @@ class SalesFormCampaignAudience
             )
             ->when(
                 $selection->mode === 'filtered',
-                fn ($query) => $query->where('status', $selection->filters['status']),
+                function ($query) use ($selection): void {
+                    if (array_key_exists('status', $selection->filters)) {
+                        $query->where('status', $selection->filters['status']);
+                    }
+
+                    if (array_key_exists('name', $selection->filters)) {
+                        $name = mb_strtolower($selection->filters['name'], 'UTF-8');
+                        $query->whereRaw('LOWER(name) LIKE ?', ["%{$name}%"]);
+                    }
+                },
             )
-            ->orderBy('id')
-            ->get();
+            ->select(['id', 'environment_id', 'email', 'phone'])
+            ->orderBy('id');
 
-        $preview = [];
-
-        foreach ($channels as $channel) {
-            $excluded = array_fill_keys(self::EXCLUSION_REASONS, 0);
-            $submissionIds = [];
-            $seenCoordinates = [];
+        $submissions->chunkById(self::CHUNK_SIZE, function ($submissions) use (&$preview, &$seenCoordinates, $channels, $form, $countryCode): void {
+            $consents = $this->latestConsents(
+                $submissions->pluck('id')->all(),
+                $channels,
+                (int) $form->environment_id
+            );
 
             foreach ($submissions as $submission) {
-                $coordinate = $this->coordinate($submission, $channel, $form);
+                foreach ($channels as $channel) {
+                    $coordinate = $this->coordinate($submission, $channel, $countryCode);
+                    $excluded = &$preview[$channel]['exclusion_counts'];
 
-                if ($coordinate === null) {
-                    $excluded['missing_address']++;
+                    if ($coordinate === null) {
+                        $excluded['missing_address']++;
+                        unset($excluded);
 
-                    continue;
+                        continue;
+                    }
+
+                    if ($coordinate === false) {
+                        $excluded['invalid_address']++;
+                        unset($excluded);
+
+                        continue;
+                    }
+
+                    $consent = $consents[$submission->id.':'.$channel] ?? null;
+                    if ($consent === null) {
+                        $excluded['no_consent']++;
+                        unset($excluded);
+
+                        continue;
+                    }
+
+                    if ($consent->status === MarketingConsent::STATUS_REVOKED) {
+                        $excluded['revoked']++;
+                        unset($excluded);
+
+                        continue;
+                    }
+
+                    if (isset($seenCoordinates[$channel][$coordinate])) {
+                        $excluded['duplicate']++;
+                        unset($excluded);
+
+                        continue;
+                    }
+
+                    $seenCoordinates[$channel][$coordinate] = true;
+                    $preview[$channel]['submission_ids'][] = $submission->id;
+                    $preview[$channel]['eligible_count']++;
+                    unset($excluded);
                 }
-
-                if ($coordinate === false) {
-                    $excluded['invalid_address']++;
-
-                    continue;
-                }
-
-                $consent = $this->latestConsent($submission, $channel);
-                if ($consent === null) {
-                    $excluded['no_consent']++;
-
-                    continue;
-                }
-
-                if ($consent->status === MarketingConsent::STATUS_REVOKED) {
-                    $excluded['revoked']++;
-
-                    continue;
-                }
-
-                if (isset($seenCoordinates[$coordinate])) {
-                    $excluded['duplicate']++;
-
-                    continue;
-                }
-
-                $seenCoordinates[$coordinate] = true;
-                $submissionIds[] = $submission->id;
             }
-
-            $preview[$channel] = [
-                'eligible_count' => count($submissionIds),
-                'exclusion_counts' => $excluded,
-                'submission_ids' => $submissionIds,
-            ];
-        }
+        });
 
         return new AudiencePreview($preview);
     }
 
-    private function latestConsent(SalesFormSubmission $submission, string $channel): ?MarketingConsent
+    /**
+     * @param  array<int, int>  $submissionIds
+     * @param  array<int, string>  $channels
+     * @return array<string, MarketingConsent>
+     */
+    private function latestConsents(array $submissionIds, array $channels, int $environmentId): array
     {
-        return MarketingConsent::withoutGlobalScopes()
-            ->where('environment_id', $submission->environment_id)
-            ->where('sales_form_submission_id', $submission->id)
-            ->where('channel', $channel)
+        $latest = [];
+
+        MarketingConsent::withoutGlobalScopes()
+            ->where('environment_id', $environmentId)
+            ->whereIn('sales_form_submission_id', $submissionIds)
+            ->whereIn('channel', $channels)
+            ->orderBy('sales_form_submission_id')
+            ->orderBy('channel')
             ->orderByDesc('created_at')
             ->orderByDesc('id')
-            ->first();
+            ->get()
+            ->each(function (MarketingConsent $consent) use (&$latest): void {
+                $key = $consent->sales_form_submission_id.':'.$consent->channel;
+                $latest[$key] ??= $consent;
+            });
+
+        return $latest;
     }
 
-    private function coordinate(SalesFormSubmission $submission, string $channel, SalesForm $form): string|false|null
+    private function coordinate(SalesFormSubmission $submission, string $channel, ?string $countryCode): string|false|null
     {
         if ($channel === 'email') {
             $email = trim((string) $submission->email);
@@ -125,7 +168,7 @@ class SalesFormCampaignAudience
             return null;
         }
 
-        $phone = PhoneNumber::normalize($rawPhone, $form->environment?->country_code);
+        $phone = PhoneNumber::normalize($rawPhone, $countryCode);
 
         return preg_match('/^\+[1-9]\d{7,14}$/', $phone) === 1 ? $phone : false;
     }
