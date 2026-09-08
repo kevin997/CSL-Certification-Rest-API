@@ -11,6 +11,7 @@ use App\Http\Middleware\EnsureEnvironmentResolved;
 use App\Http\Middleware\FixXsrfCookieDomain;
 use App\Http\Middleware\IsolateSession;
 use App\Http\Middleware\PreventIndexing;
+use App\Http\Middleware\VerifyMarketingServiceSignature;
 use App\Providers\EnvironmentAuthServiceProvider;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -80,6 +81,10 @@ return Application::configure(basePath: dirname(__DIR__))
 
             // Tenant routes refuse (or, in log mode, log) when no environment resolved.
             'environment.required' => EnsureEnvironmentResolved::class,
+
+            // HMAC service authentication for the private Marketing Service
+            // endpoint; aliases keep it off browser-facing API routes.
+            'marketing.service' => VerifyMarketingServiceSignature::class,
         ]);
 
         // Rate limiters are configured in FortifyServiceProvider

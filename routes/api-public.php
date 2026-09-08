@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\CampaignFunderController;
 use App\Http\Controllers\Api\EnvironmentController;
 use App\Http\Controllers\Api\LandingPagePopupController;
 use App\Http\Controllers\Api\LegalPageController;
+use App\Http\Controllers\Api\MarketingConsentCheckController;
 use App\Http\Controllers\Api\MarketingUnsubscribeController;
 use App\Http\Controllers\Api\ProductLandingPageController;
 use App\Http\Controllers\Api\Sales\SalesFormSubmissionController;
@@ -69,6 +70,11 @@ Route::get('/integrations/whatsapp/config', [ThirdPartyServiceController::class,
 // This endpoint authenticates and returns a Sanctum API token for Bearer auth.
 // Rate-limited to blunt credential brute-force against the admin login (security audit finding).
 Route::post('/admin/token-login', [TokenController::class, 'createToken'])->middleware('throttle:10,1');
+
+// Private service-to-service consent recheck. It intentionally returns only
+// the current boolean state for an opaque, tenant-bound recipient reference.
+Route::post('/private/marketing/consent-check', MarketingConsentCheckController::class)
+    ->middleware('marketing.service');
 
 // Marketing campaign one-click unsubscribe (signed link emailed with every campaign)
 Route::get('/marketing/unsubscribe/{user}', [MarketingUnsubscribeController::class, '__invoke'])->name('marketing.unsubscribe')->middleware('signed');
