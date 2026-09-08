@@ -57,8 +57,8 @@ class SalesFormCampaignAudience
 
                     if (array_key_exists('name', $selection->filters)) {
                         $name = mb_strtolower($selection->filters['name'], 'UTF-8');
-                        $name = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $name);
-                        $query->whereRaw("LOWER(name) LIKE ? ESCAPE '\\'", ["%{$name}%"]);
+                        $name = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $name);
+                        $query->whereRaw("LOWER(name) LIKE ? ESCAPE '!'", ["%{$name}%"]);
                     }
                 },
             )

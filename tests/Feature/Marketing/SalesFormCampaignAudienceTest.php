@@ -154,14 +154,27 @@ class SalesFormCampaignAudienceTest extends TestCase
         $underscoreOther = $this->submission('underscore-other@example.test', name: 'A1B');
         $backslash = $this->submission('backslash@example.test', name: 'A\\B');
         $backslashOther = $this->submission('backslash-other@example.test', name: 'AXB');
+        $escape = $this->submission('escape@example.test', name: 'Bang !');
+        $escapeOther = $this->submission('escape-other@example.test', name: 'Bang X');
 
-        foreach ([$percent, $percentOther, $underscore, $underscoreOther, $backslash, $backslashOther] as $submission) {
+        foreach ([$percent, $percentOther, $underscore, $underscoreOther, $backslash, $backslashOther, $escape, $escapeOther] as $submission) {
             $this->grant($submission, 'email');
         }
+
+        $nameQuery = null;
+        $nameBindings = null;
+        DB::listen(function (QueryExecuted $query) use (&$nameQuery, &$nameBindings): void {
+            if (str_contains(strtolower($query->sql), 'lower(name)')) {
+                $nameQuery = $query->sql;
+                $nameBindings = $query->bindings;
+            }
+        });
 
         $this->preview(['mode' => 'filtered', 'filters' => ['name' => '%']], ['email'])
             ->assertOk()
             ->assertJsonPath('data.channels.email.submission_ids', [$percent->id]);
+        $this->assertStringContainsString("ESCAPE '!'", $nameQuery);
+        $this->assertContains('%!%%', $nameBindings);
 
         $this->preview(['mode' => 'filtered', 'filters' => ['name' => '_']], ['email'])
             ->assertOk()
@@ -170,6 +183,10 @@ class SalesFormCampaignAudienceTest extends TestCase
         $this->preview(['mode' => 'filtered', 'filters' => ['name' => '\\']], ['email'])
             ->assertOk()
             ->assertJsonPath('data.channels.email.submission_ids', [$backslash->id]);
+
+        $this->preview(['mode' => 'filtered', 'filters' => ['name' => '!']], ['email'])
+            ->assertOk()
+            ->assertJsonPath('data.channels.email.submission_ids', [$escape->id]);
     }
 
     public function test_preview_requires_an_authenticated_authorized_caller_for_the_form_environment(): void
