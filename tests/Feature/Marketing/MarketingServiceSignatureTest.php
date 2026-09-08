@@ -7,8 +7,10 @@ use App\Models\Environment;
 use App\Models\SalesForm;
 use App\Models\SalesFormSubmission;
 use App\Models\User;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\RateLimiter;
 use Tests\TestCase;
 
 class MarketingServiceSignatureTest extends TestCase
@@ -89,6 +91,19 @@ class MarketingServiceSignatureTest extends TestCase
         config(['services.marketing_service.signing_secret' => null]);
 
         $this->signedRequest($this->payload())->assertUnauthorized();
+    }
+
+    public function test_a_throttled_private_request_is_not_decorated_by_the_resolved_tenant(): void
+    {
+        Branding::factory()->create(['environment_id' => $this->environment->id]);
+        RateLimiter::for('public-api', fn () => Limit::perMinute(1)->by('private-marketing-throttle'));
+        $payload = $this->payload();
+
+        $this->signedRequest($payload, frontendDomain: $this->environment->primary_domain)->assertOk();
+
+        $this->signedRequest($payload, frontendDomain: $this->environment->primary_domain)
+            ->assertTooManyRequests()
+            ->assertExactJson(['message' => 'Too Many Attempts.']);
     }
 
     /** @return array{environment_id: int, recipient_ref: string, channel: string} */

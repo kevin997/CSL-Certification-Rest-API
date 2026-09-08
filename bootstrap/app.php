@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\MarketingConsentCheckController;
 use App\Http\Middleware\BrandingMiddleware;
 use App\Http\Middleware\ChatRateLimitMiddleware;
 use App\Http\Middleware\CheckPlanFeature;
@@ -17,6 +18,7 @@ use App\Providers\EnvironmentAuthServiceProvider;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -28,6 +30,15 @@ return Application::configure(basePath: dirname(__DIR__))
         channels: __DIR__.'/../routes/channels.php',
         health: '/up',
         then: function () {
+            // The service marker must wrap throttling too: global tenant
+            // decorators see it when a 429 short-circuits before HMAC auth.
+            Route::prefix('api')
+                ->middleware(['marketing.private', 'throttle:public-api'])
+                ->group(function (): void {
+                    Route::post('/private/marketing/consent-check', MarketingConsentCheckController::class)
+                        ->middleware('marketing.service');
+                });
+
             // Public API routes without authentication - use higher rate limit for SSR
             Route::prefix('api')
                 ->middleware(['throttle:public-api'])
@@ -92,6 +103,14 @@ return Application::configure(basePath: dirname(__DIR__))
         // Rate limiters are configured in FortifyServiceProvider
     })
     ->withExceptions(function (Exceptions $exceptions) {
+        $exceptions->render(function (ThrottleRequestsException $exception, Request $request) {
+            if ($request->attributes->get(MarkMarketingServiceRequest::ATTRIBUTE) !== true) {
+                return null;
+            }
+
+            return response()->json(['message' => 'Too Many Attempts.'], 429, $exception->getHeaders());
+        });
+
         // An unauthenticated api/* request that did not send
         // Accept: application/json was redirected to the login page. Browsers
         // follow that redirect cross-origin, the login page carries no CORS
