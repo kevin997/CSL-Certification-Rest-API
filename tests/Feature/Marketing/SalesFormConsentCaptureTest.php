@@ -23,10 +23,16 @@ class SalesFormConsentCaptureTest extends TestCase
     public function test_unchecked_channel_consent_creates_no_marketing_grant(): void
     {
         $form = $this->makePublishedForm();
-        $response = $this->submit($form, ['email' => false, 'whatsapp' => false]);
+        $response = $this->submit($form, ['email' => false, 'whatsapp' => false], [
+            'marketing_terms_version' => null,
+        ]);
 
         $response->assertCreated();
         $this->assertDatabaseCount('marketing_consents', 0);
+        $this->assertSame(
+            SalesFormSubmission::MARKETING_TERMS_VERSION,
+            SalesFormSubmission::withoutGlobalScopes()->findOrFail($response->json('submission_id'))->marketing_terms_version
+        );
     }
 
     public function test_checked_email_consent_creates_only_an_email_grant(): void
@@ -70,6 +76,20 @@ class SalesFormConsentCaptureTest extends TestCase
         $this->submit($form, ['email' => true, 'whatsapp' => false], [
             'marketing_terms_version' => 'made-up-terms',
         ])->assertUnprocessable()->assertJsonValidationErrors('marketing_terms_version');
+
+        $this->assertDatabaseCount('sales_form_submissions', 0);
+        $this->assertDatabaseCount('marketing_consents', 0);
+    }
+
+    public function test_unknown_marketing_consent_channels_are_rejected(): void
+    {
+        $form = $this->makePublishedForm();
+
+        $this->submit($form, [
+            'email' => false,
+            'whatsapp' => false,
+            'sms' => 'yes',
+        ])->assertUnprocessable()->assertJsonValidationErrors('marketing_consent');
 
         $this->assertDatabaseCount('sales_form_submissions', 0);
         $this->assertDatabaseCount('marketing_consents', 0);

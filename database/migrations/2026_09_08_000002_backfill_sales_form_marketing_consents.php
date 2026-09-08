@@ -23,6 +23,7 @@ return new class extends Migration
         }
 
         SalesFormSubmission::withoutGlobalScopes()
+            ->whereNull('marketing_terms_version')
             ->with('environment')
             ->orderBy('id')
             ->chunkById(100, function ($submissions): void {
@@ -60,7 +61,7 @@ return new class extends Migration
 
     private function grantIfMissing(SalesFormSubmission $submission, string $channel, bool $hasValidCoordinate): void
     {
-        if (! $hasValidCoordinate || MarketingConsent::query()
+        if (! $hasValidCoordinate || MarketingConsent::withoutGlobalScopes()
             ->where('environment_id', $submission->environment_id)
             ->where('sales_form_submission_id', $submission->id)
             ->where('channel', $channel)

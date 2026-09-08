@@ -98,7 +98,7 @@ class SalesFormSubmissionController extends Controller
         $rules['email'] = 'required|email|max:255';
         $rules['name'] = 'required|string|max:255';
         $rules['password'] = 'required|string|min:8';
-        $rules['marketing_consent'] = 'nullable|array';
+        $rules['marketing_consent'] = 'nullable|array:email,whatsapp';
         $rules['marketing_consent.email'] = 'nullable|boolean';
         $rules['marketing_consent.whatsapp'] = 'nullable|boolean';
         $rules['marketing_terms_version'] = [
@@ -174,6 +174,7 @@ class SalesFormSubmissionController extends Controller
             $phone = $this->extractFieldValue($form, $request->input('answers', []), 'phone');
             $marketingConsent = $request->input('marketing_consent', []);
             $termsVersion = $request->input('marketing_terms_version');
+            $submissionTermsVersion = $termsVersion ?? SalesFormSubmission::MARKETING_TERMS_VERSION;
             $submission = SalesFormSubmission::create([
                 'sales_form_id' => $form->id,
                 'environment_id' => $environmentId,
@@ -183,7 +184,7 @@ class SalesFormSubmissionController extends Controller
                 'name' => $request->name,
                 'email' => $request->email,
                 'phone' => $phone,
-                'marketing_terms_version' => $termsVersion,
+                'marketing_terms_version' => $submissionTermsVersion,
                 'status' => SalesFormSubmission::STATUS_PENDING,
             ]);
 

@@ -25,8 +25,11 @@ class LegacySalesFormConsentMigrationTest extends TestCase
         $this->makeSubmission('invalid@example', 'not-a-phone');
 
         MarketingConsent::revoke($revokedEmail, 'email', 'unsubscribe', '2026-09', CarbonImmutable::parse('2026-09-08 12:00:00 UTC'));
+        $otherEnvironment = Environment::factory()->create();
+        session(['current_environment_id' => $otherEnvironment->id]);
 
         $this->migration()->up();
+        session()->forget('current_environment_id');
 
         $this->assertDatabaseCount('marketing_consents', 6);
         $this->assertDatabaseHas('marketing_consents', ['sales_form_submission_id' => $valid->id, 'channel' => 'email', 'status' => MarketingConsent::STATUS_GRANTED, 'source' => 'legacy_sales_form', 'terms_version' => 'legacy-sales-form-v1']);
@@ -39,9 +42,18 @@ class LegacySalesFormConsentMigrationTest extends TestCase
         $this->assertTrue(MarketingConsent::isGranted($revokedEmail, 'whatsapp'));
         $this->assertSame('2026-09-08 09:00:00', DB::table('marketing_consents')->where('sales_form_submission_id', $valid->id)->where('channel', 'email')->value('granted_at'));
 
+        $modernUnchecked = $this->makeSubmission(
+            'modern-unchecked@example.com',
+            '677 12 34 59',
+            SalesFormSubmission::MARKETING_TERMS_VERSION
+        );
+
         $this->migration()->up();
 
         $this->assertDatabaseCount('marketing_consents', 6);
+        $this->assertDatabaseMissing('marketing_consents', [
+            'sales_form_submission_id' => $modernUnchecked->id,
+        ]);
     }
 
     private function migration(): object
@@ -49,7 +61,7 @@ class LegacySalesFormConsentMigrationTest extends TestCase
         return require database_path('migrations/2026_09_08_000002_backfill_sales_form_marketing_consents.php');
     }
 
-    private function makeSubmission(string $email, string $phone): SalesFormSubmission
+    private function makeSubmission(string $email, string $phone, ?string $termsVersion = null): SalesFormSubmission
     {
         static $form;
 
@@ -63,6 +75,7 @@ class LegacySalesFormConsentMigrationTest extends TestCase
             'sales_form_id' => $form->id, 'environment_id' => $form->environment_id,
             'access_code' => 'LEGACY'.str_pad((string) SalesFormSubmission::withoutGlobalScopes()->count(), 2, '0', STR_PAD_LEFT),
             'name' => 'Legacy Learner', 'email' => $email, 'phone' => $phone, 'answers' => [],
+            'marketing_terms_version' => $termsVersion,
             'status' => SalesFormSubmission::STATUS_PENDING,
         ]);
 
