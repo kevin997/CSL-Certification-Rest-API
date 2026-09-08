@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Traits\BelongsToEnvironment;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -50,6 +51,24 @@ class MarketingConsent extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function save(array $options = []): bool
+    {
+        if ($this->exists && $this->isDirty()) {
+            throw new \LogicException('Marketing consent events are immutable. Append a new event instead.');
+        }
+
+        return parent::save($options);
+    }
+
+    public function delete(): ?bool
+    {
+        if ($this->exists) {
+            throw new \LogicException('Marketing consent events cannot be deleted.');
+        }
+
+        return parent::delete();
+    }
+
     public static function grant(
         SalesFormSubmission $submission,
         string $channel,
@@ -94,6 +113,8 @@ class MarketingConsent extends Model
         string $termsVersion,
         CarbonInterface $at
     ): self {
+        $recordedAt = CarbonImmutable::instance($at)->utc();
+
         return static::create([
             'environment_id' => $submission->environment_id,
             'sales_form_submission_id' => $submission->id,
@@ -102,8 +123,8 @@ class MarketingConsent extends Model
             'status' => $status,
             'source' => $source,
             'terms_version' => $termsVersion,
-            'granted_at' => $status === self::STATUS_GRANTED ? $at : null,
-            'revoked_at' => $status === self::STATUS_REVOKED ? $at : null,
+            'granted_at' => $status === self::STATUS_GRANTED ? $recordedAt : null,
+            'revoked_at' => $status === self::STATUS_REVOKED ? $recordedAt : null,
         ]);
     }
 }
