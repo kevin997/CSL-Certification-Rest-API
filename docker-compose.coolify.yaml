@@ -41,6 +41,23 @@ services:
     # plain GET by design: it only answers websocket upgrades at /app/{key}.
     ports:
       - "${REVERB_HOST_PORT:-8085}:8080"
+    # The image healthcheck curls http://localhost:80/health/index.php — the web
+    # container's check, inherited by a container that serves no web port. It has
+    # therefore reported unhealthy since the day this service was created, while
+    # Reverb ran perfectly: the log says "Starting server on 0.0.0.0:8080" and
+    # 8080 answers. A container that is permanently red teaches everyone to
+    # ignore the alert, which is the state in which a real outage goes unread —
+    # and it pages somebody every time the container is recreated.
+    #
+    # What is checked is the only thing that matters here: the websocket server
+    # accepts a connection. Not an HTTP status — Reverb answers a plain GET with
+    # 404 by design, so `curl -f` would fail against a working server.
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(@fsockopen(\"127.0.0.1\", 8080, $$e, $$s, 3) ? 0 : 1);'"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
     networks:
       - csl-shared-network
 
