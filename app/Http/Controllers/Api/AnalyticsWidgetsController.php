@@ -16,6 +16,16 @@ use Illuminate\Support\Facades\Log;
 
 class AnalyticsWidgetsController extends Controller
 {
+    /**
+     * How much of a client-supplied string is kept.
+     *
+     * Matches the column width set by the widen_academy_visit_tracking_headers
+     * migration. If one moves the other has to: a limit above the column is a
+     * 500 waiting for a long enough header, and a limit below it throws away
+     * data the column could have held.
+     */
+    private const HEADER_WIDTH = 1024;
+
     private function getEnvironmentId(Request $request): ?int
     {
         $environment = $request->get('environment');
@@ -24,6 +34,7 @@ class AnalyticsWidgetsController extends Controller
         }
 
         $sessionEnvId = session('current_environment_id');
+
         return $sessionEnvId ? (int) $sessionEnvId : null;
     }
 
@@ -38,6 +49,25 @@ class AnalyticsWidgetsController extends Controller
         return [$startDate, $endDate];
     }
 
+    /**
+     * Clamp a client-supplied string to what its column can hold.
+     *
+     * mb_substr, not substr: a multi-byte character cut in half is invalid
+     * UTF-8, which MySQL rejects with a different error rather than storing it.
+     * An empty string is stored as null, so "sent nothing" and "sent blank" do
+     * not become two different things in the analytics.
+     */
+    private function bounded(?string $value, int $limit = self::HEADER_WIDTH): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $value = mb_substr($value, 0, $limit);
+
+        return $value === '' ? null : $value;
+    }
+
     private function getClientIp(Request $request): ?string
     {
         $forwarded = $request->header('CF-Connecting-IP')
@@ -46,6 +76,7 @@ class AnalyticsWidgetsController extends Controller
 
         if ($forwarded) {
             $parts = explode(',', $forwarded);
+
             return trim($parts[0]);
         }
 
@@ -54,17 +85,18 @@ class AnalyticsWidgetsController extends Controller
 
     private function hashIp(?string $ip): ?string
     {
-        if (!$ip) {
+        if (! $ip) {
             return null;
         }
 
         $salt = (string) config('app.key', '');
-        return hash('sha256', $salt . '|' . $ip);
+
+        return hash('sha256', $salt.'|'.$ip);
     }
 
     private function isPublicIp(?string $ip): bool
     {
-        if (!$ip) {
+        if (! $ip) {
             return false;
         }
 
@@ -74,7 +106,7 @@ class AnalyticsWidgetsController extends Controller
     public function trackVisit(Request $request): JsonResponse
     {
         $environmentId = $this->getEnvironmentId($request);
-        if (!$environmentId) {
+        if (! $environmentId) {
             return response()->json([
                 'success' => false,
                 'message' => 'No environment selected',
@@ -89,10 +121,21 @@ class AnalyticsWidgetsController extends Controller
             ], 422);
         }
 
-        $path = $request->input('path');
-        $referrer = $request->input('referrer');
-        $userAgent = $request->header('User-Agent');
-        $acceptLanguage = $request->header('Accept-Language');
+        // Every one of these is client-supplied and unbounded: two are request
+        // body fields and two are headers, and the columns behind them are
+        // varchar(255). Ninety-three requests a day were lost to SQLSTATE[22001]
+        // because Facebook's in-app browser sends a user agent of nearly three
+        // hundred characters — a visitor arriving from a Facebook link was
+        // answered with a 500 instead of being counted.
+        //
+        // Truncated rather than merely widened. A wider column moves the ceiling;
+        // it does not remove it, and nothing stops a client sending a header of
+        // any length at all. visit_hash above was already bounded, so the
+        // question had been asked of one field of five.
+        $path = $this->bounded($request->input('path'));
+        $referrer = $this->bounded($request->input('referrer'));
+        $userAgent = $this->bounded($request->header('User-Agent'));
+        $acceptLanguage = $this->bounded($request->header('Accept-Language'));
         $ip = $this->getClientIp($request);
         $ipHash = $this->hashIp($ip);
 
@@ -103,7 +146,7 @@ class AnalyticsWidgetsController extends Controller
             ->where('visit_hash', $visitHash)
             ->first();
 
-        if (!$visitor) {
+        if (! $visitor) {
             $visitor = AcademyVisitor::create([
                 'environment_id' => $environmentId,
                 'visit_hash' => $visitHash,
@@ -123,7 +166,7 @@ class AnalyticsWidgetsController extends Controller
 
         if ($shouldCountVisit) {
             $visitor->visits_count = (int) $visitor->visits_count + 1;
-            if (!$visitor->first_seen_at) {
+            if (! $visitor->first_seen_at) {
                 $visitor->first_seen_at = $now;
             }
 
@@ -144,7 +187,7 @@ class AnalyticsWidgetsController extends Controller
             ]);
         }
 
-        if ((!$visitor->country_code || !$visitor->country_name) && $ip) {
+        if ((! $visitor->country_code || ! $visitor->country_name) && $ip) {
             $apiKey = (string) config('services.ipgeolocation.api_key');
 
             if ($apiKey !== '' && $this->isPublicIp($ip)) {
@@ -202,7 +245,7 @@ class AnalyticsWidgetsController extends Controller
     public function financialWidgets(Request $request): JsonResponse
     {
         $environmentId = $this->getEnvironmentId($request);
-        if (!$environmentId) {
+        if (! $environmentId) {
             return response()->json([
                 'success' => false,
                 'message' => 'No environment selected',
@@ -248,7 +291,7 @@ class AnalyticsWidgetsController extends Controller
     public function trafficWidgets(Request $request): JsonResponse
     {
         $environmentId = $this->getEnvironmentId($request);
-        if (!$environmentId) {
+        if (! $environmentId) {
             return response()->json([
                 'success' => false,
                 'message' => 'No environment selected',
