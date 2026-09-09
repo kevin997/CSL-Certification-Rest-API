@@ -189,6 +189,47 @@ class MediaAssetController extends Controller
     }
 
     /**
+     * Abandon an in-flight multipart upload: have the media service drop the parts
+     * MinIO is holding, then forget the asset. Only a 'pending' asset can be
+     * aborted — once complete ran, the file belongs to the transcoder and
+     * destroy() is the way out.
+     */
+    public function abortMultipartUpload(Request $request, $id)
+    {
+        $environmentId = $request->user()->environment_id ?? 1;
+        $mediaAsset = MediaAsset::where('id', $id)
+            ->where('environment_id', $environmentId)
+            ->first();
+
+        if (!$mediaAsset) {
+            return response()->json(['error' => 'Media asset not found'], 404);
+        }
+
+        if ($mediaAsset->status !== 'pending') {
+            return response()->json([
+                'code' => 'upload_not_pending',
+                'status' => $mediaAsset->status,
+                'error' => 'Only an upload still in progress can be cancelled',
+            ], 409);
+        }
+
+        $uploadId = $mediaAsset->meta['upload_id'] ?? null;
+        if ($uploadId) {
+            $baseUrl = $this->mediaServiceBaseUrl();
+            $response = Http::acceptJson()->post("{$baseUrl}/api/media/multipart/{$uploadId}/abort");
+
+            // A 404 means the media service already forgot it; nothing left to free.
+            if (!$response->successful() && $response->status() !== 404) {
+                return response()->json(['error' => 'Media Service multipart abort failed', 'details' => $response->json()], 502);
+            }
+        }
+
+        $mediaAsset->delete();
+
+        return response()->json(['deleted' => true]);
+    }
+
+    /**
      * Initialize a resumable (tus) upload against Bunny Stream.
      *
      * Creates the Bunny video object, records a local MediaAsset, and returns the
@@ -410,7 +451,14 @@ class MediaAssetController extends Controller
             ]);
         }
 
-        // Call Media Service to get session
+        // A failed transcode is final on our side: no need to ask the media service.
+        if ($mediaAsset->status === 'failed') {
+            return $this->notPlayable($mediaAsset, 'media_failed');
+        }
+
+        // A pending or processing asset still goes to the media service: it is the
+        // authority on whether the HLS exists, and our status can lag behind it
+        // when the 'ready' webhook never arrived.
         $baseUrl = $this->mediaServiceBaseUrl();
         $url = "{$baseUrl}/api/media/{$uploadId}/playback-session";
 
@@ -427,13 +475,38 @@ class MediaAssetController extends Controller
         }
 
         if (!$response->successful()) {
-            return response()->json(
-                [
-                    'error' => 'Failed to start playback session',
-                    'details' => $response->json(),
-                ],
-                $response->status()
-            );
+            $remote = is_array($response->json()) ? $response->json() : [];
+            $code = $this->notPlayableCode($remote);
+
+            if ($code === null) {
+                return response()->json(
+                    [
+                        'error' => 'Failed to start playback session',
+                        'details' => $remote,
+                    ],
+                    $response->status()
+                );
+            }
+
+            // "Not ready" is a state, not an error: relay it as one the client can
+            // branch on. When the media service knows the transcode failed and we
+            // still say processing, its webhook was lost — take its word for it.
+            if ($code === 'media_failed' && $mediaAsset->status !== 'failed') {
+                $meta = $mediaAsset->meta ?? [];
+                $meta['processing_meta'] = array_merge(
+                    is_array($meta['processing_meta'] ?? null) ? $meta['processing_meta'] : [],
+                    array_filter(['error' => $remote['reason'] ?? null])
+                );
+                $mediaAsset->update(['status' => 'failed', 'meta' => $meta]);
+            }
+
+            return $this->notPlayable($mediaAsset->fresh(), $code);
+        }
+
+        // The media service has the HLS. If our copy of the status never got the
+        // 'ready' webhook, catch it up so the client stops polling.
+        if ($mediaAsset->status !== 'ready') {
+            $mediaAsset->update(['status' => 'ready']);
         }
 
         $data = $response->json();
@@ -442,6 +515,38 @@ class MediaAssetController extends Controller
             'stream_url' => $data['manifest_url'] ?? ($data['stream_url'] ?? null),
             'type' => $data['type'] ?? 'video',
         ]);
+    }
+
+    /**
+     * Translate the media service's refusal into our stable codes. Newer media
+     * services send `code`; older ones only the text "Media not ready" (400).
+     */
+    private function notPlayableCode(array $remote): ?string
+    {
+        $code = $remote['code'] ?? null;
+        if (in_array($code, ['media_not_ready', 'media_failed'], true)) {
+            return $code;
+        }
+
+        return str_contains(strtolower((string) ($remote['error'] ?? '')), 'not ready')
+            ? 'media_not_ready'
+            : null;
+    }
+
+    /**
+     * 409 with a machine-readable code and the asset's state, so the player shows
+     * progress (or the failure and its reason) instead of a generic error.
+     */
+    private function notPlayable(MediaAsset $mediaAsset, string $code)
+    {
+        $processingMeta = $mediaAsset->meta['processing_meta'] ?? null;
+
+        return response()->json([
+            'code' => $code,
+            'status' => $mediaAsset->status,
+            'error' => $code === 'media_failed' ? 'Media processing failed' : 'Media is not ready yet',
+            'reason' => is_array($processingMeta) ? ($processingMeta['error'] ?? null) : null,
+        ], 409);
     }
 
     public function processingWebhook(Request $request)
@@ -497,6 +602,11 @@ class MediaAssetController extends Controller
 
         if (isset($processingMeta['mime_type']) && !empty($processingMeta['mime_type'])) {
             $updateData['mime_type'] = $processingMeta['mime_type'];
+        }
+
+        // The transcoder probes the duration; the editor's duration field wants it.
+        if (isset($processingMeta['duration']) && (int) $processingMeta['duration'] > 0) {
+            $updateData['duration'] = (int) $processingMeta['duration'];
         }
 
         $mediaAsset->update($updateData);
