@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ActivityCompletion;
+use App\Models\AssetDelivery;
 use App\Models\Enrollment;
 use App\Models\FeedbackSubmission;
 use App\Models\AssignmentSubmission;
@@ -74,6 +75,13 @@ class LearnerController extends Controller
             ->orderBy('completed_at', 'desc')
             ->get();
 
+        // Get digital product deliveries for this user in the current environment
+        $digitalProducts = AssetDelivery::where('user_id', $userId)
+            ->where('environment_id', $environmentId)
+            ->with(['productAsset.product'])
+            ->orderBy('created_at', 'desc')
+            ->get();
+
         // Calculate performance metrics
         $totalFeedbackSubmissions = $feedbackSubmissions->count();
         $totalAssignmentSubmissions = $assignmentSubmissions->count();
@@ -110,6 +118,7 @@ class LearnerController extends Controller
                 'feedback_submissions' => $feedbackSubmissions,
                 'assignment_submissions' => $assignmentSubmissions,
                 'quiz_completions' => $quizCompletions,
+                'digital_products' => $digitalProducts,
             ],
         ]);
     }
