@@ -164,9 +164,17 @@ class SalesFormSubmissionController extends Controller
 
             $form->increment('submissions_count');
 
-            // 3. Provisional enrollments for each course in each selected product.
+            // 3. Provisional enrollments for each course in each PAID product.
+            // Free products grant full access immediately (below), so their
+            // courses must NOT be marked provisional — the OrderCompleted
+            // listener that fires for them creates the real (non-provisional)
+            // enrollments, exactly like the storefront free-checkout path.
             $enrolledCourseIds = [];
             foreach ($products as $product) {
+                if ($this->isFreeProduct($product)) {
+                    continue;
+                }
+
                 foreach ($product->courses as $course) {
                     if (in_array($course->id, $enrolledCourseIds)) {
                         continue;
@@ -194,19 +202,24 @@ class SalesFormSubmissionController extends Controller
                 }
             }
 
-            // 4. One PENDING order per product, with a payment link.
+            // 4. One order per product. Paid products get a PENDING order with a
+            // payment link; free products are completed immediately (with no
+            // payment link) and get OrderCompleted fired below so the learner is
+            // granted the included course(s) and any digital assets right away.
             $orders = [];
+            $freeOrders = [];
             foreach ($products as $product) {
-                $price = $product->discount_price ?? $product->price ?? 0;
+                $price = (float) ($product->discount_price ?? $product->price ?? 0);
+                $isFree = $this->isFreeProduct($product);
                 $order = Order::create([
                     'user_id' => $user->id,
                     'environment_id' => $environmentId,
                     'order_number' => 'ORD-'.strtoupper(Str::random(8)),
-                    'status' => Order::STATUS_PENDING,
+                    'status' => $isFree ? Order::STATUS_COMPLETED : Order::STATUS_PENDING,
                     'type' => Order::TYPE_SALES_FORM,
                     'total_amount' => $price,
                     'currency' => $product->currency ?? 'USD',
-                    'payment_method' => 'sales_form',
+                    'payment_method' => $isFree ? 'free' : 'sales_form',
                     'billing_name' => $user->name,
                     'billing_email' => $user->email,
                     'sales_form_submission_id' => $submission->id,
@@ -223,6 +236,10 @@ class SalesFormSubmissionController extends Controller
                 ]);
 
                 $order->setRelation('environment', $environment);
+                if ($isFree) {
+                    $freeOrders[] = $order;
+                }
+
                 $orders[] = [
                     'order_id' => $order->id,
                     'order_number' => $order->order_number,
@@ -230,11 +247,30 @@ class SalesFormSubmissionController extends Controller
                     'amount' => $price,
                     'currency' => $order->currency,
                     'status' => $order->status,
-                    'payment_url' => $order->continue_payment_url,
+                    // A completed (free) order must never surface a payment link.
+                    'payment_url' => $isFree ? null : $order->continue_payment_url,
+                    'payment_type' => $isFree ? 'free' : 'payment',
                 ];
             }
 
             DB::commit();
+
+            // Grant free products immediately: completing the order runs the
+            // OrderCompleted listener, which creates the real enrollments for the
+            // included courses and delivers any digital product assets.
+            foreach ($freeOrders as $order) {
+                event(new OrderCompleted($order));
+            }
+
+            // If every order on this submission is already completed (i.e. all of
+            // the attached products were free), complete the submission too.
+            $pendingOrderCount = Order::withoutGlobalScopes()
+                ->where('sales_form_submission_id', $submission->id)
+                ->where('status', '!=', Order::STATUS_COMPLETED)
+                ->count();
+            if ($pendingOrderCount === 0) {
+                $submission->update(['status' => SalesFormSubmission::STATUS_COMPLETED]);
+            }
 
             if (! $userExisted) {
                 event(new UserCreatedDuringCheckout($user, $environment, true));
@@ -419,5 +455,17 @@ class SalesFormSubmissionController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * Whether a product should be granted immediately, with no payment step.
+     *
+     * Mirrors the storefront free-checkout decision: a product is free when it
+     * is flagged free, or when its effective (discounted) price is zero.
+     */
+    private function isFreeProduct(Product $product): bool
+    {
+        return (bool) $product->is_free
+            || ((float) ($product->discount_price ?? $product->price ?? 0)) <= 0;
     }
 }

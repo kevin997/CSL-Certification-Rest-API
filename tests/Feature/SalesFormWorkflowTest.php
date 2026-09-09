@@ -2,15 +2,21 @@
 
 namespace Tests\Feature;
 
+use App\Models\AssetDelivery;
+use App\Models\Block;
 use App\Models\Course;
 use App\Models\Enrollment;
 use App\Models\Environment;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\ProductAsset;
 use App\Models\SalesForm;
 use App\Models\SalesFormField;
+use App\Models\SalesFormSubmission;
+use App\Models\Template;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class SalesFormWorkflowTest extends TestCase
@@ -18,8 +24,11 @@ class SalesFormWorkflowTest extends TestCase
     use RefreshDatabase;
 
     private User $trainer;
+
     private Environment $environment;
+
     private Product $product;
+
     private Course $course;
 
     protected function setUp(): void
@@ -37,7 +46,7 @@ class SalesFormWorkflowTest extends TestCase
         ]);
         session(['current_environment_id' => $this->environment->id]);
 
-        $template = \App\Models\Template::create([
+        $template = Template::create([
             'title' => 'Sample Template',
             'environment_id' => $this->environment->id,
             'created_by' => $this->trainer->id,
@@ -88,7 +97,7 @@ class SalesFormWorkflowTest extends TestCase
     public function public_form_lists_the_courses_and_blocks_in_each_product(): void
     {
         $form = $this->makePublishedForm();
-        \App\Models\Block::create([
+        Block::create([
             'title' => 'First steps',
             'order' => 1,
             'template_id' => $this->course->template_id,
@@ -215,5 +224,122 @@ class SalesFormWorkflowTest extends TestCase
             ->where('course_id', $this->course->id)
             ->first();
         $this->assertFalse((bool) $enrollment->is_provisional);
+    }
+
+    /** @test */
+    public function free_product_submission_completes_order_and_grants_full_access(): void
+    {
+        Mail::fake();
+
+        $freeProduct = Product::create([
+            'name' => 'Free Course Product',
+            'slug' => 'free-course-product',
+            'price' => 0,
+            'is_free' => true,
+            'currency' => 'USD',
+            'status' => 'active',
+            'environment_id' => $this->environment->id,
+            'created_by' => $this->trainer->id,
+        ]);
+        $freeProduct->courses()->attach($this->course->id);
+
+        $form = SalesForm::create([
+            'environment_id' => $this->environment->id,
+            'created_by' => $this->trainer->id,
+            'title' => 'Free Lead Form',
+            'slug' => 'free-lead-form',
+            'status' => SalesForm::STATUS_PUBLISHED,
+        ]);
+        $form->products()->attach($freeProduct->id);
+
+        $response = $this->postJson("/api/sales-forms/public/{$form->slug}/submit", [
+            'name' => 'Free Learner',
+            'email' => 'free@example.com',
+            'password' => 'password123',
+            'answers' => ['city' => 'Test City'],
+        ]);
+
+        $response->assertStatus(201)
+            ->assertJson(['success' => true])
+            ->assertJsonPath('orders.0.status', Order::STATUS_COMPLETED)
+            ->assertJsonPath('orders.0.payment_type', 'free')
+            ->assertJsonPath('orders.0.payment_url', null);
+
+        $user = User::where('email', 'free@example.com')->first();
+        $this->assertNotNull($user);
+
+        // The free order is completed immediately, with no payment link.
+        $order = Order::withoutGlobalScopes()->where('user_id', $user->id)->first();
+        $this->assertNotNull($order);
+        $this->assertEquals(Order::STATUS_COMPLETED, $order->status);
+
+        // The learner is granted a real (non-provisional) enrollment right away.
+        $enrollment = Enrollment::withoutGlobalScopes()
+            ->where('user_id', $user->id)
+            ->where('course_id', $this->course->id)
+            ->first();
+        $this->assertNotNull($enrollment);
+        $this->assertFalse((bool) $enrollment->is_provisional);
+
+        // With no payable orders, the submission itself is completed.
+        $submission = SalesFormSubmission::where('user_id', $user->id)->first();
+        $this->assertNotNull($submission);
+        $this->assertEquals(SalesFormSubmission::STATUS_COMPLETED, $submission->status);
+    }
+
+    /** @test */
+    public function free_digital_product_submission_delivers_assets(): void
+    {
+        Mail::fake();
+
+        $freeDigital = Product::create([
+            'name' => 'Free Digital Product',
+            'slug' => 'free-digital-product',
+            'price' => 0,
+            'is_free' => true,
+            'requires_fulfillment' => true,
+            'product_type' => 'digital',
+            'currency' => 'USD',
+            'status' => 'active',
+            'environment_id' => $this->environment->id,
+            'created_by' => $this->trainer->id,
+        ]);
+
+        $asset = ProductAsset::create([
+            'product_id' => $freeDigital->id,
+            'asset_type' => 'external_link',
+            'external_url' => 'https://example.com/free.pdf',
+            'title' => 'Free Guide',
+            'is_active' => true,
+        ]);
+
+        $form = SalesForm::create([
+            'environment_id' => $this->environment->id,
+            'created_by' => $this->trainer->id,
+            'title' => 'Free Digital Form',
+            'slug' => 'free-digital-form',
+            'status' => SalesForm::STATUS_PUBLISHED,
+        ]);
+        $form->products()->attach($freeDigital->id);
+
+        $response = $this->postJson("/api/sales-forms/public/{$form->slug}/submit", [
+            'name' => 'Digital Learner',
+            'email' => 'digital@example.com',
+            'password' => 'password123',
+            'answers' => ['city' => 'Test City'],
+        ]);
+
+        $response->assertStatus(201)
+            ->assertJson(['success' => true])
+            ->assertJsonPath('orders.0.payment_type', 'free');
+
+        $user = User::where('email', 'digital@example.com')->first();
+        $this->assertNotNull($user);
+
+        // The free digital product's asset is delivered to the learner.
+        $delivery = AssetDelivery::where('user_id', $user->id)->first();
+        $this->assertNotNull($delivery);
+        $this->assertEquals($asset->id, $delivery->product_asset_id);
+        $this->assertEquals(AssetDelivery::STATUS_ACTIVE, $delivery->status);
     }
 }
