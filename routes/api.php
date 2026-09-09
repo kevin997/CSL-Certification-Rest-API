@@ -931,6 +931,7 @@ Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
     // Resumable direct-to-MinIO multipart upload (init + complete relay; sign/parts go browser->media-service)
     Route::post('/media/upload/multipart/init', [MediaAssetController::class, 'initMultipartUpload']);
     Route::post('/media/upload/multipart/{id}/complete', [MediaAssetController::class, 'completeMultipartUpload']);
+    Route::post('/media/upload/multipart/{id}/abort', [MediaAssetController::class, 'abortMultipartUpload']);
     Route::get('/media/playback/{id}', [MediaAssetController::class, 'playbackSession']);
     Route::get('/media/{id}', [MediaAssetController::class, 'show']);
     Route::delete('/media/{id}', [MediaAssetController::class, 'destroy']); // Deletion

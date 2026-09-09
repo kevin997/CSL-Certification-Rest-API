@@ -189,6 +189,47 @@ class MediaAssetController extends Controller
     }
 
     /**
+     * Abandon an in-flight multipart upload: have the media service drop the parts
+     * MinIO is holding, then forget the asset. Only a 'pending' asset can be
+     * aborted — once complete ran, the file belongs to the transcoder and
+     * destroy() is the way out.
+     */
+    public function abortMultipartUpload(Request $request, $id)
+    {
+        $environmentId = $request->user()->environment_id ?? 1;
+        $mediaAsset = MediaAsset::where('id', $id)
+            ->where('environment_id', $environmentId)
+            ->first();
+
+        if (!$mediaAsset) {
+            return response()->json(['error' => 'Media asset not found'], 404);
+        }
+
+        if ($mediaAsset->status !== 'pending') {
+            return response()->json([
+                'code' => 'upload_not_pending',
+                'status' => $mediaAsset->status,
+                'error' => 'Only an upload still in progress can be cancelled',
+            ], 409);
+        }
+
+        $uploadId = $mediaAsset->meta['upload_id'] ?? null;
+        if ($uploadId) {
+            $baseUrl = $this->mediaServiceBaseUrl();
+            $response = Http::acceptJson()->post("{$baseUrl}/api/media/multipart/{$uploadId}/abort");
+
+            // A 404 means the media service already forgot it; nothing left to free.
+            if (!$response->successful() && $response->status() !== 404) {
+                return response()->json(['error' => 'Media Service multipart abort failed', 'details' => $response->json()], 502);
+            }
+        }
+
+        $mediaAsset->delete();
+
+        return response()->json(['deleted' => true]);
+    }
+
+    /**
      * Initialize a resumable (tus) upload against Bunny Stream.
      *
      * Creates the Bunny video object, records a local MediaAsset, and returns the

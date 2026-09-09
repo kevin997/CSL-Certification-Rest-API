@@ -234,4 +234,47 @@ class MediaAssetTest extends TestCase
         $this->assertSame(186, $mediaAsset->duration);
     }
 
+    public function test_abort_multipart_drops_the_pending_asset_and_its_parts()
+    {
+        Http::fake(['*/multipart/*/abort' => Http::response(['status' => 'failed'])]);
+
+        $user = User::factory()->create();
+        $uploadId = (string) Str::uuid();
+        $mediaAsset = $this->asset($user, ['status' => 'pending', 'meta' => ['upload_id' => $uploadId, 'multipart' => true]]);
+
+        $this->actingAs($user)->postJson("/api/media/upload/multipart/{$mediaAsset->id}/abort")
+            ->assertOk()
+            ->assertJson(['deleted' => true]);
+
+        $this->assertDatabaseMissing('media_assets', ['id' => $mediaAsset->id]);
+        Http::assertSent(fn (ClientRequest $request) => $request->url() === self::MEDIA . "/api/media/multipart/{$uploadId}/abort");
+    }
+
+    public function test_abort_multipart_refuses_an_upload_that_already_completed()
+    {
+        Http::fake();
+
+        $user = User::factory()->create();
+        $mediaAsset = $this->asset($user, ['status' => 'processing']);
+
+        $this->actingAs($user)->postJson("/api/media/upload/multipart/{$mediaAsset->id}/abort")
+            ->assertStatus(409)
+            ->assertJson(['code' => 'upload_not_pending', 'status' => 'processing']);
+
+        $this->assertDatabaseHas('media_assets', ['id' => $mediaAsset->id]);
+        Http::assertNothingSent();
+    }
+
+    public function test_abort_multipart_does_not_see_another_environments_asset()
+    {
+        Http::fake();
+
+        $user = User::factory()->create();
+        $mediaAsset = $this->asset($user, ['status' => 'pending', 'environment_id' => 2]);
+
+        $this->actingAs($user)->postJson("/api/media/upload/multipart/{$mediaAsset->id}/abort")
+            ->assertStatus(404);
+
+        $this->assertDatabaseHas('media_assets', ['id' => $mediaAsset->id]);
+    }
 }
