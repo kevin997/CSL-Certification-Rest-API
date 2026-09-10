@@ -165,6 +165,18 @@ class EnrollmentCodeRedemptionEligibilityTest extends TestCase
         $this->redeem($admin)->assertForbidden();
     }
 
+    public function test_a_company_learner_is_a_learner_and_may_redeem(): void
+    {
+        // The first version of this fix treated any membership role other than
+        // exactly 'learner' as staff, which would have refused company_learner —
+        // a role that exists in production.
+        $learner = User::factory()->create(['role' => 'learner']);
+        EnvironmentUser::create(['environment_id' => $this->academy->id, 'user_id' => $learner->id, 'role' => 'company_learner']);
+        $this->code();
+
+        $this->redeem($learner)->assertCreated();
+    }
+
     public function test_an_ordinary_learner_still_redeems(): void
     {
         $learner = User::factory()->create(['role' => 'learner']);

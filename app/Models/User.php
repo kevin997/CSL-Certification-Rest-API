@@ -130,6 +130,55 @@ class User extends Authenticatable
     }
 
     /**
+     * Membership roles that carry staff powers inside an academy. An
+     * allowlist on purpose: a role nobody anticipated must deny, never grant.
+     */
+    private const ACADEMY_STAFF_ROLES = [
+        'owner',
+        'admin',
+        'instructor',
+        'teacher',
+        'individual_teacher',
+        'company_teacher',
+        'company_team_member',
+    ];
+
+    /**
+     * Whether this user may act as staff in the given academy.
+     *
+     * Use this, not isTeacher(), wherever an action touches an academy's
+     * records. isTeacher() reads the GLOBAL role, which only says the account
+     * owns an academy somewhere — so a teacher who is merely a learner in
+     * another academy passed every isTeacher() gate there, and could reset
+     * classmates' progress, delete that academy's products and change its
+     * orders. What matters is standing in the academy the record belongs to.
+     *
+     * Platform admins pass: they act across every tenant by definition.
+     */
+    public function isStaffIn(?int $environmentId): bool
+    {
+        if ($this->isAdmin()) {
+            return true;
+        }
+
+        if ($environmentId === null) {
+            return false;
+        }
+
+        if (Environment::query()->whereKey($environmentId)->where('owner_id', $this->id)->exists()) {
+            return true;
+        }
+
+        $membershipRole = EnvironmentUser::query()
+            ->where('environment_id', $environmentId)
+            ->where('user_id', $this->id)
+            ->value('role');
+
+        return is_string($membershipRole)
+            && in_array(strtolower($membershipRole), self::ACADEMY_STAFF_ROLES, true);
+    }
+
+    /**
      * Get the templates created by this user.
      */
     public function templates(): HasMany
