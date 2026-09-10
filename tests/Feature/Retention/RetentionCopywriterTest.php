@@ -180,6 +180,33 @@ class RetentionCopywriterTest extends TestCase
         $this->assertSame(['openrouter'], $seen, 'a provider with no key must never be called');
     }
 
+    /**
+     * The agent response is an object whose public shape is its internals, not
+     * its structured output. Casting it produced empty locales, an "unusable"
+     * verdict and a silent template fallback while the model was answering
+     * correctly — in production, for two releases.
+     */
+    public function test_structured_output_is_read_from_the_accessor_not_the_object_shape(): void
+    {
+        $response = new class
+        {
+            public array $messages = [];
+
+            public string $text = '{"fr":"raw"}';
+
+            public function toArray(): array
+            {
+                return ['fr' => 'Awa, ajoute ton premier produit.', 'en' => 'Awa, add your first product.'];
+            }
+        };
+
+        $structured = RetentionCopywriter::structuredFrom($response);
+
+        $this->assertSame('Awa, ajoute ton premier produit.', $structured['fr'] ?? null);
+        $this->assertArrayNotHasKey('messages', $structured, 'the response internals must not leak in as content');
+        $this->assertArrayNotHasKey('text', $structured);
+    }
+
     public function test_the_prompt_carries_the_facts_the_template_had(): void
     {
         $prompt = (new RetentionCopywriter)->buildPrompt($this->scenario(), $this->target());
