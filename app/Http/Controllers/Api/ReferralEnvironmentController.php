@@ -415,9 +415,10 @@ class ReferralEnvironmentController extends Controller
         // Base query - filter by environment
         $query = EnvironmentReferral::where('environment_id', $environmentId);
         
-        // Filter by referrer if not admin
+        // Staff of this academy see every referral in it; anyone else — a
+        // teacher who is only a learner here included — sees their own.
         $user = $request->user();
-        if (!$user->isTeacher()) {
+        if (! $user->isStaffIn($environmentId)) {
             $query->where('referrer_id', $user->id);
         }
         

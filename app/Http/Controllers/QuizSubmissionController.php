@@ -9,6 +9,7 @@ use App\Models\QuizQuestionResponse;
 use App\Models\AssessmentViolation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 
@@ -607,8 +608,13 @@ class QuizSubmissionController extends Controller
             return response()->json(['error' => 'Quiz submission not found'], 404);
         }
 
-        // Instructors/admins can view all violations, users can only see their own
-        if ($submission->user_id !== Auth::id() && !(Auth::user()->isAdmin() || Auth::user()->isTeacher())) {
+        // The learner sees their own; otherwise only staff of the academy the
+        // submission belongs to. QuizSubmission carries no environment, so its
+        // academy is its enrollment's — read without the session scope, so the
+        // answer does not depend on which academy the caller happens to be in.
+        $submissionEnvironmentId = DB::table('enrollments')->where('id', $submission->enrollment_id)->value('environment_id');
+
+        if ($submission->user_id !== Auth::id() && ! Auth::user()->isStaffIn($submissionEnvironmentId)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
