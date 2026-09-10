@@ -107,15 +107,6 @@ return [
         ],
     ],
 
-    // Self-hosted Ollama server used for AI-generated marketing/retention copy.
-    'ollama' => [
-        'url' => env('OLLAMA_URL', 'http://31.97.75.62:11434'),
-        'model' => env('OLLAMA_MODEL', 'qwen2.5:7b'),
-        'fallback_model' => env('OLLAMA_FALLBACK_MODEL', 'llama3.1:8b'),
-        'timeout' => (int) env('OLLAMA_TIMEOUT', 300),
-        'num_ctx' => (int) env('OLLAMA_NUM_CTX', 8192),
-    ],
-
     // Company blog (WordPress REST) — primary source for marketing tips/tutorials.
     // Primary source for KURSA tips/guides/email campaigns: the KURSA
     // resources site (product tutorials). WordPress application passwords are

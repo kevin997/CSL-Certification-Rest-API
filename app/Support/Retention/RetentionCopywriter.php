@@ -29,7 +29,20 @@ class RetentionCopywriter
     /** The locales this writer can produce; anything else falls back to the template. */
     private const SUPPORTED_LOCALES = ['fr', 'en'];
 
-    /** @var (\Closure(string): array<string, mixed>)|null */
+    /**
+     * Providers to try, best first. DeepSeek writes the better message;
+     * openrouter/free is OpenRouter's Free Models Router — zero cost, a random
+     * free model each time, so it is a degradation and not an equal. The
+     * scenario template remains the floor under both.
+     *
+     * @var array<int, array{0: string, 1: string}>
+     */
+    private const ATTEMPTS = [
+        ['deepseek', 'deepseek-chat'],
+        ['openrouter', 'openrouter/free'],
+    ];
+
+    /** @var (\Closure(string, string, string): array<string, mixed>)|null */
     private $generator;
 
     /**
@@ -37,7 +50,7 @@ class RetentionCopywriter
      * behind it — what matters here is the fallback and the rejection rules,
      * not the provider.
      *
-     * @param  (\Closure(string): array<string, mixed>)|null  $generator
+     * @param  (\Closure(string, string, string): array<string, mixed>)|null  $generator
      */
     public function __construct(?\Closure $generator = null)
     {
@@ -53,7 +66,18 @@ class RetentionCopywriter
      */
     public static function isConfigured(): bool
     {
-        return filled(config('ai.providers.deepseek.key'));
+        return self::configuredAttempts() !== [];
+    }
+
+    /**
+     * @return array<int, array{0: string, 1: string}>
+     */
+    private static function configuredAttempts(): array
+    {
+        return array_values(array_filter(
+            self::ATTEMPTS,
+            fn (array $attempt): bool => filled(config("ai.providers.{$attempt[0]}.key")),
+        ));
     }
 
     public function write(RetentionScenario $scenario, RetentionTarget $target): ?string
@@ -70,20 +94,48 @@ class RetentionCopywriter
             return null;
         }
 
-        $generate = $this->generator ?? static fn (string $prompt): array => (array) (new RetentionCopywriterAgent)->prompt($prompt);
+        $generate = $this->generator ?? static fn (string $prompt, string $provider, string $model): array
+            => (array) (new RetentionCopywriterAgent)->prompt($prompt, provider: $provider, model: $model);
 
-        try {
-            $result = $generate($this->buildPrompt($scenario, $target));
-        } catch (\Throwable $e) {
-            Log::warning('RetentionCopywriter: generation failed, falling back to the template', [
+        $prompt = $this->buildPrompt($scenario, $target);
+
+        foreach (self::configuredAttempts() as [$provider, $model]) {
+            try {
+                $result = $generate($prompt, $provider, $model);
+            } catch (\Throwable $e) {
+                Log::warning('RetentionCopywriter: provider failed, trying the next one', [
+                    'scenario' => $scenario->key,
+                    'provider' => $provider,
+                    'error' => $e->getMessage(),
+                ]);
+
+                continue;
+            }
+
+            $message = $this->assemble($result, $locales, $target);
+
+            if ($message !== null) {
+                return $message;
+            }
+
+            // Output this provider cannot be trusted with. Try the next rather
+            // than give up: a free model producing nonsense should not cost the
+            // recipient the personalised message a paid one would have written.
+            Log::warning('RetentionCopywriter: provider returned unusable output', [
                 'scenario' => $scenario->key,
-                'recipient_type' => $target->recipientType,
-                'error' => $e->getMessage(),
+                'provider' => $provider,
             ]);
-
-            return null;
         }
 
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     * @param  array<int, string>  $locales
+     */
+    private function assemble(array $result, array $locales, RetentionTarget $target): ?string
+    {
         $parts = [];
 
         foreach ($locales as $locale) {

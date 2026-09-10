@@ -75,7 +75,7 @@ class InstructorAssistantController extends Controller
                 // Dead-primary-host (e.g. GPU box powered off) is not
                 // failoverable in SDK v0.7.2 — retry explicitly on the CPU box.
                 \Log::warning('Assistant: primary provider failed, retrying on CPU fallback', ['error' => $primaryFailure->getMessage()]);
-                $response = $agent->prompt($prompt, provider: 'ollama_cpu', model: 'llama3.2:1b');
+                $response = $agent->prompt($prompt, provider: 'openrouter', model: 'openrouter/free');
             }
 
             return response()->json([
