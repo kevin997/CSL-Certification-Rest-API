@@ -23,7 +23,10 @@ class RetentionCopywriterTest extends TestCase
     {
         parent::setUp();
 
-        config(['services.retention.locales' => ['fr', 'en']]);
+        config([
+            'services.retention.locales' => ['fr', 'en'],
+            'ai.providers.deepseek.key' => 'test-deepseek-key',
+        ]);
     }
 
     private function scenario(bool $personalised = true): RetentionScenario
@@ -79,6 +82,21 @@ class RetentionCopywriterTest extends TestCase
 
         $this->assertNull($writer->write($this->scenario(personalised: false), $this->target()));
         $this->assertSame(0, $calls, 'an opted-out scenario must not reach the model');
+    }
+
+    public function test_an_unconfigured_provider_costs_nothing_and_falls_back(): void
+    {
+        // Counted, not asserted inside the closure: write() catches Throwable.
+        config(['ai.providers.deepseek.key' => '']);
+        $calls = 0;
+        $writer = $this->writer(function () use (&$calls): array {
+            $calls++;
+
+            return ['fr' => 'Bonjour', 'en' => 'Hello'];
+        });
+
+        $this->assertNull($writer->write($this->scenario(), $this->target()));
+        $this->assertSame(0, $calls, 'an unconfigured provider must not be dialled once per recipient');
     }
 
     public function test_a_thrown_generator_falls_back_to_the_template(): void
