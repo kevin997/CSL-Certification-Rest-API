@@ -29,6 +29,28 @@ class MediaAssetController extends Controller
     }
 
     /**
+     * Headers proving this request came from us, for the media service routes
+     * that destroy data.
+     *
+     * Those endpoints have no user session to authenticate against and were,
+     * until now, reachable by anyone who could resolve the host. The timestamp
+     * is signed along with the path so a captured DELETE cannot be replayed.
+     */
+    protected function mediaServiceSignature(string $method, string $uri, string $body = ''): array
+    {
+        $secret = (string) config('services.media_service.secret', '');
+        $timestamp = (string) time();
+        // $uri is the exact path+query being requested, so a captured call
+        // cannot be re-pointed at another tenant.
+        $canonical = implode("\n", [strtoupper($method), $uri, $timestamp, hash('sha256', $body)]);
+
+        return [
+            'X-Media-Service-Timestamp' => $timestamp,
+            'X-Media-Service-Signature' => hash_hmac('sha256', $canonical, $secret),
+        ];
+    }
+
+    /**
      * Initialize upload (proxy to Media Service)
      */
     public function initUpload(Request $request)
@@ -216,7 +238,11 @@ class MediaAssetController extends Controller
         $uploadId = $mediaAsset->meta['upload_id'] ?? null;
         if ($uploadId) {
             $baseUrl = $this->mediaServiceBaseUrl();
-            $response = Http::acceptJson()->post("{$baseUrl}/api/media/multipart/{$uploadId}/abort");
+            $uri = "/api/media/multipart/{$uploadId}/abort?environment_id={$environmentId}";
+            $response = Http::acceptJson()
+                ->withHeaders($this->mediaServiceSignature('POST', $uri))
+                ->withBody('', 'application/json')
+                ->post("{$baseUrl}{$uri}");
 
             // A 404 means the media service already forgot it; nothing left to free.
             if (!$response->successful() && $response->status() !== 404) {
@@ -399,14 +425,15 @@ class MediaAssetController extends Controller
         if ($uploadId) {
             try {
                 $baseUrl = $this->mediaServiceBaseUrl();
-                // Assuming DELETE /api/media/{upload_id} exists on the Media Service
-                // Or /api/media/uploads/{upload_id} depending on how Media Service is structured
-                // Based on initUpload being /api/media/uploads/init, let's guess /api/media/uploads/{uploadId} or just /api/media/{uploadId}
-                // Let's assume standard REST resource: DELETE /api/media/{uploadId}
-                $url = "{$baseUrl}/api/media/{$uploadId}";
+                // DELETE /api/media/{upload_id}; signed, and scoped to this
+                // tenant. The media service refuses the call without both.
+                $uri = "/api/media/{$uploadId}?environment_id={$environmentId}";
 
-                Log::info('Deleting external media asset: ' . $url);
-                Http::acceptJson()->delete($url);
+                Log::info('Deleting external media asset', ['upload_id' => $uploadId, 'environment_id' => $environmentId]);
+                Http::acceptJson()
+                    ->withHeaders($this->mediaServiceSignature('DELETE', $uri))
+                    ->withBody('', 'application/json')
+                    ->delete("{$baseUrl}{$uri}");
             } catch (\Exception $e) {
                 // Log but continue to delete local record
                 Log::error('Failed to delete remote media asset: ' . $e->getMessage());
