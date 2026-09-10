@@ -88,6 +88,10 @@ class DetectEnvironment
         // Process the request
         $response = $next($request);
 
+        if ($request->attributes->get(MarkMarketingServiceRequest::ATTRIBUTE) === true) {
+            return $response;
+        }
+
         // Add environment information to API responses
         if ($response instanceof JsonResponse) {
             $data = $response->getData(true);

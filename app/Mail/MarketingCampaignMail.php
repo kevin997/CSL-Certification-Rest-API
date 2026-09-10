@@ -45,7 +45,11 @@ class MarketingCampaignMail extends Mailable implements ShouldQueue
                 'branding' => $this->resolveBranding(),
                 'title' => $this->emailSubject,
                 'user' => $this->user,
-                'unsubscribeUrl' => URL::signedRoute('marketing.unsubscribe', ['user' => $this->user->id]),
+                'unsubscribeUrl' => URL::temporarySignedRoute(
+                    'marketing.unsubscribe',
+                    now()->addDays(max(1, (int) config('services.marketing_service.unsubscribe_link_ttl_days', 30))),
+                    ['user' => $this->user->id, 'channel' => 'email'],
+                ),
             ],
         );
     }

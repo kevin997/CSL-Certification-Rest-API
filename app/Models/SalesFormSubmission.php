@@ -11,10 +11,14 @@ use Illuminate\Support\Str;
 
 class SalesFormSubmission extends Model
 {
-    use HasFactory, BelongsToEnvironment;
+    public const MARKETING_TERMS_VERSION = '2026-09';
+
+    use BelongsToEnvironment, HasFactory;
 
     const STATUS_PENDING = 'pending';
+
     const STATUS_COMPLETED = 'completed';
+
     const STATUS_CANCELLED = 'cancelled';
 
     protected $fillable = [
@@ -26,6 +30,7 @@ class SalesFormSubmission extends Model
         'name',
         'email',
         'phone',
+        'marketing_terms_version',
         'status',
     ];
 
@@ -49,6 +54,11 @@ class SalesFormSubmission extends Model
     public function orders(): HasMany
     {
         return $this->hasMany(Order::class);
+    }
+
+    public function marketingConsents(): HasMany
+    {
+        return $this->hasMany(MarketingConsent::class);
     }
 
     /**
