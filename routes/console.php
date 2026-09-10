@@ -86,18 +86,12 @@ Schedule::command('backup:run --only-db')
         Log::info('Daily database backup completed successfully');
     });
 
-// Full application backup (database + files) weekly on Monday at 1:30 AM
-Schedule::command('backup:run')
-    ->weeklyOn(1, '01:30') // Every Monday at 1:30 AM
-    ->withoutOverlapping()
-    ->onOneServer()
-    ->runInBackground()
-    ->onFailure(function () {
-        Log::error('Weekly full backup failed');
-    })
-    ->onSuccess(function () {
-        Log::info('Weekly full backup completed successfully');
-    });
+// The weekly full backup is deliberately gone. It archived the whole
+// repository alongside the database, which pushed the zip past the 25 MB
+// limit MailBackupWithAttachment attaches under — so it was never mailed, and
+// the only copy sat in the container's storage until the next deploy replaced
+// it. The daily --only-db run above is 2 MB, leaves the machine, and is the
+// one that has actually been recoverable.
 
 // Monitor backups health daily at 3:00 AM
 Schedule::command('backup:monitor')
