@@ -44,9 +44,21 @@ class RetentionCopywriter
         $this->generator = $generator;
     }
 
+    /**
+     * Whether the provider behind the copywriter has credentials. Without this
+     * an unconfigured deployment would make one doomed HTTP call per recipient
+     * on every run before falling back — the templates would still go out, but
+     * a thousand-recipient run would spend a thousand round trips learning the
+     * same thing.
+     */
+    public static function isConfigured(): bool
+    {
+        return filled(config('ai.providers.deepseek.key'));
+    }
+
     public function write(RetentionScenario $scenario, RetentionTarget $target): ?string
     {
-        if (! $scenario->personalised) {
+        if (! $scenario->personalised || ! self::isConfigured()) {
             return null;
         }
 
