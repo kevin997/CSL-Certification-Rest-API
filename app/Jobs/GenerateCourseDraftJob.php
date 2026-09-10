@@ -86,20 +86,19 @@ class GenerateCourseDraftJob implements ShouldQueue
 
             $prompt = $languageLine."\n\n".$this->description;
 
-            // Try the primary (larger) model first, then fail over to a
-            // smaller model hosted on the same Ollama box. This is done here
-            // rather than via App\Ai\Agents\Concerns\FailsOverToFallbackModel
-            // because that concern hardcodes its fallback to `llama3.2:1b`.
+            // Try the primary model, then fail over to the free router.
+            // Kept here rather than delegating to FailsOverToFallbackModel so
+            // the failure is logged with this job's id.
             try {
                 $response = (new CourseBuilderAgent)->prompt($prompt);
             } catch (Throwable $e) {
                 Log::warning('GenerateCourseDraftJob: primary model failed, retrying with fallback model', [
                     'job_id' => $this->jobId,
-                    'fallback_model' => 'llama3.2:1b',
+                    'fallback_model' => 'openrouter/free',
                     'error' => $e->getMessage(),
                 ]);
 
-                $response = (new CourseBuilderAgent)->prompt($prompt, provider: 'ollama_cpu', model: 'llama3.2:1b');
+                $response = (new CourseBuilderAgent)->prompt($prompt, provider: 'openrouter', model: 'openrouter/free');
             }
 
             $draft = $this->normalize($response->toArray());
@@ -166,11 +165,11 @@ class GenerateCourseDraftJob implements ShouldQueue
             } catch (Throwable $e) {
                 Log::warning('GenerateCourseDraftJob: primary model failed, retrying with fallback model', [
                     'job_id' => $this->jobId,
-                    'fallback_model' => 'llama3.2:1b',
+                    'fallback_model' => 'openrouter/free',
                     'error' => $e->getMessage(),
                 ]);
 
-                $response = (new TemplateEnhancerAgent)->prompt($prompt, provider: 'ollama_cpu', model: 'llama3.2:1b');
+                $response = (new TemplateEnhancerAgent)->prompt($prompt, provider: 'openrouter', model: 'openrouter/free');
             }
 
             $additions = $this->normalizeAdditions($response->toArray(), $template);

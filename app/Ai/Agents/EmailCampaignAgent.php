@@ -22,7 +22,7 @@ use Stringable;
  * Generates a bilingual marketing email campaign about a KURSA feature or
  * blog article — see GenerateMarketingContentCommand.
  */
-#[Provider(['ollama' => 'qwen2.5:14b', 'ollama_cpu' => 'llama3.2:1b'])]
+#[Provider(['deepseek' => 'deepseek-chat', 'openrouter' => 'openrouter/free'])]
 #[Temperature(0.8)]
 #[Timeout(300)]
 class EmailCampaignAgent implements Agent, Conversational, HasStructuredOutput, HasTools

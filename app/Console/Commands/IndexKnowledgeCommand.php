@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Builds/refreshes the retrieval-grounding knowledge base: chunks the
  * company blog's FULL post content (not just an excerpt) and platform docs,
- * embeds each new chunk via Ollama (nomic-embed-text/EmbeddingService), and
+ * embeds each new chunk via EmbeddingService, and
  * upserts them into content_chunks. GenerateMarketingContentCommand reads
  * this table to ground generation in the real article/doc text and to
  * semantically dedupe generated content.
