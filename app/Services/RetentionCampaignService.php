@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\RetentionMessage;
+use App\Support\Retention\RetentionCopywriter;
 use App\Support\Retention\RetentionLinks;
 use App\Support\Retention\RetentionScenario;
 use App\Support\Retention\RetentionScenarioRegistry;
@@ -27,6 +28,7 @@ class RetentionCampaignService
     public function __construct(
         private readonly RetentionScenarioRegistry $registry,
         private readonly RetentionLinks $links,
+        private readonly RetentionCopywriter $copywriter,
     ) {}
 
     /**
@@ -76,7 +78,12 @@ class RetentionCampaignService
                 $assigned[$key] = true;
 
                 $link = $this->links->forScenario($scenario->key, $target->context);
-                $message = $scenario->render($target)."\n\n👉 ".$link;
+
+                // The copywriter is an improvement on top of the template, never
+                // a replacement for it: it returns null on any doubt and the
+                // template — which is always available — answers instead.
+                $body = $this->copywriter->write($scenario, $target) ?? $scenario->render($target);
+                $message = $body."\n\n👉 ".$link;
 
                 $sendList[] = [
                     'recipient_type' => $target->recipientType,
