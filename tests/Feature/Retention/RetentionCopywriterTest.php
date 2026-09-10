@@ -26,6 +26,7 @@ class RetentionCopywriterTest extends TestCase
         config([
             'services.retention.locales' => ['fr', 'en'],
             'ai.providers.deepseek.key' => 'test-deepseek-key',
+            'ai.providers.openrouter.key' => 'test-openrouter-key',
         ]);
     }
 
@@ -87,7 +88,7 @@ class RetentionCopywriterTest extends TestCase
     public function test_an_unconfigured_provider_costs_nothing_and_falls_back(): void
     {
         // Counted, not asserted inside the closure: write() catches Throwable.
-        config(['ai.providers.deepseek.key' => '']);
+        config(['ai.providers.deepseek.key' => '', 'ai.providers.openrouter.key' => '']);
         $calls = 0;
         $writer = $this->writer(function () use (&$calls): array {
             $calls++;
@@ -127,6 +128,56 @@ class RetentionCopywriterTest extends TestCase
 
             $this->assertNull($writer->write($this->scenario(), $this->target()), "{$label} should have been refused");
         }
+    }
+
+    public function test_a_failing_primary_falls_through_to_the_free_router(): void
+    {
+        $seen = [];
+        $writer = $this->writer(function (string $prompt, string $provider) use (&$seen): array {
+            $seen[] = $provider;
+
+            if ($provider === 'deepseek') {
+                throw new \RuntimeException('quota exhausted');
+            }
+
+            return ['fr' => 'Awa, reprends ton cours.', 'en' => 'Awa, pick your course back up.'];
+        });
+
+        $message = $writer->write($this->scenario(), $this->target());
+
+        $this->assertSame(['deepseek', 'openrouter'], $seen);
+        $this->assertStringContainsString('reprends ton cours', (string) $message);
+    }
+
+    public function test_unusable_output_from_the_primary_still_tries_the_router(): void
+    {
+        // A refusal from one provider must not cost the recipient the message
+        // another would have written.
+        $seen = [];
+        $writer = $this->writer(function (string $prompt, string $provider) use (&$seen): array {
+            $seen[] = $provider;
+
+            return $provider === 'deepseek'
+                ? ['fr' => "I'm sorry, I cannot write that.", 'en' => 'Hi there']
+                : ['fr' => 'Awa, ton cours t\'attend.', 'en' => 'Awa, your course is waiting.'];
+        });
+
+        $this->assertNotNull($writer->write($this->scenario(), $this->target()));
+        $this->assertSame(['deepseek', 'openrouter'], $seen);
+    }
+
+    public function test_an_unconfigured_provider_is_skipped_not_dialled(): void
+    {
+        config(['ai.providers.deepseek.key' => '']);
+        $seen = [];
+        $writer = $this->writer(function (string $prompt, string $provider) use (&$seen): array {
+            $seen[] = $provider;
+
+            return ['fr' => 'Awa, reprends.', 'en' => 'Awa, pick it up.'];
+        });
+
+        $this->assertNotNull($writer->write($this->scenario(), $this->target()));
+        $this->assertSame(['openrouter'], $seen, 'a provider with no key must never be called');
     }
 
     public function test_the_prompt_carries_the_facts_the_template_had(): void

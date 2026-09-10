@@ -13,11 +13,14 @@ return [
     |
     */
 
-    'default' => env('AI_PROVIDER', 'ollama'),
+    'default' => env('AI_PROVIDER', 'deepseek'),
     'default_for_images' => 'gemini',
     'default_for_audio' => 'openai',
     'default_for_transcription' => 'openai',
-    'default_for_embeddings' => env('AI_EMBEDDINGS_PROVIDER', 'ollama'),
+    // No embeddings provider is configured. EmbeddingService fails open, so
+    // knowledge search degrades to whatever its caller does without vectors
+    // rather than erroring — set AI_EMBEDDINGS_PROVIDER and a key to restore it.
+    'default_for_embeddings' => env('AI_EMBEDDINGS_PROVIDER', 'jina'),
     'default_for_reranking' => 'cohere',
 
     /*
@@ -112,22 +115,9 @@ return [
             'key' => env('MISTRAL_API_KEY'),
         ],
 
-        // PRIMARY: the RTX A4000 GPU box (~60 tok/s on qwen2.5:7b). May be
-        // powered off to save cost — agents declare ollama_cpu as failover,
-        // so the stack degrades gracefully to the media box's CPU ollama.
-        'ollama' => [
-            'driver' => 'ollama',
-            'key' => env('OLLAMA_API_KEY', ''),
-            'url' => env('OLLAMA_URL', 'http://108.181.152.248:11434'),
-        ],
-
-        // FALLBACK: CPU ollama on the CSL media box (slow under load — pair
-        // with small models only).
-        'ollama_cpu' => [
-            'driver' => 'ollama',
-            'key' => env('OLLAMA_API_KEY', ''),
-            'url' => env('OLLAMA_CPU_URL', 'http://31.97.75.62:11434'),
-        ],
+        // Ollama is gone. Both boxes were decommissioned; every agent that
+        // named them had been failing since, silently, because each one falls
+        // back to a template or fails open. Do not add it back.
 
         'openai' => [
             'driver' => 'openai',

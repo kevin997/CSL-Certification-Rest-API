@@ -45,8 +45,11 @@ class GenerateMarketingContentCommand extends Command
 
     public function handle(FeatureInventoryService $inventory, BlogContentService $blog, EmbeddingService $embeddings): int
     {
-        if (blank(config('ai.providers.ollama.url'))) {
-            $this->warn('Ollama is not configured — skipping marketing content generation.');
+        // Guards on the agents' primary provider. Their failover is the free
+        // router, so an unset DeepSeek key is a degradation and not a reason
+        // to skip — an unset one of BOTH is.
+        if (blank(config('ai.providers.deepseek.key')) && blank(config('ai.providers.openrouter.key'))) {
+            $this->warn('No AI provider is configured — skipping marketing content generation.');
 
             return self::SUCCESS;
         }
@@ -58,7 +61,7 @@ class GenerateMarketingContentCommand extends Command
         // already been used for a given channel.
         $posts = $blog->recentPosts();
 
-        // The inventory's first build crawls docs/ through Ollama and can take
+        // The inventory's first build crawls docs/ through the model and can take
         // a very long time on a busy box — resolve it LAZILY, only when a
         // channel has exhausted the blog posts and needs the feature fallback.
         $features = null;
@@ -626,8 +629,19 @@ class GenerateMarketingContentCommand extends Command
             'kind' => 'blog',
             'blog_post_id' => $post['id'],
             'blog_link' => $post['link'],
-            'model' => (string) config('services.ollama.model'),
+            'model' => self::contentModel(),
         ];
+    }
+
+    /**
+     * The model recorded against generated content. This is the agents'
+     * declared primary, not necessarily what answered: when the primary fails
+     * the SDK falls over to openrouter/free and does not report which one
+     * served the turn.
+     */
+    private static function contentModel(): string
+    {
+        return (string) config('ai.marketing_model', 'deepseek-chat');
     }
 
     private function sanitizeEmailHtml(string $html): string
@@ -713,7 +727,7 @@ class GenerateMarketingContentCommand extends Command
                 'email_html' => $extra['email_html'] ?? null,
                 'source' => $extra['source'],
                 'embedding' => $embedding,
-                'model' => config('services.ollama.model'),
+                'model' => self::contentModel(),
                 'hash' => $hash,
                 'status' => MarketingMessage::STATUS_PENDING,
             ]);

@@ -6,34 +6,38 @@ use Illuminate\Support\Facades\Log;
 use Laravel\Ai\Responses\AgentResponse;
 
 /**
- * The Laravel AI SDK (v0.7.2) only lets model failover be declared
- * natively across DIFFERENT providers — the `#[Provider]` attribute (or a
- * `provider()` method) accepts a provider => model map, but PHP arrays can't
- * hold the same provider key twice, so two models on the SAME provider (e.g.
- * two Ollama models) can't be expressed that way. This concern implements
- * the same "try the primary model, fall back to a smaller model on failure"
- * behaviour manually.
+ * Retry an agent turn on the free router when its primary provider throws.
+ *
+ * Every agent now declares two different providers in #[Provider], which the
+ * SDK can fail over between natively. This stays as the outer net: a provider
+ * map covers a model that errors, not a key that is missing, a quota that is
+ * spent, or a network that is down mid-run.
+ *
+ * It used to fail over to a second Ollama box. Both boxes are gone, and the
+ * fallback pointed at a dead address for as long as they had been — which
+ * nothing noticed, because every caller degrades quietly. Do not point this at
+ * anything that can disappear without someone being told.
  */
 trait FailsOverToFallbackModel
 {
     /**
-     * The smaller/faster model to retry against when the primary model
-     * throws (both are hosted on the same Ollama box).
+     * OpenRouter's Free Models Router: zero cost, and it picks a free model at
+     * random, so treat whatever comes back as lower quality than the primary.
      */
-    private const FALLBACK_PROVIDER = 'ollama_cpu';
+    private const FALLBACK_PROVIDER = 'openrouter';
 
-    private const FALLBACK_MODEL = 'llama3.2:1b';
+    private const FALLBACK_MODEL = 'openrouter/free';
 
     /**
-     * Prompt the agent, retrying once against the fallback model if the
-     * primary model throws.
+     * Prompt the agent, retrying once on the fallback provider if the primary
+     * throws.
      */
     public function promptWithFailover(string $prompt): AgentResponse
     {
         try {
             return $this->prompt($prompt);
         } catch (\Throwable $e) {
-            Log::warning(static::class.': primary provider/model failed, retrying on the CPU fallback', [
+            Log::warning(static::class.': primary provider/model failed, retrying on the free router', [
                 'fallback_provider' => self::FALLBACK_PROVIDER,
                 'fallback_model' => self::FALLBACK_MODEL,
                 'error' => $e->getMessage(),

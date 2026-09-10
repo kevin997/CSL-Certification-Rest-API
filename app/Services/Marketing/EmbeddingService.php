@@ -6,11 +6,17 @@ use Illuminate\Support\Facades\Log;
 use Laravel\Ai\Embeddings;
 
 /**
- * Thin wrapper around the Laravel AI SDK's Ollama embeddings support
- * (nomic-embed-text on the CSL Ollama box — config('ai.providers.ollama.url')).
- * The Ollama gateway shipped with laravel/ai already implements
+ * Thin wrapper around the Laravel AI SDK's embeddings support.
+ *
+ * There is no embeddings provider configured. Ollama hosted nomic-embed-text
+ * until both boxes were decommissioned, and nothing replaced it, so embed()
+ * returns null and every caller degrades: IndexKnowledgeCommand indexes
+ * nothing, SearchKnowledgeBase finds nothing, and the marketing generator
+ * writes without retrieval. Set AI_EMBEDDINGS_PROVIDER and that provider's key
+ * to bring it back — the rest of this class already handles it.
+ * The gateway shipped with laravel/ai already implements
  * EmbeddingProvider/EmbeddingGateway and posts batched inputs straight to
- * Ollama's native `/api/embed` endpoint, so no direct HTTP client is needed
+ * the provider's native embeddings endpoint, so no direct HTTP client is needed
  * here.
  *
  * Fails open everywhere: a down/misconfigured embeddings backend must never
@@ -39,19 +45,11 @@ class EmbeddingService
         try {
             $response = Embeddings::for($texts)
                 ->timeout(self::TIMEOUT)
-                ->generate('ollama', self::MODEL);
-        } catch (\Throwable $primaryFailure) {
-            // Dead-primary-host (GPU box off) isn't failoverable in SDK
-            // v0.7.2 — retry explicitly on the CPU box, then fail open.
-            try {
-                $response = Embeddings::for($texts)
-                    ->timeout(self::TIMEOUT)
-                    ->generate('ollama_cpu', self::MODEL);
-            } catch (\Throwable $e) {
-                Log::warning('EmbeddingService: failed generating embeddings: '.$e->getMessage());
+                ->generate(self::provider(), self::model());
+        } catch (\Throwable $e) {
+            Log::warning('EmbeddingService: failed generating embeddings: '.$e->getMessage());
 
-                return null;
-            }
+            return null;
         }
 
         return $response->embeddings;
@@ -82,11 +80,25 @@ class EmbeddingService
         return $dot / (sqrt($normA) * sqrt($normB));
     }
 
+    private static function provider(): string
+    {
+        return (string) config('ai.default_for_embeddings');
+    }
+
+    private static function model(): string
+    {
+        return (string) config('ai.embeddings_model', self::MODEL);
+    }
+
     /**
-     * Whether the Ollama embeddings backend is configured.
+     * Whether an embeddings provider has credentials. False today: nothing
+     * replaced Ollama, and a provider without a key would cost one doomed
+     * request per batch before failing open.
      */
     public static function isConfigured(): bool
     {
-        return filled(config('ai.providers.ollama.url'));
+        $provider = self::provider();
+
+        return $provider !== '' && filled(config("ai.providers.{$provider}.key"));
     }
 }

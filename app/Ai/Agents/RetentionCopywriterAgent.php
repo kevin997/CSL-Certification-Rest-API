@@ -27,7 +27,7 @@ use Stringable;
  * calls the same model with a ~600 token prompt. Switching back is one
  * attribute: #[Provider(['openclaw' => 'openclaw/main'])].
  */
-#[Provider(['deepseek' => 'deepseek-chat'])]
+#[Provider(['deepseek' => 'deepseek-chat', 'openrouter' => 'openrouter/free'])]
 #[Temperature(0.9)]
 #[Timeout(45)]
 class RetentionCopywriterAgent implements Agent, HasStructuredOutput

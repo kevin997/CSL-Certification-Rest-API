@@ -30,7 +30,7 @@ use Stringable;
  * the failover (schema + server-side normalization keep it safe) lives in
  * GenerateCourseDraftJob instead of being generalized into a shared concern.
  */
-#[Provider(['ollama' => 'qwen2.5:14b', 'ollama_cpu' => 'llama3.2:1b'])]
+#[Provider(['deepseek' => 'deepseek-chat', 'openrouter' => 'openrouter/free'])]
 #[Temperature(0.7)]
 #[Timeout(480)]
 class TemplateEnhancerAgent implements Agent, Conversational, HasStructuredOutput, HasTools
