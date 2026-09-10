@@ -7,6 +7,7 @@ use App\Models\EnrollmentCode;
 use App\Events\UserCreatedDuringCheckout;
 use App\Events\OrderCompleted;
 use App\Models\Environment;
+use App\Models\EnvironmentUser;
 use App\Models\Product;
 use App\Models\Enrollment;
 use App\Models\User;
@@ -402,6 +403,36 @@ class EnrollmentCodeController extends Controller
     }
 
     /**
+     * Whether an existing account may not consume a learner code in this
+     * environment.
+     *
+     * Decided by the account's standing HERE, not by its global role. Owning an
+     * academy makes a global role company_teacher, and the old global check
+     * therefore refused teachers who were learners in someone else's academy —
+     * while letting through a team member of THIS academy whose global role
+     * happened to be learner. Sign-in already resolves roles per environment
+     * (EffectiveAuthContext); redemption agrees with it now.
+     *
+     * Platform admins stay excluded: they act across every tenant, so there is
+     * no environment in which they are simply a learner.
+     */
+    private function isIneligibleToRedeemIn(User $user, Environment $environment): bool
+    {
+        if ($user->isAdmin() || $environment->owner_id === $user->id) {
+            return true;
+        }
+
+        $membershipRole = EnvironmentUser::query()
+            ->where('environment_id', $environment->id)
+            ->where('user_id', $user->id)
+            ->value('role');
+
+        // No membership yet means a newcomer to this academy, who becomes a
+        // learner member on redemption.
+        return $membershipRole !== null && $membershipRole !== 'learner';
+    }
+
+    /**
      * Redeem enrollment code with account creation (public endpoint).
      *
      * POST /api/enrollment-codes/redeem-with-registration
@@ -469,6 +500,18 @@ class EnrollmentCodeController extends Controller
             ], 400);
         }
 
+        // Eligibility depends on the account's role in THIS environment, so the
+        // environment is resolved before the account is judged.
+        $environmentId = session('current_environment_id');
+        $environment = $environmentId ? Environment::find($environmentId) : null;
+
+        if (! $environment) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid environment.',
+            ], 400);
+        }
+
         try {
             DB::beginTransaction();
 
@@ -486,12 +529,10 @@ class EnrollmentCodeController extends Controller
                     ], 422);
                 }
 
-                // Reject non-learner users (admins, teachers, sales agents, etc.)
-                $userRole = $existingUser->role instanceof \App\Enums\UserRole
-                    ? $existingUser->role->value
-                    : $existingUser->role;
-
-                if ($userRole !== \App\Enums\UserRole::LEARNER->value) {
+                // Staff of this academy, and platform admins, cannot consume a
+                // learner code. A teacher from ANOTHER academy is just a person
+                // here — owning an academy elsewhere is no reason to refuse them.
+                if ($this->isIneligibleToRedeemIn($existingUser, $environment)) {
                     DB::rollBack();
                     return response()->json([
                         'success' => false,
@@ -538,25 +579,15 @@ class EnrollmentCodeController extends Controller
 
             $enrolledCourses = [];
 
-            // Get environment_id
-            $environmentId = session('current_environment_id');
-
-            $environment = Environment::find($environmentId);
-            if (!$environment) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invalid environment.',
-                ], 400);
-            }
-
-            // Only fire UserCreatedDuringCheckout for new users
-            // (existing users already have environment membership)
-            if (!$userExisted) {
-                DB::afterCommit(function () use ($user, $environment) {
-                    event(new UserCreatedDuringCheckout($user, $environment, true));
-                });
-            }
+            // Membership in this environment, for new AND existing accounts. An
+            // existing account is not necessarily a member here — a teacher from
+            // another academy usually is not — and enrolling them without one
+            // would leave them unable to sign in to the academy they just paid
+            // their way into. The listener is idempotent: it does nothing when
+            // the membership already exists.
+            DB::afterCommit(function () use ($user, $environment, $userExisted) {
+                event(new UserCreatedDuringCheckout($user, $environment, ! $userExisted));
+            });
 
             // Create enrollments for each course in the product
             foreach ($productCourses as $productCourse) {
