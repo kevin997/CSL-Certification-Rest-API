@@ -18,11 +18,14 @@ return [
         'source' => [
             'files' => [
                 /*
-                 * The list of directories and files that will be included in the backup.
+                 * Nothing. The application code is in git, and sweeping it in
+                 * here produced an archive over the 25 MB mail limit, so the
+                 * only copy was written to the container's own disk and lost at
+                 * the next deploy. A backup that cannot leave the machine it is
+                 * protecting is not a backup. The database is the only thing
+                 * here that exists nowhere else.
                  */
-                'include' => [
-                    base_path(),
-                ],
+                'include' => [],
 
                 /*
                  * These directories and files will be excluded from the backup.

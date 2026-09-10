@@ -40,6 +40,34 @@ class MediaAssetTest extends TestCase
         ], $overrides));
     }
 
+    public function test_destroy_signs_and_tenant_scopes_the_media_service_call()
+    {
+        // The media service refuses an unsigned or unscoped delete. If this
+        // contract drifts, deletion silently stops freeing storage — and the
+        // only symptom is a bucket that grows forever.
+        Http::fake([self::MEDIA . '/*' => Http::response([], 200)]);
+        $user = User::factory()->create(); // environment_id defaults to 1
+        $asset = $this->asset($user, ['status' => 'ready']);
+        $uploadId = $asset->meta['upload_id'];
+
+        $this->actingAs($user)->deleteJson("/api/media/{$asset->id}")->assertStatus(200);
+
+        Http::assertSent(function (ClientRequest $request) use ($uploadId) {
+            $expectedUri = "/api/media/{$uploadId}?environment_id=1";
+            if ($request->method() !== 'DELETE' || !str_ends_with($request->url(), $expectedUri)) {
+                return false;
+            }
+
+            $timestamp = $request->header('X-Media-Service-Timestamp')[0] ?? '';
+            $canonical = implode("\n", ['DELETE', $expectedUri, $timestamp, hash('sha256', '')]);
+
+            return hash_equals(
+                hash_hmac('sha256', $canonical, 'webhook-secret'),
+                $request->header('X-Media-Service-Signature')[0] ?? ''
+            );
+        });
+    }
+
     public function test_init_upload_creates_media_asset()
     {
         Http::fake([
@@ -236,7 +264,7 @@ class MediaAssetTest extends TestCase
 
     public function test_abort_multipart_drops_the_pending_asset_and_its_parts()
     {
-        Http::fake(['*/multipart/*/abort' => Http::response(['status' => 'failed'])]);
+        Http::fake(['*/multipart/*/abort*' => Http::response(['status' => 'failed'])]);
 
         $user = User::factory()->create();
         $uploadId = (string) Str::uuid();
@@ -247,7 +275,15 @@ class MediaAssetTest extends TestCase
             ->assertJson(['deleted' => true]);
 
         $this->assertDatabaseMissing('media_assets', ['id' => $mediaAsset->id]);
-        Http::assertSent(fn (ClientRequest $request) => $request->url() === self::MEDIA . "/api/media/multipart/{$uploadId}/abort");
+        // Signed and tenant-scoped: the media service refuses it otherwise.
+        Http::assertSent(function (ClientRequest $request) use ($uploadId) {
+            $uri = "/api/media/multipart/{$uploadId}/abort?environment_id=1";
+            $timestamp = $request->header('X-Media-Service-Timestamp')[0] ?? '';
+            $canonical = implode("\n", ['POST', $uri, $timestamp, hash('sha256', '')]);
+
+            return $request->url() === self::MEDIA . $uri
+                && hash_equals(hash_hmac('sha256', $canonical, 'webhook-secret'), $request->header('X-Media-Service-Signature')[0] ?? '');
+        });
     }
 
     public function test_abort_multipart_refuses_an_upload_that_already_completed()
