@@ -7,7 +7,6 @@ use App\Models\EnrollmentCode;
 use App\Events\UserCreatedDuringCheckout;
 use App\Events\OrderCompleted;
 use App\Models\Environment;
-use App\Models\EnvironmentUser;
 use App\Models\Product;
 use App\Models\Enrollment;
 use App\Models\User;
@@ -418,18 +417,9 @@ class EnrollmentCodeController extends Controller
      */
     private function isIneligibleToRedeemIn(User $user, Environment $environment): bool
     {
-        if ($user->isAdmin() || $environment->owner_id === $user->id) {
-            return true;
-        }
-
-        $membershipRole = EnvironmentUser::query()
-            ->where('environment_id', $environment->id)
-            ->where('user_id', $user->id)
-            ->value('role');
-
-        // No membership yet means a newcomer to this academy, who becomes a
-        // learner member on redemption.
-        return $membershipRole !== null && $membershipRole !== 'learner';
+        // Staff here, including the owner and platform admins. A newcomer with
+        // no membership, or any learner role, may redeem.
+        return $user->isStaffIn($environment->id);
     }
 
     /**

@@ -272,8 +272,10 @@ class ChatService
         // Check enrollment
         $isEnrolled = $course->enrolledUsers()->where('users.id', $userId)->exists();
 
-        // Check if user is instructor (teacher role)
-        $isInstructor = $user->isTeacher();
+        // Staff of the course's academy may join without an enrolment. Any
+        // teacher anywhere used to — the global role only says they own an
+        // academy somewhere, not this one.
+        $isInstructor = $user->isStaffIn($course->environment_id);
 
         if (!$isEnrolled && !$isInstructor) {
             throw new Exception('User cannot join this course discussion');

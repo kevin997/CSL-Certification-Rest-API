@@ -131,11 +131,13 @@ class SubscriptionProductController extends Controller
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
-        if (! $actor->isTeacher() && ! $actor->isAdmin()) {
+        $environmentId = session('current_environment_id');
+
+        // Staff of this academy, not any teacher: a teacher who is only a
+        // learner here must not list other people's subscriptions.
+        if (! $actor->isStaffIn($environmentId)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
-
-        $environmentId = session('current_environment_id');
 
         $query = ProductSubscription::with(['product', 'environment'])
             ->where('user_id', $userId)

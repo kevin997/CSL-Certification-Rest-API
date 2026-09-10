@@ -690,22 +690,12 @@ class OrderController extends Controller
     {
         $order = Order::with(['user', 'items.product'])->findOrFail($id);
 
-        // Check if user has permission to view this order
+        // Staff of the order's academy — not any teacher anywhere, which is what
+        // isTeacher() allowed — or, for an order with no academy, its buyer.
         $user = Auth::user();
-        $hasPermission = false;
-        if ($user->isTeacher()) {
-            $hasPermission = true;
-        } elseif ($order->environment_id) {
-            $environment = Environment::find($order->environment_id);
-            if ($environment && $environment->owner_id === $user->id) {
-                $hasPermission = true;
-            }
-        } else {
-            // Fallback: allow if user is the order owner
-            if ($order->user_id === $user->id) {
-                $hasPermission = true;
-            }
-        }
+        $hasPermission = $user->isStaffIn($order->environment_id)
+            || ($order->environment_id === null && $order->user_id === $user->id);
+
         if (! $hasPermission) {
             return response()->json([
                 'status' => 'error',
@@ -798,26 +788,13 @@ class OrderController extends Controller
     {
         $order = Order::findOrFail($id);
 
-        // Check if user has permission to view this order
-        $user = Auth::user();
-        $hasPermission = false;
-        if ($user->isTeacher()) {
-            $hasPermission = true;
-        } elseif ($order->environment_id) {
-            $environment = Environment::find($order->environment_id);
-            if ($environment && $environment->owner_id === $user->id) {
-                $hasPermission = true;
-            }
-        } else {
-            // Fallback: allow if user is the order owner
-            if ($order->user_id === $user->id) {
-                $hasPermission = true;
-            }
-        }
-        if (! $hasPermission) {
+        // Changing an order's status is a staff action. It used to reuse the
+        // view check above, whose academy-less fallback let a buyer mark their
+        // own order completed.
+        if (! Auth::user()->isStaffIn($order->environment_id)) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'You do not have permission to view this order',
+                'message' => 'You do not have permission to update this order',
             ], Response::HTTP_FORBIDDEN);
         }
 
