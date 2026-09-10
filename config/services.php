@@ -149,6 +149,14 @@ return [
         )),
     ],
 
+    // Private Certification API endpoint consumed by KURSA Marketing Service.
+    // No default secret: an absent deployment value must deny every request.
+    'marketing_service' => [
+        'signing_secret' => env('MARKETING_SERVICE_SIGNING_SECRET'),
+        'clock_skew_seconds' => (int) env('MARKETING_SERVICE_CLOCK_SKEW_SECONDS', 300),
+        'unsubscribe_link_ttl_days' => (int) env('MARKETING_UNSUBSCRIBE_LINK_TTL_DAYS', 30),
+    ],
+
     // Retention engine — locales for bilingual messages and default links.
     'retention' => [
         'locales' => env('RETENTION_LOCALES', 'fr,en'),

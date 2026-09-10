@@ -162,10 +162,20 @@ class SendRetentionMessagesJob implements ShouldQueue
     }
 
     /**
+     * Records the attempt, and — for a message that actually went out — what was
+     * said. RetentionCopywriter reads those bodies back so the next nudge to the
+     * same person is not the last one again; without this the history is just
+     * dates and the copywriter has nothing to avoid repeating.
+     *
      * @param  array{recipient_type:string, recipient_id:string, scenario_key:string}  $item
      */
     private function record(array $item, ?string $phone, string $status, ?string $error = null, ?string $channel = null): void
     {
+        $meta = array_filter([
+            'channel' => $channel,
+            'body' => $status === RetentionMessage::STATUS_SENT ? ($item['message'] ?? null) : null,
+        ]);
+
         RetentionMessage::create([
             'recipient_type' => $item['recipient_type'],
             'recipient_id' => $item['recipient_id'],
@@ -173,7 +183,7 @@ class SendRetentionMessagesJob implements ShouldQueue
             'phone' => $phone,
             'status' => $status,
             'error' => $error,
-            'meta' => $channel ? ['channel' => $channel] : null,
+            'meta' => $meta !== [] ? $meta : null,
             'sent_at' => $status === RetentionMessage::STATUS_SENT ? now() : null,
         ]);
     }

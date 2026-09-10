@@ -110,7 +110,10 @@ class RetentionScenarioRegistry
                     ->where('enrollments.progress_percentage', '<', 75)
                     ->where('enrollments.last_activity_at', '<', now()->subDays(7)),
                     orderBy: 'enrollments.last_activity_at'),
-                'retention.learner_stalled'),
+                'retention.learner_stalled',
+                // First scenario on the copywriter: the most repetitive one
+                // (a 7-day cooldown means the same sentence roughly monthly).
+                personalised: true),
 
             new RetentionScenario('certificate_earned', RetentionScenario::LEARNER, 90, 30,
                 fn () => $this->certificateEarned(),

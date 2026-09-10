@@ -92,6 +92,7 @@ use App\Http\Controllers\Api\ReferralEnvironmentController;
 use App\Http\Controllers\Api\Sales\AuthController;
 use App\Http\Controllers\Api\Sales\SalesAgentController;
 use App\Http\Controllers\Api\Sales\SalesDashboardController;
+use App\Http\Controllers\Api\Sales\SalesFormCampaignAudienceController;
 use App\Http\Controllers\Api\Sales\SalesFormController;
 use App\Http\Controllers\Api\Sales\SalesFormSubmissionController;
 use App\Http\Controllers\Api\SellerPanelController;
@@ -735,6 +736,8 @@ Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
     Route::get('/sales-forms/analytics/summary', [SalesFormController::class, 'analyticsSummary']);
     Route::get('/sales-forms', [SalesFormController::class, 'index']);
     Route::post('/sales-forms', [SalesFormController::class, 'store'])->middleware('licence.feature:sales_forms');
+    Route::post('/sales-forms/{form}/campaigns/audience-preview', [SalesFormCampaignAudienceController::class, 'preview'])
+        ->middleware('licence.feature:marketing_automations');
     Route::get('/sales-forms/{id}', [SalesFormController::class, 'show']);
     Route::put('/sales-forms/{id}', [SalesFormController::class, 'update'])->middleware('licence.feature:sales_forms');
     Route::delete('/sales-forms/{id}', [SalesFormController::class, 'destroy'])->middleware('licence.feature:sales_forms');
