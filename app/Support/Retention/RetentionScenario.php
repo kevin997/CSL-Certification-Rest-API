@@ -35,6 +35,12 @@ class RetentionScenario
         public int $cooldownDays,
         public mixed $resolver,
         public string $messageKey,
+        /**
+         * Whether a copywriter may replace the template for this scenario.
+         * Opt-in per scenario: the template stays the floor, and a scenario
+         * only starts costing model calls once someone decides it should.
+         */
+        public bool $personalised = false,
     ) {}
 
     /**
