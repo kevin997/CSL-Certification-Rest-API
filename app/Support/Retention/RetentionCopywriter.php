@@ -50,6 +50,13 @@ class RetentionCopywriter
      * behind it — what matters here is the fallback and the rejection rules,
      * not the provider.
      *
+     * It must return the agent's STRUCTURED output. `(array) $response` casts
+     * the response object and yields its internals — messages, toolCalls, text
+     * — with no 'fr'/'en' at the top level, so every locale reads empty, every
+     * message is judged unusable, and the copywriter silently falls back to the
+     * template while the model is answering perfectly well. ->toArray() is the
+     * accessor; GenerateCourseDraftJob uses the same one.
+     *
      * @param  (\Closure(string, string, string): array<string, mixed>)|null  $generator
      */
     public function __construct(?\Closure $generator = null)
@@ -95,7 +102,7 @@ class RetentionCopywriter
         }
 
         $generate = $this->generator ?? static fn (string $prompt, string $provider, string $model): array
-            => (array) (new RetentionCopywriterAgent)->prompt($prompt, provider: $provider, model: $model);
+            => self::structuredFrom((new RetentionCopywriterAgent)->prompt($prompt, provider: $provider, model: $model));
 
         $prompt = $this->buildPrompt($scenario, $target);
 
@@ -149,6 +156,22 @@ class RetentionCopywriter
         }
 
         return $parts === [] ? null : implode("\n\n", $parts);
+    }
+
+    /**
+     * The agent's structured output.
+     *
+     * Extracted so it can be tested: casting the response with `(array)` yields
+     * its internals — messages, toolCalls, text — with no locale keys at the
+     * top level, which reads as empty output, is judged unusable, and falls
+     * back to the template while the model answers perfectly well. That shipped
+     * once; this exists so it cannot ship again unnoticed.
+     *
+     * @return array<string, mixed>
+     */
+    public static function structuredFrom(object $response): array
+    {
+        return method_exists($response, 'toArray') ? $response->toArray() : [];
     }
 
     /**
