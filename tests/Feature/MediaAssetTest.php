@@ -40,6 +40,22 @@ class MediaAssetTest extends TestCase
         ], $overrides));
     }
 
+    /**
+     * The media service recomputes this over the exact URI and body it received.
+     * Asserting it here is what keeps the two sides from drifting apart: a
+     * mismatch there is a 401, and a 401 there is an upload that never starts.
+     */
+    private function assertSignedWith(ClientRequest $request, string $method, string $uri): bool
+    {
+        $timestamp = $request->header('X-Media-Service-Timestamp')[0] ?? '';
+        $canonical = implode("\n", [$method, $uri, $timestamp, hash('sha256', $request->body())]);
+
+        return hash_equals(
+            hash_hmac('sha256', $canonical, 'webhook-secret'),
+            $request->header('X-Media-Service-Signature')[0] ?? ''
+        );
+    }
+
     public function test_destroy_signs_and_tenant_scopes_the_media_service_call()
     {
         // The media service refuses an unsigned or unscoped delete. If this
@@ -96,7 +112,7 @@ class MediaAssetTest extends TestCase
     public function test_complete_upload_updates_status()
     {
         Http::fake([
-            '*/uploads/12345/complete' => Http::response(['status' => 'processing'], 200),
+            '*/uploads/12345/complete*' => Http::response(['status' => 'processing'], 200),
         ]);
 
         $user = User::factory()->create();
@@ -312,5 +328,111 @@ class MediaAssetTest extends TestCase
             ->assertStatus(404);
 
         $this->assertDatabaseHas('media_assets', ['id' => $mediaAsset->id]);
+    }
+
+    public function test_init_upload_signs_the_media_service_call()
+    {
+        // Unsigned, this route let anyone create an upload row in any tenant and
+        // hand the transcoder work. The media service answers 401 now, so a
+        // missing signature here means audio upload stops working entirely.
+        Http::fake(['*/uploads/init' => Http::response(['upload_id' => '12345', 'upload_url' => 'http://media.test/u'], 200)]);
+
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->postJson('/api/media/upload/init', [
+            'file_name' => 'test.mp3',
+            'file_size' => 1024,
+            'mime_type' => 'audio/mpeg',
+            'title' => 'Test Audio',
+            'type' => 'audio',
+        ])->assertStatus(200);
+
+        Http::assertSent(fn (ClientRequest $r) => $r->url() === self::MEDIA . '/api/media/uploads/init'
+            && $this->assertSignedWith($r, 'POST', '/api/media/uploads/init'));
+    }
+
+    public function test_init_multipart_upload_signs_the_media_service_call()
+    {
+        Http::fake(['*/multipart/init' => Http::response([
+            'upload_id' => 'abc', 'key' => 'uploads/abc', 's3_upload_id' => 'S3',
+            'part_size' => 16, 'part_count' => 1, 'bucket' => 'media-raw',
+        ], 200)]);
+
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->postJson('/api/media/upload/multipart/init', [
+            'file_name' => 'lecture.mp4',
+            'file_size' => 16,
+            'mime_type' => 'video/mp4',
+            'title' => 'Lecture',
+            'type' => 'video',
+        ])->assertStatus(200);
+
+        Http::assertSent(fn (ClientRequest $r) => $r->url() === self::MEDIA . '/api/media/multipart/init'
+            && $this->assertSignedWith($r, 'POST', '/api/media/multipart/init'));
+    }
+
+    public function test_complete_upload_signs_and_tenant_scopes_the_media_service_call()
+    {
+        Http::fake(['*/uploads/*/complete*' => Http::response(['status' => 'processing'], 200)]);
+
+        $user = User::factory()->create();
+        $asset = $this->asset($user, ['status' => 'pending', 'meta' => ['upload_id' => 'aud-1']]);
+
+        $this->actingAs($user)->postJson("/api/media/upload/{$asset->id}/complete")->assertStatus(200);
+
+        Http::assertSent(function (ClientRequest $r) {
+            $uri = '/api/media/uploads/aud-1/complete?environment_id=1';
+
+            return $r->url() === self::MEDIA . $uri && $this->assertSignedWith($r, 'POST', $uri);
+        });
+    }
+
+    public function test_complete_multipart_signs_and_tenant_scopes_the_media_service_call()
+    {
+        Http::fake(['*/multipart/*/complete*' => Http::response(['status' => 'processing'], 200)]);
+
+        $user = User::factory()->create();
+        $asset = $this->asset($user, ['status' => 'pending', 'meta' => ['upload_id' => 'vid-1', 'multipart' => true]]);
+
+        $this->actingAs($user)->postJson("/api/media/upload/multipart/{$asset->id}/complete", [
+            'parts' => [['part_number' => 1, 'etag' => '"abc"']],
+        ])->assertStatus(200);
+
+        Http::assertSent(function (ClientRequest $r) {
+            $uri = '/api/media/multipart/vid-1/complete?environment_id=1';
+
+            return $r->url() === self::MEDIA . $uri
+                && $r->body() === json_encode(['parts' => [['part_number' => 1, 'etag' => '"abc"']]])
+                && $this->assertSignedWith($r, 'POST', $uri);
+        });
+    }
+
+    public function test_complete_upload_does_not_see_another_environments_asset()
+    {
+        Http::fake();
+
+        $user = User::factory()->create();
+        $asset = $this->asset($user, ['status' => 'pending', 'environment_id' => 2]);
+
+        $this->actingAs($user)->postJson("/api/media/upload/{$asset->id}/complete")->assertStatus(404);
+
+        Http::assertNothingSent();
+        $this->assertSame('pending', $asset->fresh()->status);
+    }
+
+    public function test_complete_multipart_does_not_see_another_environments_asset()
+    {
+        Http::fake();
+
+        $user = User::factory()->create();
+        $asset = $this->asset($user, ['status' => 'pending', 'environment_id' => 2, 'meta' => ['upload_id' => 'vid-2']]);
+
+        $this->actingAs($user)->postJson("/api/media/upload/multipart/{$asset->id}/complete", [
+            'parts' => [['part_number' => 1, 'etag' => '"abc"']],
+        ])->assertStatus(404);
+
+        Http::assertNothingSent();
+        $this->assertSame('pending', $asset->fresh()->status);
     }
 }

@@ -51,6 +51,46 @@ class MediaAssetController extends Controller
     }
 
     /**
+     * The asset behind a completion call, by local id or by media-service upload
+     * id — never outside the caller's environment.
+     *
+     * Completion queues transcoding and rewrites the asset's status, so an id
+     * alone must not be enough to reach into another tenant's upload; the media
+     * service applies the same fence on its side.
+     */
+    protected function findOwnedAsset($id, int $environmentId): ?MediaAsset
+    {
+        if (is_numeric($id)) {
+            $byId = MediaAsset::where('environment_id', $environmentId)->find($id);
+            if ($byId) {
+                return $byId;
+            }
+        }
+
+        return MediaAsset::where('environment_id', $environmentId)
+            ->where('meta->upload_id', (string) $id)
+            ->first();
+    }
+
+    /**
+     * POST to the media service as ourselves.
+     *
+     * Every route behind this relay now demands the shared-secret signature, and
+     * the signature covers the body — so the body has to be a string we control
+     * rather than something the HTTP client encodes afterwards. Hence withBody()
+     * over post($url, $array): what we hash is exactly what goes on the wire.
+     */
+    protected function postSignedToMediaService(string $uri, array $payload = [])
+    {
+        $body = $payload === [] ? '' : json_encode($payload);
+
+        return Http::acceptJson()
+            ->withHeaders($this->mediaServiceSignature('POST', $uri, $body))
+            ->withBody($body, 'application/json')
+            ->post($this->mediaServiceBaseUrl() . $uri);
+    }
+
+    /**
      * Initialize upload (proxy to Media Service)
      */
     public function initUpload(Request $request)
@@ -72,16 +112,16 @@ class MediaAssetController extends Controller
         }
 
         // Call Media Service to initialize upload
-        $baseUrl = $this->mediaServiceBaseUrl();
-        $url = "{$baseUrl}/api/media/uploads/init";
+        $uri = '/api/media/uploads/init';
+        $url = $this->mediaServiceBaseUrl() . $uri;
 
         Log::info('Media Service Request URL: ' . $url);
 
-        $response = Http::acceptJson()->post($url, [
+        $response = $this->postSignedToMediaService($uri, [
             'file_name' => $validated['file_name'],
             'mime_type' => $validated['mime_type'],
             'file_size' => $validated['file_size'],
-            'environment_id' => $request->user()->environment_id ?? 1,
+            'environment_id' => $environmentId,
         ]);
 
         Log::info('Media Service Response Status: ' . $response->status());
@@ -141,7 +181,7 @@ class MediaAssetController extends Controller
         $environmentId = $request->user()->environment_id ?? 1;
         $baseUrl = $this->mediaServiceBaseUrl();
 
-        $response = Http::acceptJson()->post("{$baseUrl}/api/media/multipart/init", [
+        $response = $this->postSignedToMediaService('/api/media/multipart/init', [
             'environment_id' => $environmentId,
             'file_name' => $validated['file_name'],
             'file_size' => $validated['file_size'],
@@ -182,10 +222,8 @@ class MediaAssetController extends Controller
             'parts.*.etag' => 'required|string',
         ]);
 
-        $mediaAsset = is_numeric($id) ? MediaAsset::find($id) : null;
-        if (!$mediaAsset) {
-            $mediaAsset = MediaAsset::where('meta->upload_id', (string) $id)->first();
-        }
+        $environmentId = $request->user()->environment_id ?? 1;
+        $mediaAsset = $this->findOwnedAsset($id, $environmentId);
         if (!$mediaAsset) {
             return response()->json(['error' => 'Media asset not found'], 404);
         }
@@ -195,10 +233,8 @@ class MediaAssetController extends Controller
             return response()->json(['error' => 'Invalid asset state'], 400);
         }
 
-        $baseUrl = $this->mediaServiceBaseUrl();
-        $response = Http::acceptJson()->post("{$baseUrl}/api/media/multipart/{$uploadId}/complete", [
-            'parts' => $validated['parts'],
-        ]);
+        $uri = "/api/media/multipart/{$uploadId}/complete?environment_id={$environmentId}";
+        $response = $this->postSignedToMediaService($uri, ['parts' => $validated['parts']]);
 
         if (!$response->successful()) {
             return response()->json(['error' => 'Media Service multipart complete failed', 'details' => $response->json()], 500);
@@ -304,15 +340,8 @@ class MediaAssetController extends Controller
      */
     public function completeUpload(Request $request, $id)
     {
-        $mediaAsset = null;
-
-        if (is_numeric($id)) {
-            $mediaAsset = MediaAsset::find($id);
-        }
-
-        if (!$mediaAsset) {
-            $mediaAsset = MediaAsset::where('meta->upload_id', (string) $id)->first();
-        }
+        $environmentId = $request->user()->environment_id ?? 1;
+        $mediaAsset = $this->findOwnedAsset($id, $environmentId);
 
         if (!$mediaAsset) {
             return response()->json(['error' => 'Media asset not found'], 404);
@@ -334,12 +363,12 @@ class MediaAssetController extends Controller
         }
 
         // Call Media Service
-        $baseUrl = $this->mediaServiceBaseUrl();
-        $url = "{$baseUrl}/api/media/uploads/{$uploadId}/complete";
+        $uri = "/api/media/uploads/{$uploadId}/complete?environment_id={$environmentId}";
+        $url = $this->mediaServiceBaseUrl() . $uri;
 
         Log::info('Media Service Request URL: ' . $url);
 
-        $response = Http::acceptJson()->post($url);
+        $response = $this->postSignedToMediaService($uri);
 
         Log::info('Media Service Response Status: ' . $response->status());
         Log::info('Media Service Response Content-Type: ' . ($response->header('Content-Type') ?? ''));
