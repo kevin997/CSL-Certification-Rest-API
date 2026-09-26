@@ -936,6 +936,7 @@ Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
     Route::post('/media/upload/multipart/{id}/complete', [MediaAssetController::class, 'completeMultipartUpload']);
     Route::post('/media/upload/multipart/{id}/abort', [MediaAssetController::class, 'abortMultipartUpload']);
     Route::get('/media/playback/{id}', [MediaAssetController::class, 'playbackSession']);
+    Route::post('/media/{id}/download', [MediaAssetController::class, 'download'])->middleware('throttle:30,1');
     Route::get('/media/{id}', [MediaAssetController::class, 'show']);
     Route::delete('/media/{id}', [MediaAssetController::class, 'destroy']); // Deletion
 

@@ -2,8 +2,9 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
+use App\Models\Environment;
 use App\Models\MediaAsset;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Support\Facades\Http;
@@ -19,6 +20,8 @@ class MediaAssetTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Environment::factory()->create(['id' => 1, 'primary_domain' => 'media-academy.test']);
+        $this->withHeader('X-Frontend-Domain', 'media-academy.test');
 
         config([
             'services.media_service.url' => self::MEDIA,
@@ -61,7 +64,7 @@ class MediaAssetTest extends TestCase
         // The media service refuses an unsigned or unscoped delete. If this
         // contract drifts, deletion silently stops freeing storage — and the
         // only symptom is a bucket that grows forever.
-        Http::fake([self::MEDIA . '/*' => Http::response([], 200)]);
+        Http::fake([self::MEDIA.'/*' => Http::response([], 200)]);
         $user = User::factory()->create(); // environment_id defaults to 1
         $asset = $this->asset($user, ['status' => 'ready']);
         $uploadId = $asset->meta['upload_id'];
@@ -70,7 +73,7 @@ class MediaAssetTest extends TestCase
 
         Http::assertSent(function (ClientRequest $request) use ($uploadId) {
             $expectedUri = "/api/media/{$uploadId}?environment_id=1";
-            if ($request->method() !== 'DELETE' || !str_ends_with($request->url(), $expectedUri)) {
+            if ($request->method() !== 'DELETE' || ! str_ends_with($request->url(), $expectedUri)) {
                 return false;
             }
 
@@ -139,7 +142,7 @@ class MediaAssetTest extends TestCase
         Http::fake([
             '*/playback-session' => Http::response([
                 'token' => 'jwt',
-                'manifest_url' => self::MEDIA . '/api/media/hls/abc/master.m3u8?token=jwt',
+                'manifest_url' => self::MEDIA.'/api/media/hls/abc/master.m3u8?token=jwt',
                 'type' => 'video',
             ]),
         ]);
@@ -297,7 +300,7 @@ class MediaAssetTest extends TestCase
             $timestamp = $request->header('X-Media-Service-Timestamp')[0] ?? '';
             $canonical = implode("\n", ['POST', $uri, $timestamp, hash('sha256', '')]);
 
-            return $request->url() === self::MEDIA . $uri
+            return $request->url() === self::MEDIA.$uri
                 && hash_equals(hash_hmac('sha256', $canonical, 'webhook-secret'), $request->header('X-Media-Service-Signature')[0] ?? '');
         });
     }
@@ -347,7 +350,7 @@ class MediaAssetTest extends TestCase
             'type' => 'audio',
         ])->assertStatus(200);
 
-        Http::assertSent(fn (ClientRequest $r) => $r->url() === self::MEDIA . '/api/media/uploads/init'
+        Http::assertSent(fn (ClientRequest $r) => $r->url() === self::MEDIA.'/api/media/uploads/init'
             && $this->assertSignedWith($r, 'POST', '/api/media/uploads/init'));
     }
 
@@ -368,7 +371,7 @@ class MediaAssetTest extends TestCase
             'type' => 'video',
         ])->assertStatus(200);
 
-        Http::assertSent(fn (ClientRequest $r) => $r->url() === self::MEDIA . '/api/media/multipart/init'
+        Http::assertSent(fn (ClientRequest $r) => $r->url() === self::MEDIA.'/api/media/multipart/init'
             && $this->assertSignedWith($r, 'POST', '/api/media/multipart/init'));
     }
 
@@ -384,7 +387,7 @@ class MediaAssetTest extends TestCase
         Http::assertSent(function (ClientRequest $r) {
             $uri = '/api/media/uploads/aud-1/complete?environment_id=1';
 
-            return $r->url() === self::MEDIA . $uri && $this->assertSignedWith($r, 'POST', $uri);
+            return $r->url() === self::MEDIA.$uri && $this->assertSignedWith($r, 'POST', $uri);
         });
     }
 
@@ -402,7 +405,7 @@ class MediaAssetTest extends TestCase
         Http::assertSent(function (ClientRequest $r) {
             $uri = '/api/media/multipart/vid-1/complete?environment_id=1';
 
-            return $r->url() === self::MEDIA . $uri
+            return $r->url() === self::MEDIA.$uri
                 && $r->body() === json_encode(['parts' => [['part_number' => 1, 'etag' => '"abc"']]])
                 && $this->assertSignedWith($r, 'POST', $uri);
         });
@@ -434,5 +437,79 @@ class MediaAssetTest extends TestCase
 
         Http::assertNothingSent();
         $this->assertSame('pending', $asset->fresh()->status);
+    }
+
+    public function test_owner_can_download_original_through_signed_tenant_scoped_relay(): void
+    {
+        Http::fake([self::MEDIA.'/*' => Http::response(['download_url' => 'https://storage.test/original?signature=abc', 'filename' => 'lecture.mp4'])]);
+        $user = User::factory()->create();
+        $asset = $this->asset($user, ['status' => 'ready']);
+        $this->actingAs($user)->postJson("/api/media/{$asset->id}/download")
+            ->assertOk()->assertJsonPath('filename', 'lecture.mp4');
+        Http::assertSent(function (ClientRequest $request) use ($asset) {
+            $uri = '/api/media/'.$asset->meta['upload_id'].'/download?environment_id=1';
+
+            return $request->url() === self::MEDIA.$uri && $this->assertSignedWith($request, 'POST', $uri);
+        });
+    }
+
+    public function test_download_is_private_to_owner_and_environment(): void
+    {
+        Http::fake();
+        $user = User::factory()->create();
+        $other = User::factory()->create();
+        foreach ([$this->asset($other), $this->asset($user, ['environment_id' => 2])] as $asset) {
+            $this->actingAs($user)->postJson("/api/media/{$asset->id}/download")->assertNotFound();
+        }
+        Http::assertNothingSent();
+    }
+
+    public function test_download_requires_a_resolved_workspace(): void
+    {
+        Http::fake();
+        $user = User::factory()->create();
+        $asset = $this->asset($user);
+        $this->withHeader('X-Frontend-Domain', 'unknown.test')->actingAs($user)
+            ->postJson("/api/media/{$asset->id}/download")->assertForbidden();
+        Http::assertNothingSent();
+    }
+
+    public function test_download_requires_authentication(): void
+    {
+        $this->postJson('/api/media/1/download')->assertUnauthorized();
+    }
+
+    public function test_download_reports_missing_original_and_service_failure(): void
+    {
+        $user = User::factory()->create();
+        $asset = $this->asset($user);
+        Http::fake([self::MEDIA.'/*' => Http::sequence()
+            ->push(['code' => 'original_unavailable'], 409)->push([], 500)]);
+        $this->actingAs($user)->postJson("/api/media/{$asset->id}/download")
+            ->assertStatus(409)->assertJsonPath('code', 'original_unavailable');
+        $this->postJson("/api/media/{$asset->id}/download")->assertStatus(502);
+    }
+
+    public function test_library_uses_resolved_workspace_and_only_offers_own_downloads(): void
+    {
+        $user = User::factory()->create();
+        $other = User::factory()->create();
+        Environment::factory()->create(['id' => 2, 'primary_domain' => 'second-academy.test']);
+        $hidden = $this->asset($user, ['environment_id' => 1]);
+        $owned = $this->asset($user, ['environment_id' => 2, 'status' => 'ready']);
+        $colleague = $this->asset($other, ['environment_id' => 2, 'status' => 'ready']);
+        $pending = $this->asset($user, ['environment_id' => 2, 'status' => 'pending']);
+        $bunny = $this->asset($user, ['environment_id' => 2, 'status' => 'ready', 'provider' => 'bunny_stream']);
+        $response = $this->withHeader('X-Frontend-Domain', 'second-academy.test')->actingAs($user)
+            ->getJson('/api/media')->assertOk();
+        $files = collect($response->json('data'))->keyBy('id');
+        $this->assertFalse($files->has($hidden->id));
+        $this->assertTrue($files[$owned->id]['can_download']);
+        foreach ([$colleague, $pending, $bunny] as $asset) {
+            $this->assertFalse($files[$asset->id]['can_download']);
+        }
+        Http::fake([self::MEDIA.'/*' => Http::response(['download_url' => 'https://storage.test/original', 'filename' => 'lecture.mp4'])]);
+        $this->postJson("/api/media/{$owned->id}/download")->assertOk();
+        Http::assertSent(fn (ClientRequest $r) => str_ends_with($r->url(), '/download?environment_id=2'));
     }
 }
