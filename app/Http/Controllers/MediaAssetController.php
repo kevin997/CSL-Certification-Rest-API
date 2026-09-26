@@ -2,10 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-
+use App\Events\MediaProcessingStatusUpdated;
 use App\Models\MediaAsset;
 use App\Services\BunnyStreamService;
+use App\Support\Tenancy\EnvironmentContext;
+use App\Support\Tenancy\EnvironmentResolver;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -21,6 +25,14 @@ class MediaAssetController extends Controller
         // Ideally from config
         $this->mediaServiceUrl = rtrim((string) config('services.media_service.url', 'http://localhost:8001'), '/');
         $this->bunny = $bunny;
+    }
+
+    protected function environmentId(Request $request): int
+    {
+        $context = $request->attributes->get(EnvironmentResolver::REQUEST_ATTRIBUTE);
+        abort_unless($context instanceof EnvironmentContext && $context->resolved(), 403, 'No academy selected.');
+
+        return (int) $context->environment->id;
     }
 
     protected function mediaServiceBaseUrl(): string
@@ -87,7 +99,7 @@ class MediaAssetController extends Controller
         return Http::acceptJson()
             ->withHeaders($this->mediaServiceSignature('POST', $uri, $body))
             ->withBody($body, 'application/json')
-            ->post($this->mediaServiceBaseUrl() . $uri);
+            ->post($this->mediaServiceBaseUrl().$uri);
     }
 
     /**
@@ -103,7 +115,7 @@ class MediaAssetController extends Controller
             'type' => 'required|in:audio,video',
         ]);
 
-        $environmentId = $request->user()->environment_id ?? 1;
+        $environmentId = $this->environmentId($request);
 
         // Route VIDEO to Bunny Stream when configured. Audio stays on the
         // self-hosted media service (Bunny Stream is video-only).
@@ -113,9 +125,9 @@ class MediaAssetController extends Controller
 
         // Call Media Service to initialize upload
         $uri = '/api/media/uploads/init';
-        $url = $this->mediaServiceBaseUrl() . $uri;
+        $url = $this->mediaServiceBaseUrl().$uri;
 
-        Log::info('Media Service Request URL: ' . $url);
+        Log::info('Media Service Request URL: '.$url);
 
         $response = $this->postSignedToMediaService($uri, [
             'file_name' => $validated['file_name'],
@@ -124,9 +136,9 @@ class MediaAssetController extends Controller
             'environment_id' => $environmentId,
         ]);
 
-        Log::info('Media Service Response Status: ' . $response->status());
-        Log::info('Media Service Response Content-Type: ' . ($response->header('Content-Type') ?? ''));
-        Log::info('Media Service Response Body: ' . $response->body());
+        Log::info('Media Service Response Status: '.$response->status());
+        Log::info('Media Service Response Content-Type: '.($response->header('Content-Type') ?? ''));
+        Log::info('Media Service Response Body: '.$response->body());
 
         $contentType = (string) $response->header('Content-Type');
         if (str_contains($contentType, 'text/html') || str_starts_with(ltrim($response->body()), '<!DOCTYPE html')) {
@@ -136,7 +148,7 @@ class MediaAssetController extends Controller
             ], 502);
         }
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             return response()->json(
                 ['error' => 'Media Service init failed', 'details' => $response->json()],
                 $response->status()
@@ -147,7 +159,7 @@ class MediaAssetController extends Controller
 
         // Create local asset reference
         $mediaAsset = MediaAsset::create([
-            'environment_id' => $request->user()->environment_id ?? 1,
+            'environment_id' => $this->environmentId($request),
             'owner_user_id' => $request->user()->id,
             'title' => $validated['title'] ?? $validated['file_name'],
             'type' => $validated['type'],
@@ -178,7 +190,7 @@ class MediaAssetController extends Controller
             'type' => 'required|in:audio,video',
         ]);
 
-        $environmentId = $request->user()->environment_id ?? 1;
+        $environmentId = $this->environmentId($request);
         $baseUrl = $this->mediaServiceBaseUrl();
 
         $response = $this->postSignedToMediaService('/api/media/multipart/init', [
@@ -188,7 +200,7 @@ class MediaAssetController extends Controller
             'mime_type' => $validated['mime_type'],
         ]);
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             return response()->json(['error' => 'Media Service multipart init failed', 'details' => $response->json()], $response->status());
         }
 
@@ -222,21 +234,21 @@ class MediaAssetController extends Controller
             'parts.*.etag' => 'required|string',
         ]);
 
-        $environmentId = $request->user()->environment_id ?? 1;
+        $environmentId = $this->environmentId($request);
         $mediaAsset = $this->findOwnedAsset($id, $environmentId);
-        if (!$mediaAsset) {
+        if (! $mediaAsset) {
             return response()->json(['error' => 'Media asset not found'], 404);
         }
 
         $uploadId = $mediaAsset->meta['upload_id'] ?? null;
-        if (!$uploadId) {
+        if (! $uploadId) {
             return response()->json(['error' => 'Invalid asset state'], 400);
         }
 
         $uri = "/api/media/multipart/{$uploadId}/complete?environment_id={$environmentId}";
         $response = $this->postSignedToMediaService($uri, ['parts' => $validated['parts']]);
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             return response()->json(['error' => 'Media Service multipart complete failed', 'details' => $response->json()], 500);
         }
 
@@ -254,12 +266,12 @@ class MediaAssetController extends Controller
      */
     public function abortMultipartUpload(Request $request, $id)
     {
-        $environmentId = $request->user()->environment_id ?? 1;
+        $environmentId = $this->environmentId($request);
         $mediaAsset = MediaAsset::where('id', $id)
             ->where('environment_id', $environmentId)
             ->first();
 
-        if (!$mediaAsset) {
+        if (! $mediaAsset) {
             return response()->json(['error' => 'Media asset not found'], 404);
         }
 
@@ -281,7 +293,7 @@ class MediaAssetController extends Controller
                 ->post("{$baseUrl}{$uri}");
 
             // A 404 means the media service already forgot it; nothing left to free.
-            if (!$response->successful() && $response->status() !== 404) {
+            if (! $response->successful() && $response->status() !== 404) {
                 return response()->json(['error' => 'Media Service multipart abort failed', 'details' => $response->json()], 502);
             }
         }
@@ -301,7 +313,7 @@ class MediaAssetController extends Controller
     {
         $videoId = $this->bunny->createVideo($validated['title'] ?? $validated['file_name']);
 
-        if (!$videoId) {
+        if (! $videoId) {
             return response()->json(['error' => 'Failed to create video on Bunny Stream'], 502);
         }
 
@@ -340,16 +352,16 @@ class MediaAssetController extends Controller
      */
     public function completeUpload(Request $request, $id)
     {
-        $environmentId = $request->user()->environment_id ?? 1;
+        $environmentId = $this->environmentId($request);
         $mediaAsset = $this->findOwnedAsset($id, $environmentId);
 
-        if (!$mediaAsset) {
+        if (! $mediaAsset) {
             return response()->json(['error' => 'Media asset not found'], 404);
         }
 
         $uploadId = $mediaAsset->meta['upload_id'] ?? null;
 
-        if (!$uploadId) {
+        if (! $uploadId) {
             return response()->json(['error' => 'Invalid asset state'], 400);
         }
 
@@ -364,17 +376,17 @@ class MediaAssetController extends Controller
 
         // Call Media Service
         $uri = "/api/media/uploads/{$uploadId}/complete?environment_id={$environmentId}";
-        $url = $this->mediaServiceBaseUrl() . $uri;
+        $url = $this->mediaServiceBaseUrl().$uri;
 
-        Log::info('Media Service Request URL: ' . $url);
+        Log::info('Media Service Request URL: '.$url);
 
         $response = $this->postSignedToMediaService($uri);
 
-        Log::info('Media Service Response Status: ' . $response->status());
-        Log::info('Media Service Response Content-Type: ' . ($response->header('Content-Type') ?? ''));
-        Log::info('Media Service Response Body: ' . $response->body());
+        Log::info('Media Service Response Status: '.$response->status());
+        Log::info('Media Service Response Content-Type: '.($response->header('Content-Type') ?? ''));
+        Log::info('Media Service Response Body: '.$response->body());
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             return response()->json(['error' => 'Media Service processing failed', 'details' => $response->json()], 500);
         }
 
@@ -391,7 +403,7 @@ class MediaAssetController extends Controller
             ]);
 
             // Broadcast WebSocket event so frontend knows immediately
-            broadcast(new \App\Events\MediaProcessingStatusUpdated(
+            broadcast(new MediaProcessingStatusUpdated(
                 $mediaAsset->id,
                 $uploadId,
                 'ready',
@@ -407,14 +419,48 @@ class MediaAssetController extends Controller
      */
     public function index(Request $request)
     {
-        $environmentId = $request->user()->environment_id ?? 1;
+        $environmentId = $this->environmentId($request);
 
         $assets = MediaAsset::where('environment_id', $environmentId)
             ->where('status', '!=', 'archived') // Example filter
             ->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 50));
 
+        $assets->getCollection()->each(function (MediaAsset $asset) use ($request) {
+            $asset->setAttribute('can_download', (int) $asset->owner_user_id === (int) $request->user()->id
+                && $asset->status !== 'pending' && $asset->provider !== 'bunny_stream');
+        });
+
         return response()->json($assets);
+    }
+
+    public function download(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        $environmentId = $this->environmentId($request);
+        $asset = MediaAsset::where('environment_id', $environmentId)
+            ->where('owner_user_id', $user->id)->findOrFail($id);
+        $uploadId = $asset->meta['upload_id'] ?? $asset->media_service_id;
+        if ($asset->provider === 'bunny_stream' || ! $uploadId) {
+            return response()->json(['code' => 'original_unavailable', 'error' => 'Original file is not available for download.'], 409);
+        }
+
+        $uri = '/api/media/'.rawurlencode($uploadId).'/download?environment_id='.(int) $environmentId;
+        try {
+            $response = Http::acceptJson()->connectTimeout(5)->timeout(20)
+                ->withHeaders($this->mediaServiceSignature('POST', $uri, ''))
+                ->withBody('', 'application/json')->post($this->mediaServiceBaseUrl().$uri);
+            if (in_array($response->status(), [404, 409])) {
+                return response()->json(['code' => 'original_unavailable', 'error' => 'Original file is not available for download.'], 409);
+            }
+            if (! $response->successful() || ! is_string($response->json('download_url'))) {
+                return response()->json(['code' => 'download_failed', 'error' => 'Unable to prepare download. Please try again.'], 502);
+            }
+
+            return response()->json($response->json())->header('Cache-Control', 'no-store');
+        } catch (ConnectionException $e) {
+            return response()->json(['code' => 'download_failed', 'error' => 'Unable to prepare download. Please try again.'], 502);
+        }
     }
 
     /**
@@ -422,7 +468,8 @@ class MediaAssetController extends Controller
      */
     public function show(Request $request, $id)
     {
-        $environmentId = $request->user()->environment_id ?? 1;
+        $environmentId = $this->environmentId($request);
+
         return MediaAsset::where('id', $id)
             ->where('environment_id', $environmentId)
             ->firstOrFail();
@@ -433,7 +480,7 @@ class MediaAssetController extends Controller
      */
     public function destroy(Request $request, $id)
     {
-        $environmentId = $request->user()->environment_id ?? 1;
+        $environmentId = $this->environmentId($request);
         $mediaAsset = MediaAsset::where('id', $id)
             ->where('environment_id', $environmentId)
             ->firstOrFail();
@@ -465,7 +512,7 @@ class MediaAssetController extends Controller
                     ->delete("{$baseUrl}{$uri}");
             } catch (\Exception $e) {
                 // Log but continue to delete local record
-                Log::error('Failed to delete remote media asset: ' . $e->getMessage());
+                Log::error('Failed to delete remote media asset: '.$e->getMessage());
             }
         }
 
@@ -483,13 +530,13 @@ class MediaAssetController extends Controller
         $mediaAsset = MediaAsset::findOrFail($id);
 
         // Restrict playback to the asset's own environment (multi-tenant boundary).
-        $environmentId = $request->user()->environment_id ?? 1;
+        $environmentId = $this->environmentId($request);
         if ((int) $mediaAsset->environment_id !== (int) $environmentId) {
             return response()->json(['error' => 'Forbidden'], 403);
         }
 
         $uploadId = $mediaAsset->meta['upload_id'] ?? null;
-        if (!$uploadId) {
+        if (! $uploadId) {
             return response()->json(['error' => 'Asset not ready'], 400);
         }
 
@@ -518,7 +565,7 @@ class MediaAssetController extends Controller
         $baseUrl = $this->mediaServiceBaseUrl();
         $url = "{$baseUrl}/api/media/{$uploadId}/playback-session";
 
-        Log::info('Media Service Request URL: ' . $url);
+        Log::info('Media Service Request URL: '.$url);
 
         $response = Http::acceptJson()->post($url);
 
@@ -530,7 +577,7 @@ class MediaAssetController extends Controller
             ], 502);
         }
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             $remote = is_array($response->json()) ? $response->json() : [];
             $code = $this->notPlayableCode($remote);
 
@@ -566,6 +613,7 @@ class MediaAssetController extends Controller
         }
 
         $data = $response->json();
+
         return response()->json([
             'token' => $data['token'] ?? null,
             'stream_url' => $data['manifest_url'] ?? ($data['stream_url'] ?? null),
@@ -616,27 +664,27 @@ class MediaAssetController extends Controller
         $rawBody = $request->getContent();
         $expected = hash_hmac('sha256', $rawBody, $secret);
 
-        if (!hash_equals($expected, $signature)) {
+        if (! hash_equals($expected, $signature)) {
             return response()->json(['error' => 'Invalid signature'], 403);
         }
 
         $payload = $request->json()->all();
         $uploadId = null;
         if (isset($payload['upload_id'])) {
-            $uploadId = (string)$payload['upload_id'];
+            $uploadId = (string) $payload['upload_id'];
         }
         $status = $payload['status'] ?? null;
 
-        if ($uploadId === null || !Str::isUuid($uploadId)) {
+        if ($uploadId === null || ! Str::isUuid($uploadId)) {
             return response()->json(['error' => 'Invalid upload_id'], 422);
         }
 
-        if (!in_array($status, ['ready', 'failed', 'processing'], true)) {
+        if (! in_array($status, ['ready', 'failed', 'processing'], true)) {
             return response()->json(['error' => 'Invalid status'], 422);
         }
 
         $mediaAsset = MediaAsset::where('meta->upload_id', $uploadId)->first();
-        if (!$mediaAsset) {
+        if (! $mediaAsset) {
             return response()->json(['error' => 'Media asset not found'], 404);
         }
 
@@ -656,7 +704,7 @@ class MediaAssetController extends Controller
             $updateData['size'] = $processingMeta['file_size'];
         }
 
-        if (isset($processingMeta['mime_type']) && !empty($processingMeta['mime_type'])) {
+        if (isset($processingMeta['mime_type']) && ! empty($processingMeta['mime_type'])) {
             $updateData['mime_type'] = $processingMeta['mime_type'];
         }
 
@@ -674,7 +722,7 @@ class MediaAssetController extends Controller
         ]);
 
         // Broadcast WebSocket event for real-time updates
-        broadcast(new \App\Events\MediaProcessingStatusUpdated(
+        broadcast(new MediaProcessingStatusUpdated(
             $mediaAsset->id,
             $uploadId,
             $status,
@@ -696,7 +744,7 @@ class MediaAssetController extends Controller
     public function bunnyWebhook(Request $request)
     {
         $provided = $request->query('secret', $request->header('X-Bunny-Webhook-Secret'));
-        if (!$this->bunny->verifyWebhookSecret(is_string($provided) ? $provided : null)) {
+        if (! $this->bunny->verifyWebhookSecret(is_string($provided) ? $provided : null)) {
             return response()->json(['error' => 'Invalid webhook secret'], 403);
         }
 
@@ -704,7 +752,7 @@ class MediaAssetController extends Controller
         $videoGuid = $payload['VideoGuid'] ?? ($payload['videoGuid'] ?? null);
         $bunnyStatus = $payload['Status'] ?? ($payload['status'] ?? null);
 
-        if (!$videoGuid) {
+        if (! $videoGuid) {
             return response()->json(['error' => 'Missing VideoGuid'], 422);
         }
 
@@ -712,7 +760,7 @@ class MediaAssetController extends Controller
             ->where('provider_asset_id', $videoGuid)
             ->first();
 
-        if (!$mediaAsset) {
+        if (! $mediaAsset) {
             // Unknown video — acknowledge so Bunny stops retrying.
             return response()->json(['ok' => true]);
         }
@@ -732,7 +780,7 @@ class MediaAssetController extends Controller
             'status' => $status,
         ]);
 
-        broadcast(new \App\Events\MediaProcessingStatusUpdated(
+        broadcast(new MediaProcessingStatusUpdated(
             $mediaAsset->id,
             (string) ($mediaAsset->meta['upload_id'] ?? $videoGuid),
             $status,
