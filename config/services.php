@@ -15,7 +15,7 @@ return [
     */
 
     'postmark' => [
-        'token' => env('POSTMARK_TOKEN', '2cc2bfdb-b6a5-4543-8466-3adfcf063045'),
+        'token' => env('POSTMARK_TOKEN'),
     ],
 
     'ses' => [
@@ -41,8 +41,8 @@ return [
     ],
 
     'telegram' => [
-        'bot_token' => env('TELEGRAM_BOT_TOKEN', default: 'AAGW4ZsUYSxeny5LbNFDW7rOmiVdKuVbnWA'),
-        'chat_id' => env('TELEGRAM_CHAT_ID', default: '-1001836815830'),
+        'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+        'chat_id' => env('TELEGRAM_CHAT_ID'),
     ],
 
     'media_service' => [
@@ -75,7 +75,7 @@ return [
     ],
 
     'ipgeolocation' => [
-        'api_key' => env('IPGEOLOCATION_API_KEY', 'f632e06f3f6a489299101706b1a2fa32'),
+        'api_key' => env('IPGEOLOCATION_API_KEY'),
     ],
 
     'vapid' => [
@@ -109,12 +109,12 @@ return [
 
     // Company blog (WordPress REST) — primary source for marketing tips/tutorials.
     // Primary source for KURSA tips/guides/email campaigns: the KURSA
-    // resources site (product tutorials). WordPress application passwords are
-    // stored here per operator instruction.
+    // resources site (product tutorials). Credentials come from the
+    // environment; never put application passwords in this file.
     'blog' => [
         'url' => env('BLOG_URL', 'https://resources.csl-brands.com'),
         'username' => env('BLOG_USERNAME'),
-        'app_password' => env('BLOG_APP_PASSWORD', 'FWzV LNpQ 6M6n pVdu qCNe tf1V'),
+        'app_password' => env('BLOG_APP_PASSWORD'),
     ],
 
     // The general CSL blog — source for WhatsApp STATUS posts, which are
@@ -123,7 +123,7 @@ return [
     'status_blog' => [
         'url' => env('STATUS_BLOG_URL', 'https://blog.csl-brands.com'),
         'username' => env('STATUS_BLOG_USERNAME'),
-        'app_password' => env('STATUS_BLOG_APP_PASSWORD', 'Sh5e Dbbs knC4 DAUz k9Uo BeJO'),
+        'app_password' => env('STATUS_BLOG_APP_PASSWORD'),
     ],
 
     // Marketing content engine.
