@@ -78,7 +78,7 @@ class EnvironmentMembershipController extends Controller
         $user = $request->user();
 
         // Check if environment exists
-        $environment = Environment::find($id);
+        $environment = Environment::findActive($id);
         if (! $environment) {
             return response()->json([
                 'message' => 'Environment not found',
@@ -95,6 +95,12 @@ class EnvironmentMembershipController extends Controller
                 'message' => 'Already a member of this environment',
                 'environment_user' => $existingMembership,
             ], 200);
+        }
+
+        if (! $environment->allow_public_signup) {
+            return response()->json([
+                'message' => 'Learner registration is disabled for this academy.',
+            ], 403);
         }
 
         // Create new membership (NO password needed - uses global password)

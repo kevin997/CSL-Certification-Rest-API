@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Api\AnalyticsWidgetsController;
+use App\Http\Controllers\Api\Auth\SocialAuthController;
+use App\Http\Controllers\Api\Auth\SsoAuthController;
 use App\Http\Controllers\Api\BrandingController;
 use App\Http\Controllers\Api\CampaignFunderController;
 use App\Http\Controllers\Api\EnvironmentController;
@@ -13,6 +15,7 @@ use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\ThirdPartyServiceController;
 use App\Http\Controllers\Api\TokenController;
 use App\Http\Controllers\MediaAssetController;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -28,6 +31,26 @@ use Illuminate\Support\Facades\Route;
 
 // Public branding route - returns branding based on domain
 Route::get('/branding/public', [BrandingController::class, 'getPublicBranding']);
+
+// SSO (OIDC) sign-in for academies. redirect() initiates the IdP flow;
+// callback() hands off to the tenant's /auth/switch page via a one-time token.
+// This file bypasses the 'api' middleware group, so SubstituteBindings is
+// listed explicitly for implicit {provider} route-model binding.
+Route::middleware(['web', 'throttle:login'])->group(function () {
+    Route::get('/auth/social/{provider}/redirect', [SocialAuthController::class, 'redirect'])
+        ->where('provider', 'google|facebook|linkedin')
+        ->name('social.auth.redirect');
+    Route::get('/auth/social/{provider}/callback', [SocialAuthController::class, 'callback'])
+        ->where('provider', 'google|facebook|linkedin')
+        ->name('social.auth.callback');
+});
+
+Route::middleware(['throttle:login', SubstituteBindings::class])->group(function () {
+    Route::get('/auth/sso/{provider}/redirect', [SsoAuthController::class, 'redirect'])->name('sso.redirect');
+    Route::get('/auth/sso/callback', [SsoAuthController::class, 'callback'])->name('sso.callback');
+    Route::post('/auth/sso/{provider}/acs', [SsoAuthController::class, 'samlAcs'])->name('sso.samlAcs');
+    Route::get('/auth/sso/{provider}/metadata', [SsoAuthController::class, 'metadata'])->name('sso.metadata');
+});
 
 // Public environment status - returns environment info based on domain
 Route::get('/environment/status', [EnvironmentController::class, 'status']);

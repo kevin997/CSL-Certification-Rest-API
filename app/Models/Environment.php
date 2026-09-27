@@ -51,6 +51,7 @@ class Environment extends Model
         'is_active',
         'domain_verified_at',
         'is_demo',
+        'allow_public_signup',
         'is_centralized_payment_provider',
         'owner_id',
         'description',
@@ -71,6 +72,7 @@ class Environment extends Model
         'is_active' => 'boolean',
         'domain_verified_at' => 'datetime',
         'is_demo' => 'boolean',
+        'allow_public_signup' => 'boolean',
         'is_centralized_payment_provider' => 'boolean',
         'payment_settings' => 'array',
     ];

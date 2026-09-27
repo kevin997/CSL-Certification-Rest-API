@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Branding;
 use App\Models\Environment;
+use App\Models\SocialAuthProvider;
+use App\Models\SsoProvider;
 use App\Scopes\EnvironmentScope;
 use App\Services\Licensing\EntitlementService;
 use App\Support\Tenancy\EnvironmentContext;
@@ -718,6 +720,15 @@ class BrandingController extends Controller
                     // source of truth; the UI must not decide this itself.
                     'licence_branding' => EntitlementService::for($environment)
                         ->featureLevel('kursa_branding') ?? 'visible',
+                    // Public-safe: id + display name only, so the login page can
+                    // render "Continue with …" without exposing client config.
+                    'sso_providers' => SsoProvider::where('environment_id', $environment->id)
+                        ->where('enabled', true)
+                        ->get(['id', 'name']),
+                    'allow_public_signup' => $environment->allow_public_signup,
+                    'social_auth_providers' => SocialAuthProvider::where('environment_id', $environment->id)
+                        ->where('enabled', true)
+                        ->pluck('provider'),
                 ];
 
                 return response()->json([
@@ -752,7 +763,13 @@ class BrandingController extends Controller
                     'font_family' => 'Roboto, sans-serif',
                     'custom_css' => null,
                     'custom_js' => null,
-                    'environment_id' => null,
+                    'environment_id' => $environment?->id,
+                    'allow_public_signup' => $environment?->allow_public_signup ?? false,
+                    'social_auth_providers' => $environment
+                        ? SocialAuthProvider::where('environment_id', $environment->id)
+                            ->where('enabled', true)
+                            ->pluck('provider')
+                        : [],
                 ],
                 'environment' => $environment ? [
                     'id' => $environment->id,
@@ -775,7 +792,13 @@ class BrandingController extends Controller
             'font_family' => $branding->font_family,
             'custom_css' => $branding->custom_css,
             'custom_js' => $branding->custom_js,
-            'environment_id' => $environment->id,
+            'environment_id' => $environment?->id,
+            'allow_public_signup' => $environment?->allow_public_signup ?? false,
+            'social_auth_providers' => $environment
+                ? SocialAuthProvider::where('environment_id', $environment->id)
+                    ->where('enabled', true)
+                    ->pluck('provider')
+                : [],
         ];
 
         return response()->json([

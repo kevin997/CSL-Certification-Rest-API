@@ -8,6 +8,7 @@ use App\Models\Environment;
 use App\Models\EnvironmentUser;
 use App\Models\User;
 use App\Support\EffectiveAuthContext;
+use App\Support\EnvironmentLearnerMembership;
 use App\Support\Tenancy\EnvironmentResolver;
 use App\Support\Tenancy\LoginBindingResolver;
 use App\Support\Tenancy\NoEnvironmentException;
@@ -21,7 +22,7 @@ use Illuminate\Validation\ValidationException;
 
 class SessionAuthController extends Controller
 {
-    public function login(Request $request)
+    public function login(Request $request, EnvironmentLearnerMembership $memberships)
     {
         $request->validate([
             'email' => 'required|email',
@@ -66,6 +67,26 @@ class SessionAuthController extends Controller
             throw ValidationException::withMessages([
                 'credentials' => ['Invalid credentials provided.'],
             ]);
+        }
+
+        if ($environmentId && ! $authenticatedViaEnvironment && ! $user->isAdmin() && ! $user->isSalesAgent()) {
+            $environment = Environment::findActive($environmentId);
+            $resolver = app(EnvironmentResolver::class);
+            $context = $resolver->resolve($request);
+            $currentEnvironment = $context->environment;
+
+            if (! $currentEnvironment && $resolver->isSharedHost($resolver->frontendHost($request))) {
+                $currentEnvironment = $environment;
+            }
+
+            if (
+                $environment
+                && $currentEnvironment
+                && (int) $currentEnvironment->id === (int) $environment->id
+                && $environment->allow_public_signup
+            ) {
+                $memberships->join($user, $environment);
+            }
         }
 
         // Check domain-based role restrictions BEFORE actually logging in

@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\AnalyticsWidgetsController;
 use App\Http\Controllers\Api\AssignmentContentController;
 use App\Http\Controllers\Api\AssignmentSubmissionController;
 use App\Http\Controllers\Api\Auth\AcademySwitchController;
+use App\Http\Controllers\Api\Auth\EnvironmentRegistrationController;
 use App\Http\Controllers\Api\Auth\ForgotPasswordController;
 use App\Http\Controllers\Api\Auth\IdpForgotPasswordController;
 use App\Http\Controllers\Api\Auth\RegisterController;
@@ -97,6 +98,8 @@ use App\Http\Controllers\Api\Sales\SalesFormController;
 use App\Http\Controllers\Api\Sales\SalesFormSubmissionController;
 use App\Http\Controllers\Api\SellerPanelController;
 use App\Http\Controllers\Api\SessionAuthController;
+use App\Http\Controllers\Api\SocialAuthSettingsController;
+use App\Http\Controllers\Api\SsoProviderController;
 use App\Http\Controllers\Api\StorefrontController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\SubscriptionProductController;
@@ -350,7 +353,9 @@ Route::get('/session/user', function (Request $request) {
 })->middleware('auth:sanctum');
 
 // API Authentication Routes
-Route::post('/register', [RegisterController::class, 'register']);
+Route::post('/auth/environment-register', [EnvironmentRegistrationController::class, 'store'])
+    ->middleware('throttle:login');
+Route::post('/register', [RegisterController::class, 'register'])->middleware('throttle:login');
 // Password reset routes with rate limiting
 Route::middleware(['throttle:reset'])->group(function () {
     Route::post('/forgot-password', [ForgotPasswordController::class, 'sendResetLinkEmail']);
@@ -842,6 +847,17 @@ Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
     Route::put('/branding/{brandingId}/popups/{popupId}', [LandingPagePopupController::class, 'update'])->where(['brandingId' => '[0-9]+', 'popupId' => '[0-9]+']);
     Route::delete('/branding/{brandingId}/popups/{popupId}', [LandingPagePopupController::class, 'destroy'])->where(['brandingId' => '[0-9]+', 'popupId' => '[0-9]+']);
     Route::post('/branding/{brandingId}/popups/{popupId}/toggle', [LandingPagePopupController::class, 'toggle'])->where(['brandingId' => '[0-9]+', 'popupId' => '[0-9]+']);
+
+    Route::get('/social-auth/settings', [SocialAuthSettingsController::class, 'index']);
+    Route::put('/social-auth/settings/signup', [SocialAuthSettingsController::class, 'updateSignup']);
+    Route::put('/social-auth/providers/{provider}', [SocialAuthSettingsController::class, 'updateProvider'])
+        ->where('provider', 'google|facebook|linkedin');
+
+    // SSO provider configuration (per-environment OIDC sign-in)
+    Route::get('/sso-providers', [SsoProviderController::class, 'index']);
+    Route::post('/sso-providers', [SsoProviderController::class, 'store']);
+    Route::put('/sso-providers/{ssoProvider}', [SsoProviderController::class, 'update'])->where('ssoProvider', '[0-9]+');
+    Route::delete('/sso-providers/{ssoProvider}', [SsoProviderController::class, 'destroy'])->where('ssoProvider', '[0-9]+');
 
     // Legal Pages Routes (About Us, Privacy Policy, Legal Notice, Terms of Service)
     Route::get('/legal-pages', [LegalPageController::class, 'index']);

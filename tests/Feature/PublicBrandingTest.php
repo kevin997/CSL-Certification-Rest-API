@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Enums\UserRole;
 use App\Models\Branding;
 use App\Models\Environment;
+use App\Models\SocialAuthProvider;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -29,7 +31,7 @@ class PublicBrandingTest extends TestCase
             'company_name' => 'First',
         ]);
 
-        $this->expectException(\Illuminate\Database\QueryException::class);
+        $this->expectException(QueryException::class);
 
         Branding::factory()->create([
             'user_id' => $owner->id,
@@ -84,6 +86,43 @@ class PublicBrandingTest extends TestCase
             ->assertJsonPath('data.primary_color', '#e41b1c')
             ->assertJsonPath('data.environment_id', $environment->id)
             ->assertJsonPath('environment.id', $environment->id);
+    }
+
+    public function test_public_branding_exposes_signup_and_enabled_social_providers_without_credentials(): void
+    {
+        $owner = User::factory()->create();
+        $environment = Environment::factory()->create([
+            'owner_id' => $owner->id,
+            'primary_domain' => 'social.example.com',
+            'allow_public_signup' => true,
+        ]);
+        Branding::factory()->create([
+            'user_id' => $owner->id,
+            'environment_id' => $environment->id,
+            'is_active' => true,
+        ]);
+        SocialAuthProvider::create([
+            'environment_id' => $environment->id,
+            'provider' => 'google',
+            'client_id' => 'public-client-id',
+            'client_secret' => 'private-client-secret',
+            'enabled' => true,
+        ]);
+        SocialAuthProvider::create([
+            'environment_id' => $environment->id,
+            'provider' => 'facebook',
+            'client_id' => 'disabled-client-id',
+            'client_secret' => 'disabled-client-secret',
+            'enabled' => false,
+        ]);
+
+        $response = $this->getJson('/api/branding/public?domain=social.example.com');
+
+        $response->assertOk()
+            ->assertJsonPath('data.allow_public_signup', true);
+        $this->assertSame(['google'], $response->json('data.social_auth_providers'));
+        $this->assertStringNotContainsString('private-client-secret', $response->getContent());
+        $this->assertStringNotContainsString('public-client-id', $response->getContent());
     }
 
     public function test_anonymous_read_ignores_superseded_rows_and_returns_the_live_one(): void
