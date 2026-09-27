@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Environment;
 use App\Models\ThirdPartyService;
+use App\Scopes\EnvironmentScope;
 use App\Services\CertificateGenerationService;
 use App\Support\Tenancy\EnvironmentContext;
 use App\Support\Tenancy\EnvironmentResolver;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -16,12 +19,11 @@ class ThirdPartyServiceController extends Controller
 {
     /**
      * Display a listing of third party services.
-     *
-     * @return JsonResponse
      */
-    public function index(Request $request)
+    public function index(Request $request): JsonResponse
     {
-        $query = ThirdPartyService::query();
+        $environment = $this->authorizeIntegrationManagement($request);
+        $query = $this->servicesForEnvironment($environment);
 
         // Filter by service type if provided
         if ($request->has('service_type')) {
@@ -48,11 +50,10 @@ class ThirdPartyServiceController extends Controller
 
     /**
      * Store a newly created third party service.
-     *
-     * @return JsonResponse
      */
-    public function store(Request $request)
+    public function store(Request $request): JsonResponse
     {
+        $environment = $this->authorizeIntegrationManagement($request);
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
@@ -65,7 +66,7 @@ class ThirdPartyServiceController extends Controller
             'is_active' => 'boolean',
             'service_type' => 'required|string|max:255',
             'config' => 'nullable|array',
-            'environment_id' => 'nullable|integer|exists:environments,id',
+            'environment_id' => 'prohibited',
         ]);
 
         if ($validator->fails()) {
@@ -76,7 +77,9 @@ class ThirdPartyServiceController extends Controller
             ], 422);
         }
 
-        $service = ThirdPartyService::create($request->all());
+        $service = new ThirdPartyService($validator->validated());
+        $service->environment_id = $environment?->id;
+        $service->save();
 
         Log::info('Third party service created', [
             'service_id' => $service->id,
@@ -94,11 +97,11 @@ class ThirdPartyServiceController extends Controller
      * Display the specified third party service.
      *
      * @param  int  $id
-     * @return JsonResponse
      */
-    public function show($id)
+    public function show(Request $request, $id): JsonResponse
     {
-        $service = ThirdPartyService::find($id);
+        $environment = $this->authorizeIntegrationManagement($request);
+        $service = $this->servicesForEnvironment($environment)->find($id);
 
         if (! $service) {
             return response()->json([
@@ -117,11 +120,11 @@ class ThirdPartyServiceController extends Controller
      * Update the specified third party service.
      *
      * @param  int  $id
-     * @return JsonResponse
      */
-    public function update(Request $request, $id)
+    public function update(Request $request, $id): JsonResponse
     {
-        $service = ThirdPartyService::find($id);
+        $environment = $this->authorizeIntegrationManagement($request);
+        $service = $this->servicesForEnvironment($environment)->find($id);
 
         if (! $service) {
             return response()->json([
@@ -142,7 +145,7 @@ class ThirdPartyServiceController extends Controller
             'is_active' => 'boolean',
             'service_type' => 'sometimes|required|string|max:255',
             'config' => 'nullable|array',
-            'environment_id' => 'nullable|integer|exists:environments,id',
+            'environment_id' => 'prohibited',
         ]);
 
         if ($validator->fails()) {
@@ -153,7 +156,7 @@ class ThirdPartyServiceController extends Controller
             ], 422);
         }
 
-        $service->update($request->all());
+        $service->update($validator->validated());
 
         Log::info('Third party service updated', [
             'service_id' => $service->id,
@@ -171,11 +174,11 @@ class ThirdPartyServiceController extends Controller
      * Remove the specified third party service.
      *
      * @param  int  $id
-     * @return JsonResponse
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id): JsonResponse
     {
-        $service = ThirdPartyService::find($id);
+        $environment = $this->authorizeIntegrationManagement($request);
+        $service = $this->servicesForEnvironment($environment)->find($id);
 
         if (! $service) {
             return response()->json([
@@ -201,11 +204,10 @@ class ThirdPartyServiceController extends Controller
      * Refresh the authentication token for a service.
      *
      * @param  int  $id
-     * @return JsonResponse
      */
-    public function refreshToken($id)
+    public function refreshToken(Request $request, $id): JsonResponse
     {
-        $service = ThirdPartyService::find($id);
+        $service = $this->platformService($request, $id);
 
         if (! $service) {
             return response()->json([
@@ -248,11 +250,10 @@ class ThirdPartyServiceController extends Controller
      * Test the connection to a third party service.
      *
      * @param  int  $id
-     * @return JsonResponse
      */
-    public function testConnection($id)
+    public function testConnection(Request $request, $id): JsonResponse
     {
-        $service = ThirdPartyService::find($id);
+        $service = $this->platformService($request, $id);
 
         if (! $service) {
             return response()->json([
@@ -295,11 +296,10 @@ class ThirdPartyServiceController extends Controller
 
     /**
      * Get available service types.
-     *
-     * @return JsonResponse
      */
-    public function getServiceTypes()
+    public function getServiceTypes(Request $request): JsonResponse
     {
+        $this->authorizeIntegrationManagement($request);
         $types = [
             [
                 'value' => 'certificate_generation',
@@ -349,6 +349,36 @@ class ThirdPartyServiceController extends Controller
         ]);
     }
 
+    private function authorizeIntegrationManagement(Request $request): ?Environment
+    {
+        $context = $request->attributes->get(EnvironmentResolver::REQUEST_ATTRIBUTE);
+        $environment = $context instanceof EnvironmentContext && $context->resolved()
+            ? $context->environment
+            : null;
+
+        abort_unless($request->user()?->isStaffIn($environment?->id), 403, 'Unauthorized');
+
+        return $environment;
+    }
+
+    private function servicesForEnvironment(?Environment $environment): Builder
+    {
+        $query = ThirdPartyService::withoutGlobalScope(EnvironmentScope::class);
+
+        return $environment
+            ? $query->where('environment_id', $environment->id)
+            : $query->whereNull('environment_id');
+    }
+
+    private function platformService(Request $request, int|string $id): ?ThirdPartyService
+    {
+        abort_unless($request->user()?->isAdmin(), 403, 'Unauthorized');
+
+        return ThirdPartyService::withoutGlobalScope(EnvironmentScope::class)
+            ->whereNull('environment_id')
+            ->find($id);
+    }
+
     /**
      * Get public WhatsApp configuration for the current environment.
      * Used by learners to see the WhatsApp button in the study room.
@@ -370,7 +400,7 @@ class ThirdPartyServiceController extends Controller
         }
 
         // Query without global scopes to avoid session-based filtering on public route
-        $service = ThirdPartyService::withoutGlobalScopes()
+        $service = ThirdPartyService::withoutGlobalScope(EnvironmentScope::class)
             ->where('service_type', 'whatsapp')
             ->where('environment_id', $environment->id)
             ->where('is_active', true)

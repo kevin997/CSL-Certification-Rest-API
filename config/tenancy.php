@@ -39,7 +39,10 @@ return [
     // 'log' records would-be refusals and lets the request through; any other
     // value, including an unrecognised one, returns 403 { code:
     // environment_required } -- a typo here must not reopen the tenant routes.
-    'environment_guard' => env('TENANCY_ENVIRONMENT_GUARD', 'log'),
+    'environment_guard' => env(
+        'TENANCY_ENVIRONMENT_GUARD',
+        in_array(env('APP_ENV'), ['local', 'testing'], true) ? 'log' : 'enforce',
+    ),
 
     'domain_probe' => [
         'http_timeout_seconds' => (int) env('TENANCY_DOMAIN_PROBE_TIMEOUT', 5),
