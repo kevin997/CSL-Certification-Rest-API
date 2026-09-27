@@ -12,7 +12,6 @@ use App\Services\Tax\TaxZoneService;
 use App\Support\Tenancy\EnvironmentResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -31,10 +30,8 @@ class SubscriptionController extends Controller
 
     /**
      * Get current user's subscription
-     *
-     * @return Response
      */
-    public function current(Request $request)
+    public function current(Request $request): JsonResponse
     {
         try {
             // Try to get user from auth first (if authenticated)
@@ -92,9 +89,8 @@ class SubscriptionController extends Controller
      * Get subscription by ID
      *
      * @param  int  $id
-     * @return Response
      */
-    public function show($id)
+    public function show($id): JsonResponse
     {
         try {
             $user = Auth::user();
@@ -135,9 +131,8 @@ class SubscriptionController extends Controller
      * Get payments for a subscription
      *
      * @param  int  $id
-     * @return Response
      */
-    public function payments($id)
+    public function payments($id): JsonResponse
     {
         try {
             $user = Auth::user();
@@ -181,9 +176,8 @@ class SubscriptionController extends Controller
      * Retry payment for a subscription
      *
      * @param  int  $id
-     * @return Response
      */
-    public function retryPayment(Request $request, $id)
+    public function retryPayment(Request $request, $id): JsonResponse
     {
         try {
             $user = Auth::user();
@@ -265,9 +259,8 @@ class SubscriptionController extends Controller
      * Cancel subscription
      *
      * @param  int  $id
-     * @return Response
      */
-    public function cancel($id)
+    public function cancel($id): JsonResponse
     {
         try {
             $user = Auth::user();
@@ -314,9 +307,8 @@ class SubscriptionController extends Controller
      * Update subscription
      *
      * @param  int  $id
-     * @return Response
      */
-    public function update(Request $request, $id)
+    public function update(Request $request, $id): JsonResponse
     {
         try {
             $user = Auth::user();
