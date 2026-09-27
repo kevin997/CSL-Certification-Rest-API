@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\ThirdPartyService;
+use App\Scopes\EnvironmentScope;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Log;
 
@@ -14,24 +15,28 @@ class ThirdPartyServiceSeeder extends Seeder
     public function run(): void
     {
         // Add certificate generation service
-        ThirdPartyService::firstOrCreate(
-            ['service_type' => 'certificate_generation'],
-            [
-                'name' => 'Certificate Generation Service',
-                'description' => 'Service for generating and managing certificates',
-                'base_url' => env('CERTIFICATE_SERVICE_URL', 'https://gen-certificate.csl-brands.com'),
-                'api_key' => env('CERTIFICATE_SERVICE_API_KEY', ''),
-                'bearer_token' => env('CERTIFICATE_SERVICE_TOKEN', ''),
-                'username' => env('CERTIFICATE_SERVICE_USERNAME', 'admin@cslcertificates.com'),
-                'password' => env(key: 'CERTIFICATE_SERVICE_PASSWORD', default: 'kwbiCamn@1990'),
-                'is_active' => true,
-                'config' => json_encode([
-                    'verify_ssl' => env('CERTIFICATE_SERVICE_VERIFY_SSL', false),
-                    'timeout' => env('CERTIFICATE_SERVICE_TIMEOUT', 30),
-                ]),
-            ]
-        );
-        
+        ThirdPartyService::withoutGlobalScope(EnvironmentScope::class)
+            ->whereNull('environment_id')
+            ->firstOrCreate(
+                ['service_type' => 'certificate_generation'],
+                [
+                    'name' => 'Certificate Generation Service',
+                    'description' => 'Service for generating and managing certificates',
+                    'base_url' => config('services.certificate_generation_seed.base_url'),
+                    'api_key' => config('services.certificate_generation_seed.api_key'),
+                    'bearer_token' => config('services.certificate_generation_seed.bearer_token'),
+                    'username' => config('services.certificate_generation_seed.username'),
+                    'password' => config('services.certificate_generation_seed.password'),
+                    'is_active' => filled(config('services.certificate_generation_seed.bearer_token'))
+                        || (filled(config('services.certificate_generation_seed.username'))
+                            && filled(config('services.certificate_generation_seed.password'))),
+                    'config' => [
+                        'verify_ssl' => config('services.certificate_generation_seed.verify_ssl'),
+                        'timeout' => config('services.certificate_generation_seed.timeout'),
+                    ],
+                ]
+            );
+
         Log::info('Certificate Generation Service seeding completed');
     }
 }

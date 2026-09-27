@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Scopes\EnvironmentScope;
 use App\Traits\BelongsToEnvironment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -9,7 +10,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ThirdPartyService extends Model
 {
-    use HasFactory, SoftDeletes, BelongsToEnvironment;
+    use BelongsToEnvironment, HasFactory, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -17,7 +18,6 @@ class ThirdPartyService extends Model
      * @var array<int, string>
      */
     protected $fillable = [
-        'environment_id',
         'name',
         'description',
         'base_url',
@@ -31,25 +31,37 @@ class ThirdPartyService extends Model
         'config',
     ];
 
+    protected $hidden = [
+        'api_key',
+        'api_secret',
+        'bearer_token',
+        'username',
+        'password',
+    ];
+
     /**
      * The attributes that should be cast.
      *
      * @var array<string, string>
      */
     protected $casts = [
+        'api_key' => 'encrypted',
+        'api_secret' => 'encrypted',
+        'bearer_token' => 'encrypted',
+        'username' => 'encrypted',
+        'password' => 'encrypted',
         'is_active' => 'boolean',
         'config' => 'json',
     ];
 
     /**
      * Get a service by its type
-     *
-     * @param string $type
-     * @return ThirdPartyService|null
      */
     public static function getServiceByType(string $type): ?ThirdPartyService
     {
-        return self::where('service_type', $type)
+        return self::withoutGlobalScope(EnvironmentScope::class)
+            ->whereNull('environment_id')
+            ->where('service_type', $type)
             ->where('is_active', true)
             ->first();
     }

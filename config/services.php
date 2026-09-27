@@ -167,6 +167,16 @@ return [
         ],
     ],
 
+    'certificate_generation_seed' => [
+        'base_url' => env('CERTIFICATE_SERVICE_URL', 'https://gen-certificate.csl-brands.com'),
+        'api_key' => env('CERTIFICATE_SERVICE_API_KEY'),
+        'bearer_token' => env('CERTIFICATE_SERVICE_TOKEN'),
+        'username' => env('CERTIFICATE_SERVICE_USERNAME'),
+        'password' => env('CERTIFICATE_SERVICE_PASSWORD'),
+        'verify_ssl' => (bool) env('CERTIFICATE_SERVICE_VERIFY_SSL', true),
+        'timeout' => (int) env('CERTIFICATE_SERVICE_TIMEOUT', 30),
+    ],
+
     // Certificate microservice. The endpoint and credentials live on the
     // ThirdPartyService row ('certificate_generation'), not here; this is only
     // the QR destination, which is a deployment decision rather than a tenant one.
