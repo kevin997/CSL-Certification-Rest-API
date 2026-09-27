@@ -3,7 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Environment;
 use App\Models\MarketingAutomation;
+use App\Scopes\EnvironmentScope;
+use App\Support\Tenancy\EnvironmentContext;
+use App\Support\Tenancy\EnvironmentResolver;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -16,9 +21,13 @@ class MarketingAutomationController extends Controller
     /**
      * All four triggers, merged with defaults for triggers without a row.
      */
-    public function index(Request $request)
+    public function index(Request $request): JsonResponse
     {
-        $existing = MarketingAutomation::all()->keyBy('trigger');
+        $environment = $this->authorizedEnvironment($request);
+        $existing = MarketingAutomation::withoutGlobalScope(EnvironmentScope::class)
+            ->where('environment_id', $environment->id)
+            ->get()
+            ->keyBy('trigger');
 
         $automations = collect(MarketingAutomation::TRIGGERS)->map(function (string $trigger) use ($existing) {
             $row = $existing->get($trigger);
@@ -46,8 +55,10 @@ class MarketingAutomationController extends Controller
     /**
      * Upsert the automation config for one trigger.
      */
-    public function upsert(Request $request, string $trigger)
+    public function upsert(Request $request, string $trigger): JsonResponse
     {
+        $environment = $this->authorizedEnvironment($request);
+
         if (! in_array($trigger, MarketingAutomation::TRIGGERS, true)) {
             return response()->json([
                 'success' => false,
@@ -65,6 +76,7 @@ class MarketingAutomationController extends Controller
             'whatsapp_template' => 'nullable|string|max:4000',
             'config' => 'nullable|array',
             'config.abandoned_delay_hours' => 'nullable|integer|min:1|max:168',
+            'environment_id' => 'prohibited',
         ]);
 
         if ($validator->fails()) {
@@ -77,8 +89,8 @@ class MarketingAutomationController extends Controller
 
         $data = $validator->validated();
 
-        $automation = MarketingAutomation::updateOrCreate(
-            ['trigger' => $trigger],
+        $automation = MarketingAutomation::withoutGlobalScope(EnvironmentScope::class)->updateOrCreate(
+            ['environment_id' => $environment->id, 'trigger' => $trigger],
             [
                 'enabled' => $data['enabled'],
                 'channels' => array_values(array_unique($data['channels'])),
@@ -93,7 +105,19 @@ class MarketingAutomationController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Automation saved.',
-            'data' => $automation->fresh(),
+            'data' => $automation,
         ]);
+    }
+
+    private function authorizedEnvironment(Request $request): Environment
+    {
+        $context = $request->attributes->get(EnvironmentResolver::REQUEST_ATTRIBUTE);
+        $environment = $context instanceof EnvironmentContext && $context->resolved()
+            ? $context->environment
+            : null;
+
+        abort_unless($environment && $request->user()?->isStaffIn($environment->id), 403, 'Unauthorized');
+
+        return $environment;
     }
 }
