@@ -2,7 +2,6 @@
 
 namespace App\Providers;
 
-use App\Listeners\MailBackupWithAttachment;
 use App\Mail\PHPMailerTransport;
 use App\Models\Environment;
 use App\Models\User;
@@ -12,12 +11,10 @@ use App\Support\Tenancy\TenantUrl;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
-use Spatie\Backup\Events\BackupZipWasCreated;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -43,12 +40,6 @@ class AppServiceProvider extends ServiceProvider
         Mail::extend('phpmailer', function (array $config = []) {
             return new PHPMailerTransport($config);
         });
-
-        // Register backup email with attachment listener
-        Event::listen(
-            BackupZipWasCreated::class,
-            MailBackupWithAttachment::class
-        );
 
         // Point password reset links at the learner's own environment
         $this->configurePasswordResetUrl();
