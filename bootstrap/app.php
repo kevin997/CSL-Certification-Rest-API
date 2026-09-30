@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\MarketingBounceReportController;
 use App\Http\Controllers\Api\MarketingConsentCheckController;
 use App\Http\Middleware\BrandingMiddleware;
 use App\Http\Middleware\ChatRateLimitMiddleware;
@@ -36,6 +37,8 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->middleware(['marketing.private', 'throttle:public-api'])
                 ->group(function (): void {
                     Route::post('/private/marketing/consent-check', MarketingConsentCheckController::class)
+                        ->middleware('marketing.service');
+                    Route::post('/private/marketing/bounces', MarketingBounceReportController::class)
                         ->middleware('marketing.service');
                 });
 

@@ -5,6 +5,8 @@ namespace App\Providers;
 use App\Mail\PHPMailerTransport;
 use App\Models\Environment;
 use App\Models\User;
+use App\Support\Mail\BounceMailbox;
+use App\Support\Mail\ImapBounceMailbox;
 use App\Support\Tenancy\DnsHttpDomainProbe;
 use App\Support\Tenancy\DomainProbe;
 use App\Support\Tenancy\TenantUrl;
@@ -24,6 +26,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(DomainProbe::class, DnsHttpDomainProbe::class);
+        $this->app->bind(BounceMailbox::class, fn (): BounceMailbox => new ImapBounceMailbox((array) config('mail.bounce_mailbox')));
     }
 
     /**

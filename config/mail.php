@@ -49,7 +49,7 @@ return [
             'encryption' => env('PHPMAILER_ENCRYPTION', 'ssl'),
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url(env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
-        
+
         'phpmailer' => [
             'transport' => 'phpmailer',
             'host' => env('PHPMAILER_HOST', 'smtp.hostinger.com'),
@@ -132,6 +132,28 @@ return [
     'from' => [
         'address' => env('PHPMAILER_USERNAME', 'no.reply@okenlysolutions.com'),
         'name' => env('MAIL_FROM_NAME', 'KURSA'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Bounce Mailbox
+    |--------------------------------------------------------------------------
+    |
+    | Hostinger's relay returns bounces as emails to the sender address above.
+    | mail:collect-bounces reads them over IMAP and blocks every address that
+    | hard-bounced, so digests and campaigns stop retrying mailboxes that do
+    | not exist. It is skipped while no credentials are set.
+    |
+    */
+
+    'bounce_mailbox' => [
+        'host' => env('BOUNCE_IMAP_HOST', 'imap.hostinger.com'),
+        'port' => (int) env('BOUNCE_IMAP_PORT', 993),
+        'encryption' => env('BOUNCE_IMAP_ENCRYPTION', 'ssl'),
+        'username' => env('BOUNCE_IMAP_USERNAME', env('PHPMAILER_USERNAME')),
+        'password' => env('BOUNCE_IMAP_PASSWORD', env('PHPMAILER_PASSWORD')),
+        'folders' => ['INBOX', 'INBOX.Trash', 'INBOX.Junk'],
+        'processed_folder' => env('BOUNCE_IMAP_PROCESSED_FOLDER', 'INBOX.Bounces'),
     ],
 
 ];

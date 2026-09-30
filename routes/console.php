@@ -1,6 +1,7 @@
 <?php
 
 use App\Console\Commands\BroadcastGroupTipCommand;
+use App\Console\Commands\CollectEmailBounces;
 use App\Console\Commands\GenerateMarketingContentCommand;
 use App\Console\Commands\GenerateMonthlyInvoices;
 use App\Console\Commands\IndexKnowledgeCommand;
@@ -278,6 +279,13 @@ Schedule::command(SendLicenceReminders::class)
     ->dailyAt('09:30')
     ->timezone('Africa/Douala')
     ->withoutOverlapping(3600)
+    ->onOneServer()
+    ->runInBackground();
+
+// Bounces: block addresses that hard-bounced before the next digest or campaign retries them - every 15 minutes
+Schedule::command(CollectEmailBounces::class)
+    ->everyFifteenMinutes()
+    ->withoutOverlapping(30)
     ->onOneServer()
     ->runInBackground();
 
