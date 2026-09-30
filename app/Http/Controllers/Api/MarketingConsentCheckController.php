@@ -3,11 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\EmailSuppression;
 use App\Models\MarketingConsent;
-use App\Models\SalesFormSubmission;
+use App\Support\Marketing\MarketingRecipientReference;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Crypt;
 
 class MarketingConsentCheckController extends Controller
 {
@@ -19,13 +19,19 @@ class MarketingConsentCheckController extends Controller
             'channel' => ['required', 'string', 'in:email,whatsapp'],
         ]);
 
-        $submission = $this->submissionFromReference(
+        $submission = MarketingRecipientReference::submission(
             $validated['recipient_ref'],
             (int) $validated['environment_id'],
         );
 
         if (! $submission) {
             return $this->json(['message' => 'The recipient reference is invalid.'], 422);
+        }
+
+        // The marketing service asks this before every send, so a hard-bounced
+        // address is refused here too — whichever provider it would go out on.
+        if ($validated['channel'] === 'email' && EmailSuppression::isSuppressed((string) $submission->email)) {
+            return $this->json(['granted' => false]);
         }
 
         $state = MarketingConsent::withoutGlobalScopes()
@@ -51,28 +57,5 @@ class MarketingConsentCheckController extends Controller
         return response(json_encode($body, JSON_THROW_ON_ERROR), $status, [
             'Content-Type' => 'application/json',
         ]);
-    }
-
-    private function submissionFromReference(string $reference, int $environmentId): ?SalesFormSubmission
-    {
-        try {
-            $payload = json_decode(Crypt::decryptString($reference), true, 512, JSON_THROW_ON_ERROR);
-        } catch (\Throwable) {
-            return null;
-        }
-
-        if (! is_array($payload)
-            || count($payload) !== 2
-            || array_diff(array_keys($payload), ['environment_id', 'submission_id']) !== []
-            || ! is_int($payload['environment_id'])
-            || ! is_int($payload['submission_id'])
-            || $payload['environment_id'] !== $environmentId) {
-            return null;
-        }
-
-        return SalesFormSubmission::withoutGlobalScopes()
-            ->where('environment_id', $environmentId)
-            ->whereKey($payload['submission_id'])
-            ->first();
     }
 }

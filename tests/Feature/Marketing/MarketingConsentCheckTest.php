@@ -3,6 +3,7 @@
 namespace Tests\Feature\Marketing;
 
 use App\Models\Branding;
+use App\Models\EmailSuppression;
 use App\Models\Environment;
 use App\Models\MarketingConsent;
 use App\Models\SalesForm;
@@ -43,6 +44,23 @@ class MarketingConsentCheckTest extends TestCase
             ->assertOk()
             ->assertExactJson(['granted' => false]);
 
+        $this->consentCheck($this->environment, $submission, 'whatsapp')
+            ->assertOk()
+            ->assertExactJson(['granted' => true]);
+    }
+
+    public function test_a_hard_bounced_address_is_refused_even_with_consent(): void
+    {
+        $submission = $this->submission($this->environment);
+        MarketingConsent::grant($submission, 'email', 'sales_form', '2026-09', CarbonImmutable::now());
+        MarketingConsent::grant($submission, 'whatsapp', 'sales_form', '2026-09', CarbonImmutable::now());
+        EmailSuppression::recordHardBounce(strtoupper($submission->email), '5.1.1', null, 'bounce_mailbox', now());
+
+        $this->consentCheck($this->environment, $submission, 'email')
+            ->assertOk()
+            ->assertExactJson(['granted' => false]);
+
+        // The bounce is about the mailbox, not the person: WhatsApp still works.
         $this->consentCheck($this->environment, $submission, 'whatsapp')
             ->assertOk()
             ->assertExactJson(['granted' => true]);
