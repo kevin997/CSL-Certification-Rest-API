@@ -91,6 +91,12 @@ return [
     ],
 
     // WhatsApp sending via the Wachap API (same platform account as shopikat).
+    'waha' => [
+        'base_url' => env('WAHA_BASE_URL'),
+        'api_key' => env('WAHA_API_KEY'),
+        'session' => env('WAHA_SESSION', 'kursa'),
+    ],
+
     'wachap' => [
         'base_url' => env('WACHAP_API_BASE_URL', 'https://api.wachap.com'),
         'token' => env('WACHAP_API_TOKEN'),
