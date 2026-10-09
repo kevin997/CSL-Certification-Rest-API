@@ -74,8 +74,9 @@ class WahaSessionController extends Controller
                 return response()->json(['status' => 'EXISTS', 'session' => $this->session()]);
             }
             $response->throw();
+            $this->request()->post($this->baseUrl().'/api/sessions/'.rawurlencode($this->session()).'/start')->throw();
 
-            return response()->json(['status' => $response->json('status'), 'session' => $this->session()]);
+            return response()->json(['status' => 'STARTING', 'session' => $this->session()]);
         } catch (\Throwable) {
             return response()->json(['message' => 'Could not create WAHA session'], 503);
         }
@@ -112,7 +113,10 @@ class WahaSessionController extends Controller
             return response()->json(['message' => 'WAHA is not configured'], 503);
         }
         try {
-            $this->request()->post($this->baseUrl().'/api/sessions/'.rawurlencode($this->session()).'/restart')->throw();
+            $sessionUrl = $this->baseUrl().'/api/sessions/'.rawurlencode($this->session());
+            $status = $this->request()->get($sessionUrl)->throw()->json('status');
+            $action = $status === 'STOPPED' ? 'start' : 'restart';
+            $this->request()->post($sessionUrl.'/'.$action)->throw();
 
             return response()->json(['status' => 'STARTING', 'session' => $this->session()]);
         } catch (\Throwable) {

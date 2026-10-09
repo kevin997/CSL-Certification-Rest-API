@@ -40,10 +40,12 @@ class WahaSessionTest extends TestCase
         Sanctum::actingAs(User::factory()->create(['role' => 'super_admin']));
         Http::fake([
             'https://waha.test/api/sessions/kursa' => Http::response(['status' => 'SCAN_QR_CODE'], 200),
-            'https://waha.test/api/sessions' => Http::response(['status' => 'STARTING'], 201),
+            'https://waha.test/api/sessions' => Http::response(['status' => 'STOPPED'], 201),
+            'https://waha.test/api/sessions/kursa/start' => Http::response(['status' => 'STARTING'], 201),
             'https://waha.test/api/kursa/auth/qr*' => Http::response(['mimetype' => 'image/png', 'data' => 'aGVsbG8='], 200),
         ]);
         $this->postJson('/api/admin/whatsapp/waha')->assertOk()->assertJsonPath('session', 'kursa');
+        Http::assertSent(fn ($request) => $request->method() === 'POST' && $request->url() === 'https://waha.test/api/sessions/kursa/start');
         $this->getJson('/api/admin/whatsapp/waha')->assertOk()->assertJsonPath('status', 'SCAN_QR_CODE');
         $this->getJson('/api/admin/whatsapp/waha/qr')->assertOk()->assertJsonPath('qr', 'data:image/png;base64,aGVsbG8=');
     }
