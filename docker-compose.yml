@@ -32,6 +32,9 @@ services:
       - BUNNY_STREAM_TOKEN_AUTH_KEY=${BUNNY_STREAM_TOKEN_AUTH_KEY}
       - BUNNY_STREAM_WEBHOOK_SECRET=${BUNNY_STREAM_WEBHOOK_SECRET}
       - BUNNY_STREAM_COLLECTION_ID=${BUNNY_STREAM_COLLECTION_ID}
+      - WAHA_BASE_URL=${WAHA_BASE_URL:-}
+      - WAHA_API_KEY=${WAHA_API_KEY:-}
+      - WAHA_SESSION=${WAHA_SESSION:-kursa}
       - WACHAP_API_BASE_URL=${WACHAP_API_BASE_URL:-https://api.wachap.com}
       - WACHAP_API_TOKEN=${WACHAP_API_TOKEN}
       - WACHAP_ACCOUNT_ID=${WACHAP_ACCOUNT_ID}
@@ -64,6 +67,9 @@ services:
       - app-storage:/var/www/html/storage
     environment:
       - CONTAINER_ROLE=queue
+      - WAHA_BASE_URL=${WAHA_BASE_URL:-}
+      - WAHA_API_KEY=${WAHA_API_KEY:-}
+      - WAHA_SESSION=${WAHA_SESSION:-kursa}
       - WACHAP_API_BASE_URL=${WACHAP_API_BASE_URL:-https://api.wachap.com}
       - WACHAP_API_TOKEN=${WACHAP_API_TOKEN}
       - WACHAP_ACCOUNT_ID=${WACHAP_ACCOUNT_ID}
@@ -138,6 +144,9 @@ services:
       - app-backups:/var/www/html/storage/app/backups
     environment:
       - CONTAINER_ROLE=scheduler
+      - WAHA_BASE_URL=${WAHA_BASE_URL:-}
+      - WAHA_API_KEY=${WAHA_API_KEY:-}
+      - WAHA_SESSION=${WAHA_SESSION:-kursa}
       - WACHAP_API_BASE_URL=${WACHAP_API_BASE_URL:-https://api.wachap.com}
       - WACHAP_API_TOKEN=${WACHAP_API_TOKEN}
       - WACHAP_ACCOUNT_ID=${WACHAP_ACCOUNT_ID}

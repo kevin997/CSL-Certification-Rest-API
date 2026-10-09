@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Admin\DomainVerificationController;
 use App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController;
 use App\Http\Controllers\Api\Admin\PasswordLinkController;
 use App\Http\Controllers\Api\Admin\SystemDashboardController;
+use App\Http\Controllers\Api\Admin\WahaSessionController;
 use App\Http\Controllers\Api\Admin\WithdrawalRequestController;
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AnalyticsWidgetsController;
@@ -1283,6 +1284,11 @@ Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
         Route::get('/{id}', [CentralizedTransactionController::class, 'show']);
         Route::put('/{id}', [CentralizedTransactionController::class, 'update']);
     });
+
+    Route::get('/whatsapp/waha', [WahaSessionController::class, 'show'])->middleware('throttle:30,1');
+    Route::post('/whatsapp/waha', [WahaSessionController::class, 'create'])->middleware('throttle:5,1');
+    Route::get('/whatsapp/waha/qr', [WahaSessionController::class, 'qr'])->middleware('throttle:30,1');
+    Route::post('/whatsapp/waha/restart', [WahaSessionController::class, 'restart'])->middleware('throttle:5,1');
 
     // Owner password-set link re-send. Onboarding emails the link once from an
     // unrelated sender domain, so it is frequently never seen; the stored token

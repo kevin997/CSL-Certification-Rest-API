@@ -24,6 +24,9 @@ services:
     restart: unless-stopped
     environment:
       CONTAINER_ROLE: app
+      WAHA_BASE_URL: ${WAHA_BASE_URL:-}
+      WAHA_API_KEY: ${WAHA_API_KEY:-}
+      WAHA_SESSION: ${WAHA_SESSION:-kursa}
     ports:
       - "${APP_HOST_PORT:-8080}:80"
     networks:
@@ -68,6 +71,9 @@ services:
     restart: unless-stopped
     environment:
       CONTAINER_ROLE: worker
+      WAHA_BASE_URL: ${WAHA_BASE_URL:-}
+      WAHA_API_KEY: ${WAHA_API_KEY:-}
+      WAHA_SESSION: ${WAHA_SESSION:-kursa}
     # The image healthcheck curls a web port this container does not serve, so
     # check the work instead. Not supervisord itself: it stays up and reports
     # healthy with zero programs configured, which is exactly how this container

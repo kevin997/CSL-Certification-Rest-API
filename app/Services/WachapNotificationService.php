@@ -12,11 +12,73 @@ use Illuminate\Support\Facades\Http;
  */
 class WachapNotificationService
 {
+    public static function wahaConfigured(): bool
+    {
+        return filled(config('services.waha.base_url'))
+            && filled(config('services.waha.api_key'))
+            && filled(config('services.waha.session'));
+    }
+
+    public static function wahaConnected(): bool
+    {
+        if (! self::wahaConfigured()) {
+            return false;
+        }
+
+        try {
+            $response = Http::withHeader('X-Api-Key', (string) config('services.waha.api_key'))
+                ->acceptJson()->connectTimeout(3)->timeout(5)
+                ->get(rtrim((string) config('services.waha.base_url'), '/').'/api/sessions/'.rawurlencode((string) config('services.waha.session')));
+
+            return $response->successful() && $response->json('status') === 'WORKING';
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function wahaPost(string $path, array $payload): Response
+    {
+        return Http::withHeader('X-Api-Key', (string) config('services.waha.api_key'))
+            ->acceptJson()->connectTimeout(5)->timeout(20)
+            ->post(rtrim((string) config('services.waha.base_url'), '/').$path, $payload)
+            ->throw();
+    }
+
+    private function wahaChatId(string $phoneNumber): string
+    {
+        return (string) preg_replace('/\D+/', '', $phoneNumber).'@c.us';
+    }
+
+    private function fileMimeType(string $url, string $filename = ''): string
+    {
+        $path = parse_url($filename !== '' ? $filename : $url, PHP_URL_PATH) ?: '';
+
+        return match (strtolower(pathinfo($path, PATHINFO_EXTENSION))) {
+            'png' => 'image/png',
+            'gif' => 'image/gif',
+            'webp' => 'image/webp',
+            'pdf' => 'application/pdf',
+            'doc' => 'application/msword',
+            'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'txt' => 'text/plain',
+            default => 'image/jpeg',
+        };
+    }
+
     /**
      * Send a text message via WhatsApp.
      */
     public function sendWhatsApp(string $phoneNumber, string $message): Response
     {
+        if (self::wahaConnected()) {
+            return $this->wahaPost('/api/sendText', [
+                'session' => config('services.waha.session'),
+                'chatId' => $this->wahaChatId($phoneNumber),
+                'text' => $message,
+            ]);
+        }
+
         return $this->send([
             'to' => $phoneNumber,
             'type' => 'text',
@@ -31,6 +93,15 @@ class WachapNotificationService
      */
     public function sendImage(string $phoneNumber, array $imageData): Response
     {
+        if (self::wahaConnected()) {
+            return $this->wahaPost('/api/sendImage', [
+                'session' => config('services.waha.session'),
+                'chatId' => $this->wahaChatId($phoneNumber),
+                'file' => ['url' => $imageData['url'], 'mimetype' => $this->fileMimeType($imageData['url'])],
+                'caption' => $imageData['caption'] ?? '',
+            ]);
+        }
+
         return $this->send([
             'to' => $phoneNumber,
             'type' => 'image',
@@ -45,6 +116,15 @@ class WachapNotificationService
      */
     public function sendDocument(string $phoneNumber, array $documentData): Response
     {
+        if (self::wahaConnected()) {
+            return $this->wahaPost('/api/sendFile', [
+                'session' => config('services.waha.session'),
+                'chatId' => $this->wahaChatId($phoneNumber),
+                'file' => ['url' => $documentData['url'], 'filename' => $documentData['filename'] ?? basename(parse_url($documentData['url'], PHP_URL_PATH) ?: 'document'), 'mimetype' => $this->fileMimeType($documentData['url'], $documentData['filename'] ?? '')],
+                'caption' => $documentData['caption'] ?? '',
+            ]);
+        }
+
         return $this->send([
             'to' => $phoneNumber,
             'type' => 'document',
@@ -61,6 +141,23 @@ class WachapNotificationService
      */
     public function postStatus(string $type, string $content, array $options = []): Response
     {
+        if (self::wahaConnected()) {
+            $path = '/api/'.rawurlencode((string) config('services.waha.session')).'/status/'.$type;
+            if ($type === 'text') {
+                return $this->wahaPost($path, [
+                    'text' => $content,
+                    'backgroundColor' => $options['backgroundColor'] ?? config('services.wachap.status_bg'),
+                    'font' => $options['font'] ?? config('services.wachap.status_font'),
+                ]);
+            }
+            if (in_array($type, ['image', 'video'], true)) {
+                return $this->wahaPost($path, [
+                    'file' => ['url' => $content, 'mimetype' => $type === 'video' ? 'video/mp4' : $this->fileMimeType($content)],
+                    'caption' => $options['caption'] ?? '',
+                ]);
+            }
+        }
+
         return $this->post('/v1/whatsapp/status/post', array_merge([
             'accountId' => config('services.wachap.account_id'),
             'type' => $type,
@@ -74,6 +171,14 @@ class WachapNotificationService
      */
     public function sendGroupMessage(string $groupJid, string $content, string $type = 'text'): Response
     {
+        if ($type === 'text' && self::wahaConnected()) {
+            return $this->wahaPost('/api/sendText', [
+                'session' => config('services.waha.session'),
+                'chatId' => $groupJid,
+                'text' => $content,
+            ]);
+        }
+
         return $this->post('/v1/whatsapp/groups/send', [
             'accountId' => config('services.wachap.account_id'),
             'groupJid' => $groupJid,
@@ -88,6 +193,14 @@ class WachapNotificationService
      */
     public function sendChannelMessage(string $newsletterJid, string $content, string $type = 'text'): Response
     {
+        if ($type === 'text' && self::wahaConnected()) {
+            return $this->wahaPost('/api/sendText', [
+                'session' => config('services.waha.session'),
+                'chatId' => $newsletterJid,
+                'text' => $content,
+            ]);
+        }
+
         return $this->post('/v1/whatsapp/newsletters/send', [
             'accountId' => config('services.wachap.account_id'),
             'newsletterJid' => $newsletterJid,
@@ -103,7 +216,7 @@ class WachapNotificationService
      * never a hard gate on sending).
      *
      * @param  array<int, string>  $phones  E.164 numbers.
-     * @return array<int, string>  the subset that are on WhatsApp.
+     * @return array<int, string> the subset that are on WhatsApp.
      */
     public function validWhatsAppNumbers(array $phones): array
     {
@@ -111,6 +224,10 @@ class WachapNotificationService
 
         if ($phones === []) {
             return [];
+        }
+
+        if (self::wahaConnected()) {
+            return $phones;
         }
 
         try {
@@ -158,9 +275,9 @@ class WachapNotificationService
      */
     public static function isConfigured(): bool
     {
-        return filled(config('services.wachap.base_url'))
+        return self::wahaConfigured() || (filled(config('services.wachap.base_url'))
             && filled(config('services.wachap.token'))
-            && filled(config('services.wachap.account_id'));
+            && filled(config('services.wachap.account_id')));
     }
 
     /**
@@ -170,10 +287,14 @@ class WachapNotificationService
      */
     private function send(array $data): Response
     {
+        if (! filled(config('services.wachap.token')) || ! filled(config('services.wachap.account_id'))) {
+            throw new \RuntimeException('No connected WAHA session or configured Wachap account');
+        }
+
         $baseUrl = rtrim((string) config('services.wachap.base_url'), '/');
 
         return Http::withToken((string) config('services.wachap.token'))
-            ->acceptJson()
+            ->acceptJson()->connectTimeout(5)->timeout(20)
             ->post($baseUrl.'/v1/whatsapp/messages/send', [
                 'data' => array_merge([
                     'accountId' => config('services.wachap.account_id'),
@@ -193,7 +314,7 @@ class WachapNotificationService
         $baseUrl = rtrim((string) config('services.wachap.base_url'), '/');
 
         return Http::withToken((string) config('services.wachap.token'))
-            ->acceptJson()
+            ->acceptJson()->connectTimeout(5)->timeout(20)
             ->post($baseUrl.$path, $body)
             ->throw();
     }
