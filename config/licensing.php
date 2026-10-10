@@ -23,6 +23,11 @@ return [
 
     'currency' => 'USD',
 
+    'teacher_referrals' => [
+        'reward_type' => env('TEACHER_REFERRAL_REWARD_TYPE', 'percentage'),
+        'reward_value' => (float) env('TEACHER_REFERRAL_REWARD_VALUE', 10),
+    ],
+
     // Canonical licence prices (doc §4.2 / §4.3). NO setup fee (§9.4).
     'prices' => [
         'creator_monthly' => 20.00,

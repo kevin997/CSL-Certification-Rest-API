@@ -7,6 +7,7 @@ use App\Models\InstructorCommission;
 use App\Models\Order;
 use App\Models\Transaction;
 use App\Services\PaymentGateways\PaymentGatewayFactory;
+use App\Services\TeacherReferralService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -196,6 +197,10 @@ class RefundService
                 $parent->refund_reason = $locked->refund_reason;
             }
             $parent->save();
+
+            if ($isFull) {
+                app(TeacherReferralService::class)->reverseForFullRefund($parent);
+            }
 
             $commissionReport = $this->reverseCommissions($parent);
             $orderReport = $this->deriveOrder($parent, $isFull);

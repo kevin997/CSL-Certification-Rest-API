@@ -10,6 +10,7 @@ use App\Models\Plan;
 use App\Models\User;
 use App\Services\Licensing\EntitlementService;
 use App\Services\Licensing\LicenceService;
+use App\Services\TeacherReferralService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -69,6 +70,10 @@ class LicenceController extends Controller
             $payloadValidator = Validator::make($request->all(), $this->onboardingRules());
             if ($payloadValidator->fails()) {
                 return response()->json(['status' => 'error', 'errors' => $payloadValidator->errors()], 422);
+            }
+
+            if ($request->filled('referral_code') && ! app(TeacherReferralService::class)->validCode($request->input('referral_code'))) {
+                return response()->json(['status' => 'error', 'message' => 'Invalid teacher referral code.'], 422);
             }
 
             $checkout = $this->licenceService->createCheckout([
@@ -276,6 +281,10 @@ class LicenceController extends Controller
         $validator = Validator::make($request->all(), $this->onboardingRules());
         if ($validator->fails()) {
             return response()->json(['status' => 'error', 'errors' => $validator->errors()], 422);
+        }
+
+        if ($request->filled('referral_code') && ! app(TeacherReferralService::class)->validCode($request->input('referral_code'))) {
+            return response()->json(['status' => 'error', 'message' => 'Invalid teacher referral code.'], 422);
         }
 
         try {
