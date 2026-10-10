@@ -104,6 +104,7 @@ use App\Http\Controllers\Api\SsoProviderController;
 use App\Http\Controllers\Api\StorefrontController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\SubscriptionProductController;
+use App\Http\Controllers\Api\TeacherReferralController;
 use App\Http\Controllers\Api\TeamController;
 use App\Http\Controllers\Api\TemplateActivityQuestionController;
 use App\Http\Controllers\Api\TemplateController;
@@ -159,6 +160,8 @@ Route::prefix('onboarding')->group(function () {
     // Get available plans
     Route::get('/plans', [PlanController::class, 'getOnboardingPlans']);
     Route::post('/referral/validate', [ReferralController::class, 'validate']);
+    Route::post('/teacher-referral/validate', [TeacherReferralController::class, 'validateCode'])
+        ->middleware('throttle:30,1');
 
     // Validation routes.
     //
@@ -199,6 +202,8 @@ Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
     Route::post('/environment-licences/trial', [LicenceController::class, 'startTrial']);
     Route::post('/environment-licences/cancel', [LicenceController::class, 'cancel']);
 });
+
+Route::middleware('auth:sanctum')->get('/teacher-referrals/me', [TeacherReferralController::class, 'mine']);
 
 // Queue status endpoint
 Route::get('/health/queue', function () {

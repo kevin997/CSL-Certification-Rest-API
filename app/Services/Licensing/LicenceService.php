@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Notifications\EnvironmentCreatedNotification;
 use App\Services\PlatformPaymentService;
 use App\Services\Tax\TaxZoneService;
+use App\Services\TeacherReferralService;
 use App\Services\TelegramService;
 use App\Support\PhoneNumber;
 use App\Support\Tenancy\SwitchTokenIssuer;
@@ -330,6 +331,7 @@ class LicenceService
         $this->activatePaidLicence($environment, $checkout->plan_type, $transaction->id);
 
         $checkout->save();
+        app(TeacherReferralService::class)->qualify($environment, $checkout, $transaction);
     }
 
     /**
@@ -501,6 +503,8 @@ class LicenceService
         $environment->users()->syncWithoutDetaching([
             $user->id => ['role' => 'owner', 'joined_at' => now()],
         ]);
+
+        app(TeacherReferralService::class)->attribute($environment, $user, $payload['referral_code'] ?? null);
 
         $passwordSetUrl = $this->sendPasswordSetLink($user, $environment);
 
