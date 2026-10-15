@@ -17,6 +17,7 @@ use App\Models\SalesForm;
 use App\Models\SalesFormSubmission;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Support\Sales\SalesFormCheckoutToken;
 use App\Support\Tenancy\TenantUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -287,6 +288,7 @@ class SalesFormSubmissionController extends Controller
                     'status' => $order->status,
                     // A completed (free) order must never surface a payment link.
                     'payment_url' => $isFree ? null : $order->continue_payment_url,
+                    'checkout_token' => $isFree ? null : SalesFormCheckoutToken::issue($order),
                     'payment_type' => $isFree ? 'free' : 'payment',
                 ];
             }
@@ -341,6 +343,35 @@ class SalesFormSubmissionController extends Controller
                 'message' => 'Failed to submit form: '.$e->getMessage(),
             ], 500);
         }
+    }
+
+    /** Public checkout details for the paid order created by a sales form. */
+    public function checkoutOrder(Request $request, $orderId)
+    {
+        $order = Order::withoutGlobalScopes()->with('items.product:id,name')->find($orderId);
+        if (! $order || ! SalesFormCheckoutToken::valid($request->query('checkout_token'), $order)) {
+            return response()->json(['message' => 'Invalid checkout link'], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'id' => $order->id,
+                'order_number' => $order->order_number,
+                'status' => $order->status,
+                'total_amount' => $order->total_amount,
+                'total' => $order->total_amount,
+                'currency' => $order->currency,
+                'currency_code' => $order->currency,
+                'items' => $order->items->map(fn ($item) => [
+                    'product_id' => $item->product_id,
+                    'name' => $item->product?->name,
+                    'quantity' => $item->quantity,
+                    'price' => (float) $item->price,
+                    'is_subscription' => false,
+                ]),
+            ],
+        ]);
     }
 
     private function ensureEnvironmentMembership(User $user, Environment $environment): void
