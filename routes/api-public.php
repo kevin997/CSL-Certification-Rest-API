@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\LegalPageController;
 use App\Http\Controllers\Api\MarketingUnsubscribeController;
 use App\Http\Controllers\Api\ProductLandingPageController;
 use App\Http\Controllers\Api\Sales\SalesFormSubmissionController;
+use App\Http\Controllers\Api\StorefrontController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\ThirdPartyServiceController;
 use App\Http\Controllers\Api\TokenController;
@@ -83,6 +84,8 @@ Route::post('/webhooks/media/processing', [MediaAssetController::class, 'process
 // Public Sales Forms (render + submit). No authentication required.
 Route::get('/sales-forms/public/{slug}', [SalesFormSubmissionController::class, 'publicShow']);
 Route::post('/sales-forms/public/{slug}/submit', [SalesFormSubmissionController::class, 'submit']);
+Route::get('/sales-forms/orders/{orderId}/checkout', [SalesFormSubmissionController::class, 'checkoutOrder']);
+Route::post('/sales-forms/orders/{orderId}/continue-payment', [StorefrontController::class, 'continuePayment']);
 
 // Public WhatsApp config - returns WhatsApp button config based on domain
 Route::get('/integrations/whatsapp/config', [ThirdPartyServiceController::class, 'getWhatsAppConfig']);

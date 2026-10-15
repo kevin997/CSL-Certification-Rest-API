@@ -19,6 +19,7 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ProductReview;
 use App\Models\User;
+use App\Support\Sales\SalesFormCheckoutToken;
 use App\Notifications\OrderCreated;
 use App\Services\Commission\CommissionService;
 use App\Services\EnvironmentPaymentConfigService;
@@ -2293,11 +2294,11 @@ class StorefrontController extends Controller
      */
     public function continuePayment(Request $request, $orderId)
     {
-        // Get the authenticated user
-        $user = $request->user();
-
-        // Fetch the order by ID
-        $order = Order::find($orderId);
+        $guestCheckout = $request->is('api/sales-forms/orders/*/continue-payment');
+        $user = $guestCheckout ? null : $request->user();
+        $order = $guestCheckout
+            ? Order::withoutGlobalScopes()->find($orderId)
+            : Order::find($orderId);
 
         // Check if order exists
         if (! $order) {
@@ -2307,8 +2308,18 @@ class StorefrontController extends Controller
             ], 404);
         }
 
+        if ($guestCheckout) {
+            if (! SalesFormCheckoutToken::valid($request->input('checkout_token'), $order)) {
+                return response()->json(['success' => false, 'message' => 'Invalid checkout link'], 403);
+            }
+            $user = $order->user;
+            // PaymentService and the gateway resolver use the current tenant
+            // session, which public API routes do not establish themselves.
+            session(['current_environment_id' => $order->environment_id]);
+        }
+
         // Validate that the order belongs to the current user
-        if ($user->id !== $order->user_id) {
+        if (! $user || $user->id !== $order->user_id) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized access to this order',
@@ -2392,9 +2403,19 @@ class StorefrontController extends Controller
             $order->save();
 
             $responseData = [];
-            $responseData['user'] = $user;
-            $responseData['transaction'] = $result['transaction'] ?? null;
-            $responseData['order'] = $order;
+            $responseData['user'] = $guestCheckout ? null : $user;
+            $transaction = $result['transaction'] ?? null;
+            $responseData['transaction'] = $guestCheckout && $transaction
+                ? [
+                    'id' => data_get($transaction, 'id'),
+                    'total_amount' => data_get($transaction, 'total_amount'),
+                    'fee_amount' => data_get($transaction, 'fee_amount'),
+                    'tax_amount' => data_get($transaction, 'tax_amount'),
+                    'tax_rate' => data_get($transaction, 'tax_rate'),
+                    'status' => data_get($transaction, 'status'),
+                ]
+                : $transaction;
+            $responseData['order'] = $guestCheckout ? ['id' => $order->id, 'status' => $order->status] : $order;
 
             // processPayment → processGatewayPayment returns a flat structure keyed by
             // field name (client_secret, checkout_url, redirect_url, payment_links, etc.)

@@ -150,6 +150,47 @@ class SalesFormWorkflowTest extends TestCase
     }
 
     /** @test */
+    public function paid_submission_can_open_its_order_without_an_account_session(): void
+    {
+        Mail::fake();
+        $form = $this->makePublishedForm();
+        $submission = $this->postJson("/api/sales-forms/public/{$form->slug}/submit", [
+            'name' => 'Guest Learner',
+            'email' => 'guest-checkout@example.com',
+            'password' => 'password123',
+            'answers' => ['city' => 'Douala'],
+        ])->assertCreated();
+
+        $orderId = $submission->json('orders.0.order_id');
+        $token = $submission->json('orders.0.checkout_token');
+        $this->assertNotEmpty($token);
+
+        $this->getJson("/api/sales-forms/orders/{$orderId}/checkout?checkout_token=".urlencode($token))
+            ->assertOk()
+            ->assertJsonPath('data.id', $orderId)
+            ->assertJsonMissingPath('data.billing_email');
+
+        $this->getJson("/api/sales-forms/orders/{$orderId}/checkout?checkout_token=invalid")
+            ->assertForbidden();
+
+        $this->postJson("/api/sales-forms/orders/{$orderId}/continue-payment", [
+            'payment_method' => 'stripe',
+            'checkout_token' => 'invalid',
+        ])->assertForbidden();
+
+        session()->forget('current_environment_id');
+        $this->postJson("/api/sales-forms/orders/{$orderId}/continue-payment", [
+            'payment_method' => 'unconfigured_gateway',
+            'checkout_token' => $token,
+        ])->assertStatus(400)->assertJsonPath('message', 'Payment method not available');
+        $this->assertSame($this->environment->id, session('current_environment_id'));
+
+        $this->travel(2)->days();
+        $this->getJson("/api/sales-forms/orders/{$orderId}/checkout?checkout_token=".urlencode($token))
+            ->assertForbidden();
+    }
+
+    /** @test */
     public function existing_global_user_is_added_to_form_environment_without_creating_a_second_account(): void
     {
         $form = $this->makePublishedForm();
@@ -176,6 +217,10 @@ class SalesFormWorkflowTest extends TestCase
                 'message',
                 'An account with this email already exists. We have added this space to your account. Log in with your existing KURSA password to continue.'
             );
+
+        $this->getJson('/api/sales-forms/orders/'.$response->json('orders.0.order_id').'/checkout?checkout_token='
+            .urlencode($response->json('orders.0.checkout_token')))
+            ->assertOk();
 
         $this->assertSame(1, User::where('email', 'existing@example.com')->count());
         $this->assertDatabaseHas('environment_user', [
