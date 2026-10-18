@@ -91,7 +91,7 @@ class MarketingConsent extends Model
 
     public static function latestStateFor(SalesFormSubmission $submission, string $channel): ?self
     {
-        return static::query()
+        return static::withoutGlobalScopes()
             ->where('environment_id', $submission->environment_id)
             ->where('sales_form_submission_id', $submission->id)
             ->where('channel', $channel)

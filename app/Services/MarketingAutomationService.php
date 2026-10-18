@@ -56,6 +56,10 @@ class MarketingAutomationService
      */
     public function handleOrderTrigger(Order $order, string $trigger): void
     {
+        if ($trigger === MarketingAutomation::TRIGGER_ORDER_ABANDONED && $order->status !== Order::STATUS_PENDING) {
+            return;
+        }
+
         $automation = MarketingAutomation::enabledFor($order->environment_id, $trigger);
         if (! $automation) {
             return;
@@ -79,7 +83,7 @@ class MarketingAutomationService
             'email' => $order->billing_email ?? $order->user?->email,
             'phone' => $order->user?->whatsapp_number,
             'name' => $order->billing_name ?? $order->user?->name,
-        ]);
+        ], $trigger === MarketingAutomation::TRIGGER_ORDER_ABANDONED ? $order->id : null);
     }
 
     /**
@@ -92,6 +96,7 @@ class MarketingAutomationService
         ?Environment $environment,
         array $variables,
         array $customer,
+        ?int $pendingOrderId = null,
     ): void {
         [$toEmail, $toPhone] = $this->resolveRecipient($automation, $environment, $customer);
 
@@ -108,7 +113,7 @@ class MarketingAutomationService
             $message = $this->substitute((string) $automation->whatsapp_template, $variables);
 
             if (filled($message)) {
-                SendWhatsAppNotification::dispatch($this->normalizePhone($toPhone), $message)->afterCommit();
+                SendWhatsAppNotification::dispatch($this->normalizePhone($toPhone), $message, $pendingOrderId)->afterCommit();
             }
         }
 

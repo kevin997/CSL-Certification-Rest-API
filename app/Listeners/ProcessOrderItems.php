@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\Enrollment;
 use App\Models\Order;
 use App\Models\ProductSubscription;
+use App\Models\SalesFormSubmission;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\DB;
@@ -61,6 +62,17 @@ class ProcessOrderItems implements ShouldQueue
         //set order status as completed
         $order->status = Order::STATUS_COMPLETED;
         $order->save();
+
+        if ($order->sales_form_submission_id
+            && ! Order::withoutGlobalScopes()
+                ->where('sales_form_submission_id', $order->sales_form_submission_id)
+                ->where('status', '!=', Order::STATUS_COMPLETED)
+                ->exists()) {
+            SalesFormSubmission::withoutGlobalScopes()
+                ->whereKey($order->sales_form_submission_id)
+                ->where('status', SalesFormSubmission::STATUS_PENDING)
+                ->update(['status' => SalesFormSubmission::STATUS_COMPLETED]);
+        }
 
         if (!$wasAlreadyCompleted && $order->referral_id) {
             $referral = \App\Models\EnvironmentReferral::find($order->referral_id);

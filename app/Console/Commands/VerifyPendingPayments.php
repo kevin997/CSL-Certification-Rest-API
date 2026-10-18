@@ -13,42 +13,46 @@ class VerifyPendingPayments extends Command
 {
     protected $signature = 'payments:verify-pending';
 
-    protected $description = 'Server-to-server verify pending payments <24h old for gateways with a trusted status API and route confirmations through WebhookProcessor';
+    protected $description = 'Verify recent pending payments with provider status APIs and route confirmations through WebhookProcessor';
 
     public function handle(): int
     {
         $transactions = Transaction::withoutGlobalScopes()
             ->where('status', Transaction::STATUS_PENDING)
-            ->where('created_at', '>=', now()->subDay())
+            ->where('created_at', '>=', now()->subDays(7))
+            ->whereHas('paymentGatewaySetting', fn ($query) => $query->whereIn('code', ['paypal', 'taramoney']))
             ->with('paymentGatewaySetting')
+            ->orderByDesc('created_at')
             ->limit(200)
             ->get();
 
         foreach ($transactions as $transaction) {
             $settings = $transaction->paymentGatewaySetting;
 
-            if (!$settings) {
+            if (! $settings) {
                 continue;
             }
 
             $code = $settings->code;
 
-            // TRUSTED gateways for S2S verification = ONLY ['paypal']. Even though
+            // Trusted gateways with provider-backed status verification. Even though
             // LygosGateway exposes verifyPayment(), that implementation is a SIMULATION
             // that always returns 'completed' — trusting it would reintroduce the
             // fail-open bug, so Lygos and all others are SKIPPED here (their webhooks
             // settle them).
-            if (!in_array($code, ['paypal'], true)) {
+            if (! in_array($code, ['paypal', 'taramoney'], true)
+                || ($code === 'paypal' && $transaction->created_at->lt(now()->subDay()))) {
                 Log::info('[VerifyPendingPayments] Skipping gateway without a trusted status API', [
                     'gateway' => $code,
                     'transaction_id' => $transaction->transaction_id,
                 ]);
+
                 continue;
             }
 
             $gateway = PaymentGatewayFactory::create($code, $settings);
 
-            if (!$gateway) {
+            if (! $gateway) {
                 continue;
             }
 
@@ -59,7 +63,8 @@ class VerifyPendingPayments extends Command
 
                 $status = strtolower((string) ($result['status'] ?? ''));
 
-                if (($result['verified'] ?? false) === true || in_array($status, ['completed', 'succeeded', 'success', 'paid'], true)) {
+                if (($result['verified'] ?? false) === true
+                    && in_array($status, ['completed', 'succeeded', 'success', 'paid'], true)) {
                     app(WebhookProcessor::class)->settle(
                         $transaction,
                         'completed',
@@ -72,7 +77,8 @@ class VerifyPendingPayments extends Command
                             'gateway_environment_id' => $settings->environment_id,
                         ]
                     );
-                } elseif (in_array($status, ['failed', 'failure', 'cancelled', 'canceled', 'expired'], true)) {
+                } elseif (($result['verified'] ?? false) === true
+                    && in_array($status, ['failed', 'failure', 'cancelled', 'canceled', 'expired'], true)) {
                     app(WebhookProcessor::class)->settle(
                         $transaction,
                         'failed',
@@ -91,6 +97,7 @@ class VerifyPendingPayments extends Command
                         'transaction_id' => $transaction->transaction_id,
                         'status' => $result['status'] ?? null,
                     ]);
+
                     continue;
                 }
             } catch (Throwable $e) {
@@ -99,6 +106,7 @@ class VerifyPendingPayments extends Command
                     'transaction_id' => $transaction->transaction_id,
                     'message' => $e->getMessage(),
                 ]);
+
                 continue;
             }
         }
