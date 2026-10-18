@@ -473,39 +473,65 @@ class TaraMoneyGateway implements PaymentGatewayInterface
     public function verifyPayment(string $transactionId): array
     {
         try {
-            Log::info('[TaraMoneyGateway] Verifying payment', ['transaction_id' => $transactionId]);
-
-            // Find the transaction in our database
-            $transaction = Transaction::where('transaction_id', $transactionId)
-                ->orWhere('gateway_transaction_id', $transactionId)
+            $transaction = Transaction::withoutGlobalScopes()
+                ->where(function ($query) use ($transactionId) {
+                    $query->where('transaction_id', $transactionId)
+                        ->orWhere('gateway_transaction_id', $transactionId);
+                })
+                ->where('payment_gateway_setting_id', $this->settings->id)
                 ->first();
 
             if (! $transaction) {
-                Log::error('[TaraMoneyGateway] Transaction not found for verification', ['transaction_id' => $transactionId]);
-
-                return [
-                    'success' => false,
-                    'message' => 'Transaction not found',
-                ];
+                return ['success' => false, 'verified' => false, 'status' => 'unknown'];
             }
 
-            // For TaraMoney, we rely on webhook callbacks for payment status
-            // This method returns the current status from our database
-            $status = $transaction->status;
-
-            Log::info('[TaraMoneyGateway] Payment verification from database', [
-                'transaction_id' => $transaction->id,
-                'gateway_transaction_id' => $transaction->gateway_transaction_id,
-                'status' => $status,
+            $response = Http::timeout(20)->post($this->apiBaseUrl.'/transactions/status', [
+                'apiKey' => $this->apiKey,
+                'businessId' => $this->businessId,
+                'productId' => $transaction->transaction_id,
             ]);
+
+            if (! $response->successful()) {
+                return ['success' => false, 'verified' => false, 'status' => 'unknown'];
+            }
+
+            $body = $response->json();
+            $payment = json_decode((string) ($body['payload'] ?? ''), true);
+            if (! is_array($payment)
+                || (string) ($payment['productId'] ?? '') !== $transaction->transaction_id
+                || ! hash_equals((string) $this->businessId, (string) ($payment['businessId'] ?? ''))
+            ) {
+                return ['success' => false, 'verified' => false, 'status' => 'unknown'];
+            }
+
+            $outerStatus = strtoupper((string) ($body['status'] ?? ''));
+            $paymentStatus = strtoupper((string) ($payment['status'] ?? ''));
+            if ($outerStatus !== 'SUCCESS' || $paymentStatus !== 'SUCCESS') {
+                return ['success' => true, 'verified' => false, 'status' => 'pending'];
+            }
+
+            $expectedXaf = $transaction->converted_amount;
+            $paidXaf = $payment['amount'] ?? null;
+            if ($expectedXaf === null || ! is_numeric($paidXaf)
+                || (int) $paidXaf !== (int) $expectedXaf
+                || empty($payment['paymentId'])) {
+                Log::warning('[TaraMoneyGateway] Paid transaction failed amount or ID validation', [
+                    'transaction_id' => $transaction->transaction_id,
+                ]);
+
+                return ['success' => false, 'verified' => false, 'status' => 'unknown'];
+            }
 
             return [
                 'success' => true,
-                'status' => $status === Transaction::STATUS_COMPLETED ? 'succeeded' : $status,
-                'transaction_id' => $transaction->transaction_id,
-                'gateway_transaction_id' => $transaction->gateway_transaction_id,
-                'amount' => $transaction->total_amount,
-                'currency' => $transaction->currency,
+                'verified' => true,
+                'status' => 'success',
+                'paymentId' => (string) $payment['paymentId'],
+                'productId' => $transaction->transaction_id,
+                'amount' => (float) ($transaction->expected_amount ?? $transaction->total_amount),
+                'currency' => $transaction->expected_currency ?: $transaction->currency,
+                'paid_amount_xaf' => (int) $paidXaf,
+                'provider_transaction_id' => $body['transactionId'] ?? null,
             ];
         } catch (\Exception $e) {
             Log::error('[TaraMoneyGateway] Exception while verifying payment', [

@@ -16,6 +16,7 @@ use App\Models\Plan;
 use App\Models\Product;
 use App\Models\Subscription;
 use App\Models\Transaction;
+use App\Services\PaymentGateways\PaymentGatewayFactory;
 use App\Services\Payments\PaymentGatewayResolver;
 use App\Services\Payments\RefundService;
 use App\Services\Payments\WebhookProcessor;
@@ -1673,33 +1674,17 @@ class TransactionController extends Controller
             $event = $_POST;
         }
 
-        if (! $this->verifyTaraMoneyWebhookSignature($payload, $headers, $gatewaySettings, $event)) {
-            Log::warning('Rejected TaraMoney webhook with invalid signature', [
-                'environment_id' => $gatewaySettings->environment_id,
-                'payment_id' => $event['paymentId'] ?? null,
-            ]);
-
-            return response()->json(['error' => 'Invalid signature'], 401);
-        }
-
-        // Get the transaction reference (paymentId from webhook)
         $paymentId = $event['paymentId'] ?? null;
         $productId = $event['productId'] ?? null;
         $status = $event['status'] ?? null;
 
-        if (! $paymentId) {
-            Log::error('Missing payment ID in TaraMoney webhook');
+        if (! $productId) {
+            Log::error('Missing product ID in TaraMoney webhook');
 
-            return response()->json(['error' => 'Missing payment ID'], 400);
+            return response()->json(['error' => 'Missing product ID'], 400);
         }
 
-        // Find the transaction using smart lookup that handles cross-environment transactions
-        // TaraMoney sends paymentId in webhook, which maps to our gateway_transaction_id or transaction_id
-        $transaction = $this->findTransactionForWebhook($paymentId, $gatewaySettings);
-
-        if (! $transaction && $productId) {
-            $transaction = $this->findTransactionForWebhook($productId, $gatewaySettings);
-        }
+        $transaction = $this->findTransactionForWebhook($productId, $gatewaySettings);
 
         if (! $transaction) {
             Log::error('Transaction not found for TaraMoney webhook', [
@@ -1715,12 +1700,30 @@ class TransactionController extends Controller
 
         // Process based on status
         if ($normalizedStatus === 'success') {
-            $this->processCompletedWebhookTransaction($transaction, 'success', $event);
+            // Tara's published collect webhook does not specify a signature header.
+            // Authenticate a success by querying Tara with this gateway's credentials.
+            $gateway = PaymentGatewayFactory::create('taramoney', $gatewaySettings);
+            $verified = $gateway?->verifyPayment($transaction->transaction_id) ?? [];
+            if (($verified['verified'] ?? false) !== true
+                || strtolower((string) ($verified['status'] ?? '')) !== 'success'
+                || ($paymentId && (string) ($verified['paymentId'] ?? '') !== (string) $paymentId)) {
+                return response()->json(['error' => 'Payment not verified'], 409);
+            }
+
+            app(WebhookProcessor::class)->settle($transaction, 'completed', 'success', $verified, null, [
+                'gateway' => 'taramoney',
+                'signature_valid' => true,
+                'gateway_environment_id' => $gatewaySettings->environment_id,
+                'event_type' => 's2s-verified-webhook',
+            ]);
             Log::info('TaraMoney payment success processed', [
                 'transaction_id' => $transaction->id,
                 'gateway_transaction_id' => $paymentId,
             ]);
         } elseif (in_array($normalizedStatus, ['failure', 'failed'], true)) {
+            if (! $this->verifyTaraMoneyWebhookSignature($payload, $headers, $gatewaySettings, $event)) {
+                return response()->json(['error' => 'Invalid signature'], 401);
+            }
             $this->processFailedWebhookTransaction($transaction, 'failed', $event, 'Payment failed');
             Log::info('TaraMoney payment failure processed', [
                 'transaction_id' => $transaction->id,
