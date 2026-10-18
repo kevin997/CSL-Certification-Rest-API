@@ -101,6 +101,20 @@ class AuditedPaymentGateway implements PaymentGatewayInterface
         try {
             $response = $operation();
 
+            // Routine status checks do not change the payment. Keep audit rows
+            // for provider-confirmed final results and transaction transitions.
+            $routineVerification = $action === 'verify_payment'
+                && (!is_array($response)
+                    || ($response['verified'] ?? false) !== true
+                    || !in_array(strtolower((string) ($response['status'] ?? '')), [
+                        'completed', 'succeeded', 'success', 'paid',
+                        'failed', 'failure', 'cancelled', 'canceled', 'expired',
+                    ], true));
+
+            if ($routineVerification) {
+                return $response;
+            }
+
             AuditLog::logPaymentGatewayOperation(
                 $source,
                 $action,

@@ -314,6 +314,11 @@ class AuditLog extends Model
 
     private function shouldNotifyTelegram(): bool
     {
+        // Status lookups are operational noise; payment transitions notify separately.
+        if ($this->action === 'verify_payment') {
+            return false;
+        }
+
         $haystack = strtolower(implode(' ', array_filter([
             $this->source,
             $this->action,

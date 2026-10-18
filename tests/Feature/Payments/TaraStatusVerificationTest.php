@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Payments;
 
+use App\Models\AuditLog;
 use App\Models\Environment;
 use App\Models\PaymentGatewaySetting;
 use App\Models\Transaction;
@@ -144,6 +145,7 @@ class TaraStatusVerificationTest extends TestCase
         $this->transaction->forceFill(['last_verification_attempt_at' => now()->subHours(7)])->saveQuietly();
         $this->artisan('payments:verify-pending')->assertSuccessful();
         Http::assertSentCount(2);
+        $this->assertSame(0, AuditLog::where('action', 'verify_payment')->count());
     }
 
     public function test_recent_pending_payment_uses_shorter_retry_intervals(): void
