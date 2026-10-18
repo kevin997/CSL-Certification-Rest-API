@@ -443,6 +443,7 @@ class SalesFormController extends Controller
             'cover_image_path' => 'nullable|string|max:2048',
             'youtube_url' => 'nullable|url|max:2048',
             'settings' => 'nullable|array',
+            'settings.payment_gateway_code' => 'nullable|string|max:50',
             'fields' => 'nullable|array',
             'fields.*.type' => 'required|string|max:50',
             'fields.*.label' => 'required|string|max:255',
