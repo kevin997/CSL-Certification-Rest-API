@@ -12,6 +12,7 @@ use App\Models\SalesFormField;
 use App\Models\SalesFormSubmission;
 use App\Models\User;
 use App\Services\WachapNotificationService;
+use App\Support\Sales\SalesFormCheckoutToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
@@ -20,6 +21,14 @@ use Tests\TestCase;
 class SalesFormPendingReminderTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config()->set('services.wachap.base_url', 'https://example.test');
+        config()->set('services.wachap.token', 'test-token');
+        config()->set('services.wachap.account_id', 'test-account');
+    }
 
     private function makeOrder(string $country, string $status = Order::STATUS_PENDING): Order
     {
@@ -79,8 +88,15 @@ class SalesFormPendingReminderTest extends TestCase
 
         Mail::assertQueued(AutomationMail::class, fn ($mail) => $mail->hasTo('mianda@example.com')
             && str_contains($mail->automationBody, 'Bonjour Mianda'));
-        Queue::assertPushed(SendWhatsAppNotification::class, fn ($job) => $job->pendingOrderId === $order->id
-            && str_contains($job->message, 'en attente de paiement'));
+        Queue::assertPushed(SendWhatsAppNotification::class, function ($job) use ($order) {
+            $this->assertSame($order->id, $job->pendingOrderId);
+            $this->assertStringContainsString('en attente de paiement', $job->message);
+            preg_match('~https://[^\s]+~', $job->message, $matches);
+            parse_str((string) parse_url(rtrim($matches[0] ?? '', '.'), PHP_URL_QUERY), $params);
+            $this->assertTrue(SalesFormCheckoutToken::valid($params['checkout_token'] ?? null, $order));
+
+            return true;
+        });
         $this->assertNotNull($order->fresh()->abandoned_reminder_sent_at);
 
         $this->artisan('automations:process-abandoned-orders')->assertSuccessful();
@@ -114,6 +130,21 @@ class SalesFormPendingReminderTest extends TestCase
 
         Mail::assertQueued(AutomationMail::class, 1);
         Queue::assertNotPushed(SendWhatsAppNotification::class);
+    }
+
+    public function test_no_consent_does_not_claim_a_reminder_was_sent(): void
+    {
+        Mail::fake();
+        Queue::fake();
+        $order = $this->makeOrder('Congo');
+        MarketingConsent::revoke($order->salesFormSubmission, 'email', 'unsubscribe', '2026-09', now());
+        MarketingConsent::revoke($order->salesFormSubmission, 'whatsapp', 'unsubscribe', '2026-09', now());
+
+        $this->artisan('automations:process-abandoned-orders')->assertSuccessful();
+
+        Mail::assertNothingOutgoing();
+        Queue::assertNotPushed(SendWhatsAppNotification::class);
+        $this->assertNull($order->fresh()->abandoned_reminder_sent_at);
     }
 
     public function test_queued_whatsapp_does_not_send_after_order_completes(): void

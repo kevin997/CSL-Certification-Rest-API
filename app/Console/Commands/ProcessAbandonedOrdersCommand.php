@@ -51,7 +51,9 @@ class ProcessAbandonedOrdersCommand extends Command
                     continue;
                 }
 
-                $salesFormReminders->send($order);
+                if (! $salesFormReminders->send($order)) {
+                    continue;
+                }
                 $order->forceFill(['abandoned_reminder_sent_at' => now()])->saveQuietly();
                 $processed++;
                 WhatsAppThrottle::pause();
