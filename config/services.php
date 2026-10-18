@@ -28,6 +28,12 @@ return [
         'key' => env('RESEND_KEY'),
     ],
 
+    'meta_conversions' => [
+        'pixel_id' => env('META_PIXEL_ID', '1636552768056179'),
+        'access_token' => env('META_CONVERSIONS_ACCESS_TOKEN'),
+        'api_version' => env('META_CONVERSIONS_API_VERSION', 'v23.0'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
