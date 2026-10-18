@@ -126,6 +126,45 @@ class TaraStatusVerificationTest extends TestCase
         ]);
     }
 
+    public function test_pending_payment_checks_back_off_as_the_transaction_ages(): void
+    {
+        $this->transaction->forceFill(['created_at' => now()->subDays(2)])->saveQuietly();
+        Http::fake(['www.dklo.co/*' => Http::response([
+            'status' => 'SUCCESS',
+            'payload' => json_encode(array_replace($this->paidPayload(), ['status' => 'PENDING'])),
+        ])]);
+
+        $this->artisan('payments:verify-pending')->assertSuccessful();
+        Http::assertSentCount(1);
+        $this->assertNotNull($this->transaction->fresh()->last_verification_attempt_at);
+
+        $this->artisan('payments:verify-pending')->assertSuccessful();
+        Http::assertSentCount(1);
+
+        $this->transaction->forceFill(['last_verification_attempt_at' => now()->subHours(7)])->saveQuietly();
+        $this->artisan('payments:verify-pending')->assertSuccessful();
+        Http::assertSentCount(2);
+    }
+
+    public function test_recent_pending_payment_uses_shorter_retry_intervals(): void
+    {
+        $this->transaction->forceFill([
+            'created_at' => now()->subHours(2),
+            'last_verification_attempt_at' => now()->subMinutes(10),
+        ])->saveQuietly();
+        Http::fake(['www.dklo.co/*' => Http::response([
+            'status' => 'SUCCESS',
+            'payload' => json_encode(array_replace($this->paidPayload(), ['status' => 'PENDING'])),
+        ])]);
+
+        $this->artisan('payments:verify-pending')->assertSuccessful();
+        Http::assertNothingSent();
+
+        $this->transaction->forceFill(['created_at' => now()->subMinutes(20)])->saveQuietly();
+        $this->artisan('payments:verify-pending')->assertSuccessful();
+        Http::assertSentCount(1);
+    }
+
     public function test_unsigned_webhook_is_settled_only_after_provider_confirmation(): void
     {
         Http::fake(['www.dklo.co/*' => Http::response([

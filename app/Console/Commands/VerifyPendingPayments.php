@@ -6,6 +6,7 @@ use App\Models\Transaction;
 use App\Services\PaymentGateways\PaymentGatewayFactory;
 use App\Services\Payments\WebhookProcessor;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -50,11 +51,25 @@ class VerifyPendingPayments extends Command
                 continue;
             }
 
+            // New payments need prompt recovery from missed webhooks. Older
+            // unverified payments should not produce an audit row every five minutes.
+            $ageMinutes = $transaction->created_at->diffInMinutes(now());
+            $retryMinutes = $ageMinutes < 60 ? 5 : ($ageMinutes < 1440 ? 30 : 360);
+            if ($transaction->last_verification_attempt_at?->gt(now()->subMinutes($retryMinutes))) {
+                continue;
+            }
+
             $gateway = PaymentGatewayFactory::create($code, $settings);
 
             if (! $gateway) {
                 continue;
             }
+
+            // Query-builder update avoids a transaction lifecycle audit event for
+            // bookkeeping and survives worker restarts or cache eviction.
+            DB::table('transactions')->where('id', $transaction->id)->update([
+                'last_verification_attempt_at' => now(),
+            ]);
 
             $ref = $transaction->gateway_transaction_id ?: $transaction->transaction_id;
 

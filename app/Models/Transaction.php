@@ -77,6 +77,7 @@ class Transaction extends Model
         'platform_fee_amount',
         'processor_fee_amount',
         'verified_at',
+        'last_verification_attempt_at',
         'merchant_environment_id',
         'gateway_account_environment_id',
     ];
@@ -99,6 +100,7 @@ class Transaction extends Model
         'platform_fee_amount' => 'decimal:2',
         'processor_fee_amount' => 'decimal:2',
         'verified_at' => 'datetime',
+        'last_verification_attempt_at' => 'datetime',
     ];
 
     /**
