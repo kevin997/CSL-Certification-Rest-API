@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\EnvironmentController;
 use App\Http\Controllers\Api\LandingPagePopupController;
 use App\Http\Controllers\Api\LegalPageController;
 use App\Http\Controllers\Api\MarketingUnsubscribeController;
+use App\Http\Controllers\Api\MetaBrowserEventController;
 use App\Http\Controllers\Api\ProductLandingPageController;
 use App\Http\Controllers\Api\Sales\SalesFormSubmissionController;
 use App\Http\Controllers\Api\StorefrontController;
@@ -73,6 +74,10 @@ Route::get('/branding/public/popups', [LandingPagePopupController::class, 'publi
 
 // Public analytics visit tracking (guest-safe)
 Route::post('/analytics/visits/track', [AnalyticsWidgetsController::class, 'trackVisit']);
+
+// Browser events are allowlisted and rate limited. Purchases and registrations
+// are sent only from the authoritative server-side completion events.
+Route::post('/meta/browser-events', MetaBrowserEventController::class)->middleware('throttle:30,1');
 
 // Public KURSA funding endpoints
 Route::post('/funders', [CampaignFunderController::class, 'store']);
