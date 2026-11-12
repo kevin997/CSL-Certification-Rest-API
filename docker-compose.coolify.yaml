@@ -24,6 +24,8 @@ services:
     restart: unless-stopped
     environment:
       CONTAINER_ROLE: app
+      # Keep licence gates active on redeploy; explicit environment values can override.
+      LICENSING_ENFORCEMENT_ENABLED: ${LICENSING_ENFORCEMENT_ENABLED:-true}
       WAHA_BASE_URL: ${WAHA_BASE_URL:-}
       WAHA_API_KEY: ${WAHA_API_KEY:-}
       WAHA_SESSION: ${WAHA_SESSION:-kursa}
@@ -39,6 +41,8 @@ services:
     restart: unless-stopped
     environment:
       CONTAINER_ROLE: reverb
+      # Keep licence gates active on redeploy; explicit environment values can override.
+      LICENSING_ENFORCEMENT_ENABLED: ${LICENSING_ENFORCEMENT_ENABLED:-true}
     # Reverb listens on 8080 inside and has always been published as 8085.
     # certificationnotify.csl-brands.com proxies to it, and returns 404 to a
     # plain GET by design: it only answers websocket upgrades at /app/{key}.
@@ -71,6 +75,8 @@ services:
     restart: unless-stopped
     environment:
       CONTAINER_ROLE: worker
+      # Keep licence gates active on redeploy; explicit environment values can override.
+      LICENSING_ENFORCEMENT_ENABLED: ${LICENSING_ENFORCEMENT_ENABLED:-true}
       WAHA_BASE_URL: ${WAHA_BASE_URL:-}
       WAHA_API_KEY: ${WAHA_API_KEY:-}
       WAHA_SESSION: ${WAHA_SESSION:-kursa}
