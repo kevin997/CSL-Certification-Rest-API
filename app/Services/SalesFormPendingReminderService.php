@@ -18,7 +18,7 @@ class SalesFormPendingReminderService
 
     public function send(Order $order): bool
     {
-        $order->loadMissing(['salesFormSubmission.salesForm.fields', 'environment']);
+        $order->loadMissing(['salesFormSubmission.salesForm.fields', 'environment', 'items.product']);
         $submission = $order->salesFormSubmission;
 
         if ($order->status !== Order::STATUS_PENDING || ! $submission || $submission->status !== SalesFormSubmission::STATUS_PENDING) {
@@ -28,14 +28,21 @@ class SalesFormPendingReminderService
         $language = $this->languageFor($submission);
         $name = trim((string) ($submission->name ?: $order->billing_name));
         $form = (string) ($submission->salesForm?->title ?? 'KURSA');
+        $productName = $order->items
+            ->map(fn ($item) => $item->product?->name)
+            ->filter()
+            ->unique()
+            ->values()
+            ->implode(', ');
+        $productLabel = $productName !== '' ? $productName : $form;
         $url = $this->shortLinks->forOrder($order);
 
         if ($language === 'fr') {
-            $subject = 'Votre inscription à '.$form.' est en attente';
-            $message = "Bonjour {$name}, votre inscription à {$form} est en attente de paiement (commande {$order->order_number}). Terminez votre paiement ici : {$url}. Si vous avez déjà payé, contactez-nous avec votre numéro de commande.";
+            $subject = 'Votre paiement pour '.$productLabel.' est en attente';
+            $message = "Bonjour {$name}, votre commande {$order->order_number} pour {$productLabel} est en attente de paiement. Terminez votre paiement ici : {$url}. Si vous avez déjà payé, contactez-nous avec votre numéro de commande.";
         } else {
-            $subject = 'Your registration for '.$form.' is awaiting payment';
-            $message = "Hello {$name}, your registration for {$form} is awaiting payment (order {$order->order_number}). Complete your payment here: {$url}. If you have already paid, contact us with your order number.";
+            $subject = 'Your payment for '.$productLabel.' is awaiting payment';
+            $message = "Hello {$name}, your order {$order->order_number} for {$productLabel} is awaiting payment. Complete your payment here: {$url}. If you have already paid, contact us with your order number.";
         }
 
         $sent = false;
