@@ -2,6 +2,7 @@
 
 namespace App\Services\Sales;
 
+use App\Models\Environment;
 use App\Models\Order;
 use App\Models\ShortLink;
 use App\Support\Tenancy\TenantUrl;
@@ -58,6 +59,19 @@ class ShortLinkService
         return TenantUrl::to($order->environment, '/p/'.$link->code);
     }
 
+    public function forUrl(string $url, Environment $environment, int $lifetimeDays = 1): string
+    {
+        $link = ShortLink::create([
+            'code' => $this->uniqueCode(),
+            'url' => $url,
+            'order_id' => null,
+            'environment_id' => $environment->id,
+            'expires_at' => now()->addDays($lifetimeDays),
+        ]);
+
+        return TenantUrl::to($environment, '/p/'.$link->code);
+    }
+
     public function resolve(string $code): ?string
     {
         $link = ShortLink::query()
@@ -69,6 +83,12 @@ class ShortLinkService
 
         if (! $link) {
             return null;
+        }
+
+        if (filled($link->url)) {
+            $link->increment('hits');
+
+            return (string) $link->url;
         }
 
         $order = Order::withoutGlobalScopes()

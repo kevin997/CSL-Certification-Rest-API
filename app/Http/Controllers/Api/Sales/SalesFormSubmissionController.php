@@ -95,11 +95,11 @@ class SalesFormSubmissionController extends Controller
             }
             $rules[$key] = $fieldRules;
         }
-        // Email + name + password are required for learner identity / account creation,
-        // regardless of field config.
+        // Email + name identify the learner. Password is optional: public forms
+        // use guest checkout, and the account gets a set-password link instead.
         $rules['email'] = 'required|email|max:255';
         $rules['name'] = 'required|string|max:255';
-        $rules['password'] = 'required|string|min:8';
+        $rules['password'] = 'nullable|string|min:8';
         $rules['marketing_consent'] = 'nullable|array:email,whatsapp';
         $rules['marketing_consent.email'] = 'nullable|boolean';
         $rules['marketing_consent.whatsapp'] = 'nullable|boolean';
@@ -157,15 +157,22 @@ class SalesFormSubmissionController extends Controller
         try {
             DB::beginTransaction();
 
-            // 1. Find-or-create the learner by email, using the password they set.
+            // 1. Find-or-create the learner by email. Guest checkout omits the
+            // password; the account is created with a random one and the
+            // UserCreatedDuringCheckout listener sends a set-password link.
             $userExisted = false;
+            $passwordSetupRequired = false;
             $phone = $this->extractFieldValue($form, $request->input('answers', []), 'phone');
             $user = User::where('email', $request->email)->first();
             if (! $user) {
+                $plainPassword = $request->input('password');
+                $passwordSetupRequired = blank($plainPassword);
+                $plainPassword = $plainPassword ?: Str::password(32);
+
                 $user = User::create([
                     'name' => $request->name,
                     'email' => $request->email,
-                    'password' => Hash::make($request->password),
+                    'password' => Hash::make($plainPassword),
                     'role' => 'learner',
                     'whatsapp_number' => $phone ?: null,
                 ]);
@@ -328,7 +335,7 @@ class SalesFormSubmissionController extends Controller
             }
 
             if (! $userExisted) {
-                event(new UserCreatedDuringCheckout($user, $environment, true));
+                event(new UserCreatedDuringCheckout($user, $environment, true, $passwordSetupRequired));
             }
 
             // Marketing automation: notify the instructor of the new lead
@@ -346,7 +353,7 @@ class SalesFormSubmissionController extends Controller
                 'success' => true,
                 'message' => $userExisted
                     ? 'An account with this email already exists. We have added this space to your account. Log in with your existing KURSA password to continue.'
-                    : 'Your account has been created. Log in to access your course.',
+                    : 'Your account has been created. Check your email and WhatsApp for a link to set your password.',
                 'user_existed' => $userExisted,
                 'email' => $user->email,
                 'login_url' => TenantUrl::to($environment, '/auth/login'),

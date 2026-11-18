@@ -100,6 +100,8 @@
                                         <td style="padding: 8px 0; border-bottom: 1px solid #e8e8e8; text-align: right;">
                                             @if($password)
                                                 <span style="font-size: 14px; font-weight: 600; color: #1a1a1a; font-family: monospace; background-color: #ffffff; padding: 2px 8px; border-radius: 4px; border: 1px solid #e8e8e8;">{{ $password }}</span>
+                                            @elseif($passwordSetupUrl)
+                                                <span style="font-size: 14px; font-weight: 500; color: #717882; font-style: italic;">Set via the button below</span>
                                             @else
                                                 <span style="font-size: 14px; font-weight: 500; color: #717882; font-style: italic;">Use your existing account password</span>
                                             @endif
@@ -123,8 +125,8 @@
             {{-- CTA Button --}}
             <tr>
                 <td style="padding: 24px 40px; text-align: center;">
-                    <a href="{{ $loginUrl }}" style="display: inline-block; text-decoration: none; font-weight: 700; font-size: 16px; line-height: 1; color: #1a1a1a; background-color: {{ $branding['secondary_color'] }}; border-radius: 9999px; padding: 16px 48px; transition: background-color 0.2s ease;">
-                        Login to Your Account
+                    <a href="{{ $passwordSetupUrl ?: $loginUrl }}" style="display: inline-block; text-decoration: none; font-weight: 700; font-size: 16px; line-height: 1; color: #1a1a1a; background-color: {{ $branding['secondary_color'] }}; border-radius: 9999px; padding: 16px 48px; transition: background-color 0.2s ease;">
+                        {{ $passwordSetupUrl ? 'Set Your Password' : 'Login to Your Account' }}
                     </a>
                 </td>
             </tr>
@@ -132,7 +134,11 @@
             {{-- Security Notice --}}
             <tr>
                 <td style="padding: 0 40px 32px; text-align: center;">
-                    @if($password)
+                    @if($passwordSetupUrl)
+                        <p style="margin: 0; font-weight: 500; font-size: 13px; line-height: 1.6; color: {{ $branding['secondary_color'] }}; background-color: #fff8eb; padding: 12px 20px; border-radius: 8px; border: 1px solid {{ $branding['accent_color'] }};">
+                            Set your password to access your account. The link is unique to this email and expires shortly.
+                        </p>
+                    @elseif($password)
                         <p style="margin: 0; font-weight: 500; font-size: 13px; line-height: 1.6; color: {{ $branding['secondary_color'] }}; background-color: #fff8eb; padding: 12px 20px; border-radius: 8px; border: 1px solid {{ $branding['accent_color'] }};">
                             🔒 For security reasons, we recommend changing your password after your first login.
                         </p>
