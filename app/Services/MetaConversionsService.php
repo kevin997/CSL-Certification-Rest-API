@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Models\Environment;
 use App\Models\Order;
 use App\Models\SalesFormSubmission;
+use App\Models\Transaction;
 use App\Support\Tenancy\TenantUrl;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -12,28 +14,138 @@ class MetaConversionsService
 {
     public function purchase(Order $order): void
     {
-        if ($order->status !== Order::STATUS_COMPLETED || $order->total_amount <= 0) {
+        $paid = $order->status === Order::STATUS_COMPLETED
+            || ($order->exists && $order->transactions()
+                ->where('status', Transaction::STATUS_COMPLETED)
+                ->where('total_amount', '>', 0)
+                ->exists());
+
+        if (! $paid || $order->total_amount <= 0) {
             return;
         }
 
-        $this->send('Purchase', 'purchase:order:'.$order->id, [
-            'value' => (float) $order->total_amount,
-            'currency' => $order->currency,
-            'order_id' => $order->order_number,
-        ], [
-            'em' => $this->hash($order->billing_email ?: $order->user?->email),
-            'ph' => $this->hashPhone($order->salesFormSubmission?->phone ?: $order->user?->phone),
-            'external_id' => $this->hash((string) $order->user_id),
-        ], $order->environment ? TenantUrl::to($order->environment) : null);
+        $this->send(
+            'Purchase',
+            'purchase:order:'.$order->id,
+            array_merge([
+                'value' => (float) $order->total_amount,
+                'currency' => $order->currency,
+            ], $this->orderContent($order)),
+            $this->orderUserData($order),
+            $order->environment
+                ? TenantUrl::to($order->environment, '/checkout/'.$order->environment_id.'/success', ['order' => $order->id])
+                : null
+        );
+    }
+
+    public function initiateCheckout(Order $order): void
+    {
+        if ($order->status !== Order::STATUS_PENDING || $order->total_amount <= 0) {
+            return;
+        }
+
+        $this->send(
+            'InitiateCheckout',
+            'InitiateCheckout:order:'.$order->id,
+            array_merge([
+                'value' => (float) $order->total_amount,
+                'currency' => $order->currency,
+            ], $this->orderContent($order)),
+            $this->orderUserData($order),
+            $order->environment ? TenantUrl::to($order->environment, '/checkout/continue-payment/'.$order->id) : null
+        );
     }
 
     public function registration(SalesFormSubmission $submission): void
     {
-        $this->send('CompleteRegistration', 'registration:submission:'.$submission->id, [], [
-            'em' => $this->hash($submission->email),
-            'ph' => $this->hashPhone($submission->phone),
-            'external_id' => $this->hash((string) $submission->user_id),
+        if ($submission->exists) {
+            $submission->loadMissing(['orders.items.product', 'salesForm']);
+        }
+
+        $orders = $submission->relationLoaded('orders')
+            ? $submission->orders
+            : collect();
+        $order = $orders->firstWhere('status', Order::STATUS_PENDING)
+            ?? $orders->first();
+
+        $content = $order ? $this->orderContent($order) : [];
+        if ($orders->isNotEmpty()) {
+            $content = array_merge([
+                'value' => (float) $orders->sum('total_amount'),
+                'currency' => $orders->first()?->currency,
+            ], $content);
+        }
+        $environment = $submission->environment_id
+            ? Environment::find($submission->environment_id)
+            : null;
+
+        $this->send(
+            'CompleteRegistration',
+            'registration:submission:'.$submission->id,
+            $content,
+            [
+                'em' => $this->hash($submission->email),
+                'ph' => $this->hashPhone($submission->phone),
+                'external_id' => $this->hash((string) $submission->user_id),
+            ],
+            $environment && $submission->salesForm
+                ? TenantUrl::to($environment, '/forms/'.$submission->salesForm->slug)
+                : null
+        );
+    }
+
+    /**
+     * @return array{content_name?: string, content_ids?: array<int, string>, content_type?: string, order_id?: string}
+     */
+    private function orderContent(Order $order): array
+    {
+        if ($order->exists) {
+            $order->loadMissing('items.product');
+        }
+
+        $items = $order->relationLoaded('items') ? $order->items : collect();
+
+        $names = $items
+            ->map(fn ($item) => $item->product?->name)
+            ->filter()
+            ->unique()
+            ->values();
+
+        $ids = $items
+            ->pluck('product_id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->map(fn ($id) => (string) $id)
+            ->all();
+
+        return array_filter([
+            'content_name' => $names->isEmpty() ? null : $names->implode(', '),
+            'content_ids' => $ids === [] ? null : $ids,
+            'content_type' => 'product',
+            'order_id' => $order->order_number,
         ]);
+    }
+
+    private function orderUserData(Order $order): array
+    {
+        if ($order->exists) {
+            $order->loadMissing(['user', 'salesFormSubmission']);
+        }
+
+        $user = $order->relationLoaded('user') ? $order->user : null;
+        $submission = $order->relationLoaded('salesFormSubmission') ? $order->salesFormSubmission : null;
+
+        return [
+            'em' => $this->hash($order->billing_email ?: $user?->email),
+            'ph' => $this->hashPhone(
+                $order->phone_number
+                ?: $submission?->phone
+                ?: $user?->whatsapp_number
+                ?: $user?->phone
+            ),
+            'external_id' => $this->hash((string) $order->user_id),
+        ];
     }
 
     public function browserEvent(string $name, string $eventId, array $customData, array $browserData): void

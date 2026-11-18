@@ -19,16 +19,17 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ProductReview;
 use App\Models\User;
-use App\Support\Sales\SalesFormCheckoutToken;
 use App\Notifications\OrderCreated;
 use App\Services\Commission\CommissionService;
 use App\Services\EnvironmentPaymentConfigService;
+use App\Services\MetaConversionsService;
 use App\Services\OrderService;
 use App\Services\PaymentGateways\PaymentGatewayFactory;
 use App\Services\Payments\PaymentGatewayResolver;
 use App\Services\PaymentService;
 use App\Services\Tax\TaxZoneService;
 use App\Services\TelegramService;
+use App\Support\Sales\SalesFormCheckoutToken;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 // Response::HTTP_* is used at four sites below and was never imported: PHP
@@ -2401,6 +2402,11 @@ class StorefrontController extends Controller
             // Update the order with payment method
             $order->payment_method = $paymentGatewaySetting->id;
             $order->save();
+
+            // Server-side InitiateCheckout so the event survives ad blockers and
+            // in-app browsers that never run the pixel. Same event_id as the
+            // browser event, so Meta deduplicates the pair.
+            app(MetaConversionsService::class)->initiateCheckout($order);
 
             $responseData = [];
             $responseData['user'] = $guestCheckout ? null : $user;
