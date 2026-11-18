@@ -760,6 +760,7 @@ Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
 
     // Marketing automations (Email/WhatsApp triggers — /settings/integrations/automations)
     Route::get('/marketing-automations', [MarketingAutomationController::class, 'index']);
+    Route::post('/marketing-automations/{trigger}/generate-copy', [MarketingAutomationController::class, 'generateCopy'])->middleware('licence.feature:marketing_automations');
     Route::put('/marketing-automations/{trigger}', [MarketingAutomationController::class, 'upsert'])->middleware('licence.feature:marketing_automations');
 
     // "Notify me" interest in coming-soon integrations

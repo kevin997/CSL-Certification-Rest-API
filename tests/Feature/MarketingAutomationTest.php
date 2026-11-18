@@ -6,6 +6,7 @@ use App\Jobs\SendWhatsAppNotification;
 use App\Mail\AutomationMail;
 use App\Models\Environment;
 use App\Models\MarketingAutomation;
+use App\Models\MarketingConsent;
 use App\Models\Order;
 use App\Models\SalesForm;
 use App\Models\SalesFormSubmission;
@@ -205,5 +206,56 @@ class MarketingAutomationTest extends TestCase
         $this->artisan('automations:process-abandoned-orders')->assertSuccessful();
 
         Mail::assertNothingQueued();
+    }
+
+    public function test_order_placed_for_a_sales_form_uses_the_order_phone_and_a_signed_continue_link(): void
+    {
+        Mail::fake();
+        Queue::fake();
+
+        $this->makeAutomation(MarketingAutomation::TRIGGER_ORDER_PLACED, [
+            'recipient' => MarketingAutomation::RECIPIENT_CUSTOMER,
+            'email_subject' => 'Pay order {{order_number}}',
+            'email_body' => 'Hi {{name}}, continue here: {{continue_url}}',
+            'whatsapp_template' => 'Hi {{name}}, continue here: {{continue_url}}',
+        ]);
+
+        $submission = $this->makeSubmission();
+        MarketingConsent::grant($submission, 'whatsapp', 'sales_form', '2026-09', now());
+
+        $customer = User::factory()->create([
+            'email' => $submission->email,
+            'whatsapp_number' => null,
+        ]);
+
+        $order = Order::withoutGlobalScopes()->create([
+            'user_id' => $customer->id,
+            'environment_id' => $this->environment->id,
+            'order_number' => 'ORD-4004',
+            'status' => Order::STATUS_PENDING,
+            'type' => Order::TYPE_SALES_FORM,
+            'sales_form_submission_id' => $submission->id,
+            'total_amount' => 10.50,
+            'currency' => 'USD',
+            'billing_name' => $submission->name,
+            'billing_email' => $submission->email,
+        ]);
+        $order->phone_number = $submission->phone;
+        $order->save();
+
+        app(MarketingAutomationService::class)
+            ->handleOrderTrigger($order, MarketingAutomation::TRIGGER_ORDER_PLACED);
+
+        Mail::assertQueued(AutomationMail::class, function (AutomationMail $mail) use ($submission) {
+            return $mail->hasTo($submission->email)
+                && str_contains($mail->automationBody, 'checkout_token=')
+                && ! str_contains($mail->automationBody, '{{continue_url}}');
+        });
+
+        Queue::assertPushed(SendWhatsAppNotification::class, function (SendWhatsAppNotification $job) {
+            return $job->phoneNumber === '237699999999'
+                && str_contains($job->message, 'checkout_token=')
+                && ! str_contains($job->message, '{{continue_url}}');
+        });
     }
 }
