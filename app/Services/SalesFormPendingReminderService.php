@@ -7,11 +7,15 @@ use App\Mail\AutomationMail;
 use App\Models\MarketingConsent;
 use App\Models\Order;
 use App\Models\SalesFormSubmission;
-use App\Support\Sales\SalesFormCheckoutToken;
+use App\Services\Sales\ShortLinkService;
 use Illuminate\Support\Facades\Mail;
 
 class SalesFormPendingReminderService
 {
+    public function __construct(
+        private readonly ShortLinkService $shortLinks,
+    ) {}
+
     public function send(Order $order): bool
     {
         $order->loadMissing(['salesFormSubmission.salesForm.fields', 'environment']);
@@ -24,18 +28,7 @@ class SalesFormPendingReminderService
         $language = $this->languageFor($submission);
         $name = trim((string) ($submission->name ?: $order->billing_name));
         $form = (string) ($submission->salesForm?->title ?? 'KURSA');
-        $url = (string) ($order->continue_payment_url ?? '');
-        if ($url !== '') {
-            $query = [
-                'checkout_token' => SalesFormCheckoutToken::issue($order),
-                'registration' => $submission->id,
-            ];
-            $gateway = $submission->salesForm?->settings['payment_gateway_code'] ?? null;
-            if (is_string($gateway) && $gateway !== '') {
-                $query['payment_gateway'] = $gateway;
-            }
-            $url .= (str_contains($url, '?') ? '&' : '?').http_build_query($query);
-        }
+        $url = $this->shortLinks->forOrder($order);
 
         if ($language === 'fr') {
             $subject = 'Votre inscription à '.$form.' est en attente';

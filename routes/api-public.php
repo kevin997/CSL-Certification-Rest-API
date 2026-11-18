@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\MarketingUnsubscribeController;
 use App\Http\Controllers\Api\MetaBrowserEventController;
 use App\Http\Controllers\Api\ProductLandingPageController;
 use App\Http\Controllers\Api\Sales\SalesFormSubmissionController;
+use App\Http\Controllers\Api\ShortLinkController;
 use App\Http\Controllers\Api\StorefrontController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\ThirdPartyServiceController;
@@ -91,6 +92,9 @@ Route::get('/sales-forms/public/{slug}', [SalesFormSubmissionController::class, 
 Route::post('/sales-forms/public/{slug}/submit', [SalesFormSubmissionController::class, 'submit']);
 Route::get('/sales-forms/orders/{orderId}/checkout', [SalesFormSubmissionController::class, 'checkoutOrder']);
 Route::post('/sales-forms/orders/{orderId}/continue-payment', [StorefrontController::class, 'continuePayment']);
+
+// Short branded checkout links used in WhatsApp/email order messages.
+Route::get('/short-links/{code}', [ShortLinkController::class, 'resolve']);
 
 // Public WhatsApp config - returns WhatsApp button config based on domain
 Route::get('/integrations/whatsapp/config', [ThirdPartyServiceController::class, 'getWhatsAppConfig']);

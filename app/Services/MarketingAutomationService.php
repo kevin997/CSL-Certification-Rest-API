@@ -8,7 +8,8 @@ use App\Models\Environment;
 use App\Models\MarketingAutomation;
 use App\Models\Order;
 use App\Models\SalesFormSubmission;
-use App\Support\Sales\SalesFormCheckoutToken;
+use App\Services\Sales\OrderContinueUrl;
+use App\Services\Sales\ShortLinkService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -19,6 +20,11 @@ use Illuminate\Support\Facades\Mail;
  */
 class MarketingAutomationService
 {
+    public function __construct(
+        private readonly ShortLinkService $shortLinks,
+        private readonly OrderContinueUrl $continueUrls,
+    ) {}
+
     /**
      * Run the form_submitted automation for a sales form submission.
      */
@@ -77,7 +83,7 @@ class MarketingAutomationService
             '{{total}}' => number_format((float) $order->total_amount, 2),
             '{{currency}}' => (string) ($order->currency ?? ''),
             '{{store_name}}' => (string) ($order->environment?->name ?? ''),
-            '{{continue_url}}' => $this->continueUrl($order),
+            '{{continue_url}}' => $this->shortLinks->forOrder($order) ?: $this->continueUrls->for($order),
         ];
 
         $this->dispatchSends($automation, $order->environment, $variables, [
@@ -128,37 +134,6 @@ class MarketingAutomationService
             'email' => filled($toEmail),
             'whatsapp' => filled($toPhone),
         ]);
-    }
-
-    /**
-     * Sales-form guests are not signed in on the tenant domain, so their
-     * continue-payment link needs the same signed checkout token the sales form
-     * response and the abandoned-reminder mail use.
-     */
-    private function continueUrl(Order $order): string
-    {
-        $url = (string) ($order->continue_payment_url ?? '');
-
-        if ($url === '' || $order->type !== Order::TYPE_SALES_FORM) {
-            return $url;
-        }
-
-        $order->loadMissing('salesFormSubmission.salesForm');
-
-        $query = [
-            'checkout_token' => SalesFormCheckoutToken::issue($order),
-        ];
-
-        if ($order->sales_form_submission_id) {
-            $query['registration'] = $order->sales_form_submission_id;
-        }
-
-        $gateway = $order->salesFormSubmission?->salesForm?->settings['payment_gateway_code'] ?? null;
-        if (is_string($gateway) && $gateway !== '') {
-            $query['payment_gateway'] = $gateway;
-        }
-
-        return $url.(str_contains($url, '?') ? '&' : '?').http_build_query($query);
     }
 
     /**

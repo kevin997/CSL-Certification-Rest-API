@@ -10,8 +10,10 @@ use App\Models\MarketingConsent;
 use App\Models\Order;
 use App\Models\SalesForm;
 use App\Models\SalesFormSubmission;
+use App\Models\ShortLink;
 use App\Models\User;
 use App\Services\MarketingAutomationService;
+use App\Services\Sales\ShortLinkService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
@@ -248,14 +250,21 @@ class MarketingAutomationTest extends TestCase
 
         Mail::assertQueued(AutomationMail::class, function (AutomationMail $mail) use ($submission) {
             return $mail->hasTo($submission->email)
-                && str_contains($mail->automationBody, 'checkout_token=')
-                && ! str_contains($mail->automationBody, '{{continue_url}}');
+                && str_contains($mail->automationBody, '/p/')
+                && ! str_contains($mail->automationBody, 'checkout_token');
         });
 
         Queue::assertPushed(SendWhatsAppNotification::class, function (SendWhatsAppNotification $job) {
             return $job->phoneNumber === '237699999999'
-                && str_contains($job->message, 'checkout_token=')
-                && ! str_contains($job->message, '{{continue_url}}');
+                && str_contains($job->message, '/p/')
+                && ! str_contains($job->message, 'checkout_token');
         });
+
+        $link = ShortLink::query()->where('order_id', $order->id)->firstOrFail();
+        $destination = app(ShortLinkService::class)->resolve($link->code);
+        $this->assertNotNull($destination);
+        $this->assertStringContainsString('/checkout/continue-payment/'.$order->id, $destination);
+        $this->assertStringContainsString('checkout_token=', $destination);
+        $this->assertStringContainsString('registration='.$submission->id, $destination);
     }
 }
