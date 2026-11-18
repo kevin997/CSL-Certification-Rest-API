@@ -73,9 +73,9 @@ class AutomationCopyGenerator
         string $language,
     ): string {
         $facts = match ($trigger) {
-            MarketingAutomation::TRIGGER_ORDER_PLACED => 'The customer has just placed order {{order_number}} for {{total}} {{currency}} at {{store_name}}. Payment is still pending: invite them to finish paying with {{continue_url}}.',
-            MarketingAutomation::TRIGGER_PAYMENT_CONFIRMED => 'Payment for order {{order_number}} ({{total}} {{currency}}) at {{store_name}} is confirmed. Thank the customer and keep {{continue_url}} for their records.',
-            MarketingAutomation::TRIGGER_ORDER_ABANDONED => 'Order {{order_number}} for {{total}} {{currency}} at {{store_name}} is still unpaid. Send a gentle reminder and the continue-payment link {{continue_url}}.',
+            MarketingAutomation::TRIGGER_ORDER_PLACED => 'The customer has just placed order {{order_number}} for {{product_name}} ({{total}} {{currency}}) at {{store_name}}. Payment is still pending: invite them to finish paying with {{continue_url}}.',
+            MarketingAutomation::TRIGGER_PAYMENT_CONFIRMED => 'Payment for order {{order_number}} ({{product_name}}, {{total}} {{currency}}) at {{store_name}} is confirmed. Thank the customer and keep {{continue_url}} for their records.',
+            MarketingAutomation::TRIGGER_ORDER_ABANDONED => 'Order {{order_number}} for {{product_name}} ({{total}} {{currency}}) at {{store_name}} is still unpaid. Send a gentle reminder and the continue-payment link {{continue_url}}.',
             MarketingAutomation::TRIGGER_FORM_SUBMITTED => 'A lead just submitted a marketing form. Summarise the lead and keep {{continue_url}} available as the checkout link.',
             default => 'Use the placeholders exactly as provided.',
         };
@@ -95,7 +95,7 @@ class AutomationCopyGenerator
             "Language: {$languageName}",
             "Facts: {$facts}",
             $instructions ? "Operator instructions: {$instructions}" : null,
-            'Return the email subject, email body and WhatsApp message. Keep every placeholder literal, including {{continue_url}}.',
+            'Return the email subject, email body and WhatsApp message. Keep every placeholder literal, including {{product_name}} and {{continue_url}}.',
         ]));
     }
 

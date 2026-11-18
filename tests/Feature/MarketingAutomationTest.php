@@ -8,6 +8,8 @@ use App\Models\Environment;
 use App\Models\MarketingAutomation;
 use App\Models\MarketingConsent;
 use App\Models\Order;
+use App\Models\OrderItem;
+use App\Models\Product;
 use App\Models\SalesForm;
 use App\Models\SalesFormSubmission;
 use App\Models\ShortLink;
@@ -218,8 +220,8 @@ class MarketingAutomationTest extends TestCase
         $this->makeAutomation(MarketingAutomation::TRIGGER_ORDER_PLACED, [
             'recipient' => MarketingAutomation::RECIPIENT_CUSTOMER,
             'email_subject' => 'Pay order {{order_number}}',
-            'email_body' => 'Hi {{name}}, continue here: {{continue_url}}',
-            'whatsapp_template' => 'Hi {{name}}, continue here: {{continue_url}}',
+            'email_body' => 'Hi {{name}}, {{product_name}} is waiting. Continue here: {{continue_url}}',
+            'whatsapp_template' => 'Hi {{name}}, {{product_name}} is waiting. Continue here: {{continue_url}}',
         ]);
 
         $submission = $this->makeSubmission();
@@ -245,17 +247,39 @@ class MarketingAutomationTest extends TestCase
         $order->phone_number = $submission->phone;
         $order->save();
 
+        $product = Product::create([
+            'name' => 'Media Buying Bootcamp',
+            'slug' => 'media-buying-bootcamp',
+            'price' => 10.50,
+            'currency' => 'USD',
+            'status' => 'active',
+            'environment_id' => $this->environment->id,
+            'created_by' => $this->owner->id,
+        ]);
+
+        OrderItem::create([
+            'order_id' => $order->id,
+            'product_id' => $product->id,
+            'quantity' => 1,
+            'price' => 10.50,
+            'discount' => 0,
+            'total' => 10.50,
+            'is_subscription' => false,
+        ]);
+
         app(MarketingAutomationService::class)
             ->handleOrderTrigger($order, MarketingAutomation::TRIGGER_ORDER_PLACED);
 
         Mail::assertQueued(AutomationMail::class, function (AutomationMail $mail) use ($submission) {
             return $mail->hasTo($submission->email)
+                && str_contains($mail->automationBody, 'Media Buying Bootcamp')
                 && str_contains($mail->automationBody, '/p/')
                 && ! str_contains($mail->automationBody, 'checkout_token');
         });
 
         Queue::assertPushed(SendWhatsAppNotification::class, function (SendWhatsAppNotification $job) {
             return $job->phoneNumber === '237699999999'
+                && str_contains($job->message, 'Media Buying Bootcamp')
                 && str_contains($job->message, '/p/')
                 && ! str_contains($job->message, 'checkout_token');
         });
