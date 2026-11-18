@@ -11,6 +11,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class AuditLog extends Model
 {
     use HasFactory;
+
+    /**
+     * Historic audit_logs.user_agent was varchar(191) and Facebook/Instagram
+     * in-app browsers send longer agents. Keep the column text (see the
+     * 2026_11_18 migration) and still clamp writes so an un-migrated database
+     * cannot abort a payment.
+     */
+    private const USER_AGENT_LIMIT = 191;
     
     /**
      * The attributes that are mass assignable.
@@ -119,7 +127,7 @@ class AuditLog extends Model
         ?string $status = null
     ): self {
         $ip = request()->ip();
-        $userAgent = request()->userAgent();
+        $userAgent = self::requestUserAgent();
         
         return self::create([
             'log_type' => self::TYPE_WEBHOOK,
@@ -161,7 +169,7 @@ class AuditLog extends Model
         ?string $status = null
     ): self {
         $ip = request()->ip();
-        $userAgent = request()->userAgent();
+        $userAgent = self::requestUserAgent();
         
         return self::create([
             'log_type' => self::TYPE_CALLBACK,
@@ -210,7 +218,7 @@ class AuditLog extends Model
             'metadata' => self::sanitizePayload($metadata),
             'notes' => "Transaction {$action}",
             'ip_address' => request()?->ip(),
-            'user_agent' => request()?->userAgent(),
+            'user_agent' => self::requestUserAgent(),
             'status' => self::statusFromTransactionStatus($transaction->status),
         ]);
     }
@@ -244,7 +252,7 @@ class AuditLog extends Model
             'metadata' => self::sanitizePayload($metadata),
             'notes' => $notes,
             'ip_address' => request()?->ip(),
-            'user_agent' => request()?->userAgent(),
+            'user_agent' => self::requestUserAgent(),
             'status' => $status ?? self::STATUS_SUCCESS,
         ]);
     }
@@ -277,6 +285,17 @@ class AuditLog extends Model
         }
 
         return $sanitized;
+    }
+
+    private static function requestUserAgent(): ?string
+    {
+        $userAgent = request()?->userAgent();
+
+        if ($userAgent === null) {
+            return null;
+        }
+
+        return mb_substr($userAgent, 0, self::USER_AGENT_LIMIT);
     }
 
     private static function statusFromTransactionStatus(?string $status): string

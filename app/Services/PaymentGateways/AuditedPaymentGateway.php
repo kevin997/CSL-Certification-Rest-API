@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\Invoice;
 use App\Models\PaymentGatewaySetting;
 use App\Models\Transaction;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class AuditedPaymentGateway implements PaymentGatewayInterface
@@ -97,6 +98,10 @@ class AuditedPaymentGateway implements PaymentGatewayInterface
     ): mixed {
         $source = 'payment_gateway:' . $this->settings->code;
         $startedAt = microtime(true);
+        $entityType ??= $transaction ? Transaction::class : null;
+        $entityId ??= $transaction ? (string) $transaction->getKey() : null;
+        $environmentId ??= $transaction?->environment_id ?? $this->settings->environment_id;
+        $userId ??= $transaction?->customer_id;
 
         try {
             $response = $operation();
@@ -115,7 +120,7 @@ class AuditedPaymentGateway implements PaymentGatewayInterface
                 return $response;
             }
 
-            AuditLog::logPaymentGatewayOperation(
+            $this->recordAudit(
                 $source,
                 $action,
                 $this->requestPayload($transaction, $requestData),
@@ -126,16 +131,16 @@ class AuditedPaymentGateway implements PaymentGatewayInterface
                     'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
                 ],
                 $this->statusFromResponse($response),
-                $entityType ?? ($transaction ? Transaction::class : null),
-                $entityId ?? ($transaction ? (string) $transaction->getKey() : null),
-                $environmentId ?? $transaction?->environment_id ?? $this->settings->environment_id,
-                $userId ?? $transaction?->customer_id,
+                $entityType,
+                $entityId,
+                $environmentId,
+                $userId,
                 $this->notesFromResponse($response)
             );
 
             return $response;
         } catch (Throwable $e) {
-            AuditLog::logPaymentGatewayOperation(
+            $this->recordAudit(
                 $source,
                 $action,
                 $this->requestPayload($transaction, $requestData),
@@ -147,14 +152,57 @@ class AuditedPaymentGateway implements PaymentGatewayInterface
                     'exception' => get_class($e),
                 ],
                 AuditLog::STATUS_ERROR,
-                $entityType ?? ($transaction ? Transaction::class : null),
-                $entityId ?? ($transaction ? (string) $transaction->getKey() : null),
-                $environmentId ?? $transaction?->environment_id ?? $this->settings->environment_id,
-                $userId ?? $transaction?->customer_id,
+                $entityType,
+                $entityId,
+                $environmentId,
+                $userId,
                 $e->getMessage()
             );
 
             throw $e;
+        }
+    }
+
+    /**
+     * Audit logging is observability, never part of the payment transaction.
+     * A failed insert (long user agent, schema drift, database hiccup) must not
+     * turn a successful gateway payment into an error response.
+     */
+    private function recordAudit(
+        string $source,
+        string $action,
+        ?array $requestData,
+        ?array $responseData,
+        ?array $metadata,
+        ?string $status,
+        ?string $entityType,
+        ?string $entityId,
+        ?int $environmentId,
+        ?int $userId,
+        ?string $notes
+    ): void {
+        try {
+            AuditLog::logPaymentGatewayOperation(
+                $source,
+                $action,
+                $requestData,
+                $responseData,
+                $metadata,
+                $status,
+                $entityType,
+                $entityId,
+                $environmentId,
+                $userId,
+                $notes
+            );
+        } catch (Throwable $auditException) {
+            Log::warning('Payment gateway audit logging failed', [
+                'source' => $source,
+                'action' => $action,
+                'entity_type' => $entityType,
+                'entity_id' => $entityId,
+                'error' => $auditException->getMessage(),
+            ]);
         }
     }
 
