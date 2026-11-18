@@ -6,11 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Environment;
 use App\Models\MarketingAutomation;
 use App\Scopes\EnvironmentScope;
+use App\Services\Marketing\AutomationCopyGenerator;
 use App\Support\Tenancy\EnvironmentContext;
 use App\Support\Tenancy\EnvironmentResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Throwable;
 
 /**
  * Per-environment Email/WhatsApp marketing automation settings
@@ -119,5 +122,67 @@ class MarketingAutomationController extends Controller
         abort_unless($environment && $request->user()?->isStaffIn($environment->id), 403, 'Unauthorized');
 
         return $environment;
+    }
+
+    /**
+     * Draft the email + WhatsApp copy for a trigger with the configured AI
+     * provider. The draft is returned, never saved: the instructor edits it
+     * and saves through upsert().
+     */
+    public function generateCopy(
+        Request $request,
+        string $trigger,
+        AutomationCopyGenerator $generator
+    ): JsonResponse {
+        $environment = $this->authorizedEnvironment($request);
+
+        if (! in_array($trigger, MarketingAutomation::TRIGGERS, true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unknown automation trigger.',
+            ], 404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'channels' => 'nullable|array',
+            'channels.*' => 'string|in:email,whatsapp',
+            'instructions' => 'nullable|string|max:500',
+            'language' => 'nullable|string|in:fr,en',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed.',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $data = $validator->validated();
+
+        try {
+            $copy = $generator->generate(
+                $environment,
+                $trigger,
+                $data['channels'] ?? [MarketingAutomation::CHANNEL_EMAIL, MarketingAutomation::CHANNEL_WHATSAPP],
+                $data['instructions'] ?? null,
+                $data['language'] ?? 'fr',
+            );
+        } catch (Throwable $e) {
+            Log::error('MarketingAutomationController: copy generation failed: '.$e->getMessage(), [
+                'environment_id' => $environment->id,
+                'trigger' => $trigger,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'The AI draft could not be generated. Try again or write the message manually.',
+            ], 503);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $copy,
+        ]);
     }
 }

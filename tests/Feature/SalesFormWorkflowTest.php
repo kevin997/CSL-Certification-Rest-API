@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Events\OrderPlaced;
 use App\Models\AssetDelivery;
 use App\Models\Block;
 use App\Models\Course;
@@ -16,6 +17,7 @@ use App\Models\SalesFormSubmission;
 use App\Models\Template;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
@@ -117,6 +119,7 @@ class SalesFormWorkflowTest extends TestCase
     /** @test */
     public function public_submission_runs_pre_enrollment_workflow(): void
     {
+        Event::fake([OrderPlaced::class]);
         $form = $this->makePublishedForm();
 
         $response = $this->postJson("/api/sales-forms/public/{$form->slug}/submit", [
@@ -147,6 +150,9 @@ class SalesFormWorkflowTest extends TestCase
         $this->assertNotNull($order);
         $this->assertEquals(Order::STATUS_PENDING, $order->status);
         $this->assertEquals(Order::TYPE_SALES_FORM, $order->type);
+
+        // The buyer gets the order_placed automation for the pending order.
+        Event::assertDispatched(OrderPlaced::class, fn (OrderPlaced $event) => $event->order->id === $order->id);
     }
 
     /** @test */

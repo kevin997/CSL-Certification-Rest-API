@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Sales;
 
 use App\Events\OrderCompleted;
+use App\Events\OrderPlaced;
 use App\Events\SalesFormSubmitted;
 use App\Events\UserCreatedDuringCheckout;
 use App\Http\Controllers\Controller;
@@ -158,6 +159,7 @@ class SalesFormSubmissionController extends Controller
 
             // 1. Find-or-create the learner by email, using the password they set.
             $userExisted = false;
+            $phone = $this->extractFieldValue($form, $request->input('answers', []), 'phone');
             $user = User::where('email', $request->email)->first();
             if (! $user) {
                 $user = User::create([
@@ -165,14 +167,19 @@ class SalesFormSubmissionController extends Controller
                     'email' => $request->email,
                     'password' => Hash::make($request->password),
                     'role' => 'learner',
+                    'whatsapp_number' => $phone ?: null,
                 ]);
             } else {
                 $userExisted = true;
                 $this->ensureEnvironmentMembership($user, $environment);
+
+                if (blank($user->whatsapp_number) && filled($phone)) {
+                    $user->whatsapp_number = $phone;
+                    $user->save();
+                }
             }
 
             // 2. Generate access code + persist submission.
-            $phone = $this->extractFieldValue($form, $request->input('answers', []), 'phone');
             $marketingConsent = $request->input('marketing_consent', []);
             $termsVersion = $request->input('marketing_terms_version');
             $submissionTermsVersion = $termsVersion ?? SalesFormSubmission::MARKETING_TERMS_VERSION;
@@ -247,6 +254,7 @@ class SalesFormSubmissionController extends Controller
             // granted the included course(s) and any digital assets right away.
             $orders = [];
             $freeOrders = [];
+            $pendingPaidOrders = [];
             foreach ($products as $product) {
                 $price = (float) ($product->discount_price ?? $product->price ?? 0);
                 $isFree = $this->isFreeProduct($product);
@@ -264,6 +272,11 @@ class SalesFormSubmissionController extends Controller
                     'sales_form_submission_id' => $submission->id,
                 ]);
 
+                if (filled($phone)) {
+                    $order->phone_number = $phone;
+                    $order->save();
+                }
+
                 OrderItem::create([
                     'order_id' => $order->id,
                     'product_id' => $product->id,
@@ -277,6 +290,8 @@ class SalesFormSubmissionController extends Controller
                 $order->setRelation('environment', $environment);
                 if ($isFree) {
                     $freeOrders[] = $order;
+                } else {
+                    $pendingPaidOrders[] = $order;
                 }
 
                 $orders[] = [
@@ -318,6 +333,14 @@ class SalesFormSubmissionController extends Controller
 
             // Marketing automation: notify the instructor of the new lead
             event(new SalesFormSubmitted($submission));
+
+            // Marketing automation: give the buyer the continue-payment link for
+            // every pending order. Sales-form orders now follow the same
+            // order_placed trigger as storefront orders; the listener is queued
+            // after commit.
+            foreach ($pendingPaidOrders as $order) {
+                event(new OrderPlaced($order));
+            }
 
             return response()->json([
                 'success' => true,
