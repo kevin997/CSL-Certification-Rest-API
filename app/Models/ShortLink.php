@@ -15,6 +15,7 @@ class ShortLink extends Model
 {
     protected $fillable = [
         'code',
+        'url',
         'order_id',
         'environment_id',
         'expires_at',

@@ -13,6 +13,7 @@ use App\Models\Product;
 use App\Models\ProductAsset;
 use App\Models\SalesForm;
 use App\Models\SalesFormField;
+use App\Mail\WelcomeToEnvironment;
 use App\Models\SalesFormSubmission;
 use App\Models\Template;
 use App\Models\User;
@@ -392,5 +393,49 @@ class SalesFormWorkflowTest extends TestCase
         $this->assertNotNull($delivery);
         $this->assertEquals($asset->id, $delivery->product_asset_id);
         $this->assertEquals(AssetDelivery::STATUS_ACTIVE, $delivery->status);
+    }
+
+    /** @test */
+    public function guest_checkout_creates_an_account_and_queues_password_links(): void
+    {
+        Mail::fake();
+        $form = $this->makePublishedForm();
+
+        SalesFormField::create([
+            'sales_form_id' => $form->id,
+            'type' => 'phone',
+            'field_key' => 'phone_whatsapp_1',
+            'label' => 'Phone / WhatsApp',
+            'is_required' => true,
+            'order' => 1,
+        ]);
+
+        $response = $this->postJson("/api/sales-forms/public/{$form->slug}/submit", [
+            'name' => 'Guest Learner',
+            'email' => 'guest-password@example.com',
+            'answers' => [
+                'city' => 'Douala',
+                'phone_whatsapp_1' => '+237681685901',
+            ],
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('user_existed', false);
+
+        $user = User::where('email', 'guest-password@example.com')->firstOrFail();
+        $this->assertNotEmpty($user->password);
+        $this->assertSame('+237681685901', $user->whatsapp_number);
+
+        Mail::assertQueued(WelcomeToEnvironment::class, function (WelcomeToEnvironment $mail) use ($user) {
+            return $mail->hasTo($user->email)
+                && is_string($mail->passwordSetupUrl)
+                && str_contains($mail->passwordSetupUrl, '/p/');
+        });
+
+        $this->assertDatabaseHas('environment_user', [
+            'environment_id' => $this->environment->id,
+            'user_id' => $user->id,
+        ]);
     }
 }

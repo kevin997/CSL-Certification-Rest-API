@@ -28,6 +28,7 @@ class WelcomeToEnvironment extends Mailable implements ShouldQueue
         public User $user,
         public Environment $environment,
         public ?string $password = null,
+        public ?string $passwordSetupUrl = null,
     ) {}
 
     /**
@@ -56,6 +57,7 @@ class WelcomeToEnvironment extends Mailable implements ShouldQueue
                 'user' => $this->user,
                 'environment' => $this->environment,
                 'password' => $this->password,
+                'passwordSetupUrl' => $this->passwordSetupUrl,
                 'branding' => $branding,
                 'loginUrl' => $branding['login_url'],
             ],
