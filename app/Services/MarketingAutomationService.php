@@ -66,12 +66,12 @@ class MarketingAutomationService
             return;
         }
 
-        $order->loadMissing(['environment', 'user']);
+        $order->loadMissing(['environment', 'user', 'salesFormSubmission']);
 
         $variables = [
             '{{name}}' => (string) ($order->billing_name ?? $order->user?->name ?? ''),
             '{{email}}' => (string) ($order->billing_email ?? $order->user?->email ?? ''),
-            '{{phone}}' => (string) ($order->phone_number ?: ($order->user?->whatsapp_number ?? '')),
+            '{{phone}}' => (string) ($order->phone_number ?: ($order->user?->whatsapp_number ?: ($order->salesFormSubmission?->phone ?? ''))),
             '{{form_title}}' => '',
             '{{order_number}}' => (string) ($order->order_number ?? ''),
             '{{total}}' => number_format((float) $order->total_amount, 2),
@@ -82,7 +82,7 @@ class MarketingAutomationService
 
         $this->dispatchSends($automation, $order->environment, $variables, [
             'email' => $order->billing_email ?? $order->user?->email,
-            'phone' => $order->phone_number ?: $order->user?->whatsapp_number,
+            'phone' => $order->phone_number ?: ($order->user?->whatsapp_number ?: $order->salesFormSubmission?->phone),
             'name' => $order->billing_name ?? $order->user?->name,
         ], in_array($trigger, [
             MarketingAutomation::TRIGGER_ORDER_PLACED,
