@@ -45,6 +45,7 @@ class MarketingAutomationService
             '{{phone}}' => (string) ($submission->phone ?? ''),
             '{{form_title}}' => (string) ($submission->salesForm?->title ?? ''),
             '{{order_number}}' => '',
+            '{{product_name}}' => '',
             '{{total}}' => '',
             '{{currency}}' => '',
             '{{store_name}}' => (string) ($environment?->name ?? ''),
@@ -72,7 +73,14 @@ class MarketingAutomationService
             return;
         }
 
-        $order->loadMissing(['environment', 'user', 'salesFormSubmission']);
+        $order->loadMissing(['environment', 'user', 'salesFormSubmission', 'items.product']);
+
+        $productNames = $order->items
+            ->map(fn ($item) => $item->product?->name)
+            ->filter()
+            ->unique()
+            ->values()
+            ->implode(', ');
 
         $variables = [
             '{{name}}' => (string) ($order->billing_name ?? $order->user?->name ?? ''),
@@ -80,6 +88,7 @@ class MarketingAutomationService
             '{{phone}}' => (string) ($order->phone_number ?: ($order->user?->whatsapp_number ?: ($order->salesFormSubmission?->phone ?? ''))),
             '{{form_title}}' => '',
             '{{order_number}}' => (string) ($order->order_number ?? ''),
+            '{{product_name}}' => $productNames,
             '{{total}}' => number_format((float) $order->total_amount, 2),
             '{{currency}}' => (string) ($order->currency ?? ''),
             '{{store_name}}' => (string) ($order->environment?->name ?? ''),
