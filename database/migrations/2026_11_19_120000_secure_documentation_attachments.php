@@ -1,7 +1,6 @@
 <?php
 
 use App\Helpers\MigrationHelper;
-use App\Models\DocumentationContent;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -57,11 +56,17 @@ return new class extends Migration
         // protected endpoint. The JSON column stays for backwards compatibility
         // but is no longer returned to learners.
         DB::table('documentation_contents')
-            ->select(['id', 'attachments', 'created_by'])
+            ->select(['id', 'activity_id', 'attachments', 'created_by'])
             ->orderBy('id')
             ->chunk(100, function ($contents) {
                 foreach ($contents as $content) {
                     $attachments = json_decode((string) $content->attachments, true);
+
+                    // Legacy rows were written with an extra json_encode on a
+                    // JSON column, so the first decode yields a JSON string.
+                    if (is_string($attachments)) {
+                        $attachments = json_decode($attachments, true);
+                    }
 
                     if (! is_array($attachments)) {
                         continue;
@@ -70,8 +75,7 @@ return new class extends Migration
                     $owner = DB::table('activities')
                         ->join('blocks', 'blocks.id', '=', 'activities.block_id')
                         ->join('templates', 'templates.id', '=', 'blocks.template_id')
-                        ->where('activities.content_type', DocumentationContent::class)
-                        ->where('activities.content_id', $content->id)
+                        ->where('activities.id', $content->activity_id)
                         ->select(['templates.environment_id', 'templates.created_by'])
                         ->first();
 
