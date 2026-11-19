@@ -189,15 +189,15 @@ class DocumentationContentController extends Controller
 
         // Handle arrays that need to be stored as JSON
         if ($request->has('tags')) {
-            $data['tags'] = json_encode($request->tags);
+            $data['tags'] = $request->tags;
         }
 
         if ($request->has('attachments')) {
-            $data['attachments'] = json_encode($request->attachments);
+            $data['attachments'] = $request->attachments;
         }
 
         if ($request->has('related_links')) {
-            $data['related_links'] = json_encode($request->related_links);
+            $data['related_links'] = $request->related_links;
         }
 
         // Add activity_id to data
@@ -414,15 +414,15 @@ class DocumentationContentController extends Controller
 
         // Handle arrays that need to be stored as JSON
         if ($request->has('tags')) {
-            $updateData['tags'] = json_encode($request->tags);
+            $updateData['tags'] = $request->tags;
         }
 
         if ($request->has('attachments')) {
-            $updateData['attachments'] = json_encode($request->attachments);
+            $updateData['attachments'] = $request->attachments;
         }
 
         if ($request->has('related_links')) {
-            $updateData['related_links'] = json_encode($request->related_links);
+            $updateData['related_links'] = $request->related_links;
         }
 
         $documentationContent->update($updateData);
