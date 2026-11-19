@@ -26,9 +26,14 @@ use ZipArchive;
  * The bytes stay where the instructor uploaded them (Cloudinary today), but
  * the URL is never returned to the browser. The learner asks this service for
  * the document; it checks the academy, the enrollment and the account, then
- * streams the bytes and records the access. PDFs and images are returned as
- * they are (rendered by the in-app viewer), Office documents are converted to
- * a safe preview, never the editable original.
+ * streams the bytes and records the access. PDFs are stamped per open with
+ * the learner, email, access id and time; images are returned as they are
+ * (rendered by the in-app viewer). Office documents are converted to a safe
+ * text/table preview, never the editable original.
+ *
+ * DOCX-to-PDF conversion is intentionally not implemented: it requires
+ * LibreOffice in the runtime image, while the text preview already preserves
+ * the content without shipping an editable file.
  */
 class DocumentProtectionService
 {
@@ -407,8 +412,27 @@ class DocumentProtectionService
 
         $url = $attachment->source_url ?: $attachment->file_path;
         $path = (string) parse_url((string) $url, PHP_URL_PATH);
+        $fromUrl = strtolower(pathinfo($path, PATHINFO_EXTENSION));
 
-        return strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        if ($fromUrl !== '') {
+            return $fromUrl;
+        }
+
+        // Self-hosted legacy rows may have no extension anywhere; the MIME
+        // still tells us it is an Office file that must not ship editable.
+        return match (strtolower((string) $attachment->file_type)) {
+            'application/pdf' => 'pdf',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+            'application/msword' => 'doc',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+            'application/vnd.ms-excel' => 'xls',
+            'text/csv' => 'csv',
+            'image/png' => 'png',
+            'image/jpeg', 'image/jpg' => 'jpg',
+            'image/webp' => 'webp',
+            'image/gif' => 'gif',
+            default => '',
+        };
     }
 
     private function mime(DocumentationAttachment $attachment, ?string $remote): string
