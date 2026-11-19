@@ -492,7 +492,9 @@ Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
 });
 
 // Template Management Routes
-Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
+// `device.active` also covers the learner-facing data endpoints in this group
+// (my-enrollments, my-orders, digital products), not just routes/learner.php.
+Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->group(function () {
 
     // Invoice routes
     Route::get('/invoices', [InvoiceController::class, 'index']);
