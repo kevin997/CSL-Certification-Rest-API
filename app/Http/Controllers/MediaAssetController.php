@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\UserRole;
 use App\Events\MediaProcessingStatusUpdated;
 use App\Models\Activity;
 use App\Models\Enrollment;
@@ -812,6 +813,14 @@ class MediaAssetController extends Controller
     protected function userCanPlay(User $user, MediaAsset $asset): bool
     {
         $environmentId = (int) $asset->environment_id;
+
+        $platformRole = $user->role instanceof UserRole
+            ? $user->role->value
+            : (string) $user->role;
+
+        if (in_array($platformRole, ['admin', 'super_admin'], true)) {
+            return true;
+        }
 
         try {
             $role = EffectiveAuthContext::for($user, $environmentId)['role'];
