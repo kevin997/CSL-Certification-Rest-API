@@ -10,6 +10,7 @@ use App\Http\Middleware\ConfigureTenantCorsAndSanctum;
 use App\Http\Middleware\DetectEnvironment;
 use App\Http\Middleware\EnforceHttps;
 use App\Http\Middleware\EnsureEnvironmentResolved;
+use App\Http\Middleware\EnsureLearnerDevice;
 use App\Http\Middleware\FixXsrfCookieDomain;
 use App\Http\Middleware\IsolateSession;
 use App\Http\Middleware\MarkMarketingServiceRequest;
@@ -96,6 +97,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
             // Tenant routes refuse (or, in log mode, log) when no environment resolved.
             'environment.required' => EnsureEnvironmentResolved::class,
+
+            // Learners may use a bounded number of devices per academy.
+            'device.active' => EnsureLearnerDevice::class,
 
             // HMAC service authentication for the private Marketing Service
             // endpoint; aliases keep it off browser-facing API routes.

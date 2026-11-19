@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Environment;
 use App\Models\EnvironmentUser;
 use App\Models\User;
+use App\Services\Devices\DeviceRegistrar;
 use App\Support\EffectiveAuthContext;
 use App\Support\EnvironmentLearnerMembership;
 use App\Support\Tenancy\EnvironmentResolver;
@@ -255,6 +256,12 @@ class SessionAuthController extends Controller
         }
 
         $authContext = EffectiveAuthContext::for($user, $environmentId);
+
+        // Refuse a third device before the session is created, so the learner
+        // sees the device message instead of a half-signed-in app.
+        if ($environmentId) {
+            app(DeviceRegistrar::class)->registerFromRequest($request, $user, (int) $environmentId);
+        }
 
         if ($authenticatedViaEnvironment) {
             $this->autoHealPassword($user, $request->password);

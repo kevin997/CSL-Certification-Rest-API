@@ -61,6 +61,7 @@ use App\Http\Controllers\Api\IntegrationInterestController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\LandingPagePopupController;
 use App\Http\Controllers\Api\LearnerController;
+use App\Http\Controllers\Api\LearnerDeviceController;
 use App\Http\Controllers\Api\LegalPageController;
 use App\Http\Controllers\Api\LessonContentController;
 use App\Http\Controllers\Api\LessonDiscussionController;
@@ -696,6 +697,12 @@ Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
     // Learner routes
     Route::get('/learners/{userId}', [LearnerController::class, 'show']);
     Route::get('/learners/{userId}/enrollments/{enrollmentId}/submissions', [LearnerController::class, 'getEnrollmentSubmissions']);
+
+    // Learner device slots: the learner reads their own; an instructor manages
+    // a learner of their own academy.
+    Route::get('/me/devices', [LearnerDeviceController::class, 'mine']);
+    Route::get('/learners/{userId}/devices', [LearnerDeviceController::class, 'index']);
+    Route::delete('/learners/{userId}/devices/{deviceId}', [LearnerDeviceController::class, 'destroy']);
 
     // Activity Completion routes
     Route::get('/enrollments/{enrollmentId}/activity-completions', [ActivityCompletionController::class, 'index']);

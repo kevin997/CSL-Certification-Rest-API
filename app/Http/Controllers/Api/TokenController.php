@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Environment;
 use App\Models\EnvironmentUser;
 use App\Models\User;
+use App\Services\Devices\DeviceRegistrar;
 use App\Support\EffectiveAuthContext;
 use App\Support\EnvironmentLearnerMembership;
 use App\Support\Tenancy\EnvironmentResolver;
@@ -236,6 +237,11 @@ class TokenController extends Controller
                     ]);
                 }
             }
+
+            // A learner gets at most two devices per academy. Register the
+            // device before a token exists so a third device is refused with a
+            // clear message instead of silently sharing the account.
+            app(DeviceRegistrar::class)->registerFromRequest($request, $user, (int) $environmentId);
 
             // Determine the role for token abilities
             $userRole = $user->role;
