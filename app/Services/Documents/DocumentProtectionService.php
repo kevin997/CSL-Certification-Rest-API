@@ -7,6 +7,7 @@ use App\Models\Activity;
 use App\Models\DocumentAccessLog;
 use App\Models\DocumentationAttachment;
 use App\Models\DocumentationContent;
+use App\Models\DocumentBlob;
 use App\Models\Enrollment;
 use App\Models\User;
 use App\Support\EffectiveAuthContext;
@@ -14,6 +15,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use setasign\Fpdi\Fpdi;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Throwable;
 use ZipArchive;
@@ -51,13 +53,17 @@ class DocumentProtectionService
             $uuid = isset($item['uuid']) && Str::isUuid((string) $item['uuid']) ? (string) $item['uuid'] : null;
 
             $existing = $uuid
-                ? DocumentationAttachment::query()
-                    ->where('documentation_content_id', $content->id)
-                    ->where('uuid', $uuid)
-                    ->first()
+                ? DocumentationAttachment::query()->where('uuid', $uuid)->first()
                 : null;
 
+            if ($existing && $existing->documentation_content_id !== null
+                && (int) $existing->documentation_content_id !== (int) $content->id) {
+                // A uuid from another document must never be re-parented.
+                $existing = null;
+            }
+
             if ($existing) {
+                $existing->documentation_content_id = $content->id;
                 $existing->fill(array_filter([
                     'file_name' => $item['name'] ?? $existing->file_name,
                     'file_type' => $item['file_type'] ?? $existing->file_type,
@@ -171,19 +177,14 @@ class DocumentProtectionService
      */
     public function stream(User $user, DocumentationAttachment $attachment, ?string $ip, ?string $userAgent): Response
     {
-        $url = $attachment->source_url ?: $attachment->file_path;
-
-        if (! is_string($url) || ! $this->isAllowedSource($url)) {
-            throw new HttpException(422, 'This document source is not allowed.');
-        }
-
+        $bytes = $this->bytesFor($attachment);
         $extension = $this->extensionFor($attachment);
+        $access = $this->logAccess($attachment, $user, $ip, $userAgent);
 
         // Office files are never sent to the browser in their original form:
         // the original is editable and could be re-shared.
         if (in_array($extension, ['docx', 'doc'], true)) {
-            $binary = $this->fetch($url);
-            $text = $this->docxToText($binary);
+            $text = $this->docxToText($bytes);
 
             if ($text === null) {
                 return $this->textResponse(
@@ -191,14 +192,11 @@ class DocumentProtectionService
                 );
             }
 
-            $this->logAccess($attachment, $user, $ip, $userAgent);
-
             return $this->textResponse($text);
         }
 
         if (in_array($extension, ['xlsx', 'xls', 'csv'], true)) {
-            $binary = $this->fetch($url);
-            $table = $this->spreadsheetToHtml($binary);
+            $table = $this->spreadsheetToHtml($bytes);
 
             if ($table === null) {
                 return $this->textResponse(
@@ -206,27 +204,20 @@ class DocumentProtectionService
                 );
             }
 
-            $this->logAccess($attachment, $user, $ip, $userAgent);
-
             return $this->htmlResponse($table);
         }
 
-        $response = Http::timeout(30)->get($url);
-
-        if (! $response->successful()) {
-            throw new HttpException(502, 'The document is temporarily unavailable.');
+        // Bake the learner's identity into the PDF so a screenshot or a saved
+        // copy is traceable to the account and the access event.
+        if ($extension === 'pdf') {
+            $stamped = $this->watermarkPdf($bytes, $this->watermarkText($user, $access));
+            if (is_string($stamped) && $stamped !== '') {
+                $bytes = $stamped;
+            }
         }
-
-        $bytes = $response->body();
-
-        if (strlen($bytes) > self::MAX_BYTES) {
-            throw new HttpException(413, 'This document is too large to preview.');
-        }
-
-        $this->logAccess($attachment, $user, $ip, $userAgent);
 
         return response($bytes, 200, [
-            'Content-Type' => $this->mime($attachment, $response->header('Content-Type')),
+            'Content-Type' => $this->mime($attachment, null),
             'Content-Disposition' => 'inline; filename="'.$this->safeName($attachment->file_name).'"',
             'Content-Length' => (string) strlen($bytes),
             'Cache-Control' => 'no-store, private, max-age=0',
@@ -242,6 +233,35 @@ class DocumentProtectionService
         return in_array($this->extensionFor($attachment), [
             'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'docx', 'xlsx', 'csv',
         ], true);
+    }
+
+    private function bytesFor(DocumentationAttachment $attachment): string
+    {
+        if ($attachment->storage === 'database') {
+            $blob = DocumentBlob::query()
+                ->where('documentation_attachment_id', $attachment->id)
+                ->first();
+
+            $bytes = $blob?->bytes();
+
+            if (! is_string($bytes) || $bytes === '') {
+                throw new HttpException(502, 'The document is temporarily unavailable.');
+            }
+
+            if (strlen($bytes) > self::MAX_BYTES) {
+                throw new HttpException(413, 'This document is too large to preview.');
+            }
+
+            return $bytes;
+        }
+
+        $url = $attachment->source_url ?: $attachment->file_path;
+
+        if (! is_string($url) || ! $this->isAllowedSource($url)) {
+            throw new HttpException(422, 'This document source is not allowed.');
+        }
+
+        return $this->fetch($url);
     }
 
     private function fetch(string $url): string
@@ -285,10 +305,10 @@ class DocumentProtectionService
         return false;
     }
 
-    private function logAccess(DocumentationAttachment $attachment, User $user, ?string $ip, ?string $userAgent): void
+    private function logAccess(DocumentationAttachment $attachment, User $user, ?string $ip, ?string $userAgent): ?DocumentAccessLog
     {
         try {
-            DocumentAccessLog::create([
+            $log = DocumentAccessLog::create([
                 'documentation_attachment_id' => $attachment->id,
                 'environment_id' => $attachment->resolvedEnvironmentId() ?? 0,
                 'user_id' => $user->id,
@@ -297,11 +317,79 @@ class DocumentProtectionService
             ]);
 
             $attachment->forceFill(['last_accessed_at' => now()])->save();
+
+            return $log;
         } catch (Throwable $exception) {
             Log::warning('document_access_log_failed', [
                 'attachment_id' => $attachment->id,
                 'error' => $exception->getMessage(),
             ]);
+
+            return null;
+        }
+    }
+
+    private function watermarkText(User $user, ?DocumentAccessLog $access): string
+    {
+        $parts = array_values(array_filter([
+            $user->name,
+            $user->email,
+            $access ? 'access #'.$access->id : null,
+            now()->format('Y-m-d H:i'),
+        ]));
+
+        $text = implode('  |  ', $parts);
+        $converted = @iconv('UTF-8', 'windows-1252//TRANSLIT', $text);
+
+        return $converted !== false ? $converted : preg_replace('/[^\x20-\x7E]/', '', $text);
+    }
+
+    private function watermarkPdf(string $pdf, string $text): ?string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'pdf_');
+
+        if ($path === false) {
+            return null;
+        }
+
+        file_put_contents($path, $pdf);
+
+        try {
+            $output = new Fpdi;
+            $output->SetAutoPageBreak(false);
+            // Keep the watermark readable in the file itself; the PDF is a
+            // few hundred KB at most and traceability matters more than bytes.
+            $output->SetCompression(false);
+            $pages = $output->setSourceFile($path);
+
+            for ($page = 1; $page <= $pages; $page++) {
+                $template = $output->importPage($page);
+                $size = $output->getTemplateSize($template);
+                $width = (float) $size['width'];
+                $height = (float) $size['height'];
+
+                $output->AddPage($size['orientation'], [$width, $height]);
+                $output->useTemplate($template);
+                $output->SetFont('Helvetica', '', 9);
+                $output->SetTextColor(185, 185, 185);
+
+                foreach ([0.18, 0.36, 0.54, 0.72, 0.9] as $offset) {
+                    $y = $height * $offset;
+
+                    $output->Text(18, $y, $text);
+                    $output->Text(18, $y + 12, $text);
+                }
+            }
+
+            $result = $output->Output('S');
+            @unlink($path);
+
+            return is_string($result) ? $result : null;
+        } catch (Throwable $exception) {
+            @unlink($path);
+            Log::warning('document_watermark_failed', ['error' => $exception->getMessage()]);
+
+            return null;
         }
     }
 

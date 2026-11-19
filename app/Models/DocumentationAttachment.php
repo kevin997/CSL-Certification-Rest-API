@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
@@ -18,6 +19,7 @@ class DocumentationAttachment extends Model
         'documentation_content_id',
         'uuid',
         'environment_id',
+        'storage',
         'public_id',
         'source_url',
         'checksum',
@@ -75,6 +77,11 @@ class DocumentationAttachment extends Model
     public function accessLogs(): HasMany
     {
         return $this->hasMany(DocumentAccessLog::class);
+    }
+
+    public function blob(): HasOne
+    {
+        return $this->hasOne(DocumentBlob::class);
     }
 
     public function resolvedEnvironmentId(): ?int
