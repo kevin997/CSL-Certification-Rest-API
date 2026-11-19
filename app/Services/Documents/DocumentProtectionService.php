@@ -2,6 +2,7 @@
 
 namespace App\Services\Documents;
 
+use App\Enums\UserRole;
 use App\Models\Activity;
 use App\Models\DocumentAccessLog;
 use App\Models\DocumentationAttachment;
@@ -130,6 +131,16 @@ class DocumentProtectionService
         }
 
         if ((int) $template->created_by === (int) $user->id) {
+            return true;
+        }
+
+        // Platform staff support tenants without being a member; the owner
+        // check above already covers the instructor who built the template.
+        $platformRole = $user->role instanceof UserRole
+            ? $user->role->value
+            : (string) $user->role;
+
+        if (in_array($platformRole, ['admin', 'super_admin'], true)) {
             return true;
         }
 
