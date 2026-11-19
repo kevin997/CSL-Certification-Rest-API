@@ -16,6 +16,7 @@ use App\Models\Template;
 use App\Models\User;
 use App\Models\VideoContent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -243,6 +244,62 @@ class DocumentProtectionTest extends TestCase
             ->getJson("/api/media/playback/{$asset->id}")
             ->assertOk()
             ->assertJsonStructure(['stream_url', 'token', 'expires']);
+    }
+
+    public function test_an_office_file_without_an_extension_is_not_served_as_the_original(): void
+    {
+        if (! class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ext-zip is required to build the fixture.');
+        }
+
+        $path = tempnam(sys_get_temp_dir(), 'docx_fixture_');
+        $zip = new \ZipArchive;
+        $zip->open($path, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+        $zip->addFromString(
+            'word/document.xml',
+            '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Confidential lesson notes</w:t></w:r></w:p></w:body></w:document>',
+        );
+        $zip->close();
+
+        // Http::fake appends stubs; start from a clean factory so the DOCX
+        // response wins over the PDF fixture installed in setUp.
+        Http::swap(new Factory);
+        Http::fake([
+            'res.cloudinary.com/*' => Http::response(file_get_contents($path), 200, [
+                'Content-Type' => 'application/octet-stream',
+            ]),
+        ]);
+
+        $attachment = DocumentationAttachment::create([
+            'documentation_content_id' => $this->documentation->id,
+            'environment_id' => $this->environment->id,
+            'source_url' => 'https://res.cloudinary.com/demo/raw/upload/notes.docx',
+            'file_path' => 'https://res.cloudinary.com/demo/raw/upload/notes.docx',
+            'file_name' => 'Confidential lesson notes',
+            'file_type' => 'raw/octet-stream',
+            'file_size' => filesize($path),
+            'created_by' => $this->teacher->id,
+        ]);
+
+        $response = $this->asLearner()->get("/api/documents/{$attachment->uuid}/content");
+
+        $response->assertOk();
+        $this->assertStringStartsWith('text/plain', (string) $response->headers->get('Content-Type'));
+
+        $this->assertStringContainsString('Confidential lesson notes', $response->getContent());
+        $this->assertStringNotContainsString('PK', $response->getContent());
+
+        @unlink($path);
+    }
+
+    public function test_a_pdf_is_served_with_a_real_pdf_content_type(): void
+    {
+        $this->attachment->forceFill(['file_type' => 'image/pdf'])->save();
+
+        $this->asLearner()
+            ->get("/api/documents/{$this->attachment->uuid}/content")
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf');
     }
 
     private function asLearner(string $domain = ''): static
