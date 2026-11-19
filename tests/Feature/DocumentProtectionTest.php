@@ -8,6 +8,7 @@ use App\Models\Block;
 use App\Models\Course;
 use App\Models\DocumentationAttachment;
 use App\Models\DocumentationContent;
+use App\Models\DocumentBlob;
 use App\Models\Enrollment;
 use App\Models\Environment;
 use App\Models\EnvironmentUser;
@@ -405,6 +406,49 @@ class DocumentProtectionTest extends TestCase
         $this->assertStringContainsString('Learner Test', $body);
         $this->assertStringContainsString('access #', $body);
         $this->assertGreaterThan(strlen($original), strlen($body));
+    }
+
+    public function test_a_stored_docx_without_an_extension_is_previewed_as_text(): void
+    {
+        if (! class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ext-zip is required to build the fixture.');
+        }
+
+        $path = tempnam(sys_get_temp_dir(), 'docx_legacy_');
+        $zip = new \ZipArchive;
+        $zip->open($path, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+        $zip->addFromString(
+            'word/document.xml',
+            '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Legacy confidential text</w:t></w:r></w:p></w:body></w:document>',
+        );
+        $zip->close();
+
+        $bytes = (string) file_get_contents($path);
+        @unlink($path);
+
+        $attachment = DocumentationAttachment::create([
+            'documentation_content_id' => $this->documentation->id,
+            'uuid' => (string) Str::uuid(),
+            'environment_id' => $this->environment->id,
+            'storage' => 'database',
+            'file_path' => 'db://legacy',
+            'file_name' => 'Legacy document',
+            'file_type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'file_size' => strlen($bytes),
+            'created_by' => $this->teacher->id,
+        ]);
+
+        DocumentBlob::create([
+            'documentation_attachment_id' => $attachment->id,
+            'payload' => base64_encode($bytes),
+            'mime_type' => $attachment->file_type,
+        ]);
+
+        $response = $this->asLearner()->get("/api/documents/{$attachment->uuid}/content");
+
+        $response->assertOk();
+        $this->assertStringStartsWith('text/plain', (string) $response->headers->get('Content-Type'));
+        $this->assertStringContainsString('Legacy confidential text', $response->getContent());
     }
 
     private function attachThroughContent(string $uuid, string $name, string $mime, int $size): void
