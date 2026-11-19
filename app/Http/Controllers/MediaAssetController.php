@@ -3,8 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Events\MediaProcessingStatusUpdated;
+use App\Models\Activity;
+use App\Models\Enrollment;
+use App\Models\LessonContent;
 use App\Models\MediaAsset;
+use App\Models\User;
+use App\Models\VideoContent;
 use App\Services\BunnyStreamService;
+use App\Support\EffectiveAuthContext;
 use App\Support\Tenancy\EnvironmentContext;
 use App\Support\Tenancy\EnvironmentResolver;
 use Illuminate\Http\Client\ConnectionException;
@@ -535,6 +541,15 @@ class MediaAssetController extends Controller
             return response()->json(['error' => 'Forbidden'], 403);
         }
 
+        // A signed playlist must only go to someone entitled to the lesson,
+        // not to any account that knows an asset id.
+        if (! $this->userCanPlay($request->user(), $mediaAsset)) {
+            return response()->json([
+                'code' => 'not_enrolled',
+                'error' => 'You do not have access to this video.',
+            ], 403);
+        }
+
         $uploadId = $mediaAsset->meta['upload_id'] ?? null;
         if (! $uploadId) {
             return response()->json(['error' => 'Asset not ready'], 400);
@@ -788,5 +803,68 @@ class MediaAssetController extends Controller
         ));
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Staff and the template owner can always preview. A learner needs an
+     * active enrollment in a course built from the activity's template.
+     */
+    protected function userCanPlay(User $user, MediaAsset $asset): bool
+    {
+        $environmentId = (int) $asset->environment_id;
+
+        try {
+            $role = EffectiveAuthContext::for($user, $environmentId)['role'];
+        } catch (\Throwable) {
+            return false;
+        }
+
+        if (in_array($role, (array) config('devices.manager_roles', []), true)) {
+            return true;
+        }
+
+        $activity = $this->activityForMedia((int) $asset->id);
+
+        // Unlinked legacy assets keep working: nothing to check against.
+        if (! $activity) {
+            return true;
+        }
+
+        $template = $activity->block?->template;
+
+        if (! $template) {
+            return true;
+        }
+
+        if ((int) $template->created_by === (int) $user->id) {
+            return true;
+        }
+
+        return Enrollment::query()
+            ->where('user_id', $user->id)
+            ->where('environment_id', $template->environment_id)
+            ->whereIn('status', [
+                Enrollment::STATUS_ENROLLED,
+                Enrollment::STATUS_IN_PROGRESS,
+                Enrollment::STATUS_COMPLETED,
+            ])
+            ->whereHas('course', fn ($query) => $query->where('template_id', $template->id))
+            ->exists();
+    }
+
+    protected function activityForMedia(int $mediaAssetId): ?Activity
+    {
+        $video = VideoContent::query()->where('media_asset_id', $mediaAssetId)->first();
+
+        if ($video) {
+            return $video->parentActivity ?: $video->activity;
+        }
+
+        $lesson = LessonContent::query()
+            ->where('video_media_asset_id', $mediaAssetId)
+            ->orWhere('audio_media_asset_id', $mediaAssetId)
+            ->first();
+
+        return $lesson?->activity;
     }
 }

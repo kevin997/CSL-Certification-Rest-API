@@ -7,6 +7,7 @@ use App\Models\Activity;
 use App\Models\Block;
 use App\Models\DocumentationContent;
 use App\Models\Template;
+use App\Services\Documents\DocumentProtectionService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
@@ -16,6 +17,7 @@ use Illuminate\Support\Facades\Validator;
  * @OA\Schema(
  *     schema="DocumentationContent",
  *     required={"activity_id", "title", "content", "version"},
+ *
  *     @OA\Property(property="id", type="integer", format="int64", example=1),
  *     @OA\Property(property="activity_id", type="integer", format="int64", example=1),
  *     @OA\Property(property="title", type="string", example="API Documentation"),
@@ -25,8 +27,10 @@ use Illuminate\Support\Facades\Validator;
  *     @OA\Property(
  *         property="attachments",
  *         type="array",
+ *
  *         @OA\Items(
  *             type="object",
+ *
  *             @OA\Property(property="name", type="string", example="API Schema"),
  *             @OA\Property(property="file_path", type="string", example="path/to/schema.json"),
  *             @OA\Property(property="file_type", type="string", example="application/json"),
@@ -37,16 +41,16 @@ use Illuminate\Support\Facades\Validator;
  *     @OA\Property(property="updated_at", type="string", format="date-time")
  * )
  */
-
 class DocumentationContentController extends Controller
 {
+    public function __construct(private readonly DocumentProtectionService $documents) {}
+
     /**
      * Store a newly created documentation content in storage.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $activityId
-     * @return \Illuminate\Http\Response
-     * 
+     * @return Response
+     *
      * @OA\Post(
      *     path="/activities/{activityId}/documentation-content",
      *     summary="Create documentation content for an activity",
@@ -54,18 +58,23 @@ class DocumentationContentController extends Controller
      *     operationId="storeDocumentationContent",
      *     tags={"Content Types"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="activityId",
      *         in="path",
      *         required=true,
      *         description="ID of the activity",
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\RequestBody(
      *         required=true,
      *         description="Documentation content data",
+     *
      *         @OA\JsonContent(
      *             required={"title", "content", "version"},
+     *
      *             @OA\Property(property="title", type="string", example="API Documentation"),
      *             @OA\Property(property="content", type="string", example="This documentation covers the API endpoints and usage..."),
      *             @OA\Property(property="version", type="string", example="1.0"),
@@ -73,8 +82,10 @@ class DocumentationContentController extends Controller
      *             @OA\Property(
      *                 property="attachments",
      *                 type="array",
+     *
      *                 @OA\Items(
      *                     type="object",
+     *
      *                     @OA\Property(property="name", type="string", example="API Schema"),
      *                     @OA\Property(property="file_path", type="string", example="path/to/schema.json"),
      *                     @OA\Property(property="file_type", type="string", example="application/json"),
@@ -83,16 +94,20 @@ class DocumentationContentController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=201,
      *         description="Documentation content created successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Documentation content created successfully"),
      *             @OA\Property(property="data", ref="#/components/schemas/DocumentationContent")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=400,
      *         description="Invalid activity type"
@@ -143,7 +158,8 @@ class DocumentationContentController extends Controller
             'tags.*' => 'string|max:50',
             'attachments' => 'nullable|array',
             'attachments.*.name' => 'required_with:attachments|string|max:255',
-            'attachments.*.file_url' => 'required_with:attachments|string|url',
+            'attachments.*.uuid' => 'nullable|uuid',
+            'attachments.*.file_url' => 'nullable|string|url',
             'attachments.*.file_type' => 'required_with:attachments|string|max:50',
             'attachments.*.file_size' => 'nullable|integer', // in KB
             'related_links' => 'nullable|array',
@@ -170,29 +186,38 @@ class DocumentationContentController extends Controller
 
         // Prepare data for storage
         $data = $request->except(['tags', 'attachments', 'related_links']);
-        
+
         // Handle arrays that need to be stored as JSON
         if ($request->has('tags')) {
             $data['tags'] = json_encode($request->tags);
         }
-        
+
         if ($request->has('attachments')) {
             $data['attachments'] = json_encode($request->attachments);
         }
-        
+
         if ($request->has('related_links')) {
             $data['related_links'] = json_encode($request->related_links);
         }
-        
+
         // Add activity_id to data
         $data['activity_id'] = $activityId;
 
         $documentationContent = DocumentationContent::create($data);
 
+        if ($request->has('attachments')) {
+            $this->documents->sync(
+                $documentationContent,
+                (array) $request->input('attachments', []),
+                Auth::id(),
+                (int) $template->environment_id,
+            );
+        }
+
         return response()->json([
             'status' => 'success',
             'message' => 'Documentation content created successfully',
-            'data' => $documentationContent,
+            'data' => $this->payload($documentationContent->fresh()),
         ], Response::HTTP_CREATED);
     }
 
@@ -200,8 +225,8 @@ class DocumentationContentController extends Controller
      * Display the specified documentation content.
      *
      * @param  int  $activityId
-     * @return \Illuminate\Http\Response
-     * 
+     * @return Response
+     *
      * @OA\Get(
      *     path="/activities/{activityId}/documentation-content",
      *     summary="Get documentation content for an activity",
@@ -209,22 +234,28 @@ class DocumentationContentController extends Controller
      *     operationId="getDocumentationContent",
      *     tags={"Content Types"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="activityId",
      *         in="path",
      *         required=true,
      *         description="ID of the activity",
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Documentation content retrieved successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="data", ref="#/components/schemas/DocumentationContent")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=403,
      *         description="Forbidden - User does not have permission"
@@ -241,42 +272,30 @@ class DocumentationContentController extends Controller
         $block = Block::findOrFail($activity->block_id);
         $template = Template::findOrFail($block->template_id);
 
-        // Check if user has access to this template
-        if (!$template->is_public && $template->created_by !== Auth::id()) {
+        $documentationContent = DocumentationContent::where('activity_id', $activityId)->firstOrFail();
+
+        // A learner must be enrolled in a course that uses this template. The
+        // old check (public template) exposed the content to any account that
+        // knew an activity id.
+        if (! $this->documents->userCanAccessContent(Auth::user(), $documentationContent)) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'You do not have permission to view this content',
+                'message' => 'You do not have access to this document.',
             ], Response::HTTP_FORBIDDEN);
-        }
-
-        $documentationContent = DocumentationContent::where('activity_id', $activityId)->firstOrFail();
-        
-        // Decode JSON fields for the response
-        if ($documentationContent->tags) {
-            $documentationContent->tags = json_decode($documentationContent->tags);
-        }
-        
-        if ($documentationContent->attachments) {
-            $documentationContent->attachments = json_decode($documentationContent->attachments);
-        }
-        
-        if ($documentationContent->related_links) {
-            $documentationContent->related_links = json_decode($documentationContent->related_links);
         }
 
         return response()->json([
             'status' => 'success',
-            'data' => $documentationContent,
+            'data' => $this->payload($documentationContent),
         ]);
     }
 
     /**
      * Update the specified documentation content in storage.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $activityId
-     * @return \Illuminate\Http\Response
-     * 
+     * @return Response
+     *
      * @OA\Put(
      *     path="/activities/{activityId}/documentation-content",
      *     summary="Update documentation content for an activity",
@@ -284,17 +303,22 @@ class DocumentationContentController extends Controller
      *     operationId="updateDocumentationContent",
      *     tags={"Content Types"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="activityId",
      *         in="path",
      *         required=true,
      *         description="ID of the activity",
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\RequestBody(
      *         required=true,
      *         description="Documentation content data",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="title", type="string", example="API Documentation"),
      *             @OA\Property(property="content", type="string", example="This documentation covers the API endpoints and usage..."),
      *             @OA\Property(property="version", type="string", example="1.0"),
@@ -302,8 +326,10 @@ class DocumentationContentController extends Controller
      *             @OA\Property(
      *                 property="attachments",
      *                 type="array",
+     *
      *                 @OA\Items(
      *                     type="object",
+     *
      *                     @OA\Property(property="name", type="string", example="API Schema"),
      *                     @OA\Property(property="file_path", type="string", example="path/to/schema.json"),
      *                     @OA\Property(property="file_type", type="string", example="application/json"),
@@ -312,16 +338,20 @@ class DocumentationContentController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Documentation content updated successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Documentation content updated successfully"),
      *             @OA\Property(property="data", ref="#/components/schemas/DocumentationContent")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=403,
      *         description="Forbidden - User does not have permission"
@@ -362,7 +392,8 @@ class DocumentationContentController extends Controller
             'tags.*' => 'string|max:50',
             'attachments' => 'nullable|array',
             'attachments.*.name' => 'required_with:attachments|string|max:255',
-            'attachments.*.file_url' => 'required_with:attachments|string|url',
+            'attachments.*.uuid' => 'nullable|uuid',
+            'attachments.*.file_url' => 'nullable|string|url',
             'attachments.*.file_type' => 'required_with:attachments|string|max:50',
             'attachments.*.file_size' => 'nullable|integer',
             'related_links' => 'nullable|array',
@@ -380,39 +411,35 @@ class DocumentationContentController extends Controller
 
         // Prepare data for update
         $updateData = $request->except(['tags', 'attachments', 'related_links']);
-        
+
         // Handle arrays that need to be stored as JSON
         if ($request->has('tags')) {
             $updateData['tags'] = json_encode($request->tags);
         }
-        
+
         if ($request->has('attachments')) {
             $updateData['attachments'] = json_encode($request->attachments);
         }
-        
+
         if ($request->has('related_links')) {
             $updateData['related_links'] = json_encode($request->related_links);
         }
 
         $documentationContent->update($updateData);
 
-        // Decode JSON fields for the response
-        if ($documentationContent->tags) {
-            $documentationContent->tags = json_decode($documentationContent->tags);
-        }
-        
-        if ($documentationContent->attachments) {
-            $documentationContent->attachments = json_decode($documentationContent->attachments);
-        }
-        
-        if ($documentationContent->related_links) {
-            $documentationContent->related_links = json_decode($documentationContent->related_links);
+        if ($request->has('attachments')) {
+            $this->documents->sync(
+                $documentationContent,
+                (array) $request->input('attachments', []),
+                Auth::id(),
+                (int) $template->environment_id,
+            );
         }
 
         return response()->json([
             'status' => 'success',
             'message' => 'Documentation content updated successfully',
-            'data' => $documentationContent,
+            'data' => $this->payload($documentationContent->fresh()),
         ]);
     }
 
@@ -420,8 +447,8 @@ class DocumentationContentController extends Controller
      * Remove the specified documentation content from storage.
      *
      * @param  int  $activityId
-     * @return \Illuminate\Http\Response
-     * 
+     * @return Response
+     *
      * @OA\Delete(
      *     path="/activities/{activityId}/documentation-content",
      *     summary="Delete documentation content for an activity",
@@ -429,22 +456,28 @@ class DocumentationContentController extends Controller
      *     operationId="deleteDocumentationContent",
      *     tags={"Content Types"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="activityId",
      *         in="path",
      *         required=true,
      *         description="ID of the activity",
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Documentation content deleted successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Documentation content deleted successfully")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=403,
      *         description="Forbidden - User does not have permission"
@@ -476,5 +509,22 @@ class DocumentationContentController extends Controller
             'status' => 'success',
             'message' => 'Documentation content deleted successfully',
         ]);
+    }
+
+    /**
+     * The editor and the study room get attachment metadata only, never a URL
+     * that would let them bypass the access endpoint.
+     */
+    private function payload(DocumentationContent $content): array
+    {
+        $payload = $content->toArray();
+        $payload['attachments'] = $content->attachments()
+            ->get()
+            ->map(fn ($attachment) => $this->documents->present($attachment))
+            ->values()
+            ->all();
+        $payload['allow_downloads'] = false;
+
+        return $payload;
     }
 }
