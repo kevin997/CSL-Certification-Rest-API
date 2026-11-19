@@ -17,8 +17,10 @@ use App\Models\User;
 use App\Models\VideoContent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use setasign\Fpdi\Fpdi;
 use Tests\TestCase;
 
 class DocumentProtectionTest extends TestCase
@@ -110,6 +112,7 @@ class DocumentProtectionTest extends TestCase
         ]);
 
         $this->learner = User::factory()->create([
+            'name' => 'Learner Test',
             'role' => UserRole::LEARNER->value,
         ]);
 
@@ -300,6 +303,123 @@ class DocumentProtectionTest extends TestCase
             ->get("/api/documents/{$this->attachment->uuid}/content")
             ->assertOk()
             ->assertHeader('Content-Type', 'application/pdf');
+    }
+
+    public function test_a_pdf_uploaded_to_our_storage_streams_without_cloudinary(): void
+    {
+        $pdf = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF";
+
+        $upload = $this->actingAs($this->teacher, 'sanctum')
+            ->withHeaders($this->headers())
+            ->post('/api/documents', [
+                'file' => UploadedFile::fake()->createWithContent('handbook.pdf', $pdf),
+            ]);
+
+        $upload->assertCreated();
+        $upload->assertJsonPath('data.name', 'handbook.pdf');
+        $this->assertStringNotContainsString('cloudinary', $upload->getContent());
+        $this->assertStringNotContainsString('file_url', $upload->getContent());
+
+        $uuid = $upload->json('data.uuid');
+        $this->assertNotEmpty($uuid);
+
+        $this->attachThroughContent($uuid, 'handbook.pdf', 'application/pdf', strlen($pdf));
+
+        $response = $this->asLearner()->get("/api/documents/{$uuid}/content");
+
+        $response->assertOk();
+        $response->assertHeader('Content-Type', 'application/pdf');
+        $this->assertSame($pdf, $response->getContent());
+
+        $this->assertDatabaseHas('document_blobs', [
+            'mime_type' => 'application/pdf',
+        ]);
+    }
+
+    public function test_an_xlsx_uploaded_to_our_storage_is_previewed_as_a_table(): void
+    {
+        if (! class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ext-zip is required to build the fixture.');
+        }
+
+        $path = tempnam(sys_get_temp_dir(), 'xlsx_fixture_');
+        $zip = new \ZipArchive;
+        $zip->open($path, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+        $zip->addFromString(
+            'xl/sharedStrings.xml',
+            '<sst><si><t>Learner Name</t></si><si><t>Score</t></si></sst>',
+        );
+        $zip->addFromString(
+            'xl/worksheets/sheet1.xml',
+            '<worksheet><sheetData><row><c t="s"><v>0</v></c><c t="s"><v>1</v></c></row><row><c><v>42</v></c></row></sheetData></worksheet>',
+        );
+        $zip->close();
+
+        $upload = $this->actingAs($this->teacher, 'sanctum')
+            ->withHeaders($this->headers())
+            ->post('/api/documents', [
+                'file' => UploadedFile::fake()->createWithContent('report.xlsx', file_get_contents($path)),
+            ]);
+
+        @unlink($path);
+
+        $upload->assertCreated();
+        $uuid = $upload->json('data.uuid');
+
+        $this->attachThroughContent($uuid, 'report.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 512);
+
+        $response = $this->asLearner()->get("/api/documents/{$uuid}/content");
+
+        $response->assertOk();
+        $this->assertStringStartsWith('text/html', (string) $response->headers->get('Content-Type'));
+        $this->assertStringContainsString('Learner Name', $response->getContent());
+        $this->assertStringContainsString('42', $response->getContent());
+    }
+
+    public function test_a_pdf_is_watermarked_with_the_learner_and_access_id(): void
+    {
+        $source = new Fpdi;
+        $source->AddPage();
+        $source->SetFont('Helvetica', '', 12);
+        $source->Cell(0, 10, 'Original lesson content');
+        $original = $source->Output('S');
+
+        $upload = $this->actingAs($this->teacher, 'sanctum')
+            ->withHeaders($this->headers())
+            ->post('/api/documents', [
+                'file' => UploadedFile::fake()->createWithContent('lesson.pdf', $original),
+            ]);
+
+        $upload->assertCreated();
+        $uuid = $upload->json('data.uuid');
+
+        $this->attachThroughContent($uuid, 'lesson.pdf', 'application/pdf', strlen($original));
+
+        $response = $this->asLearner()->get("/api/documents/{$uuid}/content");
+
+        $response->assertOk();
+        $response->assertHeader('Content-Type', 'application/pdf');
+
+        $body = $response->getContent();
+        $this->assertStringStartsWith('%PDF', $body);
+        $this->assertStringContainsString('Learner Test', $body);
+        $this->assertStringContainsString('access #', $body);
+        $this->assertGreaterThan(strlen($original), strlen($body));
+    }
+
+    private function attachThroughContent(string $uuid, string $name, string $mime, int $size): void
+    {
+        $this->actingAs($this->teacher, 'sanctum')
+            ->withHeaders($this->headers())
+            ->putJson("/api/activities/{$this->documentation->activity_id}/documentation", [
+                'attachments' => [[
+                    'uuid' => $uuid,
+                    'name' => $name,
+                    'file_type' => $mime,
+                    'file_size' => $size,
+                ]],
+            ])
+            ->assertOk();
     }
 
     private function asLearner(string $domain = ''): static

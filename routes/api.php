@@ -40,6 +40,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DigitalProductController;
 use App\Http\Controllers\Api\DocumentAccessController;
 use App\Http\Controllers\Api\DocumentationContentController;
+use App\Http\Controllers\Api\DocumentUploadController;
 use App\Http\Controllers\Api\EnrollmentAnalyticsController;
 use App\Http\Controllers\Api\EnrollmentCodeController;
 use App\Http\Controllers\Api\EnrollmentController;
@@ -621,7 +622,9 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     // Documentation Content routes
     Route::post('/activities/{activityId}/documentation', [DocumentationContentController::class, 'store']);
     Route::get('/activities/{activityId}/documentation', [DocumentationContentController::class, 'show']);
-    // The only path to attachment bytes: authorized, logged, never a public URL.
+    // Documents: upload into our storage, then read only through the protected
+    // endpoint. No public URL ever reaches the browser.
+    Route::post('/documents', [DocumentUploadController::class, 'store']);
     Route::get('/documents/{uuid}/content', [DocumentAccessController::class, 'show']);
 
     // Certificate Template routes

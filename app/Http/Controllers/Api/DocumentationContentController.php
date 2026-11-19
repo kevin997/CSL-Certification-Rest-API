@@ -160,7 +160,7 @@ class DocumentationContentController extends Controller
             'attachments.*.name' => 'required_with:attachments|string|max:255',
             'attachments.*.uuid' => 'nullable|uuid',
             'attachments.*.file_url' => 'nullable|string|url',
-            'attachments.*.file_type' => 'required_with:attachments|string|max:50',
+            'attachments.*.file_type' => 'required_with:attachments|string|max:150',
             'attachments.*.file_size' => 'nullable|integer', // in KB
             'related_links' => 'nullable|array',
             'related_links.*.title' => 'required_with:related_links|string|max:255',
@@ -394,7 +394,7 @@ class DocumentationContentController extends Controller
             'attachments.*.name' => 'required_with:attachments|string|max:255',
             'attachments.*.uuid' => 'nullable|uuid',
             'attachments.*.file_url' => 'nullable|string|url',
-            'attachments.*.file_type' => 'required_with:attachments|string|max:50',
+            'attachments.*.file_type' => 'required_with:attachments|string|max:150',
             'attachments.*.file_size' => 'nullable|integer',
             'related_links' => 'nullable|array',
             'related_links.*.title' => 'required_with:related_links|string|max:255',
