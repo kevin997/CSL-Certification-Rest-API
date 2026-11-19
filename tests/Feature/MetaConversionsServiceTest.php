@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\SalesForm;
+use App\Models\SalesFormField;
 use App\Models\SalesFormSubmission;
 use App\Models\User;
 use App\Services\MetaConversionsService;
@@ -124,6 +125,21 @@ class MetaConversionsServiceTest extends TestCase
             'status' => 'published',
         ]);
 
+        foreach ([
+            ['country', 'country_1'],
+            ['state', 'state_2'],
+            ['city', 'city_3'],
+        ] as [$type, $key]) {
+            SalesFormField::create([
+                'sales_form_id' => $form->id,
+                'type' => $type,
+                'field_key' => $key,
+                'label' => ucfirst($type),
+                'is_required' => true,
+                'order' => 0,
+            ]);
+        }
+
         $submission = SalesFormSubmission::withoutGlobalScopes()->create([
             'sales_form_id' => $form->id,
             'environment_id' => $this->environment->id,
@@ -133,7 +149,15 @@ class MetaConversionsServiceTest extends TestCase
             'email' => 'buyer@example.com',
             'phone' => '+237681685901',
             'status' => 'pending',
-            'answers' => [],
+            'answers' => [
+                'country_1' => 'CM',
+                'state_2' => 'CE',
+                'city_3' => 'Yaounde',
+            ],
+            'meta_fbp' => 'fb.1.1700000000000.111111111.ABCDEF',
+            'meta_fbc' => 'fb.1.1700000000000.AbCdEfGh.ABCDEF',
+            'client_ip' => '41.202.219.10',
+            'client_user_agent' => 'Mozilla/5.0 (Linux; Android 13)',
         ]);
 
         $this->order->update(['sales_form_submission_id' => $submission->id]);
@@ -144,9 +168,20 @@ class MetaConversionsServiceTest extends TestCase
         Http::assertSent(function (Request $request) use ($submission) {
             $event = $request->data()['data'][0] ?? [];
 
+            $user = $event['user_data'] ?? [];
+
             return $event['event_name'] === 'CompleteRegistration'
                 && $event['event_id'] === 'registration:submission:'.$submission->id
-                && $event['custom_data']['content_name'] === 'Media Buying Bootcamp';
+                && $event['custom_data']['content_name'] === 'Media Buying Bootcamp'
+                && $user['fbp'] === 'fb.1.1700000000000.111111111.ABCDEF'
+                && $user['fbc'] === 'fb.1.1700000000000.AbCdEfGh.ABCDEF'
+                && $user['client_ip_address'] === '41.202.219.10'
+                && $user['client_user_agent'] === 'Mozilla/5.0 (Linux; Android 13)'
+                && $user['fn'] === hash('sha256', 'buyer')
+                && $user['ln'] === hash('sha256', 'name')
+                && $user['country'] === hash('sha256', 'cm')
+                && $user['st'] === hash('sha256', 'ce')
+                && $user['ct'] === hash('sha256', 'yaounde');
         });
     }
 }
