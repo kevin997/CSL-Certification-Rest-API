@@ -166,7 +166,7 @@ class DocumentProtectionService
             throw new HttpException(422, 'This document source is not allowed.');
         }
 
-        $extension = strtolower(pathinfo($attachment->file_name ?: '', PATHINFO_EXTENSION));
+        $extension = $this->extensionFor($attachment);
 
         // Office files are never sent to the browser in their original form:
         // the original is editable and could be re-shared.
@@ -228,9 +228,7 @@ class DocumentProtectionService
 
     public function canPreview(DocumentationAttachment $attachment): bool
     {
-        $extension = strtolower(pathinfo($attachment->file_name ?: '', PATHINFO_EXTENSION));
-
-        return in_array($extension, [
+        return in_array($this->extensionFor($attachment), [
             'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'docx', 'xlsx', 'csv',
         ], true);
     }
@@ -296,11 +294,44 @@ class DocumentProtectionService
         }
     }
 
+    /**
+     * The real extension. Uploaded names often omit it (Cloudinary's
+     * original_filename drops it), so fall back to the storage URL path.
+     */
+    private function extensionFor(DocumentationAttachment $attachment): string
+    {
+        $extension = strtolower(pathinfo($attachment->file_name ?: '', PATHINFO_EXTENSION));
+
+        if ($extension !== '') {
+            return $extension;
+        }
+
+        $url = $attachment->source_url ?: $attachment->file_path;
+        $path = (string) parse_url((string) $url, PHP_URL_PATH);
+
+        return strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    }
+
     private function mime(DocumentationAttachment $attachment, ?string $remote): string
     {
+        $fromExtension = match ($this->extensionFor($attachment)) {
+            'pdf' => 'application/pdf',
+            'png' => 'image/png',
+            'jpg', 'jpeg' => 'image/jpeg',
+            'gif' => 'image/gif',
+            'webp' => 'image/webp',
+            default => null,
+        };
+
+        if ($fromExtension !== null) {
+            return $fromExtension;
+        }
+
         $type = strtolower((string) $attachment->file_type);
 
-        if (str_contains($type, '/')) {
+        // Cloudinary resource types are not MIME types ("raw/octet-stream",
+        // "image/pdf"); never forward them as a content type.
+        if (str_contains($type, '/') && ! str_starts_with($type, 'raw/') && $type !== 'image/pdf') {
             return $type;
         }
 
@@ -308,16 +339,7 @@ class DocumentProtectionService
             return $remote;
         }
 
-        $extension = strtolower(pathinfo($attachment->file_name ?: '', PATHINFO_EXTENSION));
-
-        return match ($extension) {
-            'pdf' => 'application/pdf',
-            'png' => 'image/png',
-            'jpg', 'jpeg' => 'image/jpeg',
-            'gif' => 'image/gif',
-            'webp' => 'image/webp',
-            default => 'application/octet-stream',
-        };
+        return 'application/octet-stream';
     }
 
     private function docxToText(string $binary): ?string
