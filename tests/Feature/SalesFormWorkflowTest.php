@@ -410,14 +410,20 @@ class SalesFormWorkflowTest extends TestCase
             'order' => 1,
         ]);
 
-        $response = $this->postJson("/api/sales-forms/public/{$form->slug}/submit", [
-            'name' => 'Guest Learner',
-            'email' => 'guest-password@example.com',
-            'answers' => [
-                'city' => 'Douala',
-                'phone_whatsapp_1' => '+237681685901',
-            ],
-        ]);
+        $response = $this->withHeader('User-Agent', 'MetaTest/1.0')
+            ->postJson("/api/sales-forms/public/{$form->slug}/submit", [
+                'name' => 'Guest Learner',
+                'email' => 'guest-password@example.com',
+                'answers' => [
+                    'city' => 'Douala',
+                    'phone_whatsapp_1' => '+237681685901',
+                ],
+                'meta' => [
+                    'fbp' => 'fb.1.1700000000000.111111111.ABCDEF',
+                    'fbc' => 'fb.1.1700000000000.AbCdEfGh.ABCDEF',
+                    'referrer_url' => 'https://l.facebook.com/',
+                ],
+            ]);
 
         $response->assertCreated()
             ->assertJsonPath('success', true)
@@ -437,5 +443,15 @@ class SalesFormWorkflowTest extends TestCase
             'environment_id' => $this->environment->id,
             'user_id' => $user->id,
         ]);
+
+        $submission = SalesFormSubmission::withoutGlobalScopes()
+            ->where('email', 'guest-password@example.com')
+            ->firstOrFail();
+
+        $this->assertSame('fb.1.1700000000000.111111111.ABCDEF', $submission->meta_fbp);
+        $this->assertSame('fb.1.1700000000000.AbCdEfGh.ABCDEF', $submission->meta_fbc);
+        $this->assertSame('https://l.facebook.com/', $submission->referrer_url);
+        $this->assertNotNull($submission->client_ip);
+        $this->assertSame('MetaTest/1.0', $submission->client_user_agent);
     }
 }
