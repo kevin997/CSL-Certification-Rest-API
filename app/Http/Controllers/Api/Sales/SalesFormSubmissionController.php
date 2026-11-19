@@ -108,6 +108,10 @@ class SalesFormSubmissionController extends Controller
             'string',
             Rule::in([SalesFormSubmission::MARKETING_TERMS_VERSION]),
         ];
+        $rules['meta'] = 'nullable|array';
+        $rules['meta.fbp'] = ['nullable', 'string', 'max:255', 'regex:/^fb\./'];
+        $rules['meta.fbc'] = ['nullable', 'string', 'max:255', 'regex:/^fb\./'];
+        $rules['meta.referrer_url'] = 'nullable|url|max:2048';
 
         $validator = Validator::make($request->all(), $rules);
         $validator->after(function ($validator) use ($request): void {
@@ -201,6 +205,11 @@ class SalesFormSubmissionController extends Controller
                 'phone' => $phone,
                 'marketing_terms_version' => $submissionTermsVersion,
                 'status' => SalesFormSubmission::STATUS_PENDING,
+                'meta_fbp' => $request->input('meta.fbp'),
+                'meta_fbc' => $request->input('meta.fbc'),
+                'client_ip' => $this->clientIp($request),
+                'client_user_agent' => substr((string) $request->userAgent(), 0, 1024),
+                'referrer_url' => $this->referrerUrl($request),
             ]);
 
             foreach (['email', 'whatsapp'] as $channel) {
@@ -566,5 +575,31 @@ class SalesFormSubmissionController extends Controller
     {
         return (bool) $product->is_free
             || ((float) ($product->discount_price ?? $product->price ?? 0)) <= 0;
+    }
+
+    private function clientIp(Request $request): ?string
+    {
+        $forwarded = (string) $request->header('X-Forwarded-For', '');
+
+        foreach (explode(',', $forwarded) as $candidate) {
+            $ip = trim($candidate);
+
+            if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                return $ip;
+            }
+        }
+
+        return $request->ip();
+    }
+
+    private function referrerUrl(Request $request): ?string
+    {
+        $referrer = $request->input('meta.referrer_url') ?: $request->headers->get('referer');
+
+        if (! is_string($referrer) || $referrer === '') {
+            return null;
+        }
+
+        return filter_var($referrer, FILTER_VALIDATE_URL) ? substr($referrer, 0, 2048) : null;
     }
 }

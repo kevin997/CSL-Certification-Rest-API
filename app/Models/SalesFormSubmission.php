@@ -32,6 +32,11 @@ class SalesFormSubmission extends Model
         'phone',
         'marketing_terms_version',
         'status',
+        'meta_fbp',
+        'meta_fbc',
+        'client_ip',
+        'client_user_agent',
+        'referrer_url',
     ];
 
     protected function casts(): array

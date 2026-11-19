@@ -59,7 +59,7 @@ class MetaConversionsService
     public function registration(SalesFormSubmission $submission): void
     {
         if ($submission->exists) {
-            $submission->loadMissing(['orders.items.product', 'salesForm']);
+            $submission->loadMissing(['orders.items.product', 'salesForm.fields']);
         }
 
         $orders = $submission->relationLoaded('orders')
@@ -83,11 +83,7 @@ class MetaConversionsService
             'CompleteRegistration',
             'registration:submission:'.$submission->id,
             $content,
-            [
-                'em' => $this->hash($submission->email),
-                'ph' => $this->hashPhone($submission->phone),
-                'external_id' => $this->hash((string) $submission->user_id),
-            ],
+            $this->submissionUserData($submission, $order),
             $environment && $submission->salesForm
                 ? TenantUrl::to($environment, '/forms/'.$submission->salesForm->slug)
                 : null
@@ -130,22 +126,129 @@ class MetaConversionsService
     private function orderUserData(Order $order): array
     {
         if ($order->exists) {
-            $order->loadMissing(['user', 'salesFormSubmission']);
+            $order->loadMissing(['user', 'salesFormSubmission.salesForm.fields']);
+        }
+
+        $submission = $order->relationLoaded('salesFormSubmission') ? $order->salesFormSubmission : null;
+
+        if ($submission) {
+            return $this->submissionUserData($submission, $order);
         }
 
         $user = $order->relationLoaded('user') ? $order->user : null;
-        $submission = $order->relationLoaded('salesFormSubmission') ? $order->salesFormSubmission : null;
 
         return [
             'em' => $this->hash($order->billing_email ?: $user?->email),
             'ph' => $this->hashPhone(
                 $order->phone_number
-                ?: $submission?->phone
                 ?: $user?->whatsapp_number
                 ?: $user?->phone
             ),
             'external_id' => $this->hash((string) $order->user_id),
         ];
+    }
+
+    /**
+     * High-coverage customer information for CAPI events. Values are hashed
+     * once, with Meta's normalization, and fbp/fbc/IP/UA stay unhashed.
+     */
+    private function submissionUserData(SalesFormSubmission $submission, ?Order $order = null): array
+    {
+        if ($submission->exists) {
+            $submission->loadMissing(['salesForm.fields', 'user']);
+        }
+
+        $answers = is_array($submission->answers) ? $submission->answers : [];
+        $fields = $submission->relationLoaded('salesForm') ? $submission->salesForm?->fields : null;
+
+        $name = trim((string) ($submission->name ?? ''));
+        $nameParts = preg_split('/\s+/', $name, 2) ?: [];
+        $firstName = $this->answerByKey($answers, $fields, ['first_name', 'firstname', 'prenom', 'prénom']) ?: ($nameParts[0] ?? null);
+        $lastName = $this->answerByKey($answers, $fields, ['last_name', 'lastname', 'surname', 'nom_de_famille']) ?: ($nameParts[1] ?? null);
+        $gender = $this->hashGender($this->answerByKey($answers, $fields, ['gender', 'sexe', 'sex']));
+        $birthDate = $this->hashDate($this->answerByKey($answers, $fields, ['date_of_birth', 'dob', 'birth', 'naissance']));
+
+        $user = [
+            'em' => $this->hash($order?->billing_email ?: $submission->email ?: $submission->user?->email),
+            'ph' => $this->hashPhone($order?->phone_number ?: $submission->phone ?: $submission->user?->whatsapp_number),
+            'fn' => $this->hashText($firstName),
+            'ln' => $this->hashText($lastName),
+            'ct' => $this->hashText($this->answerByType($answers, $fields, 'city')),
+            'st' => $this->hashText($this->answerByType($answers, $fields, 'state')),
+            'country' => $this->hashText($this->answerByType($answers, $fields, 'country')),
+            'zp' => $this->hashText($this->answerByKey($answers, $fields, ['postal', 'zip', 'code_postal', 'postcode'])),
+            'db' => $birthDate,
+            'ge' => $gender,
+            'external_id' => $this->hash((string) ($submission->user_id ?? $order?->user_id)),
+            'fbp' => $submission->meta_fbp ?: null,
+            'fbc' => $submission->meta_fbc ?: null,
+            'client_ip_address' => $submission->client_ip ?: null,
+            'client_user_agent' => $submission->client_user_agent ?: null,
+        ];
+
+        return array_filter($user, fn ($value) => $value !== null && $value !== '');
+    }
+
+    private function answerByType(array $answers, $fields, string $type): ?string
+    {
+        if (! $fields) {
+            return null;
+        }
+
+        $field = $fields->firstWhere('type', $type);
+        $value = $field ? ($answers[$field->field_key] ?? null) : null;
+
+        return is_scalar($value) ? (string) $value : null;
+    }
+
+    private function answerByKey(array $answers, $fields, array $patterns): ?string
+    {
+        if (! $fields) {
+            return null;
+        }
+
+        $field = $fields->first(function ($field) use ($patterns) {
+            $key = strtolower((string) $field->field_key);
+
+            foreach ($patterns as $pattern) {
+                if (str_contains($key, $pattern)) {
+                    return true;
+                }
+            }
+
+            return false;
+        });
+
+        $value = $field ? ($answers[$field->field_key] ?? null) : null;
+
+        return is_scalar($value) ? (string) $value : null;
+    }
+
+    private function hashText(?string $value): ?string
+    {
+        $value = strtolower(trim((string) $value));
+        $value = preg_replace('/[^\p{L}\p{N} ]+/u', '', $value) ?? $value;
+        $value = preg_replace('/\s+/', ' ', $value) ?? $value;
+
+        return $value === '' ? null : hash('sha256', $value);
+    }
+
+    private function hashDate(?string $value): ?string
+    {
+        $digits = preg_replace('/\D+/', '', (string) $value);
+
+        return strlen($digits) === 8 ? hash('sha256', $digits) : null;
+    }
+
+    private function hashGender(?string $value): ?string
+    {
+        $value = strtolower(trim((string) $value));
+
+        return match (true) {
+            in_array($value, ['m', 'male', 'homme', 'masculin'], true) => hash('sha256', 'm'),
+            in_array($value, ['f', 'female', 'femme', 'feminin', 'féminin'], true) => hash('sha256', 'f'),
+            default => null,
+        };
     }
 
     public function browserEvent(string $name, string $eventId, array $customData, array $browserData): void
