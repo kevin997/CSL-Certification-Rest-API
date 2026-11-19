@@ -38,6 +38,7 @@ use App\Http\Controllers\Api\CourseSectionController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DigitalProductController;
+use App\Http\Controllers\Api\DocumentAccessController;
 use App\Http\Controllers\Api\DocumentationContentController;
 use App\Http\Controllers\Api\EnrollmentAnalyticsController;
 use App\Http\Controllers\Api\EnrollmentCodeController;
@@ -620,6 +621,8 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     // Documentation Content routes
     Route::post('/activities/{activityId}/documentation', [DocumentationContentController::class, 'store']);
     Route::get('/activities/{activityId}/documentation', [DocumentationContentController::class, 'show']);
+    // The only path to attachment bytes: authorized, logged, never a public URL.
+    Route::get('/documents/{uuid}/content', [DocumentAccessController::class, 'show']);
 
     // Certificate Template routes
     Route::get('/certificate-templates', [CertificateTemplateController::class, 'index']);
