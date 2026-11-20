@@ -3,28 +3,30 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Activity;
 use App\Models\CertificateContent;
+use App\Models\Enrollment;
 use App\Models\IssuedCertificate;
+use App\Scopes\EnvironmentScope;
 use App\Services\CertificateGenerationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 
 class CertificateController extends Controller
 {
     /**
      * Certificate generation service
-     * 
+     *
      * @var CertificateGenerationService
      */
     protected $certificateGenerationService;
 
     /**
      * Constructor
-     * 
-     * @param CertificateGenerationService $certificateGenerationService
      */
     public function __construct(CertificateGenerationService $certificateGenerationService)
     {
@@ -33,15 +35,13 @@ class CertificateController extends Controller
 
     /**
      * Download a certificate
-     * 
-     * @param Request $request
-     * @param string $path
+     *
      * @return Response
      */
     public function download(Request $request, string $path)
     {
         // Verify that the request has a valid signature
-        if (!$request->hasValidSignature()) {
+        if (! $request->hasValidSignature()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Invalid signature',
@@ -49,9 +49,9 @@ class CertificateController extends Controller
         }
 
         // Proxy the request to the certificate service
-        $serviceUrl = $this->certificateGenerationService->getServiceUrl('/api/certificates/download/' . $path);
+        $serviceUrl = $this->certificateGenerationService->getServiceUrl('/api/certificates/download/'.$path);
 
-        if (!$serviceUrl) {
+        if (! $serviceUrl) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Certificate service not configured',
@@ -64,17 +64,15 @@ class CertificateController extends Controller
 
     /**
      * Preview a certificate
-     * 
-     * @param Request $request
-     * @param string $path
+     *
      * @return Response
      */
     public function preview(Request $request, string $path)
     {
         // Proxy the request to the certificate service
-        $serviceUrl = $this->certificateGenerationService->getServiceUrl('/api/certificates/preview/' . $path);
+        $serviceUrl = $this->certificateGenerationService->getServiceUrl('/api/certificates/preview/'.$path);
 
-        if (!$serviceUrl) {
+        if (! $serviceUrl) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Certificate service not configured',
@@ -87,12 +85,11 @@ class CertificateController extends Controller
 
     /**
      * Generate a certificate for a user
-     * 
-     * @param Request $request
-     * @param int $activityId
-     * @param int $id
+     *
+     * @param  int  $activityId
+     * @param  int  $id
      * @return Response
-     * 
+     *
      * @OA\Post(
      *     path="/activities/{activityId}/certificate-content/{id}/generate",
      *     summary="Generate a certificate for a user",
@@ -100,35 +97,45 @@ class CertificateController extends Controller
      *     operationId="generateCertificate",
      *     tags={"Certificates"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="activityId",
      *         in="path",
      *         required=true,
      *         description="ID of the activity",
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         required=true,
      *         description="ID of the certificate content",
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\RequestBody(
      *         required=true,
      *         description="User data for certificate",
+     *
      *         @OA\JsonContent(
      *             required={"fullName"},
+     *
      *             @OA\Property(property="fullName", type="string", example="John Doe"),
      *             @OA\Property(property="certificateDate", type="string", example="May 21, 2025"),
      *             @OA\Property(property="additionalData", type="object")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Certificate generated successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Certificate generated successfully"),
      *             @OA\Property(property="data", type="object",
@@ -138,6 +145,7 @@ class CertificateController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=404,
      *         description="Certificate content not found"
@@ -180,7 +188,6 @@ class CertificateController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-
         // Calculate certificate date based on expiry period if set
         $issueDate = now();
         $expiryDate = null;
@@ -221,14 +228,14 @@ class CertificateController extends Controller
         $templateName = $certificateContent->template->file_path;
         // Strip the 'templates/' prefix if it exists
         $templateName = str_replace('templates/', '', $templateName);
-        Log::info('Template name on Rest api: ' . $templateName);
+        Log::info('Template name on Rest api: '.$templateName);
         $result = $this->certificateGenerationService->generateCertificate(
             $certificateContent,
             $userData,
             $templateName,
         );
 
-        if (!$result) {
+        if (! $result) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to generate certificate',
@@ -252,29 +259,34 @@ class CertificateController extends Controller
 
     /**
      * Verify a certificate
-     * 
-     * @param Request $request
+     *
      * @return Response
-     * 
+     *
      * @OA\Post(
      *     path="/certificates/verify",
      *     summary="Verify a certificate",
      *     description="Verifies a certificate using its access code",
      *     operationId="verifyCertificate",
      *     tags={"Certificates"},
+     *
      *     @OA\RequestBody(
      *         required=true,
      *         description="Certificate verification data",
+     *
      *         @OA\JsonContent(
      *             required={"accessCode"},
+     *
      *             @OA\Property(property="accessCode", type="string", example="ABC123XYZ")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Certificate verification result",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="data", type="object",
      *                 @OA\Property(property="isValid", type="boolean", example=true),
@@ -282,6 +294,7 @@ class CertificateController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=422,
      *         description="Validation error"
@@ -303,8 +316,18 @@ class CertificateController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // First, check if the certificate exists in our LMS system
-        $issuedCertificate = IssuedCertificate::where('certificate_number', $request->accessCode)
+        // First, check if the certificate exists in our LMS system.
+        //
+        // Verification is public and the certificate code is the bearer of the
+        // claim: a QR code printed on a BootCamps certificate is routinely
+        // scanned from the shared certification host, whose request resolves a
+        // DIFFERENT environment. Filtering by the caller's tenant made every
+        // cross-tenant certificate read as "not found", so the environment
+        // scope is deliberately bypassed here. The code is unguessable
+        // (8 base62 characters) and the response only exposes the holder's
+        // name and the course title the certificate already prints.
+        $issuedCertificate = IssuedCertificate::withoutGlobalScope(EnvironmentScope::class)
+            ->where('certificate_number', $request->accessCode)
             ->with(['certificateContent.template', 'user', 'course'])
             ->first();
 
@@ -317,8 +340,8 @@ class CertificateController extends Controller
             $urlsValid = $this->verifyCertificateUrls($certificateUrl, $previewUrl);
 
             // If URLs are invalid, regenerate the certificate
-            if (!$urlsValid) {
-                Log::info('Certificate URLs are invalid, regenerating certificate for: ' . $request->accessCode);
+            if (! $urlsValid) {
+                Log::info('Certificate URLs are invalid, regenerating certificate for: '.$request->accessCode);
 
                 $regenerated = $this->regenerateCertificate($issuedCertificate);
 
@@ -330,13 +353,13 @@ class CertificateController extends Controller
 
                     Log::info('Certificate regenerated successfully with new URLs');
                 } else {
-                    Log::error('Failed to regenerate certificate for: ' . $request->accessCode);
+                    Log::error('Failed to regenerate certificate for: '.$request->accessCode);
                 }
             }
 
             // Check certificate status and expiry
             $isValid = $issuedCertificate->status === 'issued' &&
-                      (!$issuedCertificate->expiry_date || $issuedCertificate->expiry_date > now());
+                      (! $issuedCertificate->expiry_date || $issuedCertificate->expiry_date > now());
 
             return response()->json([
                 'status' => 'success',
@@ -353,7 +376,7 @@ class CertificateController extends Controller
                         'certificate_url' => $certificateUrl,
                         'preview_url' => $previewUrl,
                     ],
-                    'source' => 'lms'
+                    'source' => 'lms',
                 ],
             ]);
         }
@@ -361,7 +384,7 @@ class CertificateController extends Controller
         // If not found in LMS, try the certificate generation service
         $result = false; // $this->certificateGenerationService->verifyCertificate($request->accessCode);
 
-        if (!$result) {
+        if (! $result) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Certificate not found or verification failed',
@@ -379,45 +402,40 @@ class CertificateController extends Controller
 
     /**
      * Verify if certificate URLs are still valid/accessible
-     *
-     * @param string|null $certificateUrl
-     * @param string|null $previewUrl
-     * @return bool
      */
     private function verifyCertificateUrls(?string $certificateUrl, ?string $previewUrl): bool
     {
-        if (!$certificateUrl) {
+        if (! $certificateUrl) {
             return false;
         }
 
         try {
             // Check if the certificate URL is accessible
-            $response = \Illuminate\Support\Facades\Http::timeout(5)->head($certificateUrl);
+            $response = Http::timeout(5)->head($certificateUrl);
 
             // If the URL returns 404 or any error status, it's invalid
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 return false;
             }
 
             return true;
         } catch (\Exception $e) {
-            Log::warning('Failed to verify certificate URL: ' . $e->getMessage());
+            Log::warning('Failed to verify certificate URL: '.$e->getMessage());
+
             return false;
         }
     }
 
     /**
      * Regenerate a certificate that has invalid URLs
-     *
-     * @param IssuedCertificate $issuedCertificate
-     * @return bool
      */
     private function regenerateCertificate(IssuedCertificate $issuedCertificate): bool
     {
         try {
             $certificateContent = $issuedCertificate->certificateContent;
-            if (!$certificateContent) {
-                Log::error('Certificate content not found for issued certificate: ' . $issuedCertificate->id);
+            if (! $certificateContent) {
+                Log::error('Certificate content not found for issued certificate: '.$issuedCertificate->id);
+
                 return false;
             }
 
@@ -440,7 +458,7 @@ class CertificateController extends Controller
             }
 
             // Find the enrollment
-            $enrollment = \App\Models\Enrollment::where('user_id', $issuedCertificate->user_id)
+            $enrollment = Enrollment::where('user_id', $issuedCertificate->user_id)
                 ->where('course_id', $issuedCertificate->course_id)
                 ->first();
 
@@ -456,8 +474,9 @@ class CertificateController extends Controller
                 $enrollment
             );
 
-            if (!$result || !isset($result['data']['certificate_url'])) {
+            if (! $result || ! isset($result['data']['certificate_url'])) {
                 Log::error('Failed to regenerate certificate, no certificate URL in response');
+
                 return false;
             }
 
@@ -476,18 +495,18 @@ class CertificateController extends Controller
         } catch (\Exception $e) {
             Log::error('Exception when regenerating certificate', [
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return false;
         }
     }
 
     /**
      * Get user certificates
-     * 
-     * @param Request $request
+     *
      * @return Response
-     * 
+     *
      * @OA\Get(
      *     path="/user/certificates",
      *     summary="Get user certificates",
@@ -495,14 +514,19 @@ class CertificateController extends Controller
      *     operationId="getUserCertificates",
      *     tags={"Certificates"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Response(
      *         response=200,
      *         description="User certificates retrieved successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="data", type="array",
+     *
      *                 @OA\Items(type="object",
+     *
      *                     @OA\Property(property="id", type="integer"),
      *                     @OA\Property(property="certificate_number", type="string"),
      *                     @OA\Property(property="access_code", type="string"),
@@ -516,6 +540,7 @@ class CertificateController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=401,
      *         description="Unauthorized"
@@ -525,7 +550,7 @@ class CertificateController extends Controller
     public function getUserCertificates(Request $request)
     {
         $user = Auth::user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'User not authenticated',
@@ -545,11 +570,10 @@ class CertificateController extends Controller
 
     /**
      * Issue a certificate for a user and store it in the IssuedCertificate model
-     * 
-     * @param Request $request
-     * @param int $certificateContentId
+     *
+     * @param  int  $certificateContentId
      * @return Response
-     * 
+     *
      * @OA\Post(
      *     path="/certificate-content/{certificateContentId}/issue",
      *     summary="Issue a certificate for a user",
@@ -557,28 +581,36 @@ class CertificateController extends Controller
      *     operationId="issueCertificate",
      *     tags={"Certificates"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="certificateContentId",
      *         in="path",
      *         required=true,
      *         description="ID of the certificate content",
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\RequestBody(
      *         required=true,
      *         description="User data for certificate",
+     *
      *         @OA\JsonContent(
      *             required={"fullName"},
+     *
      *             @OA\Property(property="fullName", type="string", example="John Doe"),
      *             @OA\Property(property="certificateDate", type="string", example="May 21, 2025"),
      *             @OA\Property(property="additionalData", type="object")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Certificate issued successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Certificate issued successfully"),
      *             @OA\Property(property="data", type="object",
@@ -589,6 +621,7 @@ class CertificateController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=404,
      *         description="Certificate content not found"
@@ -606,28 +639,28 @@ class CertificateController extends Controller
 
         // Get the current authenticated user
         $user = Auth::user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'User not authenticated',
             ], Response::HTTP_UNAUTHORIZED);
         }
-        
+
         // Check if a certificate has already been issued for this user and content
         $existingCertificate = IssuedCertificate::where('user_id', $user->id)
             ->where('certificate_content_id', $certificateContentId)
             ->first();
-            
+
         if ($existingCertificate) {
             // Get file URL from file_path field
             $fileUrl = $existingCertificate->file_path;
-            
+
             // Get preview URL from custom_fields JSON (already casted to array by model)
             $previewUrl = null;
             if ($existingCertificate->custom_fields) {
                 $previewUrl = $existingCertificate->custom_fields['preview_url'] ?? null;
             }
-            
+
             // Return the existing certificate data
             return response()->json([
                 'status' => 'success',
@@ -642,22 +675,22 @@ class CertificateController extends Controller
         }
 
         // Find the correct course for this certificate content and user
-        $activity = \App\Models\Activity::find($certificateContent->activity_id);
-        if (!$activity) {
+        $activity = Activity::find($certificateContent->activity_id);
+        if (! $activity) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Activity not found for certificate content',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
         $block = $activity->block;
-        if (!$block) {
+        if (! $block) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Block not found for activity',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
         $template = $block->template;
-        if (!$template) {
+        if (! $template) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Template not found for block',
@@ -671,10 +704,10 @@ class CertificateController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
         // Find the user's enrollment in any of these courses
-        $enrollment = \App\Models\Enrollment::where('user_id', $user->id)
+        $enrollment = Enrollment::where('user_id', $user->id)
             ->whereIn('course_id', $courses->pluck('id'))
             ->first();
-        if (!$enrollment) {
+        if (! $enrollment) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'User is not enrolled in any course for this certificate',
@@ -730,7 +763,7 @@ class CertificateController extends Controller
         if ($templateName) {
             $templateName = str_replace('templates/', '', $templateName);
         }
-        Log::info('Template name for issueCertificate: ' . $templateName);
+        Log::info('Template name for issueCertificate: '.$templateName);
 
         // Generate certificate through the certificate generation service
         $result = $this->certificateGenerationService->generateCertificate(
@@ -740,7 +773,7 @@ class CertificateController extends Controller
             $enrollment
         );
 
-        if (!$result) {
+        if (! $result) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to issue certificate',
@@ -752,17 +785,17 @@ class CertificateController extends Controller
         if (isset($result['issuedCertificateId'])) {
             $issuedCertificate = IssuedCertificate::find($result['issuedCertificateId']);
         }
-        
-        if (!$issuedCertificate) {
+
+        if (! $issuedCertificate) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to create certificate record',
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
-        
+
         // Get file URL from file_path field
         $fileUrl = $issuedCertificate->file_path;
-        
+
         // Get preview URL from custom_fields JSON (already casted to array by model)
         $previewUrl = null;
         if ($issuedCertificate->custom_fields) {
@@ -784,14 +817,13 @@ class CertificateController extends Controller
     /**
      * Get the issued certificate for the current user and a specific activity (if any)
      *
-     * @param Request $request
-     * @param int $activityId
+     * @param  int  $activityId
      * @return Response
      */
     public function getIssuedCertificateForActivity(Request $request, $activityId)
     {
         $user = Auth::user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'User not authenticated',
@@ -799,11 +831,11 @@ class CertificateController extends Controller
         }
 
         // Find the latest certificate content for this activity
-        $certificateContent = \App\Models\CertificateContent::where('activity_id', $activityId)
+        $certificateContent = CertificateContent::where('activity_id', $activityId)
             ->latest()
             ->first();
 
-        if (!$certificateContent) {
+        if (! $certificateContent) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'No certificate content found for this activity',
@@ -811,11 +843,11 @@ class CertificateController extends Controller
         }
 
         // Find the issued certificate for this user and certificate content
-        $issuedCertificate = \App\Models\IssuedCertificate::where('user_id', $user->id)
+        $issuedCertificate = IssuedCertificate::where('user_id', $user->id)
             ->where('certificate_content_id', $certificateContent->id)
             ->first();
 
-        if (!$issuedCertificate) {
+        if (! $issuedCertificate) {
             return response()->json([
                 'status' => 'success',
                 'data' => null,

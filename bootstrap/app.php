@@ -74,6 +74,15 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prepend(ConfigureTenantCorsAndSanctum::class);
         $middleware->prepend(IsolateSession::class);
 
+        // Public certificate verification is a read-only POST that must work
+        // for a visitor arriving from a printed QR: they have no session and
+        // therefore no CSRF token, so a first-party origin would be refused
+        // with 419 before the controller runs. The endpoint authenticates by
+        // the access code itself and mutates nothing.
+        $middleware->validateCsrfTokens(except: [
+            'api/certificates/verify',
+        ]);
+
         // HTTPS enforcement middleware (runs first for security)
         $middleware->append(EnforceHttps::class);
 
