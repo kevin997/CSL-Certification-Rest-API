@@ -4,11 +4,13 @@ namespace App\Services\Documents;
 
 use App\Enums\UserRole;
 use App\Models\Activity;
+use App\Models\AssignmentContent;
 use App\Models\DocumentAccessLog;
 use App\Models\DocumentationAttachment;
 use App\Models\DocumentationContent;
 use App\Models\DocumentBlob;
 use App\Models\Enrollment;
+use App\Models\Template;
 use App\Models\User;
 use App\Support\EffectiveAuthContext;
 use Illuminate\Http\Response;
@@ -135,8 +137,38 @@ class DocumentProtectionService
         // relation is only populated by newer writers.
         $activity = $content->activity
             ?: (Activity::query()->find($content->activity_id));
-        $template = $activity?->block?->template;
 
+        return $this->canAccessTemplate($user, $activity?->block?->template);
+    }
+
+    /**
+     * A fillable-PDF assignment points at a document attachment by uuid, with
+     * no documentation content row of its own. It is readable when the
+     * attachment is referenced by assignment content whose template the user
+     * may access by the same rules as any other protected document.
+     */
+    public function userCanAccessFormDocument(User $user, DocumentationAttachment $attachment): bool
+    {
+        $contents = AssignmentContent::query()
+            ->where('fillable_pdf->document_uuid', $attachment->uuid)
+            ->get();
+
+        foreach ($contents as $content) {
+            if ($this->canAccessTemplate($user, $content->activity?->block?->template)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Shared access rule for template-backed documents: the template creator,
+     * platform staff, academy managers, and learners enrolled in a course built
+     * from the template.
+     */
+    private function canAccessTemplate(User $user, ?Template $template): bool
+    {
         if (! $template) {
             return false;
         }
@@ -223,6 +255,34 @@ class DocumentProtectionService
 
         return response($bytes, 200, [
             'Content-Type' => $this->mime($attachment, null),
+            'Content-Disposition' => 'inline; filename="'.$this->safeName($attachment->file_name).'"',
+            'Content-Length' => (string) strlen($bytes),
+            'Cache-Control' => 'no-store, private, max-age=0',
+            'Pragma' => 'no-cache',
+            'X-Content-Type-Options' => 'nosniff',
+            'X-Document-Id' => (string) $attachment->uuid,
+            'Content-Security-Policy' => "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+        ]);
+    }
+
+    /**
+     * Stream the stored PDF byte for byte.
+     *
+     * stream() re-imports every page to stamp the learner's identity, and FPDI
+     * drops AcroForm fields in the process. Fillable PDFs must reach pdf.js
+     * untouched so the form fields survive.
+     */
+    public function streamOriginalPdf(User $user, DocumentationAttachment $attachment, ?string $ip, ?string $userAgent): Response
+    {
+        if ($this->extensionFor($attachment) !== 'pdf') {
+            throw new HttpException(422, 'Only PDF documents can be opened as fillable forms.');
+        }
+
+        $bytes = $this->bytesFor($attachment);
+        $this->logAccess($attachment, $user, $ip, $userAgent);
+
+        return response($bytes, 200, [
+            'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="'.$this->safeName($attachment->file_name).'"',
             'Content-Length' => (string) strlen($bytes),
             'Cache-Control' => 'no-store, private, max-age=0',

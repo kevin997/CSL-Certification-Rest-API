@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @OA\Schema(
  *     schema="AssignmentSubmission",
  *     type="object",
+ *
  *     @OA\Property(property="id", type="integer", format="int64", example=1),
  *     @OA\Property(property="assignment_content_id", type="integer", format="int64", example=1),
  *     @OA\Property(property="user_id", type="integer", format="int64", example=1),
@@ -37,7 +38,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  *     @OA\Property(
  *         property="files",
  *         type="array",
+ *
  *         @OA\Items(type="object",
+ *
  *             @OA\Property(property="id", type="integer", format="int64", example=1),
  *             @OA\Property(property="filename", type="string", example="assignment.pdf"),
  *             @OA\Property(property="path", type="string", example="submissions/assignment.pdf"),
@@ -47,10 +50,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  *     )
  * )
  */
-
 class AssignmentSubmission extends Model
 {
-    use HasFactory, SoftDeletes, HasGradedBy;
+    use HasFactory, HasGradedBy, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -61,13 +63,15 @@ class AssignmentSubmission extends Model
         'assignment_content_id',
         'user_id',
         'submission_text',
-        'status', // draft, submitted, graded
+        'status', // draft, submitted, graded, returned
         'score',
         'feedback',
         'attempt_number',
         'submitted_at',
         'graded_by',
         'graded_at',
+        'fillable_data',
+        'correction_data',
     ];
 
     /**
@@ -80,6 +84,8 @@ class AssignmentSubmission extends Model
         return [
             'submitted_at' => 'datetime',
             'graded_at' => 'datetime',
+            'fillable_data' => 'array',
+            'correction_data' => 'array',
         ];
     }
 
