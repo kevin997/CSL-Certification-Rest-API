@@ -76,7 +76,11 @@ class MetaBrowserEventController extends Controller
      */
     private function logRejected(Request $request): void
     {
-        Log::warning('Rejected meta browser event', [
+        // The production channels require level=error, so Log::warning() is
+        // silently dropped. The stderr monolog channel has no level floor and
+        // its output is visible in `docker logs`, which is where a rejected
+        // browser event can actually be investigated.
+        Log::channel('stderr')->warning('Rejected meta browser event', [
             'payload' => $request->except(['fbp', 'fbc']),
             'origin' => $request->header('Origin'),
         ]);
