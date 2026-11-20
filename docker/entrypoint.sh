@@ -2,6 +2,21 @@
 # Don't exit immediately on error to allow proper error logging
 set +e
 
+# Refuse to start without a runtime APP_KEY.
+#
+# The image bakes a throwaway key at build time (Dockerfile runs
+# `key:generate`) so the build's config cache is self-contained, but that key
+# changes on every build. A deployment that falls back to it silently makes
+# every encrypted column written by the previous deployment undecryptable: the
+# certificate credentials then throw "The MAC is invalid" at request time and
+# the endpoint 500s. Fail the rollout loudly instead.
+if [ -z "${APP_KEY:-}" ]; then
+  echo "FATAL: APP_KEY is not set in the runtime environment." >&2
+  echo "Refusing to start with the build-time key: it changes on every deploy and makes encrypted columns unreadable." >&2
+  echo "Set APP_KEY in the deployment environment (Coolify application environment variables)." >&2
+  exit 1
+fi
+
 # Export temporary directory environment variables to ensure spatie packages use Laravel storage
 export TMPDIR=/var/www/html/storage/app/backup-temp
 export TEMP=/var/www/html/storage/app/backup-temp

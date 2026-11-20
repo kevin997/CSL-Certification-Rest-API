@@ -234,7 +234,13 @@ RUN chown -R www-data:www-data /var/www/html \
     && chown -R www-data:www-data /var/www/html/storage/app/private \
     && chmod -R 775 /var/www/html/storage/app/private
 
-# Laravel optimizations (run after code copy)
+# Laravel optimizations (run after code copy).
+#
+# The build-time key is a throwaway so this layer is self-contained; the runtime
+# APP_KEY from the deployment environment overrides it. The entrypoint refuses
+# to start when that env var is absent: a build-time key changes on every build,
+# which would silently make every encrypted column written by the previous
+# deployment unreadable ("The MAC is invalid").
 RUN php artisan key:generate --no-interaction \
     && php artisan config:cache \
     && php artisan route:cache \

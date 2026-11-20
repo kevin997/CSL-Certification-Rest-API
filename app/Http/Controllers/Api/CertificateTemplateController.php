@@ -212,10 +212,105 @@ class CertificateTemplateController extends Controller
             'remote_id' => $templateData['id'] ?? null,
         ]);
 
+        // Cache the template's own field declaration. It is the contract
+        // generation works against, and keeping it on the row means the
+        // dashboard can show the field list without a second remote call.
+        $contract = $this->certificateGenerationService->describeTemplate(
+            $this->certificateGenerationService->templateNameFor($template)
+        );
+
+        if ($contract !== null) {
+            $template->metadata = [
+                'fields' => $contract['fields'],
+                'qr_field' => $contract['qr_field'],
+            ];
+            $template->save();
+        } else {
+            Log::warning('Could not read template fields after upload', [
+                'template_id' => $template->id,
+                'file_path' => $template->file_path,
+            ]);
+        }
+
         return response()->json([
             'status' => 'success',
             'message' => 'Template uploaded successfully',
             'data' => $template,
+        ]);
+    }
+
+    /**
+     * The field contract of a stored template.
+     *
+     * Proxies GET /api/v2/templates/{name}/fields on the certificate service so
+     * the dashboard can offer per-field mapping: the template is the only
+     * authority on which fields exist and what type each one is. The QR field
+     * is reported separately because it is stamped from the qr payload, never
+     * sent as a text value.
+     *
+     * @param  int  $id
+     * @return Response
+     *
+     * @OA\Get(
+     *     path="/certificate-templates/{id}/fields",
+     *     summary="Get a template's declared fields",
+     *     description="Returns the page geometry, QR field and data fields the stored PDF declares, with the source each field maps to by default",
+     *     operationId="getCertificateTemplateFields",
+     *     tags={"Certificates"},
+     *     security={{"bearerAuth":{}}},
+     *
+     *     @OA\Parameter(
+     *         name="id",
+     *         in="path",
+     *         required=true,
+     *         description="ID of the template",
+     *
+     *         @OA\Schema(type="integer", format="int64")
+     *     ),
+     *
+     *     @OA\Response(
+     *         response=200,
+     *         description="Template field contract",
+     *
+     *         @OA\JsonContent(
+     *             type="object",
+     *
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="data", type="object")
+     *         )
+     *     ),
+     *
+     *     @OA\Response(response=404, description="Template not found"),
+     *     @OA\Response(response=500, description="Certificate service unreachable")
+     * )
+     */
+    public function fields($id)
+    {
+        $template = $this->findForEnvironment($id);
+
+        $contract = $this->certificateGenerationService->describeTemplate(
+            $this->certificateGenerationService->templateNameFor($template)
+        );
+
+        if ($contract === null) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to read template fields from certificate service',
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'template' => [
+                    'id' => $template->id,
+                    'name' => $template->name,
+                    'file_path' => $template->file_path,
+                ],
+                'page' => $contract['page'],
+                'qr_field' => $contract['qr_field'],
+                'fields' => $contract['fields'],
+            ],
         ]);
     }
 

@@ -11,8 +11,11 @@ use App\Models\Enrollment;
 use App\Models\IssuedCertificate;
 use App\Models\Template;
 use App\Models\ThirdPartyService;
+use App\Support\Certificates\TemplateFieldContract;
+use App\Support\Certificates\TemplateFieldResolver;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
@@ -21,11 +24,12 @@ use Illuminate\Support\Str;
 class CertificateGenerationService
 {
     /**
-     * Template field names, keyed by template name, for this request.
+     * Template contracts, keyed by template name, for this request. A failed
+     * lookup is cached as null so an outage is not retried per certificate.
      *
-     * @var array<string, list<string>>
+     * @var array<string, TemplateFieldContract|null>
      */
-    private array $templateFieldCache = [];
+    private array $templateContractCache = [];
 
     /**
      * The third-party service for certificate generation
@@ -39,25 +43,69 @@ class CertificateGenerationService
     {
         $this->service = ThirdPartyService::getServiceByType('certificate_generation');
 
-        // Authenticate with the service if we have credentials but no token
-        if ($this->service && ! $this->service->bearer_token && $this->service->username && $this->service->password) {
+        // Authenticate with the service if we have credentials but no token.
+        // credential() rather than the attributes: a decryption failure on any
+        // encrypted column must degrade to "not configured", not throw here.
+        if ($this->service
+            && $this->service->credential('bearer_token') === null
+            && $this->service->hasCredentials('username', 'password')) {
             $this->authenticate();
         }
     }
 
     /**
-     * The field names a template declares, as reported by the service.
+     * The template name the certificate service knows a stored template by.
+     *
+     * Uploads are stored as "templates/<name>.pdf", while the service's field
+     * and generation endpoints expect the bare filename including ".pdf".
+     */
+    public function templateNameFor(CertificateTemplate $template): string
+    {
+        $path = trim((string) ($template->file_path ?: $template->filename));
+
+        return $this->normaliseTemplateName($path);
+    }
+
+    /**
+     * The template's field contract, shaped for the dashboard: page geometry,
+     * the QR field, and every data field with the source it maps to by default.
+     *
+     * @return array{page: array{width: float|int|null, height: float|int|null, count: int|null}, qr_field: array{name: string, rect: list<mixed>|null, box: list<mixed>|null}|null, fields: list<array{name: string, type: string|null, rect: list<mixed>|null, maps_to: string|null}>}|null
+     */
+    public function describeTemplate(string $templateName): ?array
+    {
+        $contract = $this->templateContract($this->normaliseTemplateName($templateName));
+
+        if ($contract === null) {
+            return null;
+        }
+
+        return [
+            'page' => $contract->page,
+            'qr_field' => $contract->qrField,
+            'fields' => array_map(
+                static fn (array $field): array => [
+                    'name' => $field['name'],
+                    'type' => $field['type'],
+                    'rect' => $field['rect'],
+                    'maps_to' => TemplateFieldResolver::mapsTo($field['name']),
+                ],
+                $contract->dataFields(),
+            ),
+        ];
+    }
+
+    /**
+     * The full field contract a template declares, fetched once per request.
      *
      * GET /api/v2/templates/{name}/fields is the contract for what a template
      * can be filled with; sending anything else makes v2 reject the whole
      * request, so this is consulted before every generation.
-     *
-     * @return list<string>|null Null when the service could not be asked.
      */
-    private function templateFields(string $templateName): ?array
+    private function templateContract(string $templateName): ?TemplateFieldContract
     {
-        if (array_key_exists($templateName, $this->templateFieldCache)) {
-            return $this->templateFieldCache[$templateName];
+        if (array_key_exists($templateName, $this->templateContractCache)) {
+            return $this->templateContractCache[$templateName];
         }
 
         $response = $this->makeAuthenticatedRequest(
@@ -71,50 +119,20 @@ class CertificateGenerationService
                 'status' => $response?->status(),
             ]);
 
-            return null;
+            return $this->templateContractCache[$templateName] = null;
         }
 
-        $names = collect($response->json('fields') ?? [])
-            ->pluck('name')
-            ->filter(fn ($name) => is_string($name) && $name !== '')
-            ->values()
-            ->all();
+        $body = $response->json();
 
-        return $this->templateFieldCache[$templateName] = $names;
-    }
+        if (! is_array($body)) {
+            Log::warning('Certificate service returned an unreadable field contract', [
+                'template' => $templateName,
+            ]);
 
-    /**
-     * Narrow the values the app holds to the ones this template declares.
-     *
-     * Matching folds case because templates disagree on it (QrCode vs QRCode,
-     * fullName vs FullName), and the value is keyed by the template's own
-     * spelling so pdftk finds the field.
-     *
-     * @param  array<string, mixed>  $values
-     * @param  list<string>  $declared
-     * @return array<string, string>
-     */
-    private function fieldsForTemplate(array $values, array $declared): array
-    {
-        $byLowerName = [];
-        foreach ($declared as $name) {
-            $byLowerName[mb_strtolower($name)] = $name;
+            return $this->templateContractCache[$templateName] = null;
         }
 
-        $fields = [];
-        foreach ($values as $key => $value) {
-            $canonical = $byLowerName[mb_strtolower((string) $key)] ?? null;
-
-            // null, bool and arrays all reach the service as something it
-            // refuses (unfillableValue), so they are dropped here instead.
-            if ($canonical === null || $value === null || is_bool($value) || is_array($value) || is_object($value)) {
-                continue;
-            }
-
-            $fields[$canonical] = (string) $value;
-        }
-
-        return $fields;
+        return $this->templateContractCache[$templateName] = TemplateFieldContract::fromArray($body, $templateName);
     }
 
     /**
@@ -125,31 +143,35 @@ class CertificateGenerationService
      * at this class.
      *
      * @param  array<string, mixed>  $values
+     * @param  mixed  $fieldsConfig  certificate_contents.fields_config (JSON cast value)
      * @return array<string, mixed>|null
      */
-    private function issueViaV2(string $templateName, array $values, ?string $reference = null): ?array
+    private function issueViaV2(string $templateName, array $values, ?string $reference = null, mixed $fieldsConfig = null): ?array
     {
-        $declared = $this->templateFields($templateName);
+        $contract = $this->templateContract($templateName);
 
-        if ($declared === null) {
+        if ($contract === null) {
             return null;
         }
 
+        $resolver = TemplateFieldResolver::fromFieldsConfig($fieldsConfig);
+        $resolvedFields = $resolver->resolve($contract->dataFieldNames(), $values);
+
         $payload = [
             'template' => $templateName,
-            'fields' => $this->fieldsForTemplate($values, $declared),
+            'fields' => $resolvedFields,
         ];
 
         if ($reference !== null) {
             $payload['reference'] = $reference;
         }
 
-        // Only sent when a verification base URL is configured: the service
-        // allow-lists QR hosts, so an unconfigured deployment would have every
-        // generation rejected rather than simply going out without a QR.
-        $qrUrl = $this->qrVerificationUrl($values['accessCode'] ?? null);
-        if ($qrUrl !== null) {
-            $payload['qr'] = ['url' => $qrUrl];
+        // Only when the template actually declares a QR field: the service
+        // refuses a qr payload (noQrField) for a template that has none, and a
+        // template without one gets no code rather than a rejected request.
+        $qr = $this->qrPayload($contract, $values['accessCode'] ?? null);
+        if ($qr !== null) {
+            $payload['qr'] = $qr;
         }
 
         $response = $this->makeAuthenticatedRequest('post', 'v2/certificates', $payload);
@@ -159,8 +181,8 @@ class CertificateGenerationService
                 'template' => $templateName,
                 'status' => $response?->status(),
                 'body' => $response?->body(),
-                'sent_fields' => array_keys($payload['fields']),
-                'declared_fields' => $declared,
+                'sent_fields' => array_keys($resolvedFields),
+                'declared_fields' => $contract->dataFieldNames(),
             ]);
 
             return null;
@@ -179,17 +201,131 @@ class CertificateGenerationService
     }
 
     /**
-     * The page a certificate's QR should point at, or null when unconfigured.
+     * The qr payload for a template, or null when there is nothing to stamp.
+     *
+     * The QR field is excluded from `fields` (the service rejects sending it as
+     * text) and is rendered from qr.url instead.
+     *
+     * @return array{url: string}|null
      */
-    private function qrVerificationUrl(?string $accessCode): ?string
+    private function qrPayload(TemplateFieldContract $contract, mixed $accessCode): ?array
     {
-        $base = config('services.certificate_generation.qr_verify_base_url');
-
-        if (! is_string($base) || trim($base) === '' || ! $accessCode) {
+        if (! $contract->hasQrField()) {
             return null;
         }
 
-        return rtrim($base, '/').'/'.$accessCode;
+        $base = config('services.certificate_generation.qr_verify_base_url');
+
+        // The service allow-lists QR hosts, so an unconfigured deployment would
+        // have every generation rejected rather than simply going out without
+        // a QR. Logged because the certificate will have a blank QR field.
+        if (! is_string($base) || trim($base) === '') {
+            Log::warning('Template declares a QR field but no QR verification base URL is configured', [
+                'template' => $contract->template,
+                'qr_field' => $contract->qrFieldName(),
+            ]);
+
+            return null;
+        }
+
+        if (! is_string($accessCode) || trim($accessCode) === '') {
+            return null;
+        }
+
+        return ['url' => rtrim($base, '/').'/'.$accessCode];
+    }
+
+    private function normaliseTemplateName(string $templateName): string
+    {
+        return str_starts_with($templateName, 'templates/')
+            ? substr($templateName, strlen('templates/'))
+            : $templateName;
+    }
+
+    /**
+     * The service's config JSON, whether the cast returned an array or (for a
+     * stale model) a string. json_decode() on the cast array used to throw a
+     * TypeError that catch (\Exception) could not catch.
+     *
+     * @return array<string, mixed>
+     */
+    private function serviceConfig(): array
+    {
+        $config = $this->service?->config;
+
+        if (is_string($config)) {
+            $decoded = json_decode($config, true);
+
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return is_array($config) ? $config : [];
+    }
+
+    /**
+     * Everything the app can offer a template, plus the caller's own keys.
+     *
+     * The template decides which of these are actually sent: the resolver maps
+     * declared PDF field names onto these sources. Computed sources win over a
+     * caller key of the same name (the caller values are already folded into
+     * them), while any other caller key rides along as additional data.
+     *
+     * @param  array<string, mixed>  $userData
+     * @return array<string, mixed>
+     */
+    private function valuesForCertificate(
+        CertificateContent $certificateContent,
+        array $userData,
+        ?Enrollment $enrollment,
+        string $accessCode,
+    ): array {
+        $sources = [
+            'fullName' => $userData['fullName'] ?? 'Student Name',
+            'courseTitle' => $userData['courseTitle'] ?? $this->courseTitleFor($certificateContent, $enrollment),
+            'certificateTitle' => $userData['certificateTitle'] ?? $certificateContent->title ?? 'Certificate',
+            'certificateDate' => $userData['certificateDate'] ?? now()->format('F j, Y'),
+            'expiryDate' => $userData['expiryDate'] ?? $this->expiryDateFromContent($certificateContent),
+            'validity' => $userData['validity'] ?? TemplateFieldResolver::validityLabel(
+                $certificateContent->expiry_period,
+                $certificateContent->expiry_period_unit,
+            ),
+            'issuedDate' => $userData['issuedDate'] ?? $userData['issued_date'] ?? now(),
+            'userEmail' => $userData['userEmail'] ?? $userData['email'] ?? null,
+            'userId' => $userData['userId'] ?? $userData['user_id'] ?? null,
+            'courseId' => $userData['courseId'] ?? $userData['course_id'] ?? null,
+            'accessCode' => $accessCode,
+        ];
+
+        return array_merge($userData, $sources);
+    }
+
+    private function courseTitleFor(CertificateContent $certificateContent, ?Enrollment $enrollment): string
+    {
+        if ($enrollment && $enrollment->course) {
+            return $enrollment->course->title;
+        }
+
+        return $this->getTemplateTitleFromCertificateContent($certificateContent) ?: 'Certificate';
+    }
+
+    /**
+     * The date the certificate content's expiry period ends, or null when it
+     * never expires.
+     */
+    private function expiryDateFromContent(CertificateContent $certificateContent): ?\DateTimeInterface
+    {
+        $period = $certificateContent->expiry_period;
+
+        if (! is_numeric($period) || (int) $period <= 0) {
+            return null;
+        }
+
+        return match ($certificateContent->expiry_period_unit) {
+            'days' => now()->addDays((int) $period),
+            'months' => now()->addMonths((int) $period),
+            'years' => now()->addYears((int) $period),
+            default => null,
+        };
     }
 
     /**
@@ -205,23 +341,42 @@ class CertificateGenerationService
             return false;
         }
 
+        $username = $this->service->credential('username');
+        $password = $this->service->credential('password');
+
+        if ($username === null || $password === null) {
+            Log::error('Certificate generation service credentials are missing or unreadable');
+
+            return false;
+        }
+
         try {
-            // Get config from service
-            $config = json_decode($this->service->config ?? '{}', true);
+            $config = $this->serviceConfig();
             $verifySSL = $config['verify_ssl'] ?? false;
 
             // Disable SSL verification for the request
             $response = Http::withOptions([
                 'verify' => $verifySSL,
             ])->post($this->service->base_url.'/api/login', [
-                'email' => $this->service->username,
-                'password' => $this->service->password,
+                'email' => $username,
+                'password' => $password,
             ]);
 
-            if ($response->successful() && isset($response['data']['access_token'])) {
-                // Update the service with the new token
-                $this->service->bearer_token = $response['data']['access_token'];
-                $this->service->save();
+            $token = $response->json('data.access_token');
+
+            if ($response->successful() && is_string($token) && $token !== '') {
+                // Query-builder update instead of $model->save(): saving reads
+                // every encrypted sibling (username, password, ...) through
+                // its cast, so one unreadable column would throw here and
+                // leave the new token unpersisted.
+                ThirdPartyService::query()
+                    ->whereKey($this->service->getKey())
+                    ->update([
+                        'bearer_token' => Crypt::encryptString($token),
+                        'updated_at' => now(),
+                    ]);
+
+                $this->service->setAttribute('bearer_token', $token);
 
                 Log::info('Successfully authenticated with certificate service');
 
@@ -258,14 +413,13 @@ class CertificateGenerationService
         $url = $this->service->base_url.'/api/'.ltrim($endpoint, '/');
 
         try {
-            // Get config from service
-            $config = json_decode($this->service->config ?? '{}', true);
+            $config = $this->serviceConfig();
             $verifySSL = $config['verify_ssl'] ?? false;
 
             // Prepare the request with SSL verification disabled
             $request = Http::withOptions([
                 'verify' => $verifySSL,
-            ])->withToken($this->service->bearer_token);
+            ])->withToken($this->service->credential('bearer_token'));
 
             // Attach files if any
             foreach ($files as $name => $file) {
@@ -286,7 +440,7 @@ class CertificateGenerationService
                     // Prepare a new request with the fresh token and the same SSL verification settings
                     $request = Http::withOptions([
                         'verify' => $verifySSL,
-                    ])->withToken($this->service->bearer_token);
+                    ])->withToken($this->service->credential('bearer_token'));
 
                     // Attach files again if any
                     foreach ($files as $name => $file) {
@@ -377,7 +531,7 @@ class CertificateGenerationService
         }
 
         try {
-            $response = Http::withToken($this->service->bearer_token)
+            $response = Http::withToken($this->service->credential('bearer_token'))
                 ->get($this->service->base_url.'/api/templates');
 
             if ($response->successful()) {
@@ -468,23 +622,20 @@ class CertificateGenerationService
             $accessCode = $this->generateAccessCode();
 
             // Determine which template to use
-            $templateToUse = $templateName ?: $certificateContent->template->file_path ?? 'default';
+            $templateToUse = $this->normaliseTemplateName(
+                $templateName ?: ($template ? $this->templateNameFor($template) : 'default')
+            );
 
             Log::info('Enrollment course title: '.($enrollment && $enrollment->course ? $enrollment->course->title : 'No course title'));
             Log::info('Certificate content course title: '.$this->getTemplateTitleFromCertificateContent($certificateContent));
+
             // Everything the app can offer. What actually gets sent is decided
             // by the template, not by this list -- additionalData the caller
             // merged into $userData rides along, so a tenant template can
             // declare fields this code has never heard of.
-            $values = array_merge($userData, [
-                'fullName' => $userData['fullName'] ?? 'Student Name',
-                'courseTitle' => $enrollment && $enrollment->course ? $enrollment->course->title : ($this->getTemplateTitleFromCertificateContent($certificateContent) ?: 'Certificate'),
-                'certificateDate' => $userData['certificateDate'] ?? now()->format('F j, Y'),
-                'expiryDate' => $userData['expiryDate'] ?? null,
-                'accessCode' => $accessCode,
-            ]);
+            $values = $this->valuesForCertificate($certificateContent, $userData, $enrollment, $accessCode);
 
-            $result = $this->issueViaV2($templateToUse, $values, $accessCode);
+            $result = $this->issueViaV2($templateToUse, $values, $accessCode, $certificateContent->fields_config);
 
             if ($result !== null) {
 
@@ -560,7 +711,7 @@ class CertificateGenerationService
         }
 
         try {
-            $response = Http::withToken($this->service->bearer_token)
+            $response = Http::withToken($this->service->credential('bearer_token'))
                 ->post($this->service->base_url.'/api/certificates/verify', [
                     'accessCode' => $accessCode,
                 ]);
@@ -611,21 +762,21 @@ class CertificateGenerationService
 
         try {
             // Determine which template to use
-            $templateToUse = $templateName ?: $certificateContent->template->file_path ?? 'default';
+            $template = $certificateContent->certificate_template_id
+                ? CertificateTemplate::find($certificateContent->certificate_template_id)
+                : null;
+
+            $templateToUse = $this->normaliseTemplateName(
+                $templateName ?: ($template ? $this->templateNameFor($template) : 'default')
+            );
 
             Log::info('Regenerating certificate with access code: '.$accessCode);
 
             // Same values as generateCertificate, reusing the existing access
             // code; the template decides which of them are actually sent.
-            $values = array_merge($userData, [
-                'fullName' => $userData['fullName'] ?? 'Student Name',
-                'courseTitle' => $enrollment && $enrollment->course ? $enrollment->course->title : ($this->getTemplateTitleFromCertificateContent($certificateContent) ?: 'Certificate'),
-                'certificateDate' => $userData['certificateDate'] ?? now()->format('F j, Y'),
-                'expiryDate' => $userData['expiryDate'] ?? null,
-                'accessCode' => $accessCode,
-            ]);
+            $values = $this->valuesForCertificate($certificateContent, $userData, $enrollment, $accessCode);
 
-            $result = $this->issueViaV2($templateToUse, $values, $accessCode);
+            $result = $this->issueViaV2($templateToUse, $values, $accessCode, $certificateContent->fields_config);
 
             if ($result !== null) {
                 // Check if the response contains the certificate URLs
