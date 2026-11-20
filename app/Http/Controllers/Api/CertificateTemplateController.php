@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\CertificateTemplate;
 use App\Services\CertificateGenerationService;
+use App\Support\Tenancy\EnvironmentContext;
+use App\Support\Tenancy\EnvironmentResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
@@ -35,6 +37,15 @@ class CertificateTemplateController extends Controller
      */
     protected function environmentId(): ?int
     {
+        // Token-authenticated requests (the SPA and the public form host) have
+        // no session. The middleware already resolved the environment from the
+        // request host or binding, so use that first.
+        $context = request()->attributes->get(EnvironmentResolver::REQUEST_ATTRIBUTE);
+
+        if ($context instanceof EnvironmentContext && $context->environment) {
+            return (int) $context->environment->id;
+        }
+
         $environmentId = session('current_environment_id');
 
         return $environmentId === null ? null : (int) $environmentId;
