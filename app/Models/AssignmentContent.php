@@ -5,13 +5,13 @@ namespace App\Models;
 use App\Traits\HasCreatedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class AssignmentContent extends Model
 {
-    use HasFactory, SoftDeletes, HasCreatedBy;
+    use HasCreatedBy, HasFactory, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -24,6 +24,7 @@ class AssignmentContent extends Model
         'description',
         'instructions',
         'instruction_format',
+        'fillable_pdf',
         'submission_type',
         'max_points',
         'max_file_size',
@@ -52,6 +53,7 @@ class AssignmentContent extends Model
             'instruction_format' => 'string',
             'allowed_file_types' => 'array',
             'resource_files' => 'array',
+            'fillable_pdf' => 'array',
         ];
     }
 

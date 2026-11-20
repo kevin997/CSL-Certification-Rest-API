@@ -626,6 +626,7 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     // endpoint. No public URL ever reaches the browser.
     Route::post('/documents', [DocumentUploadController::class, 'store']);
     Route::get('/documents/{uuid}/content', [DocumentAccessController::class, 'show']);
+    Route::get('/documents/{uuid}/form-content', [DocumentAccessController::class, 'form']);
 
     // Certificate Template routes
     Route::get('/certificate-templates', [CertificateTemplateController::class, 'index']);

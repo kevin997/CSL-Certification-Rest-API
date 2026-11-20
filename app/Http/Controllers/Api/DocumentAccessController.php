@@ -46,6 +46,39 @@ class DocumentAccessController extends Controller
         return $this->documents->stream($user, $attachment, $request->ip(), $request->userAgent());
     }
 
+    /**
+     * Original bytes of a fillable-PDF assignment document.
+     *
+     * Same academy and entitlement checks as show(), but the bytes are not
+     * watermarked: the browser feeds them to pdf.js, which needs the AcroForm
+     * fields intact.
+     */
+    public function form(Request $request, string $uuid): Response
+    {
+        $attachment = DocumentationAttachment::query()
+            ->where('uuid', $uuid)
+            ->firstOrFail();
+
+        $environmentId = $this->environmentId($request);
+
+        abort_if($environmentId === null, 403, 'No academy selected.');
+        abort_unless(
+            (int) $attachment->resolvedEnvironmentId() === (int) $environmentId,
+            404,
+        );
+
+        $user = $request->user();
+
+        abort_unless($user, 401);
+        abort_unless(
+            $this->documents->userCanAccessFormDocument($user, $attachment),
+            403,
+            'You do not have access to this document.',
+        );
+
+        return $this->documents->streamOriginalPdf($user, $attachment, $request->ip(), $request->userAgent());
+    }
+
     private function environmentId(Request $request): ?int
     {
         $context = $request->attributes->get(EnvironmentResolver::REQUEST_ATTRIBUTE);
