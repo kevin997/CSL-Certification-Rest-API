@@ -630,6 +630,7 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     // Certificate Template routes
     Route::get('/certificate-templates', [CertificateTemplateController::class, 'index']);
     Route::post('/certificate-templates', [CertificateTemplateController::class, 'store'])->middleware('licence.limit:certificate_templates');
+    Route::get('/certificate-templates/{id}/fields', [CertificateTemplateController::class, 'fields']);
     Route::get('/certificate-templates/{id}', [CertificateTemplateController::class, 'show']);
     Route::put('/certificate-templates/{id}/set-default', [CertificateTemplateController::class, 'setDefault']);
     Route::delete('/certificate-templates/{id}', [CertificateTemplateController::class, 'destroy']);
