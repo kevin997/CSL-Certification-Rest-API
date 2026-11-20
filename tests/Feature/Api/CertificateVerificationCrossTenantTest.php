@@ -28,7 +28,10 @@ class CertificateVerificationCrossTenantTest extends TestCase
         Http::fake(['*' => Http::response('', 200)]);
 
         $sharedHost = Environment::factory()->create();
-        $tenant = Environment::factory()->create();
+        $tenant = Environment::factory()->create([
+            'name' => 'BootCamps',
+            'primary_domain' => 'bootcamps.csl-brands.com',
+        ]);
 
         // The verification request resolves the shared host, not the tenant
         // that issued the certificate.
@@ -78,7 +81,12 @@ class CertificateVerificationCrossTenantTest extends TestCase
             ->assertOk()
             ->assertJsonPath('status', 'success')
             ->assertJsonPath('data.isValid', true)
-            ->assertJsonPath('data.certificate.recipient_name', 'Ralph NDONGO');
+            ->assertJsonPath('data.certificate.recipient_name', 'Ralph NDONGO')
+            // The verifier page runs on a shared host and needs the issuing
+            // tenant to load its branding.
+            ->assertJsonPath('data.environment.id', $tenant->id)
+            ->assertJsonPath('data.environment.name', 'BootCamps')
+            ->assertJsonPath('data.environment.primary_domain', 'bootcamps.csl-brands.com');
     }
 
     public function test_an_unknown_code_is_still_not_found(): void

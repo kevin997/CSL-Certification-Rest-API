@@ -328,7 +328,7 @@ class CertificateController extends Controller
         // name and the course title the certificate already prints.
         $issuedCertificate = IssuedCertificate::withoutGlobalScope(EnvironmentScope::class)
             ->where('certificate_number', $request->accessCode)
-            ->with(['certificateContent.template', 'user', 'course'])
+            ->with(['certificateContent.template', 'user', 'course', 'environment'])
             ->first();
 
         if ($issuedCertificate) {
@@ -376,6 +376,18 @@ class CertificateController extends Controller
                         'certificate_url' => $certificateUrl,
                         'preview_url' => $previewUrl,
                     ],
+                    // The tenant that issued the certificate. A QR is scanned
+                    // on the shared app host (app.getkursa.space), where the
+                    // request itself resolves no tenant; this is what lets the
+                    // verifier page load that environment's branding instead
+                    // of the platform defaults.
+                    'environment' => $issuedCertificate->environment
+                        ? [
+                            'id' => $issuedCertificate->environment->id,
+                            'name' => $issuedCertificate->environment->name,
+                            'primary_domain' => $issuedCertificate->environment->primary_domain,
+                        ]
+                        : null,
                     'source' => 'lms',
                 ],
             ]);
