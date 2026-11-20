@@ -616,6 +616,9 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     // Assignment Submission routes
     Route::get('/activities/{activityId}/submissions', [AssignmentSubmissionController::class, 'index']);
     Route::post('/activities/{activityId}/submissions', [AssignmentSubmissionController::class, 'store']);
+    // Files go into the private document store first; the submission then
+    // references them by uuid. No Cloudinary URL ever reaches the browser.
+    Route::post('/activities/{activityId}/submission-files', [AssignmentSubmissionController::class, 'uploadFile']);
     Route::get('/activities/{activityId}/submissions/{submissionId}', [AssignmentSubmissionController::class, 'show']);
     Route::put('/activities/{activityId}/submissions/{submissionId}/grade', [AssignmentSubmissionController::class, 'grade']);
 

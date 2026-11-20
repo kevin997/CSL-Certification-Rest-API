@@ -5,6 +5,7 @@ namespace App\Services\Documents;
 use App\Enums\UserRole;
 use App\Models\Activity;
 use App\Models\AssignmentContent;
+use App\Models\AssignmentSubmissionFile;
 use App\Models\DocumentAccessLog;
 use App\Models\DocumentationAttachment;
 use App\Models\DocumentationContent;
@@ -128,7 +129,55 @@ class DocumentProtectionService
     {
         $content = $attachment->documentationContent;
 
-        return $content ? $this->userCanAccessContent($user, $content) : false;
+        if ($content) {
+            return $this->userCanAccessContent($user, $content);
+        }
+
+        if ($attachment->documentation_content_id !== null) {
+            return false;
+        }
+
+        return $this->userCanAccessSubmissionFile($user, $attachment);
+    }
+
+    /**
+     * Submission files live in the same store as documentation attachments but
+     * are not attached to documentation content. They are private to the
+     * learner who uploaded them and to the people who may review the
+     * submission (template creator, platform staff, academy managers). A
+     * classmate enrolled in the same course must not read another learner's
+     * work, so the enrollment branch of the template rule is excluded here.
+     */
+    private function userCanAccessSubmissionFile(User $user, DocumentationAttachment $attachment): bool
+    {
+        if ((int) $attachment->created_by === (int) $user->id) {
+            return true;
+        }
+
+        $files = AssignmentSubmissionFile::query()
+            ->where('document_uuid', $attachment->uuid)
+            ->with(['submission.assignmentContent.activity.block.template'])
+            ->get();
+
+        foreach ($files as $file) {
+            $submission = $file->submission;
+
+            if (! $submission) {
+                continue;
+            }
+
+            if ((int) $submission->user_id === (int) $user->id) {
+                return true;
+            }
+
+            $template = $submission->assignmentContent?->activity?->block?->template;
+
+            if ($this->canAccessTemplate($user, $template, includeEnrolledLearners: false)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function userCanAccessContent(User $user, DocumentationContent $content): bool
@@ -167,7 +216,7 @@ class DocumentProtectionService
      * platform staff, academy managers, and learners enrolled in a course built
      * from the template.
      */
-    private function canAccessTemplate(User $user, ?Template $template): bool
+    public function canAccessTemplate(User $user, ?Template $template, bool $includeEnrolledLearners = true): bool
     {
         if (! $template) {
             return false;
@@ -195,6 +244,10 @@ class DocumentProtectionService
 
         if (in_array($role, (array) config('devices.manager_roles', []), true)) {
             return true;
+        }
+
+        if (! $includeEnrolledLearners) {
+            return false;
         }
 
         return Enrollment::query()

@@ -626,6 +626,120 @@ class AssignmentFillablePdfApiTest extends TestCase
             ->assertJsonPath('data.status', 'graded');
     }
 
+    public function test_returning_for_correction_without_a_score_keeps_the_existing_score(): void
+    {
+        $owner = User::factory()->create(['role' => 'individual_teacher']);
+        $learner = User::factory()->create(['role' => 'learner']);
+
+        [, , $activityId] = $this->makeStructure($owner);
+        $attachment = $this->makePdfAttachment($owner);
+        $content = $this->makeContent($owner, $activityId, $attachment->uuid);
+
+        $submission = AssignmentSubmission::create([
+            'assignment_content_id' => $content->id,
+            'user_id' => $learner->id,
+            'status' => 'graded',
+            'score' => 70,
+            'graded_by' => $owner->id,
+            'graded_at' => now(),
+            'submitted_at' => now(),
+            'attempt_number' => 1,
+        ]);
+
+        Sanctum::actingAs($owner);
+        $this->putJson("/api/activities/{$activityId}/submissions/{$submission->id}/grade", [
+            'feedback' => 'One more pass, please.',
+            'return_for_correction' => true,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'returned')
+            ->assertJsonPath('data.score', 70);
+
+        $this->assertSame(70, (int) $submission->fresh()->score);
+    }
+
+    public function test_returning_for_correction_without_a_score_leaves_a_missing_score_null(): void
+    {
+        $owner = User::factory()->create(['role' => 'individual_teacher']);
+        $learner = User::factory()->create(['role' => 'learner']);
+
+        [, , $activityId] = $this->makeStructure($owner);
+        $attachment = $this->makePdfAttachment($owner);
+        $content = $this->makeContent($owner, $activityId, $attachment->uuid);
+
+        $submission = AssignmentSubmission::create([
+            'assignment_content_id' => $content->id,
+            'user_id' => $learner->id,
+            'status' => 'submitted',
+            'score' => null,
+            'submitted_at' => now(),
+            'attempt_number' => 1,
+        ]);
+
+        Sanctum::actingAs($owner);
+        $this->putJson("/api/activities/{$activityId}/submissions/{$submission->id}/grade", [
+            'return_for_correction' => true,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'returned')
+            ->assertJsonPath('data.score', null);
+
+        $this->assertNull($submission->fresh()->score);
+    }
+
+    public function test_returning_for_correction_with_a_score_still_persists_it(): void
+    {
+        $owner = User::factory()->create(['role' => 'individual_teacher']);
+        $learner = User::factory()->create(['role' => 'learner']);
+
+        [, , $activityId] = $this->makeStructure($owner);
+        $attachment = $this->makePdfAttachment($owner);
+        $content = $this->makeContent($owner, $activityId, $attachment->uuid);
+
+        $submission = AssignmentSubmission::create([
+            'assignment_content_id' => $content->id,
+            'user_id' => $learner->id,
+            'status' => 'graded',
+            'score' => 70,
+            'submitted_at' => now(),
+            'attempt_number' => 1,
+        ]);
+
+        Sanctum::actingAs($owner);
+        $this->putJson("/api/activities/{$activityId}/submissions/{$submission->id}/grade", [
+            'score' => 55,
+            'return_for_correction' => true,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'returned')
+            ->assertJsonPath('data.score', 55);
+    }
+
+    public function test_grading_without_a_score_and_without_returning_is_rejected(): void
+    {
+        $owner = User::factory()->create(['role' => 'individual_teacher']);
+        $learner = User::factory()->create(['role' => 'learner']);
+
+        [, , $activityId] = $this->makeStructure($owner);
+        $attachment = $this->makePdfAttachment($owner);
+        $content = $this->makeContent($owner, $activityId, $attachment->uuid);
+
+        $submission = AssignmentSubmission::create([
+            'assignment_content_id' => $content->id,
+            'user_id' => $learner->id,
+            'status' => 'submitted',
+            'submitted_at' => now(),
+            'attempt_number' => 1,
+        ]);
+
+        Sanctum::actingAs($owner);
+        $this->putJson("/api/activities/{$activityId}/submissions/{$submission->id}/grade", [
+            'feedback' => 'No score yet.',
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['score']);
+    }
+
     public function test_a_correction_naming_an_unknown_field_is_rejected(): void
     {
         $owner = User::factory()->create(['role' => 'individual_teacher']);
