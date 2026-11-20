@@ -18,6 +18,7 @@ class AssignmentSubmissionFile extends Model
      */
     protected $fillable = [
         'assignment_submission_id',
+        'document_uuid',
         'file_path',
         'file_name',
         'file_type',

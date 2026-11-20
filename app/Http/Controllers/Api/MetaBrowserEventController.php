@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Services\MetaConversionsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class MetaBrowserEventController extends Controller
 {
@@ -14,10 +17,12 @@ class MetaBrowserEventController extends Controller
     {
         $origin = parse_url((string) $request->header('Origin'), PHP_URL_HOST);
         if (! is_string($origin) || ! $this->allowedHost($origin)) {
+            $this->logRejected($request);
+
             abort(403);
         }
 
-        $data = $request->validate([
+        $validator = Validator::make($request->all(), [
             'event_name' => ['required', Rule::in(['ViewContent', 'InitiateCheckout', 'AddPaymentInfo', 'AccessCodeStart'])],
             'event_id' => ['required', 'string', 'max:100', 'regex:/^[a-zA-Z0-9:._-]+$/'],
             'event_source_url' => ['required', 'url', 'max:2048'],
@@ -31,8 +36,18 @@ class MetaBrowserEventController extends Controller
             'fbc' => ['nullable', 'string', 'max:200'],
         ]);
 
+        if ($validator->fails()) {
+            $this->logRejected($request);
+
+            throw new ValidationException($validator);
+        }
+
+        $data = $validator->validated();
+
         $urlHost = parse_url($data['event_source_url'], PHP_URL_HOST);
         if (parse_url($data['event_source_url'], PHP_URL_SCHEME) !== 'https' || $urlHost !== $origin) {
+            $this->logRejected($request);
+
             abort(422);
         }
 
@@ -53,5 +68,17 @@ class MetaBrowserEventController extends Controller
         return in_array($host, ['csl-brands.com', 'getkursa.space'], true)
             || str_ends_with($host, '.csl-brands.com')
             || str_ends_with($host, '.getkursa.space');
+    }
+
+    /**
+     * A rejected browser event is otherwise invisible: the caller only sees a
+     * 422 and the production payload that broke the URL rule is lost.
+     */
+    private function logRejected(Request $request): void
+    {
+        Log::warning('Rejected meta browser event', [
+            'payload' => $request->except(['fbp', 'fbc']),
+            'origin' => $request->header('Origin'),
+        ]);
     }
 }
