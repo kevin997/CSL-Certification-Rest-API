@@ -32,8 +32,12 @@ class MetaBrowserEventController extends Controller
             'content_type' => ['nullable', 'string', 'max:50'],
             'content_ids' => ['nullable', 'array', 'max:20'],
             'content_ids.*' => ['string', 'max:100'],
-            'fbp' => ['nullable', 'string', 'max:200'],
-            'fbc' => ['nullable', 'string', 'max:200'],
+            // fbc embeds the full fbclid, which Meta routinely issues longer
+            // than 200 characters; a 200-char cap rejected legitimate browser
+            // events with 422 ("The fbc field must not be greater than 200
+            // characters"). Match the event_source_url ceiling instead.
+            'fbp' => ['nullable', 'string', 'max:2048'],
+            'fbc' => ['nullable', 'string', 'max:2048'],
         ]);
 
         if ($validator->fails()) {

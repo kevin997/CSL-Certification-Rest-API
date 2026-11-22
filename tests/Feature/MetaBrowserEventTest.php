@@ -50,6 +50,24 @@ class MetaBrowserEventTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_long_click_ids_from_a_real_facebook_ad_are_accepted(): void
+    {
+        // Meta's fbclid (and therefore our _fbc cookie) is commonly longer than
+        // 200 characters; such a visitor must not lose the event to a 422.
+        $longFbc = 'fb.1.1700000000.'.str_repeat('A', 300);
+
+        $this->postJson('/api/meta/browser-events', [
+            'event_name' => 'ViewContent',
+            'event_id' => 'ViewContent:long-fbc',
+            'event_source_url' => 'https://bootcamps.csl-brands.com/forms/facebook-tiktok-google-meta',
+            'fbc' => $longFbc,
+            'fbp' => 'fb.1.1700000000.1234567890',
+        ], ['Origin' => 'https://bootcamps.csl-brands.com'])
+            ->assertAccepted();
+
+        Http::assertSent(fn ($request) => $request['data'][0]['event_id'] === 'ViewContent:long-fbc');
+    }
+
     public function test_a_rejected_event_is_logged_without_the_click_ids(): void
     {
         Log::spy();
