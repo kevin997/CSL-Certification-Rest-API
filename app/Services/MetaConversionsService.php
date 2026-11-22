@@ -263,10 +263,10 @@ class MetaConversionsService
 
     private function send(string $name, string $eventId, array $customData, array $userData, ?string $url = null): void
     {
-        $pixelId = config('services.meta_conversions.pixel_id');
+        $pixelIds = $this->pixelIds();
         $token = config('services.meta_conversions.access_token');
         $version = config('services.meta_conversions.api_version');
-        if (! $pixelId || ! $token) {
+        if ($pixelIds === [] || ! $token) {
             return;
         }
 
@@ -284,15 +284,62 @@ class MetaConversionsService
             $event['event_source_url'] = $url;
         }
 
-        try {
-            $endpoint = 'https://graph.facebook.com/'.$version.'/'.$pixelId.'/events?'.http_build_query(['access_token' => $token]);
-            $response = Http::timeout(6)->post($endpoint, ['data' => [$event]]);
-            if (! $response->successful()) {
-                Log::warning('Meta Conversions API rejected event', ['event' => $name, 'status' => $response->status()]);
+        // Several pixels may observe the same site (the academy pixel plus a
+        // brand pixel). They all receive the same event id so Meta deduplicates
+        // browser + server copies per pixel; one rejected pixel must not stop
+        // the others, hence the per-pixel catch.
+        foreach ($pixelIds as $pixelId) {
+            try {
+                $endpoint = 'https://graph.facebook.com/'.$version.'/'.$pixelId.'/events?'.http_build_query(['access_token' => $token]);
+                $response = Http::timeout(6)->post($endpoint, ['data' => [$event]]);
+                if (! $response->successful()) {
+                    Log::warning('Meta Conversions API rejected event', [
+                        'event' => $name,
+                        'pixel_id' => $pixelId,
+                        'status' => $response->status(),
+                    ]);
+                }
+            } catch (\Throwable $exception) {
+                Log::warning('Meta Conversions API request failed', [
+                    'event' => $name,
+                    'pixel_id' => $pixelId,
+                    'exception' => $exception::class,
+                ]);
             }
-        } catch (\Throwable $exception) {
-            Log::warning('Meta Conversions API request failed', ['event' => $name, 'exception' => $exception::class]);
         }
+    }
+
+    /**
+     * Every pixel id this deployment reports to, deduplicated.
+     *
+     * META_PIXEL_IDS is the multi-pixel setting; META_PIXEL_ID remains a
+     * supported single-pixel fallback (and the built-in default) so existing
+     * deployments do not silently lose tracking.
+     *
+     * @return list<string>
+     */
+    private function pixelIds(): array
+    {
+        $candidates = (array) config('services.meta_conversions.pixel_ids', []);
+
+        $single = config('services.meta_conversions.pixel_id');
+        if ($single !== null) {
+            $candidates[] = $single;
+        }
+
+        $ids = [];
+        foreach ($candidates as $candidate) {
+            if (! is_string($candidate) && ! is_int($candidate)) {
+                continue;
+            }
+
+            $id = trim((string) $candidate);
+            if (preg_match('/^\d{5,20}$/', $id) === 1) {
+                $ids[$id] = true;
+            }
+        }
+
+        return array_keys($ids);
     }
 
     private function hash(?string $value): ?string
