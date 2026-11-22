@@ -63,7 +63,7 @@ class MetaBrowserEventTest extends TestCase
         ], ['Origin' => 'https://bootcamps.csl-brands.com'])
             ->assertUnprocessable();
 
-        Log::shouldHaveReceived('warning')
+        Log::shouldHaveReceived('error')
             ->withArgs(function (string $message, array $context): bool {
                 return $message === 'Rejected meta browser event'
                     && $context['origin'] === 'https://bootcamps.csl-brands.com'
@@ -85,7 +85,7 @@ class MetaBrowserEventTest extends TestCase
         ], ['Origin' => 'https://bootcamps.csl-brands.com'])
             ->assertUnprocessable();
 
-        Log::shouldHaveReceived('warning')
+        Log::shouldHaveReceived('error')
             ->withArgs(fn (string $message): bool => $message === 'Rejected meta browser event')
             ->once();
     }

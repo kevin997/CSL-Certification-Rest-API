@@ -29,7 +29,15 @@ return [
     ],
 
     'meta_conversions' => [
+        // Legacy single-pixel setting. Kept so existing deployments keep
+        // working; META_PIXEL_IDS below adds co-existing pixels.
         'pixel_id' => env('META_PIXEL_ID', '1636552768056179'),
+        // Comma-separated list of additional pixels (e.g. a brand pixel that
+        // sits beside the academy pixel). Every event is mirrored to each id.
+        'pixel_ids' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('META_PIXEL_IDS', ''))
+        ))),
         'access_token' => env('META_CONVERSIONS_ACCESS_TOKEN'),
         'api_version' => env('META_CONVERSIONS_API_VERSION', 'v23.0'),
     ],
