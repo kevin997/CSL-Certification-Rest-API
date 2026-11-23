@@ -17,6 +17,7 @@ use App\Services\PaymentGateways\PaymentGatewayFactory;
 use App\Services\PaymentGateways\PaymentGatewayInterface;
 use App\Services\Payments\PaymentGatewayResolver;
 use App\Services\Payments\RefundService;
+use App\Services\Payments\WebhookProcessor;
 use App\Services\Tax\TaxZoneService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -405,7 +406,7 @@ class PaymentService
         }
 
         // Check if order is already paid
-        if ($order->payment_status === 'paid') {
+        if ($order->payment_status === 'paid' || $order->status === Order::STATUS_COMPLETED) {
             return [
                 'success' => false,
                 'message' => 'Order is already paid',
@@ -444,6 +445,53 @@ class PaymentService
                     'message' => 'Unsupported payment method',
                 ];
         }
+    }
+
+    /**
+     * Return a previously created provider payment link, if the transaction
+     * still carries one. Prevents duplicate provider products when the learner
+     * re-opens checkout.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function reusablePaymentLinks(Transaction $transaction): ?array
+    {
+        $raw = $transaction->gateway_response;
+        $response = is_array($raw) ? $raw : (json_decode((string) $raw, true) ?: []);
+        if ($response === []) {
+            return null;
+        }
+
+        $general = $response['generalLink'] ?? $response['general_link'] ?? null;
+        $redirect = $response['redirect_url'] ?? $response['checkout_url'] ?? null;
+        $card = $response['cardLink'] ?? null;
+        $dikalo = $response['dikaloLink'] ?? null;
+        $whatsapp = $response['whatsappLink'] ?? null;
+        $telegram = $response['telegramLink'] ?? null;
+        $sms = $response['smsLink'] ?? null;
+        $links = $response['payment_links'] ?? null;
+
+        $hasAny = $general || $redirect || $card || $dikalo || $whatsapp || $telegram || $sms || (is_array($links) && $links !== []);
+        if (! $hasAny) {
+            return null;
+        }
+
+        return [
+            'redirect_url' => $redirect ?: $general,
+            'general_link' => $general,
+            'card_link' => $card,
+            'dikalo_link' => $dikalo,
+            'whatsapp_link' => $whatsapp,
+            'telegram_link' => $telegram,
+            'sms_link' => $sms,
+            'payment_links' => is_array($links) ? $links : array_filter([
+                'whatsapp' => $whatsapp,
+                'telegram' => $telegram,
+                'dikalo' => $dikalo,
+                'sms' => $sms,
+            ]),
+            'type' => $general ? 'redirect_url' : 'payment_links',
+        ];
     }
 
     /**
@@ -496,14 +544,6 @@ class PaymentService
                     'transaction_id' => $existingTransaction->transaction_id,
                 ]);
 
-                // update the transaction with a new transaction_id 'TXN_' . Str::uuid(),
-                $existingTransaction->update([
-                    'transaction_id' => 'TXN_'.Str::uuid(),
-                    'payment_method' => $gatewayCode,
-                    'environment_id' => $environmentId,
-                    'status' => 'pending',
-                ]);
-
                 // Initialize the payment gateway with environment-specific settings
                 $gateway = $this->initializeGateway($gatewayCode, $environment->name);
                 if (! $gateway['success']) {
@@ -511,6 +551,75 @@ class PaymentService
                 }
 
                 $this->currentGateway = $gateway['gateway'];
+
+                // A learner can reopen the checkout link (duplicate WhatsApp,
+                // browser back/refresh). Before creating another provider
+                // product, check whether the payment they already started was
+                // actually captured. Rotating transaction_id here used to orphan
+                // a paid Tara product and leave the order pending forever.
+                if (in_array($gatewayCode, ['taramoney', 'paypal'], true)) {
+                    try {
+                        $verified = $this->currentGateway->verifyPayment($existingTransaction->transaction_id);
+                        if (($verified['verified'] ?? false) === true
+                            && in_array(strtolower((string) ($verified['status'] ?? '')), ['success', 'completed', 'succeeded', 'paid'], true)) {
+                            app(WebhookProcessor::class)->settle(
+                                $existingTransaction,
+                                'completed',
+                                (string) ($verified['status'] ?? 'completed'),
+                                $verified,
+                                'Verified on checkout re-open',
+                                [
+                                    'gateway' => $gatewayCode,
+                                    'signature_valid' => true,
+                                    'gateway_environment_id' => $gatewaySettings->environment_id,
+                                    'event_type' => 's2s-verified-checkout-reopen',
+                                ]
+                            );
+                            $existingTransaction->refresh();
+
+                            return [
+                                'success' => true,
+                                'message' => 'Payment already confirmed',
+                                'transaction' => $existingTransaction,
+                                'payment_type' => $gatewayCode,
+                                'already_paid' => true,
+                            ];
+                        }
+                    } catch (\Throwable $e) {
+                        Log::warning('Provider verification on checkout re-open failed', [
+                            'order_id' => $order->id,
+                            'gateway' => $gatewayCode,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+
+                // The learner already has a live payment link — return it
+                // instead of minting a second provider product.
+                $reusable = $this->reusablePaymentLinks($existingTransaction);
+                if ($reusable !== null) {
+                    Log::info('Reusing existing payment link instead of creating a new one', [
+                        'order_id' => $order->id,
+                        'transaction_id' => $existingTransaction->transaction_id,
+                    ]);
+
+                    return array_merge([
+                        'success' => true,
+                        'message' => 'Existing payment link reused',
+                        'transaction' => $existingTransaction,
+                        'payment_type' => $gatewayCode,
+                        'reused' => true,
+                    ], $reusable);
+                }
+
+                // No reusable link: start a fresh attempt, but keep the
+                // transaction row identity stable for reconciliation.
+                $existingTransaction->update([
+                    'transaction_id' => 'TXN_'.Str::uuid(),
+                    'payment_method' => $gatewayCode,
+                    'environment_id' => $environmentId,
+                    'status' => 'pending',
+                ]);
 
                 // Create the payment with the gateway using existing transaction
                 $response = $this->currentGateway->createPayment($existingTransaction, $paymentData);
