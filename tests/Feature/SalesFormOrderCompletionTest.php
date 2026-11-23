@@ -10,6 +10,7 @@ use App\Models\SalesForm;
 use App\Models\SalesFormSubmission;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class SalesFormOrderCompletionTest extends TestCase
@@ -44,6 +45,33 @@ class SalesFormOrderCompletionTest extends TestCase
 
         $listener->handle(new OrderCompleted($second));
         $this->assertSame(SalesFormSubmission::STATUS_COMPLETED, $submission->fresh()->status);
+    }
+
+    public function test_staff_manual_completion_dispatches_order_completed_event(): void
+    {
+        Event::fake([OrderCompleted::class]);
+
+        $owner = User::factory()->create();
+        $environment = Environment::factory()->create(['owner_id' => $owner->id]);
+        $order = Order::withoutGlobalScopes()->create([
+            'user_id' => $owner->id,
+            'environment_id' => $environment->id,
+            'order_number' => 'ORD-MANUAL-COMPLETE',
+            'type' => Order::TYPE_SALES_FORM,
+            'status' => Order::STATUS_PENDING,
+            'total_amount' => 10,
+            'currency' => 'USD',
+            'billing_email' => 'buyer@example.com',
+        ]);
+
+        $this->withoutMiddleware();
+        $this->actingAs($owner);
+
+        $this->putJson('/api/orders/'.$order->id.'/status', ['status' => 'completed'])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'completed');
+
+        Event::assertDispatched(OrderCompleted::class, fn (OrderCompleted $event) => $event->order->id === $order->id);
     }
 
     private function order(User $user, Environment $environment, SalesFormSubmission $submission, string $number): Order

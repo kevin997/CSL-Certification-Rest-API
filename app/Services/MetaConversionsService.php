@@ -7,8 +7,12 @@ use App\Models\Order;
 use App\Models\SalesFormSubmission;
 use App\Models\Transaction;
 use App\Support\Tenancy\TenantUrl;
+use Carbon\CarbonInterface;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class MetaConversionsService
 {
@@ -24,6 +28,18 @@ class MetaConversionsService
             return;
         }
 
+        $paidAt = $order->exists
+            ? $order->transactions()->withoutGlobalScopes()
+                ->where('status', Transaction::STATUS_COMPLETED)->where('total_amount', '>', 0)
+                ->orderBy('paid_at')->first()?->paid_at
+            : null;
+        $eventTime = $paidAt ?? $order->updated_at ?? now();
+        // Browser/server deduplication has a finite window. Preserve the actual
+        // payment time and stop automated replays before that window expires.
+        if ($eventTime->lt(now()->subHours(47))) {
+            return;
+        }
+
         $this->send(
             'Purchase',
             'purchase:order:'.$order->id,
@@ -34,7 +50,9 @@ class MetaConversionsService
             $this->orderUserData($order),
             $order->environment
                 ? TenantUrl::to($order->environment, '/checkout/'.$order->environment_id.'/success', ['order' => $order->id])
-                : null
+                : null,
+            $eventTime,
+            $order
         );
     }
 
@@ -261,7 +279,7 @@ class MetaConversionsService
         ], $browserData['url'] ?? null);
     }
 
-    private function send(string $name, string $eventId, array $customData, array $userData, ?string $url = null): void
+    private function send(string $name, string $eventId, array $customData, array $userData, ?string $url = null, ?CarbonInterface $eventTime = null, ?Order $purchase = null): void
     {
         $pixelIds = $this->pixelIds();
         $token = config('services.meta_conversions.access_token');
@@ -272,7 +290,7 @@ class MetaConversionsService
 
         $event = [
             'event_name' => $name,
-            'event_time' => time(),
+            'event_time' => ($eventTime ?? now())->getTimestamp(),
             'event_id' => $eventId,
             'action_source' => 'website',
             'user_data' => array_filter($userData, fn ($value) => $value !== null && $value !== ''),
@@ -284,21 +302,24 @@ class MetaConversionsService
             $event['event_source_url'] = $url;
         }
 
-        // Several pixels may observe the same site (the academy pixel plus a
-        // brand pixel). They all receive the same event id so Meta deduplicates
-        // browser + server copies per pixel; one rejected pixel must not stop
-        // the others, hence the per-pixel catch.
+        $failed = false;
         foreach ($pixelIds as $pixelId) {
+            $delivery = $purchase?->exists ? $this->claimPurchase($purchase, $pixelId, $eventTime ?? now()) : null;
+            if ($purchase?->exists && $delivery === null) {
+                continue;
+            }
+            if ($delivery !== null) {
+                $event['event_time'] = Carbon::parse($delivery->event_time)->getTimestamp();
+            }
+            $status = null;
+            $errorCode = null;
+            $accepted = false;
             try {
-                $endpoint = 'https://graph.facebook.com/'.$version.'/'.$pixelId.'/events?'.http_build_query(['access_token' => $token]);
-                $response = Http::timeout(6)->post($endpoint, ['data' => [$event]]);
-                if (! $response->successful()) {
-                    Log::warning('Meta Conversions API rejected event', [
-                        'event' => $name,
-                        'pixel_id' => $pixelId,
-                        'status' => $response->status(),
-                    ]);
-                }
+                $endpoint = 'https://graph.facebook.com/'.$version.'/'.$pixelId.'/events';
+                $response = Http::withToken($token)->timeout(6)->post($endpoint, ['data' => [$event]]);
+                $status = $response->status();
+                $accepted = $response->successful() && (int) $response->json('events_received', 0) > 0;
+                $errorCode = is_numeric($response->json('error.code')) ? (int) $response->json('error.code') : null;
             } catch (\Throwable $exception) {
                 Log::warning('Meta Conversions API request failed', [
                     'event' => $name,
@@ -306,7 +327,50 @@ class MetaConversionsService
                     'exception' => $exception::class,
                 ]);
             }
+            if ($delivery !== null) {
+                DB::table('meta_purchase_deliveries')->where('id', $delivery->id)
+                    ->where('lease_token', $delivery->lease_token)->update([
+                        'lease_token' => null,
+                        'delivered_at' => $accepted ? now() : null,
+                        'last_http_status' => $status,
+                        'last_error_code' => $errorCode,
+                        'available_at' => now()->addSeconds(min(3600, 30 * 2 ** min($delivery->attempts, 7))),
+                        'updated_at' => now(),
+                    ]);
+            }
+            if (! $accepted) {
+                $failed = true;
+                Log::warning('Meta Conversions API rejected event', [
+                    'event' => $name, 'event_id' => $eventId, 'pixel_id' => $pixelId,
+                    'status' => $status, 'error_code' => $errorCode,
+                ]);
+            }
         }
+        if ($failed && $purchase !== null) {
+            // Fail the queued listener only after every configured pixel gets
+            // its attempt. Previously these failures silently completed jobs.
+            throw new \RuntimeException('Meta Purchase delivery is pending retry');
+        }
+    }
+
+    private function claimPurchase(Order $order, string $pixelId, CarbonInterface $eventTime): ?object
+    {
+        DB::table('meta_purchase_deliveries')->insertOrIgnore([
+            'order_id' => $order->id, 'pixel_id' => $pixelId,
+            'event_time' => $eventTime, 'available_at' => now(),
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $lease = (string) Str::uuid();
+        $claimed = DB::table('meta_purchase_deliveries')->where('order_id', $order->id)
+            ->where('pixel_id', $pixelId)->whereNull('delivered_at')
+            ->where('available_at', '<=', now())->where('attempts', '<', 20)
+            ->where('event_time', '>=', now()->subHours(47))
+            ->update([
+                'lease_token' => $lease, 'attempts' => DB::raw('attempts + 1'),
+                'available_at' => now()->addMinute(), 'updated_at' => now(),
+            ]);
+
+        return $claimed ? DB::table('meta_purchase_deliveries')->where('lease_token', $lease)->first() : null;
     }
 
     /**
@@ -318,7 +382,7 @@ class MetaConversionsService
      *
      * @return list<string>
      */
-    private function pixelIds(): array
+    public function pixelIds(): array
     {
         $candidates = (array) config('services.meta_conversions.pixel_ids', []);
 
@@ -339,7 +403,7 @@ class MetaConversionsService
             }
         }
 
-        return array_keys($ids);
+        return array_map(strval(...), array_keys($ids));
     }
 
     private function hash(?string $value): ?string

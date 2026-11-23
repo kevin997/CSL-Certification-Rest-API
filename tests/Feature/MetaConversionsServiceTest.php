@@ -82,7 +82,7 @@ class MetaConversionsServiceTest extends TestCase
 
     public function test_initiate_checkout_uses_a_deduplicated_event_and_order_content(): void
     {
-        Http::fake();
+        Http::fake(['graph.facebook.com/*' => Http::response(['events_received' => 1])]);
 
         app(MetaConversionsService::class)->initiateCheckout($this->order);
 
@@ -101,7 +101,7 @@ class MetaConversionsServiceTest extends TestCase
     public function test_purchase_uses_the_same_event_id_as_the_browser_success_page(): void
     {
         $this->order->update(['status' => Order::STATUS_COMPLETED]);
-        Http::fake();
+        Http::fake(['graph.facebook.com/*' => Http::response(['events_received' => 1])]);
 
         app(MetaConversionsService::class)->purchase($this->order->fresh());
 
@@ -161,7 +161,7 @@ class MetaConversionsServiceTest extends TestCase
         ]);
 
         $this->order->update(['sales_form_submission_id' => $submission->id]);
-        Http::fake();
+        Http::fake(['graph.facebook.com/*' => Http::response(['events_received' => 1])]);
 
         app(MetaConversionsService::class)->registration($submission);
 

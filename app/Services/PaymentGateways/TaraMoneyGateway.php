@@ -485,54 +485,28 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                 return ['success' => false, 'verified' => false, 'status' => 'unknown'];
             }
 
-            $response = Http::timeout(20)->post($this->apiBaseUrl.'/transactions/status', [
-                'apiKey' => $this->apiKey,
-                'businessId' => $this->businessId,
-                'productId' => $transaction->transaction_id,
-            ]);
-
-            if (! $response->successful()) {
-                return ['success' => false, 'verified' => false, 'status' => 'unknown'];
+            $result = $this->verifyViaStatusApi($transaction);
+            if (($result['verified'] ?? false) === true) {
+                return $result;
             }
 
-            $body = $response->json();
-            $payment = json_decode((string) ($body['payload'] ?? ''), true);
-            if (! is_array($payment)
-                || (string) ($payment['productId'] ?? '') !== $transaction->transaction_id
-                || ! hash_equals((string) $this->businessId, (string) ($payment['businessId'] ?? ''))
-            ) {
-                return ['success' => false, 'verified' => false, 'status' => 'unknown'];
-            }
-
-            $outerStatus = strtoupper((string) ($body['status'] ?? ''));
-            $paymentStatus = strtoupper((string) ($payment['status'] ?? ''));
-            if ($outerStatus !== 'SUCCESS' || $paymentStatus !== 'SUCCESS') {
-                return ['success' => true, 'verified' => false, 'status' => 'pending'];
-            }
-
-            $expectedXaf = $transaction->converted_amount;
-            $paidXaf = $payment['amount'] ?? null;
-            if ($expectedXaf === null || ! is_numeric($paidXaf)
-                || (int) $paidXaf !== (int) $expectedXaf
-                || empty($payment['paymentId'])) {
-                Log::warning('[TaraMoneyGateway] Paid transaction failed amount or ID validation', [
+            // Payment Links products are not always resolvable through
+            // /transactions/status ("PAYMENT_FOR_TRANSACTION_NOT_FOUND" even
+            // while the collection exists), which left real payments pending
+            // forever and triggered duplicate payment reminders. Fall back to
+            // the provider's paid-collection list before giving up.
+            $fallback = ($result['status'] ?? null) === 'unknown'
+                ? $this->verifyViaPaidList($transaction)
+                : null;
+            if ($fallback !== null) {
+                Log::info('[TaraMoneyGateway] Verified payment through paid collection list', [
                     'transaction_id' => $transaction->transaction_id,
                 ]);
 
-                return ['success' => false, 'verified' => false, 'status' => 'unknown'];
+                return $fallback;
             }
 
-            return [
-                'success' => true,
-                'verified' => true,
-                'status' => 'success',
-                'paymentId' => (string) $payment['paymentId'],
-                'productId' => $transaction->transaction_id,
-                'amount' => (float) ($transaction->expected_amount ?? $transaction->total_amount),
-                'currency' => $transaction->expected_currency ?: $transaction->currency,
-                'paid_amount_xaf' => (int) $paidXaf,
-                'provider_transaction_id' => $body['transactionId'] ?? null,
-            ];
+            return $result;
         } catch (\Exception $e) {
             Log::error('[TaraMoneyGateway] Exception while verifying payment', [
                 'transaction_id' => $transactionId,
@@ -545,6 +519,123 @@ class TaraMoneyGateway implements PaymentGatewayInterface
                 'message' => 'An error occurred while verifying payment: '.$e->getMessage(),
             ];
         }
+    }
+
+    private function verifyViaStatusApi(Transaction $transaction): array
+    {
+        $response = Http::timeout(20)->post($this->apiBaseUrl.'/transactions/status', [
+            'apiKey' => $this->apiKey,
+            'businessId' => $this->businessId,
+            'productId' => $transaction->transaction_id,
+        ]);
+
+        if (! $response->successful()) {
+            return ['success' => false, 'verified' => false, 'status' => 'unknown'];
+        }
+
+        $body = $response->json();
+        $payment = json_decode((string) ($body['payload'] ?? ''), true);
+        if (! is_array($payment)
+            || (string) ($payment['productId'] ?? '') !== $transaction->transaction_id
+            || ! hash_equals((string) $this->businessId, (string) ($payment['businessId'] ?? ''))
+        ) {
+            return ['success' => false, 'verified' => false, 'status' => 'unknown'];
+        }
+
+        $outerStatus = strtoupper((string) ($body['status'] ?? ''));
+        $paymentStatus = strtoupper((string) ($payment['status'] ?? ''));
+        if ($outerStatus !== 'SUCCESS' || $paymentStatus !== 'SUCCESS') {
+            return ['success' => true, 'verified' => false, 'status' => 'pending'];
+        }
+
+        $expectedXaf = $transaction->converted_amount;
+        $paidXaf = $payment['amount'] ?? null;
+        if ($expectedXaf === null || ! is_numeric($paidXaf)
+            || (int) $paidXaf !== (int) $expectedXaf
+            || empty($payment['paymentId'])) {
+            Log::warning('[TaraMoneyGateway] Paid transaction failed amount or ID validation', [
+                'transaction_id' => $transaction->transaction_id,
+            ]);
+
+            return ['success' => false, 'verified' => false, 'status' => 'unknown'];
+        }
+
+        return [
+            'success' => true,
+            'verified' => true,
+            'status' => 'success',
+            'paymentId' => (string) $payment['paymentId'],
+            'productId' => $transaction->transaction_id,
+            'amount' => (float) ($transaction->expected_amount ?? $transaction->total_amount),
+            'currency' => $transaction->expected_currency ?: $transaction->currency,
+            'paid_amount_xaf' => (int) $paidXaf,
+            'provider_transaction_id' => $body['transactionId'] ?? null,
+        ];
+    }
+
+    /**
+     * Last-resort verification for Payment Links: find the product in Tara's
+     * paid-collections list and validate the captured amount.
+     */
+    private function verifyViaPaidList(Transaction $transaction): ?array
+    {
+        $expectedXaf = $transaction->converted_amount;
+        if ($expectedXaf === null || ! is_numeric($expectedXaf)) {
+            return null;
+        }
+
+        for ($start = 0; $start < 500; $start += 100) {
+            $response = Http::timeout(20)->post($this->apiBaseUrl.'/paid/transactionlist', [
+                'apiKey' => $this->apiKey,
+                'businessId' => $this->businessId,
+                'start' => $start,
+                'size' => 100,
+            ]);
+
+            if (! $response->successful()) {
+                return null;
+            }
+
+            $items = $response->json()['transactionList'] ?? [];
+            if (! is_array($items) || $items === []) {
+                return null;
+            }
+
+            foreach ($items as $item) {
+                if ((string) ($item['productId'] ?? '') !== $transaction->transaction_id) {
+                    continue;
+                }
+
+                $paidXaf = $item['dailyAmount'] ?? null;
+                if (! is_numeric($paidXaf) || (int) $paidXaf !== (int) $expectedXaf) {
+                    Log::warning('[TaraMoneyGateway] Paid collection failed amount validation', [
+                        'transaction_id' => $transaction->transaction_id,
+                        'expected_xaf' => $expectedXaf,
+                        'paid_xaf' => $paidXaf,
+                    ]);
+
+                    return null;
+                }
+
+                return [
+                    'success' => true,
+                    'verified' => true,
+                    'status' => 'success',
+                    'paymentId' => (string) ($item['identifier'] ?? ''),
+                    'productId' => $transaction->transaction_id,
+                    'amount' => (float) ($transaction->expected_amount ?? $transaction->total_amount),
+                    'currency' => $transaction->expected_currency ?: $transaction->currency,
+                    'paid_amount_xaf' => (int) $paidXaf,
+                    'verified_via' => 'paid_collection_list',
+                ];
+            }
+
+            if (count($items) < 100) {
+                return null;
+            }
+        }
+
+        return null;
     }
 
     /**

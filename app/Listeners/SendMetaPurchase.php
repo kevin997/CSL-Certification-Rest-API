@@ -4,9 +4,9 @@ namespace App\Listeners;
 
 use App\Events\OrderCompleted;
 use App\Services\MetaConversionsService;
-use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 
-class SendMetaPurchase implements ShouldQueue
+class SendMetaPurchase implements ShouldQueueAfterCommit
 {
     public int $tries = 5;
 
