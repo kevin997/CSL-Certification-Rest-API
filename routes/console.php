@@ -8,6 +8,7 @@ use App\Console\Commands\IndexKnowledgeCommand;
 use App\Console\Commands\MarketingHealthReportCommand;
 use App\Console\Commands\ProcessAbandonedOrdersCommand;
 use App\Console\Commands\ProcessLicenceLifecycle;
+use App\Console\Commands\ReconcileMetaPurchases;
 use App\Console\Commands\RegularizeCompletedOrders;
 use App\Console\Commands\RunRetentionCampaignsCommand;
 use App\Console\Commands\SendEmailCampaignCommand;
@@ -59,6 +60,12 @@ Artisan::command('inspire', function () {
 
 // Regularize orders with completed transactions every 5 minutes
 Schedule::command(RegularizeCompletedOrders::class)
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->runInBackground();
+
+Schedule::command(ReconcileMetaPurchases::class)
     ->everyFiveMinutes()
     ->withoutOverlapping()
     ->onOneServer()

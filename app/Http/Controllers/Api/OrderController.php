@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\OrderCompleted;
 use App\Http\Controllers\Controller;
 use App\Models\Enrollment;
 use App\Models\Environment;
@@ -20,6 +21,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 
 /**
  * @OA\Schema(
@@ -831,12 +833,24 @@ class OrderController extends Controller
 
             $order->save();
 
+            $completedOrder = null;
+
             // If order is completed, create enrollments for course products
             if ($oldStatus !== 'completed' && $newStatus === 'completed') {
                 $this->processCompletedOrder($order);
+
+                // A staff member completing an order manually is still a sale:
+                // fire the domain event so fulfillment listeners (Meta Purchase,
+                // confirmation emails, automations, referrals) run exactly like a
+                // webhook-confirmed payment.
+                $completedOrder = $order->fresh(['items.product', 'environment', 'user', 'salesFormSubmission']);
             }
 
             DB::commit();
+
+            if ($completedOrder !== null) {
+                event(new OrderCompleted($completedOrder));
+            }
 
             return response()->json([
                 'status' => 'success',
@@ -977,7 +991,7 @@ class OrderController extends Controller
         }
 
         $date = now()->format('Ymd');
-        $random = strtoupper(\Illuminate\Support\Str::random(4));
+        $random = strtoupper(Str::random(4));
 
         return $prefix.$date.'-'.$random;
     }

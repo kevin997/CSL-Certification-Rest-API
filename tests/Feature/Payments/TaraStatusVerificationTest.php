@@ -101,6 +101,57 @@ class TaraStatusVerificationTest extends TestCase
         }
     }
 
+    public function test_payment_links_are_verified_from_the_paid_collection_list_when_status_lookup_fails(): void
+    {
+        Http::fake([
+            'www.dklo.co/api/tara/transactions/status' => Http::response([
+                'status' => 'ERROR',
+                'message' => 'PAYMENT_FOR_TRANSACTION_NOT_FOUND',
+            ]),
+            'www.dklo.co/api/tara/paid/transactionlist' => Http::response([
+                'transactionList' => [[
+                    'productId' => 'TXN-tara-test',
+                    'dailyAmount' => 2992,
+                    'identifier' => '462325112',
+                    'collectionStatus' => 'PAID',
+                ]],
+            ]),
+        ]);
+
+        $gateway = new TaraMoneyGateway;
+        $gateway->initialize($this->settings);
+        $result = $gateway->verifyPayment($this->transaction->transaction_id);
+
+        $this->assertTrue($result['verified']);
+        $this->assertSame('success', $result['status']);
+        $this->assertSame('462325112', $result['paymentId']);
+        $this->assertSame(2992, $result['paid_amount_xaf']);
+        $this->assertSame('paid_collection_list', $result['verified_via']);
+    }
+
+    public function test_paid_collection_list_still_rejects_a_wrong_amount(): void
+    {
+        Http::fake([
+            'www.dklo.co/api/tara/transactions/status' => Http::response([
+                'status' => 'ERROR',
+                'message' => 'PAYMENT_FOR_TRANSACTION_NOT_FOUND',
+            ]),
+            'www.dklo.co/api/tara/paid/transactionlist' => Http::response([
+                'transactionList' => [[
+                    'productId' => 'TXN-tara-test',
+                    'dailyAmount' => 2500,
+                    'identifier' => '462325112',
+                ]],
+            ]),
+        ]);
+
+        $gateway = new TaraMoneyGateway;
+        $gateway->initialize($this->settings);
+        $result = $gateway->verifyPayment($this->transaction->transaction_id);
+
+        $this->assertFalse($result['verified']);
+    }
+
     public function test_pending_provider_status_does_not_verify_payment(): void
     {
         $result = $this->verify(array_replace($this->paidPayload(), ['status' => 'PENDING']));

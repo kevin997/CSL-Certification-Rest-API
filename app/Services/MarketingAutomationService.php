@@ -68,6 +68,17 @@ class MarketingAutomationService
             return;
         }
 
+        // Sales-form checkout already sends the account/set-password message with
+        // the payment link. Sending a second "complete your payment" WhatsApp in
+        // the same minute made learners re-open the link and start another
+        // payment attempt, leaving a duplicate pending transaction.
+        if ($trigger === MarketingAutomation::TRIGGER_ORDER_PLACED
+            && $order->type === Order::TYPE_SALES_FORM
+            && $order->created_at
+            && $order->created_at->gt(now()->subMinutes(10))) {
+            return;
+        }
+
         $automation = MarketingAutomation::enabledFor($order->environment_id, $trigger);
         if (! $automation) {
             return;
