@@ -18,7 +18,6 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use setasign\Fpdi\Fpdi;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Throwable;
 use ZipArchive;
@@ -29,10 +28,10 @@ use ZipArchive;
  * The bytes stay where the instructor uploaded them (Cloudinary today), but
  * the URL is never returned to the browser. The learner asks this service for
  * the document; it checks the academy, the enrollment and the account, then
- * streams the bytes and records the access. PDFs are stamped per open with
- * the learner, email, access id and time; images are returned as they are
- * (rendered by the in-app viewer). Office documents are converted to a safe
- * text/table preview, never the editable original.
+ * streams the bytes unchanged and records the access in the audit log.
+ * Images and PDFs reach the in-app viewer exactly as the instructor uploaded
+ * them; office documents are converted to a safe text/table preview, never
+ * the editable original.
  *
  * DOCX-to-PDF conversion is intentionally not implemented: it requires
  * LibreOffice in the runtime image, while the text preview already preserves
@@ -269,7 +268,7 @@ class DocumentProtectionService
     {
         $bytes = $this->bytesFor($attachment);
         $extension = $this->extensionFor($attachment);
-        $access = $this->logAccess($attachment, $user, $ip, $userAgent);
+        $this->logAccess($attachment, $user, $ip, $userAgent);
 
         // Office files are never sent to the browser in their original form:
         // the original is editable and could be re-shared.
@@ -297,15 +296,6 @@ class DocumentProtectionService
             return $this->htmlResponse($table);
         }
 
-        // Bake the learner's identity into the PDF so a screenshot or a saved
-        // copy is traceable to the account and the access event.
-        if ($extension === 'pdf') {
-            $stamped = $this->watermarkPdf($bytes, $this->watermarkText($user, $access));
-            if (is_string($stamped) && $stamped !== '') {
-                $bytes = $stamped;
-            }
-        }
-
         return response($bytes, 200, [
             'Content-Type' => $this->mime($attachment, null),
             'Content-Disposition' => 'inline; filename="'.$this->safeName($attachment->file_name).'"',
@@ -321,9 +311,8 @@ class DocumentProtectionService
     /**
      * Stream the stored PDF byte for byte.
      *
-     * stream() re-imports every page to stamp the learner's identity, and FPDI
-     * drops AcroForm fields in the process. Fillable PDFs must reach pdf.js
-     * untouched so the form fields survive.
+     * Fillable PDFs must reach pdf.js with their AcroForm fields intact, so
+     * this endpoint serves the stored file without any conversion.
      */
     public function streamOriginalPdf(User $user, DocumentationAttachment $attachment, ?string $ip, ?string $userAgent): Response
     {
@@ -442,70 +431,6 @@ class DocumentProtectionService
                 'attachment_id' => $attachment->id,
                 'error' => $exception->getMessage(),
             ]);
-
-            return null;
-        }
-    }
-
-    private function watermarkText(User $user, ?DocumentAccessLog $access): string
-    {
-        $parts = array_values(array_filter([
-            $user->name,
-            $user->email,
-            $access ? 'access #'.$access->id : null,
-            now()->format('Y-m-d H:i'),
-        ]));
-
-        $text = implode('  |  ', $parts);
-        $converted = @iconv('UTF-8', 'windows-1252//TRANSLIT', $text);
-
-        return $converted !== false ? $converted : preg_replace('/[^\x20-\x7E]/', '', $text);
-    }
-
-    private function watermarkPdf(string $pdf, string $text): ?string
-    {
-        $path = tempnam(sys_get_temp_dir(), 'pdf_');
-
-        if ($path === false) {
-            return null;
-        }
-
-        file_put_contents($path, $pdf);
-
-        try {
-            $output = new Fpdi;
-            $output->SetAutoPageBreak(false);
-            // Keep the watermark readable in the file itself; the PDF is a
-            // few hundred KB at most and traceability matters more than bytes.
-            $output->SetCompression(false);
-            $pages = $output->setSourceFile($path);
-
-            for ($page = 1; $page <= $pages; $page++) {
-                $template = $output->importPage($page);
-                $size = $output->getTemplateSize($template);
-                $width = (float) $size['width'];
-                $height = (float) $size['height'];
-
-                $output->AddPage($size['orientation'], [$width, $height]);
-                $output->useTemplate($template);
-                $output->SetFont('Helvetica', '', 9);
-                $output->SetTextColor(185, 185, 185);
-
-                foreach ([0.18, 0.36, 0.54, 0.72, 0.9] as $offset) {
-                    $y = $height * $offset;
-
-                    $output->Text(18, $y, $text);
-                    $output->Text(18, $y + 12, $text);
-                }
-            }
-
-            $result = $output->Output('S');
-            @unlink($path);
-
-            return is_string($result) ? $result : null;
-        } catch (Throwable $exception) {
-            @unlink($path);
-            Log::warning('document_watermark_failed', ['error' => $exception->getMessage()]);
 
             return null;
         }

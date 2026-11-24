@@ -377,7 +377,7 @@ class DocumentProtectionTest extends TestCase
         $this->assertStringContainsString('42', $response->getContent());
     }
 
-    public function test_a_pdf_is_watermarked_with_the_learner_and_access_id(): void
+    public function test_a_pdf_is_streamed_unchanged_and_the_access_is_logged(): void
     {
         $source = new Fpdi;
         $source->AddPage();
@@ -396,6 +396,8 @@ class DocumentProtectionTest extends TestCase
 
         $this->attachThroughContent($uuid, 'lesson.pdf', 'application/pdf', strlen($original));
 
+        $attachment = DocumentationAttachment::query()->where('uuid', $uuid)->firstOrFail();
+
         $response = $this->asLearner()->get("/api/documents/{$uuid}/content");
 
         $response->assertOk();
@@ -403,9 +405,17 @@ class DocumentProtectionTest extends TestCase
 
         $body = $response->getContent();
         $this->assertStringStartsWith('%PDF', $body);
-        $this->assertStringContainsString('Learner Test', $body);
-        $this->assertStringContainsString('access #', $body);
-        $this->assertGreaterThan(strlen($original), strlen($body));
+        // The learner receives exactly the uploaded bytes: no identity stamp
+        // and no page re-import that could alter the document.
+        $this->assertSame($original, $body);
+        $this->assertStringNotContainsString('Learner Test', $body);
+        $this->assertStringNotContainsString('access #', $body);
+
+        $this->assertDatabaseHas('document_access_logs', [
+            'documentation_attachment_id' => $attachment->id,
+            'environment_id' => $this->environment->id,
+            'user_id' => $this->learner->id,
+        ]);
     }
 
     public function test_a_stored_docx_without_an_extension_is_previewed_as_text(): void
