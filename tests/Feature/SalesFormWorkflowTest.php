@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Events\OrderPlaced;
+use App\Events\OrderCompleted;
+use App\Listeners\ProcessOrderItems;
 use App\Models\AssetDelivery;
 use App\Models\Block;
 use App\Models\Course;
@@ -276,6 +278,65 @@ class SalesFormWorkflowTest extends TestCase
             ->where('course_id', $this->course->id)
             ->first();
         $this->assertFalse((bool) $enrollment->is_provisional);
+    }
+
+    public function test_online_completion_upgrades_only_the_purchased_enrollment_and_preserves_progress(): void
+    {
+        $form = $this->makePublishedForm();
+        $learner = User::factory()->create();
+        $otherLearner = User::factory()->create();
+        $otherEnvironment = Environment::factory()->create(['owner_id' => $this->trainer->id]);
+        $otherCourse = Course::create([
+            'title' => 'Unpurchased course',
+            'environment_id' => $otherEnvironment->id,
+            'created_by' => $this->trainer->id,
+            'template_id' => $this->course->template_id,
+        ]);
+        $attributes = [
+            'course_id' => $this->course->id,
+            'user_id' => $learner->id,
+            'environment_id' => $this->environment->id,
+            'status' => Enrollment::STATUS_IN_PROGRESS,
+            'is_provisional' => true,
+            'sales_form_id' => $form->id,
+            'progress_percentage' => 25,
+            'last_activity_at' => now()->subDay(),
+        ];
+        $enrollment = Enrollment::create($attributes);
+        $otherUserEnrollment = Enrollment::create(array_replace($attributes, ['user_id' => $otherLearner->id]));
+        $otherTenantEnrollment = Enrollment::create(array_replace($attributes, [
+            'environment_id' => $otherEnvironment->id,
+            'course_id' => $otherCourse->id,
+        ]));
+        $before = $enrollment->getAttributes();
+        $order = Order::create([
+            'user_id' => $learner->id,
+            'environment_id' => $this->environment->id,
+            'order_number' => 'ORD-ONLINE-ACCESS',
+            'type' => Order::TYPE_SALES_FORM,
+            'status' => Order::STATUS_COMPLETED,
+            'total_amount' => 50,
+            'currency' => 'USD',
+        ]);
+        $order->items()->create([
+            'product_id' => $this->product->id,
+            'quantity' => 1,
+            'price' => 50,
+            'total' => 50,
+        ]);
+
+        $listener = new ProcessOrderItems;
+        $listener->handle(new OrderCompleted($order));
+        $listener->handle(new OrderCompleted($order));
+
+        $enrollment->refresh();
+        $this->assertFalse($enrollment->is_provisional);
+        foreach (['status', 'progress_percentage', 'last_activity_at', 'enrolled_at', 'sales_form_id'] as $field) {
+            $this->assertEquals($before[$field], $enrollment->getAttributes()[$field], $field);
+        }
+        $this->assertTrue($otherUserEnrollment->fresh()->is_provisional);
+        $this->assertTrue($otherTenantEnrollment->fresh()->is_provisional);
+        $this->assertSame(3, Enrollment::withoutGlobalScopes()->count());
     }
 
     /** @test */
