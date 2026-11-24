@@ -36,7 +36,14 @@ class LinkPreviewService
      */
     private const BATCH_TIME_BUDGET_SECONDS = 12;
 
-    private const MAX_BYTES = 524288; // 512 KB: enough for <head>, cheap to store.
+    /**
+     * Bytes parsed for metadata. The <head> sits at the start of the document,
+     * so large marketing pages are truncated instead of rejected.
+     */
+    private const MAX_PARSE_BYTES = 524288; // 512 KB
+
+    /** Bodies above this are abandoned outright rather than held in memory. */
+    private const HARD_MAX_BYTES = 2097152; // 2 MB
 
     private const CONNECT_TIMEOUT_SECONDS = 3;
 
@@ -184,8 +191,14 @@ class LinkPreviewService
 
         $body = $response->body();
 
-        if ($body === '' || strlen($body) > self::MAX_BYTES) {
+        if ($body === '' || strlen($body) > self::HARD_MAX_BYTES) {
             return null;
+        }
+
+        // Marketing sites often ship hundreds of KB of scripts after the head;
+        // parsing only the beginning keeps large pages previewable.
+        if (strlen($body) > self::MAX_PARSE_BYTES) {
+            $body = mb_strcut($body, 0, self::MAX_PARSE_BYTES, 'UTF-8');
         }
 
         $contentType = strtolower((string) $response->header('Content-Type'));

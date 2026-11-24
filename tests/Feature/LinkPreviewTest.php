@@ -271,6 +271,42 @@ class LinkPreviewTest extends TestCase
         ))->assertUnprocessable();
     }
 
+    public function test_it_reads_the_head_of_a_page_larger_than_the_parse_limit(): void
+    {
+        // Marketing pages ship hundreds of KB of scripts after the metadata.
+        $largePage = $this->htmlPage().str_repeat('<div>spacer</div>', 60000);
+
+        $this->assertGreaterThan(512 * 1024, strlen($largePage));
+
+        Http::fake([
+            "https://{$this->publicIp()}/large" => Http::response($largePage, 200, [
+                'Content-Type' => 'text/html',
+            ]),
+        ]);
+
+        $response = $this->postPreview(["https://{$this->publicIp()}/large"]);
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.preview.title', 'The Complete Media Buying Guide');
+        $response->assertJsonPath('data.0.preview.description', 'How to buy media profitably.');
+    }
+
+    public function test_it_abandons_bodies_larger_than_the_hard_limit(): void
+    {
+        $hugePage = $this->htmlPage().str_repeat('x', 2 * 1024 * 1024 + 1);
+
+        Http::fake([
+            "https://{$this->publicIp()}/huge" => Http::response($hugePage, 200, [
+                'Content-Type' => 'text/html',
+            ]),
+        ]);
+
+        $response = $this->postPreview(["https://{$this->publicIp()}/huge"]);
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.preview', null);
+    }
+
     private function postPreview(array $urls): TestResponse
     {
         return $this->actingAs($this->user, 'sanctum')
