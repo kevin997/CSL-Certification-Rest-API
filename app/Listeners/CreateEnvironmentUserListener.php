@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Notifications\EnvironmentAccountCreated;
 use App\Services\Sales\ShortLinkService;
 use App\Services\TelegramService;
+use App\Support\PhoneNumber;
 use App\Support\Tenancy\TenantUrl;
 use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -132,6 +133,10 @@ class CreateEnvironmentUserListener implements ShouldQueue
     private function sendPasswordSetupWhatsApp($user, string $url): void
     {
         $phone = preg_replace('/[^0-9]/', '', (string) $user->whatsapp_number);
+
+        if (preg_match('/^2430[1-9]\d{8}$/', $phone)) {
+            $phone = ltrim(PhoneNumber::normalize('+'.$phone), '+');
+        }
 
         if (blank($phone)) {
             return;
