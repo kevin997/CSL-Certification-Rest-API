@@ -125,9 +125,15 @@
             {{-- CTA Button --}}
             <tr>
                 <td style="padding: 24px 40px; text-align: center;">
-                    <a href="{{ $passwordSetupUrl ?: $loginUrl }}" style="display: inline-block; text-decoration: none; font-weight: 700; font-size: 16px; line-height: 1; color: #1a1a1a; background-color: {{ $branding['secondary_color'] }}; border-radius: 9999px; padding: 16px 48px; transition: background-color 0.2s ease;">
+                    <a href="{{ $passwordSetupUrl ?: $loginUrl }}" bgcolor="#14532d" style="display: inline-block; text-decoration: none; font-weight: 700; font-size: 16px; line-height: 1; color: #ffffff !important; background-color: #14532d; border-radius: 9999px; padding: 16px 48px;">
                         {{ $passwordSetupUrl ? 'Set Your Password' : 'Login to Your Account' }}
                     </a>
+                    @if($passwordSetupUrl)
+                        <p style="margin: 16px 0 0; font-size: 13px; line-height: 1.6; color: #4b5563;">
+                            If the button doesn't work, open this password setup link:<br />
+                            <a href="{{ $passwordSetupUrl }}" style="color: #14532d; text-decoration: underline; word-break: break-all;">{{ $passwordSetupUrl }}</a>
+                        </p>
+                    @endif
                 </td>
             </tr>
 
