@@ -215,6 +215,14 @@ class ProcessOrderItems implements ShouldQueue
                 ]);
 
                 Log::info("Created enrollment for user {$order->user_id} in course {$productCourse->course_id}");
+            } else {
+                // A paid order upgrades preview access without resetting learning progress.
+                DB::table('enrollments')
+                    ->where('id', $enrollment->id)
+                    ->whereNull('deleted_at')
+                    ->whereIn('status', [Enrollment::STATUS_ENROLLED, Enrollment::STATUS_IN_PROGRESS, Enrollment::STATUS_COMPLETED])
+                    ->where('is_provisional', true)
+                    ->update(['is_provisional' => false, 'updated_at' => now()]);
             }
         }
     }
