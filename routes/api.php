@@ -69,6 +69,7 @@ use App\Http\Controllers\Api\LessonContentController;
 use App\Http\Controllers\Api\LessonDiscussionController;
 use App\Http\Controllers\Api\LessonQuestionResponseController;
 use App\Http\Controllers\Api\LicenceController;
+use App\Http\Controllers\Api\LinkPreviewController;
 use App\Http\Controllers\Api\LiveKitWebhookController;
 use App\Http\Controllers\Api\LiveSessionController;
 use App\Http\Controllers\Api\LiveSessionTokenController;
@@ -630,6 +631,11 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     Route::post('/documents', [DocumentUploadController::class, 'store']);
     Route::get('/documents/{uuid}/content', [DocumentAccessController::class, 'show']);
     Route::get('/documents/{uuid}/form-content', [DocumentAccessController::class, 'form']);
+
+    // Link previews: the API reads a pasted URL's Open Graph metadata so the
+    // web app can show a card instead of a bare link. Rate limited because it
+    // reaches out to the public internet on the caller's behalf.
+    Route::post('/link-previews', [LinkPreviewController::class, 'store'])->middleware('throttle:60,1');
 
     // Certificate Template routes
     Route::get('/certificate-templates', [CertificateTemplateController::class, 'index']);
