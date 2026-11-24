@@ -49,9 +49,8 @@ class DocumentAccessController extends Controller
     /**
      * Original bytes of a fillable-PDF assignment document.
      *
-     * Same academy and entitlement checks as show(), but the bytes are not
-     * watermarked: the browser feeds them to pdf.js, which needs the AcroForm
-     * fields intact.
+     * Same academy and entitlement checks as show(); the browser feeds the
+     * bytes to pdf.js, which needs the AcroForm fields intact.
      */
     public function form(Request $request, string $uuid): Response
     {

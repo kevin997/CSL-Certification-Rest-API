@@ -21,10 +21,9 @@ use Tests\TestCase;
 /**
  * Fillable-PDF bytes come from the private document store, not Cloudinary.
  *
- * The generic document endpoint watermarks PDFs by re-importing every page,
- * which drops AcroForm fields. GET /api/documents/{uuid}/form-content streams
- * the stored bytes untouched, but only to people who may read the assignment
- * content that references them.
+ * GET /api/documents/{uuid}/form-content streams the stored bytes untouched,
+ * with their AcroForm fields intact, but only to people who may read the
+ * assignment content that references them.
  */
 class AssignmentFormDocumentAccessTest extends TestCase
 {
@@ -191,7 +190,7 @@ class AssignmentFormDocumentAccessTest extends TestCase
 
         $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
 
-        // Byte-identical: no page re-import, no watermark, no AcroForm loss.
+        // Byte-identical: no re-import and no AcroForm loss.
         $this->assertSame($this->pdf, $response->getContent());
         $this->assertStringNotContainsString('access #', $response->getContent());
         $this->assertStringNotContainsString('Enrolled Learner', $response->getContent());

@@ -6,8 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * One open of a protected document. Used both for the audit trail and as the
- * watermark reference shown to the learner.
+ * One open of a protected document, recorded for the audit trail.
  */
 class DocumentAccessLog extends Model
 {
