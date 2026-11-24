@@ -271,12 +271,13 @@ class LinkPreviewTest extends TestCase
         ))->assertUnprocessable();
     }
 
-    public function test_it_reads_the_head_of_a_page_larger_than_the_parse_limit(): void
+    public function test_it_reads_metadata_from_a_page_larger_than_half_a_megabyte(): void
     {
-        // Marketing pages ship hundreds of KB of scripts after the metadata.
-        $largePage = $this->htmlPage().str_repeat('<div>spacer</div>', 60000);
+        // YouTube puts its Open Graph tags after hundreds of KB of inline
+        // scripts, so the whole body below the hard limit must be parsed.
+        $largePage = str_repeat('<div>spacer</div>', 60000).$this->htmlPage();
 
-        $this->assertGreaterThan(512 * 1024, strlen($largePage));
+        $this->assertGreaterThan(900 * 1024, strlen($largePage));
 
         Http::fake([
             "https://{$this->publicIp()}/large" => Http::response($largePage, 200, [
