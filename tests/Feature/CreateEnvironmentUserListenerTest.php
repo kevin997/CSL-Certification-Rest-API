@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class CreateEnvironmentUserListenerTest extends TestCase
@@ -48,5 +49,32 @@ class CreateEnvironmentUserListenerTest extends TestCase
             'environment_id' => $environment->id,
             'user_id' => $user->id,
         ]);
+    }
+
+    #[DataProvider('checkoutDestinations')]
+    public function test_guest_checkout_normalizes_drc_whatsapp_destination(string $phone, string $expected): void
+    {
+        Mail::fake();
+        Queue::fake();
+
+        $user = User::factory()->create(['whatsapp_number' => $phone]);
+        $environment = Environment::factory()->create();
+
+        app(CreateEnvironmentUserListener::class)->handle(
+            new UserCreatedDuringCheckout($user, $environment, true, true)
+        );
+
+        Queue::assertPushed(SendWhatsAppNotification::class, function (SendWhatsAppNotification $job) use ($expected) {
+            return $job->phoneNumber === $expected;
+        });
+    }
+
+    public static function checkoutDestinations(): array
+    {
+        return [
+            ['+2430812345678', '243812345678'],
+            ['0812345678', '0812345678'],
+            ['+242050330038', '242050330038'],
+        ];
     }
 }

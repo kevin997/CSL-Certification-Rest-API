@@ -24,7 +24,7 @@ class PhoneNumber
     /** Calling codes for the countries this platform serves. */
     private const CALLING_CODES = [
         'CM' => '237', 'GA' => '241', 'TD' => '235', 'CF' => '236', 'CG' => '242',
-        'GQ' => '240', 'CI' => '225', 'SN' => '221', 'BJ' => '229', 'BF' => '226',
+        'GQ' => '240', 'CD' => '243', 'CI' => '225', 'SN' => '221', 'BJ' => '229', 'BF' => '226',
         'ML' => '223', 'TG' => '228', 'NE' => '227', 'GN' => '224', 'NG' => '234',
         'GH' => '233', 'FR' => '33', 'US' => '1', 'GB' => '44',
     ];
@@ -56,6 +56,12 @@ class PhoneNumber
             } else {
                 $digits = $national;
             }
+        }
+
+        // DRC international numbers omit the national trunk zero. Repair only
+        // the complete nine-digit subscriber shape to avoid guessing at lengths.
+        if (preg_match('/^2430([1-9]\d{8})$/', $digits, $matches)) {
+            $digits = '243'.$matches[1];
         }
 
         // Cameroon mobile subscriber numbers are 9 digits starting with 6; a
