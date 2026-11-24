@@ -24,7 +24,7 @@ class Order extends Model
         'user_id',
         'environment_id',
         'order_number',
-        'status', // pending, completed, failed, refunded
+        'status', // pending, processing, completed, failed, cancelled, refunded
         'type',
         'total_amount',
         'currency',
@@ -52,6 +52,9 @@ class Order extends Model
     const STATUS_COMPLETED = 'completed';
 
     const STATUS_FAILED = 'failed';
+
+    /** Another attempt for the same cart was paid; this attempt was voided. */
+    const STATUS_CANCELLED = 'cancelled';
 
     const STATUS_REFUNDED = 'refunded';
 
