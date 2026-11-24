@@ -3,11 +3,13 @@
 namespace App\Listeners;
 
 use App\Events\OrderCompleted;
+use App\Events\OrderCompletedWithReferral;
 use App\Mail\DigitalProductDelivery;
 use App\Models\AssetDelivery;
-use App\Models\Product;
 use App\Models\Enrollment;
+use App\Models\EnvironmentReferral;
 use App\Models\Order;
+use App\Models\Product;
 use App\Models\ProductSubscription;
 use App\Models\SalesFormSubmission;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -42,6 +44,23 @@ class ProcessOrderItems implements ShouldQueue
     {
         $order = $event->order;
 
+        // A superseded or otherwise voided attempt must never fulfil: the
+        // money went to another order, and fulfilling this one would grant
+        // duplicate access and report a second Meta Purchase.
+        if (in_array($order->status, [
+            Order::STATUS_CANCELLED,
+            Order::STATUS_FAILED,
+            Order::STATUS_REFUNDED,
+            Order::STATUS_PARTIALLY_REFUNDED,
+        ], true)) {
+            Log::warning('Ignoring OrderCompleted for a voided order', [
+                'order_id' => $order->id,
+                'status' => $order->status,
+            ]);
+
+            return;
+        }
+
         $order->loadMissing(['user']);
         $wasAlreadyCompleted = $order->status === Order::STATUS_COMPLETED;
 
@@ -59,7 +78,7 @@ class ProcessOrderItems implements ShouldQueue
             return;
         }
 
-        //set order status as completed
+        // set order status as completed
         $order->status = Order::STATUS_COMPLETED;
         $order->save();
 
@@ -74,10 +93,10 @@ class ProcessOrderItems implements ShouldQueue
                 ->update(['status' => SalesFormSubmission::STATUS_COMPLETED]);
         }
 
-        if (!$wasAlreadyCompleted && $order->referral_id) {
-            $referral = \App\Models\EnvironmentReferral::find($order->referral_id);
+        if (! $wasAlreadyCompleted && $order->referral_id) {
+            $referral = EnvironmentReferral::find($order->referral_id);
             if ($referral) {
-                event(new \App\Events\OrderCompletedWithReferral($order, $referral));
+                event(new OrderCompletedWithReferral($order, $referral));
             }
         }
 
@@ -87,17 +106,18 @@ class ProcessOrderItems implements ShouldQueue
         foreach ($orderItems as $item) {
             $product = Product::find($item->product_id);
 
-            if (!$product) {
+            if (! $product) {
                 Log::warning("Product not found for order item {$item->id}");
+
                 continue;
             }
 
             // Handle course enrollments if the product contains courses
             // Ensure we're passing a single Product model, not a collection
-            if ($product instanceof \App\Models\Product) {
+            if ($product instanceof Product) {
                 $this->processProductCourses($product, $order);
             } else {
-                Log::error("Expected single Product model for order item {$item->id}, got " . get_class($product));
+                Log::error("Expected single Product model for order item {$item->id}, got ".get_class($product));
             }
 
             // Handle digital product fulfillment if product requires it
@@ -107,7 +127,7 @@ class ProcessOrderItems implements ShouldQueue
 
             // Handle subscriptions if the product is a subscription
             if ($product->is_subscription) {
-                //$this->processSubscription($product, $order);
+                // $this->processSubscription($product, $order);
             }
         }
     }
@@ -116,23 +136,26 @@ class ProcessOrderItems implements ShouldQueue
     {
         if ($subscriptionItems->isEmpty()) {
             Log::warning("No subscription items found for subscription_product order {$order->id}");
+
             return;
         }
 
         foreach ($subscriptionItems as $item) {
-            if (!empty($item->subscription_id)) {
+            if (! empty($item->subscription_id)) {
                 continue;
             }
 
             $product = Product::find($item->product_id);
 
-            if (!$product) {
+            if (! $product) {
                 Log::warning("Product not found for subscription order item {$item->id}");
+
                 continue;
             }
 
-            if (!$product->is_subscription) {
+            if (! $product->is_subscription) {
                 Log::warning("Non-subscription product in subscription_product order {$order->id}, item {$item->id}");
+
                 continue;
             }
 
@@ -144,7 +167,7 @@ class ProcessOrderItems implements ShouldQueue
                 ->orderByDesc('id')
                 ->first();
 
-            $isFirst = !$existing;
+            $isFirst = ! $existing;
 
             $startsAt = $existing?->starts_at ?? $now;
             $baseStart = $existing?->ends_at && $existing->ends_at->isFuture() ? $existing->ends_at : $now;
@@ -186,9 +209,8 @@ class ProcessOrderItems implements ShouldQueue
     /**
      * Process courses associated with a product.
      *
-     * @param \App\Models\Product $product
-     * @param \App\Models\Order $order
-     * @return void
+     * @param  Product  $product
+     * @param  Order  $order
      */
     private function processProductCourses($product, $order): void
     {
@@ -204,7 +226,7 @@ class ProcessOrderItems implements ShouldQueue
                 ->where('environment_id', $order->environment_id)
                 ->first();
 
-            if (!$enrollment) {
+            if (! $enrollment) {
                 Enrollment::create([
                     'user_id' => $order->user_id,
                     'course_id' => $productCourse->course_id,
@@ -230,10 +252,9 @@ class ProcessOrderItems implements ShouldQueue
     /**
      * Process digital assets associated with a product.
      *
-     * @param \App\Models\Product $product
-     * @param \App\Models\Order $order
-     * @param \stdClass $orderItem
-     * @return void
+     * @param  Product  $product
+     * @param  Order  $order
+     * @param  \stdClass  $orderItem
      */
     private function processProductAssets($product, $order, $orderItem): void
     {
@@ -245,6 +266,7 @@ class ProcessOrderItems implements ShouldQueue
 
         if ($assets->isEmpty()) {
             Log::info("No active assets found for product {$product->id}");
+
             return;
         }
 
@@ -276,8 +298,9 @@ class ProcessOrderItems implements ShouldQueue
             }
         }
 
-        if ($deliveries->every(fn ($delivery) => !$delivery->wasRecentlyCreated)) {
+        if ($deliveries->every(fn ($delivery) => ! $delivery->wasRecentlyCreated)) {
             Log::info("Skipping duplicate digital product delivery email for order {$order->id}, product {$product->id}");
+
             return;
         }
 
@@ -295,9 +318,8 @@ class ProcessOrderItems implements ShouldQueue
     /**
      * Process subscription for a product.
      *
-     * @param \App\Models\Product $product
-     * @param \App\Models\Order $order
-     * @return void
+     * @param  Product  $product
+     * @param  Order  $order
      */
     private function processSubscription($product, $order): void
     {
@@ -308,7 +330,7 @@ class ProcessOrderItems implements ShouldQueue
             ->where('environment_id', $order->environment_id)
             ->first();
 
-        if (!$subscription) {
+        if (! $subscription) {
             // Create new subscription
             DB::table('subscriptions')->insert([
                 'user_id' => $order->user_id,
