@@ -1,5 +1,9 @@
-# Laravel 12.x Docker build with php:8.3-fpm Debian base - OPTIMIZED FOR FREQUENT CODE CHANGES
-FROM php:8.3-fpm
+# Laravel 12.x Docker build with php:8.5-fpm Debian base - OPTIMIZED FOR FREQUENT CODE CHANGES
+# Default to the Google pull-through mirror of the official image: Docker Hub
+# resolution was what repeatedly stalled Coolify builds. Override with
+#   --build-arg PHP_IMAGE=php:8.5-fpm
+ARG PHP_IMAGE=mirror.gcr.io/library/php:8.5-fpm
+FROM ${PHP_IMAGE}
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -74,7 +78,7 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 # Install Puppeteer globally for Browsershot
-RUN npm install -g puppeteer@latest --unsafe-perm
+RUN npm install -g puppeteer@24.37.3 --unsafe-perm
 
 # Install PHP extensions step by step (rarely change - cached layer)
 RUN docker-php-ext-install -j$(nproc) \
@@ -112,7 +116,7 @@ RUN apt-get update && apt-get install -y librdkafka-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Composer (rarely change - cached layer)
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY --from=mirror.gcr.io/library/composer:2 /usr/bin/composer /usr/bin/composer
 
 # Copy composer files first for dependency caching
 COPY composer.json composer.lock ./
