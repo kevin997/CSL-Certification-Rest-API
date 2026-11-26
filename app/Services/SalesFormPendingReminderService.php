@@ -46,7 +46,7 @@ class SalesFormPendingReminderService
         }
 
         $sent = false;
-        if (filled($submission->email) && MarketingConsent::isGranted($submission, 'email')) {
+        if (config('marketing.email_enabled') && filled($submission->email) && MarketingConsent::isGranted($submission, 'email')) {
             Mail::to($submission->email)->send(new AutomationMail($subject, $message, $order->environment));
             $sent = true;
         }
