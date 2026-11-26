@@ -88,7 +88,6 @@ RUN docker-php-ext-install -j$(nproc) \
         pcntl \
         bcmath \
         zip \
-        opcache
 
 # Configure and install GD with dependencies (rarely change - cached layer)
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
