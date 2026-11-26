@@ -33,6 +33,9 @@ class MarketingAutomationTest extends TestCase
     {
         parent::setUp();
 
+        // These suites exercise marketing email delivery, which is off by default.
+        config()->set('marketing.email_enabled', true);
+
         $this->owner = User::factory()->create([
             'whatsapp_number' => '+237600000001',
         ]);

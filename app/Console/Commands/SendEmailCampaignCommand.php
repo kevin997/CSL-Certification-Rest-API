@@ -22,6 +22,12 @@ class SendEmailCampaignCommand extends Command
 
     public function handle(): int
     {
+        if (! config('marketing.email_enabled')) {
+            $this->info('Marketing email is disabled — campaign emails are paused.');
+
+            return self::SUCCESS;
+        }
+
         $message = MarketingMessage::nextFor(MarketingMessage::CHANNEL_EMAIL);
 
         if (! $message) {

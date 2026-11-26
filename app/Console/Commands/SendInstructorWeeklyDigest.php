@@ -3,12 +3,13 @@
 namespace App\Console\Commands;
 
 use App\Mail\InstructorWeeklyDigest;
-use App\Models\ActivityCompletion;
+use App\Models\Activity;
+use App\Models\Course;
 use App\Models\Enrollment;
 use App\Models\Environment;
 use App\Models\EnvironmentUser;
 use App\Models\EventContent;
-use App\Models\Activity;
+use App\Models\EventRegistration;
 use App\Models\IssuedCertificate;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -19,10 +20,17 @@ use Illuminate\Support\Facades\Mail;
 class SendInstructorWeeklyDigest extends Command
 {
     protected $signature = 'engagement:instructor-digest {--dry-run : Preview stats without sending emails}';
+
     protected $description = 'Send weekly digest emails to environment owners/instructors';
 
     public function handle(): int
     {
+        if (! config('marketing.email_enabled')) {
+            $this->info('Marketing email is disabled — instructor digest skipped.');
+
+            return self::SUCCESS;
+        }
+
         $this->info('Starting instructor weekly digest...');
 
         $environments = Environment::where('is_active', true)
@@ -34,9 +42,10 @@ class SendInstructorWeeklyDigest extends Command
         $skipped = 0;
 
         foreach ($environments as $environment) {
-            if (!$environment->owner || !$environment->owner->email) {
+            if (! $environment->owner || ! $environment->owner->email) {
                 $this->warn("Skipping environment #{$environment->id} — no owner email.");
                 $skipped++;
+
                 continue;
             }
 
@@ -47,6 +56,7 @@ class SendInstructorWeeklyDigest extends Command
                 if ($this->isInactive($stats)) {
                     $this->line("Skipping {$environment->name} — no activity this week.");
                     $skipped++;
+
                     continue;
                 }
 
@@ -54,7 +64,7 @@ class SendInstructorWeeklyDigest extends Command
                     $this->info("DRY-RUN: {$environment->name} → {$environment->owner->email}");
                     $this->table(
                         ['Metric', 'Value'],
-                        collect($stats)->except(['top_course', 'upcoming_events'])->map(fn($v, $k) => [$k, $v])->values()->toArray()
+                        collect($stats)->except(['top_course', 'upcoming_events'])->map(fn ($v, $k) => [$k, $v])->values()->toArray()
                     );
                 } else {
                     Mail::to($environment->owner->email)
@@ -70,6 +80,7 @@ class SendInstructorWeeklyDigest extends Command
         }
 
         $this->info("Done. Sent: {$sent}, Skipped: {$skipped}");
+
         return self::SUCCESS;
     }
 
@@ -122,7 +133,7 @@ class SendInstructorWeeklyDigest extends Command
 
         $topCourseData = null;
         if ($topCourse) {
-            $course = \App\Models\Course::find($topCourse->course_id);
+            $course = Course::find($topCourse->course_id);
             if ($course) {
                 $totalForCourse = Enrollment::where('course_id', $course->id)
                     ->where('environment_id', $environmentId)->count();
@@ -142,7 +153,7 @@ class SendInstructorWeeklyDigest extends Command
 
         // Upcoming events (next 7 days)
         $eventActivities = Activity::where('type', 'event')
-            ->whereHas('block.template.courses', fn($q) => $q->where('environment_id', $environmentId))
+            ->whereHas('block.template.courses', fn ($q) => $q->where('environment_id', $environmentId))
             ->pluck('content_id');
 
         $upcomingEvents = EventContent::whereIn('id', $eventActivities)
@@ -151,10 +162,10 @@ class SendInstructorWeeklyDigest extends Command
             ->orderBy('start_date')
             ->limit(3)
             ->get()
-            ->map(fn($e) => [
+            ->map(fn ($e) => [
                 'title' => $e->title,
                 'date' => $e->start_date->format('M d, g:i A'),
-                'registrations' => \App\Models\EventRegistration::where('event_content_id', $e->id)->count(),
+                'registrations' => EventRegistration::where('event_content_id', $e->id)->count(),
             ])->toArray();
 
         return [

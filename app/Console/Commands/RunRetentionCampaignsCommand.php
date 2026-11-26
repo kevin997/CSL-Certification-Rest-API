@@ -32,8 +32,14 @@ class RunRetentionCampaignsCommand extends Command
     {
         $dryRun = (bool) $this->option('dry-run');
 
+        if (! $dryRun && ! WachapNotificationService::isConfigured() && ! config('marketing.email_enabled')) {
+            $this->warn('Marketing channels disabled: WhatsApp is not configured and marketing email is off. Nothing to send.');
+
+            return self::SUCCESS;
+        }
+
         if (! $dryRun && ! WachapNotificationService::isConfigured()) {
-            $this->warn('WhatsApp (Wachap) is not configured — every send will fall back to email.');
+            $this->warn('WhatsApp (Wachap) is not configured — email fallback is used for every send.');
         }
 
         $sendList = $service->buildSendList();

@@ -18,10 +18,17 @@ use Illuminate\Support\Facades\Mail;
 class SendLearnerWeeklyDigest extends Command
 {
     protected $signature = 'engagement:learner-digest {--dry-run : Preview stats without sending emails}';
+
     protected $description = 'Send weekly progress digest emails to learners across all active environments';
 
     public function handle(): int
     {
+        if (! config('marketing.email_enabled')) {
+            $this->info('Marketing email is disabled — learner digest skipped.');
+
+            return self::SUCCESS;
+        }
+
         $this->info('Starting learner weekly digest...');
 
         $environments = Environment::where('is_active', true)->get();
@@ -37,7 +44,8 @@ class SendLearnerWeeklyDigest extends Command
                 ->pluck('user_id');
 
             if ($learnerUserIds->isEmpty()) {
-                $this->line("  No learners, skipping.");
+                $this->line('  No learners, skipping.');
+
                 continue;
             }
 
@@ -52,6 +60,7 @@ class SendLearnerWeeklyDigest extends Command
                             // Skip if zero activity
                             if ($this->isInactive($stats)) {
                                 $totalSkipped++;
+
                                 continue;
                             }
 
@@ -72,6 +81,7 @@ class SendLearnerWeeklyDigest extends Command
         }
 
         $this->info("Done. Sent: {$totalSent}, Skipped: {$totalSkipped}");
+
         return self::SUCCESS;
     }
 
@@ -86,7 +96,7 @@ class SendLearnerWeeklyDigest extends Command
             ->with('course:id,title')
             ->get();
 
-        $courses = $enrollments->map(fn($e) => [
+        $courses = $enrollments->map(fn ($e) => [
             'title' => $e->course?->title ?? 'Unknown Course',
             'progress' => round($e->progress_percentage ?? 0),
             'status' => $e->status,
@@ -95,8 +105,7 @@ class SendLearnerWeeklyDigest extends Command
         $activeEnrollments = $enrollments->whereIn('status', ['enrolled', 'in-progress'])->count();
 
         // Activities completed this week
-        $activitiesCompleted = ActivityCompletion::whereHas('enrollment', fn($q) =>
-            $q->where('user_id', $userId)->where('environment_id', $environmentId)
+        $activitiesCompleted = ActivityCompletion::whereHas('enrollment', fn ($q) => $q->where('user_id', $userId)->where('environment_id', $environmentId)
         )->where('completed_at', '>=', $weekAgo)->count();
 
         // Certificates earned this week
@@ -132,7 +141,7 @@ class SendLearnerWeeklyDigest extends Command
                 ->limit(3)
                 ->get();
 
-            $upcomingDeadlines = $deadlines->map(fn($d) => [
+            $upcomingDeadlines = $deadlines->map(fn ($d) => [
                 'title' => $d->title,
                 'due_date' => Carbon::parse($d->due_date)->format('M d, g:i A'),
                 'course' => $d->course_title,

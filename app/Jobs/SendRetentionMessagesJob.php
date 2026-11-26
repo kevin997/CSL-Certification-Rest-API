@@ -55,9 +55,11 @@ class SendRetentionMessagesJob implements ShouldQueue
             $message = (string) $item['message'];
             $email = $item['email'] ?? null;
 
-            // Complementary channel: fire a best-effort web push too (no-op if
-            // the recipient has no subscription / push isn't configured).
-            $this->maybePush($item, $message);
+            // Complementary channel: fire a best-effort web push too (no-op
+            // if disabled, or the recipient has no subscription).
+            if (config('marketing.push_enabled')) {
+                $this->maybePush($item, $message);
+            }
 
             // PhoneNumber::normalize() never returns null — empty input yields "".
             $phone = PhoneNumber::normalize((string) ($item['phone'] ?? ''));
@@ -85,9 +87,11 @@ class SendRetentionMessagesJob implements ShouldQueue
                 WhatsAppThrottle::pause();
             }
 
-            // Email fallback: no phone, WhatsApp not configured, or the send failed above.
+            // Email fallback: no phone, WhatsApp not configured, or the send
+            // failed above. Marketing email is disabled by default; WhatsApp is
+            // the retention channel, so unmatched recipients are skipped.
             if (! $sent) {
-                if ($email) {
+                if ($email && config('marketing.email_enabled')) {
                     try {
                         $subject = Str::of($message)->before("\n")->squish()->limit(120)->toString();
 

@@ -130,7 +130,7 @@ class MarketingAutomationService
     ): void {
         [$toEmail, $toPhone] = $this->resolveRecipient($automation, $environment, $customer);
 
-        if ($automation->usesChannel(MarketingAutomation::CHANNEL_EMAIL) && filled($toEmail)) {
+        if (config('marketing.email_enabled') && $automation->usesChannel(MarketingAutomation::CHANNEL_EMAIL) && filled($toEmail)) {
             $subject = $this->substitute((string) $automation->email_subject, $variables);
             $body = $this->substitute((string) $automation->email_body, $variables);
 

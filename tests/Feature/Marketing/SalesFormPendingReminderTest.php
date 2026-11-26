@@ -25,6 +25,9 @@ class SalesFormPendingReminderTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // These suites exercise marketing email delivery, which is off by default.
+        config()->set('marketing.email_enabled', true);
         config()->set('services.wachap.base_url', 'https://example.test');
         config()->set('services.wachap.token', 'test-token');
         config()->set('services.wachap.account_id', 'test-account');
