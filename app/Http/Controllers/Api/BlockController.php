@@ -3,17 +3,22 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Activity;
 use App\Models\Block;
 use App\Models\Template;
+use App\Services\Templates\TemplateAccess;
+use App\Services\Templates\TemplateContentCloner;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 /**
  * @OA\Schema(
  *     schema="Block",
  *     required={"template_id", "title", "type", "order"},
+ *
  *     @OA\Property(property="id", type="integer", format="int64", example=1),
  *     @OA\Property(property="template_id", type="integer", format="int64", example=1),
  *     @OA\Property(property="title", type="string", example="Introduction Video"),
@@ -34,23 +39,30 @@ use Illuminate\Support\Facades\Validator;
  *     operationId="getTemplateBlocks",
  *     tags={"Blocks"},
  *     security={{"sanctum":{}}},
+ *
  *     @OA\Parameter(
  *         name="templateId",
  *         in="path",
  *         description="Template ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\Response(
  *         response=200,
  *         description="Successful operation",
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="status", type="string", example="success"),
  *             @OA\Property(
  *                 property="data",
  *                 type="array",
+ *
  *                 @OA\Items(
  *                     type="object",
+ *
  *                     @OA\Property(property="id", type="integer", format="int64", example=1),
  *                     @OA\Property(property="template_id", type="integer", format="int64", example=1),
  *                     @OA\Property(property="title", type="string", example="Introduction Video"),
@@ -64,6 +76,7 @@ use Illuminate\Support\Facades\Validator;
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=401,
  *         description="Unauthenticated"
@@ -81,17 +94,22 @@ use Illuminate\Support\Facades\Validator;
  *     operationId="createBlock",
  *     tags={"Blocks"},
  *     security={{"sanctum":{}}},
+ *
  *     @OA\Parameter(
  *         name="templateId",
  *         in="path",
  *         description="Template ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\RequestBody(
  *         required=true,
+ *
  *         @OA\JsonContent(
  *             required={"title", "type"},
+ *
  *             @OA\Property(property="title", type="string", example="Introduction Video"),
  *             @OA\Property(property="description", type="string", example="A video introduction to the course"),
  *             @OA\Property(property="type", type="string", enum={"text", "video", "quiz", "assignment", "lesson", "documentation", "event", "certificate", "feedback"}, example="video"),
@@ -104,10 +122,13 @@ use Illuminate\Support\Facades\Validator;
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=201,
  *         description="Block created successfully",
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="status", type="string", example="success"),
  *             @OA\Property(property="message", type="string", example="Block created successfully"),
  *             @OA\Property(
@@ -125,6 +146,7 @@ use Illuminate\Support\Facades\Validator;
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=401,
  *         description="Unauthenticated"
@@ -150,24 +172,31 @@ use Illuminate\Support\Facades\Validator;
  *     operationId="getBlock",
  *     tags={"Blocks"},
  *     security={{"sanctum":{}}},
+ *
  *     @OA\Parameter(
  *         name="templateId",
  *         in="path",
  *         description="Template ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\Parameter(
  *         name="id",
  *         in="path",
  *         description="Block ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\Response(
  *         response=200,
  *         description="Successful operation",
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="status", type="string", example="success"),
  *             @OA\Property(
  *                 property="data",
@@ -184,6 +213,7 @@ use Illuminate\Support\Facades\Validator;
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=401,
  *         description="Unauthenticated"
@@ -201,23 +231,30 @@ use Illuminate\Support\Facades\Validator;
  *     operationId="updateBlock",
  *     tags={"Blocks"},
  *     security={{"sanctum":{}}},
+ *
  *     @OA\Parameter(
  *         name="templateId",
  *         in="path",
  *         description="Template ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\Parameter(
  *         name="id",
  *         in="path",
  *         description="Block ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\RequestBody(
  *         required=true,
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="title", type="string", example="Updated Video Introduction"),
  *             @OA\Property(property="description", type="string", example="Updated description for the video introduction"),
  *             @OA\Property(property="type", type="string", enum={"text", "video", "quiz", "assignment", "lesson", "documentation", "event", "certificate", "feedback"}, example="video"),
@@ -230,10 +267,13 @@ use Illuminate\Support\Facades\Validator;
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=200,
  *         description="Block updated successfully",
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="status", type="string", example="success"),
  *             @OA\Property(property="message", type="string", example="Block updated successfully"),
  *             @OA\Property(
@@ -251,6 +291,7 @@ use Illuminate\Support\Facades\Validator;
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=401,
  *         description="Unauthenticated"
@@ -276,28 +317,36 @@ use Illuminate\Support\Facades\Validator;
  *     operationId="deleteBlock",
  *     tags={"Blocks"},
  *     security={{"sanctum":{}}},
+ *
  *     @OA\Parameter(
  *         name="templateId",
  *         in="path",
  *         description="Template ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\Parameter(
  *         name="id",
  *         in="path",
  *         description="Block ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\Response(
  *         response=200,
  *         description="Block deleted successfully",
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="status", type="string", example="success"),
  *             @OA\Property(property="message", type="string", example="Block deleted successfully")
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=401,
  *         description="Unauthenticated"
@@ -319,21 +368,27 @@ use Illuminate\Support\Facades\Validator;
  *     operationId="reorderBlocks",
  *     tags={"Blocks"},
  *     security={{"sanctum":{}}},
+ *
  *     @OA\Parameter(
  *         name="templateId",
  *         in="path",
  *         description="Template ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\RequestBody(
  *         required=true,
+ *
  *         @OA\JsonContent(
  *             required={"blocks"},
+ *
  *             @OA\Property(
  *                 property="blocks",
  *                 type="array",
  *                 description="Array of block IDs in the desired order",
+ *
  *                 @OA\Items(
  *                     type="integer",
  *                     example=1
@@ -341,17 +396,22 @@ use Illuminate\Support\Facades\Validator;
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=200,
  *         description="Blocks reordered successfully",
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="status", type="string", example="success"),
  *             @OA\Property(property="message", type="string", example="Blocks reordered successfully"),
  *             @OA\Property(
  *                 property="data",
  *                 type="array",
+ *
  *                 @OA\Items(
  *                     type="object",
+ *
  *                     @OA\Property(property="id", type="integer", format="int64", example=1),
  *                     @OA\Property(property="template_id", type="integer", format="int64", example=1),
  *                     @OA\Property(property="title", type="string", example="Introduction Video"),
@@ -365,6 +425,7 @@ use Illuminate\Support\Facades\Validator;
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=401,
  *         description="Unauthenticated"
@@ -390,24 +451,31 @@ use Illuminate\Support\Facades\Validator;
  *     operationId="duplicateBlock",
  *     tags={"Blocks"},
  *     security={{"sanctum":{}}},
+ *
  *     @OA\Parameter(
  *         name="templateId",
  *         in="path",
  *         description="Template ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\Parameter(
  *         name="id",
  *         in="path",
  *         description="Block ID to duplicate",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\Response(
  *         response=200,
  *         description="Block duplicated successfully",
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="status", type="string", example="success"),
  *             @OA\Property(property="message", type="string", example="Block duplicated successfully"),
  *             @OA\Property(
@@ -425,6 +493,7 @@ use Illuminate\Support\Facades\Validator;
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=401,
  *         description="Unauthenticated"
@@ -444,26 +513,34 @@ use Illuminate\Support\Facades\Validator;
  *     operationId="batchCreateBlocks",
  *     tags={"Blocks"},
  *     security={{"sanctum":{}}},
+ *
  *     @OA\Parameter(
  *         name="templateId",
  *         in="path",
  *         description="Template ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\RequestBody(
  *         required=true,
+ *
  *         @OA\JsonContent(
  *             type="array",
+ *
  *             @OA\Items(
  *                 required={"title"},
+ *
  *                 @OA\Property(property="title", type="string"),
  *                 @OA\Property(property="description", type="string"),
  *                 @OA\Property(property="order", type="integer"),
  *                 @OA\Property(property="is_required", type="boolean"),
  *                 @OA\Property(property="activities", type="array",
+ *
  *                     @OA\Items(
  *                         required={"title", "type"},
+ *
  *                         @OA\Property(property="title", type="string"),
  *                         @OA\Property(property="type", type="string"),
  *                         @OA\Property(property="description", type="string"),
@@ -474,35 +551,38 @@ use Illuminate\Support\Facades\Validator;
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=201,
  *         description="Blocks and activities created successfully",
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="status", type="string", example="success"),
  *             @OA\Property(property="message", type="string", example="Blocks and activities created successfully"),
  *             @OA\Property(property="data", type="array", @OA\Items(type="object"))
  *         )
  *     ),
+ *
  *     @OA\Response(response=401, description="Unauthenticated"),
  *     @OA\Response(response=403, description="Forbidden"),
  *     @OA\Response(response=422, description="Validation error")
  * )
  */
-
 class BlockController extends Controller
 {
     /**
      * Display a listing of blocks for a specific template.
      *
      * @param  int  $templateId
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function index($templateId)
     {
         $template = Template::findOrFail($templateId);
 
         // Check if user has access to this template
-        if (!$template->is_public && $template->created_by !== Auth::id()) {
+        if (! $template->is_public && $template->created_by !== Auth::id()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to view blocks for this template',
@@ -523,9 +603,8 @@ class BlockController extends Controller
     /**
      * Store a newly created block in storage.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $templateId
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function store(Request $request, $templateId)
     {
@@ -554,7 +633,7 @@ class BlockController extends Controller
         }
 
         // If order is not provided, place the block at the end
-        if (!$request->has('order')) {
+        if (! $request->has('order')) {
             $maxOrder = Block::where('template_id', $templateId)->max('order') ?? 0;
             $request->merge(['order' => $maxOrder + 1]);
         }
@@ -580,7 +659,7 @@ class BlockController extends Controller
      * Display the specified block.
      *
      * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function show($id)
     {
@@ -591,7 +670,7 @@ class BlockController extends Controller
         $template = Template::findOrFail($block->template_id);
 
         // Check if user has access to this template
-        if (!$template->is_public && $template->created_by !== Auth::id()) {
+        if (! $template->is_public && $template->created_by !== Auth::id()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to view this block',
@@ -607,9 +686,8 @@ class BlockController extends Controller
     /**
      * Update the specified block in storage.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function update(Request $request, $id)
     {
@@ -623,7 +701,7 @@ class BlockController extends Controller
                 'message' => 'You do not have permission to update this block',
             ], Response::HTTP_FORBIDDEN);
         }
-        
+
         // Check if template is published and enforce restrictions
         // if ($template->status === 'published') {
         //     return response()->json([
@@ -658,7 +736,7 @@ class BlockController extends Controller
      * Remove the specified block from storage.
      *
      * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function destroy($id)
     {
@@ -672,7 +750,7 @@ class BlockController extends Controller
                 'message' => 'You do not have permission to delete this block',
             ], Response::HTTP_FORBIDDEN);
         }
-        
+
         // Check if template is published and enforce restrictions
         // if ($template->status === 'published') {
         //     return response()->json([
@@ -703,9 +781,8 @@ class BlockController extends Controller
     /**
      * Reorder blocks within a template.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $templateId
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function reorder(Request $request, $templateId)
     {
@@ -718,7 +795,7 @@ class BlockController extends Controller
                 'message' => 'You do not have permission to reorder blocks in this template',
             ], Response::HTTP_FORBIDDEN);
         }
-        
+
         // Check if template is published and enforce restrictions
         // if ($template->status === 'published') {
         //     return response()->json([
@@ -743,7 +820,7 @@ class BlockController extends Controller
         // Update the order of each block
         foreach ($request->blocks as $blockData) {
             $block = Block::findOrFail($blockData['id']);
-            
+
             // Ensure the block belongs to the specified template
             if ($block->template_id != $templateId) {
                 return response()->json([
@@ -751,7 +828,7 @@ class BlockController extends Controller
                     'message' => 'One or more blocks do not belong to this template',
                 ], Response::HTTP_BAD_REQUEST);
             }
-            
+
             $block->update(['order' => $blockData['order']]);
         }
 
@@ -776,26 +853,34 @@ class BlockController extends Controller
      *     operationId="batchCreateBlocks",
      *     tags={"Blocks"},
      *     security={{"sanctum":{}}},
+     *
      *     @OA\Parameter(
      *         name="templateId",
      *         in="path",
      *         description="Template ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\RequestBody(
      *         required=true,
+     *
      *         @OA\JsonContent(
      *             type="array",
+     *
      *             @OA\Items(
      *                 required={"title"},
+     *
      *                 @OA\Property(property="title", type="string"),
      *                 @OA\Property(property="description", type="string"),
      *                 @OA\Property(property="order", type="integer"),
      *                 @OA\Property(property="is_required", type="boolean"),
      *                 @OA\Property(property="activities", type="array",
+     *
      *                     @OA\Items(
      *                         required={"title", "type"},
+     *
      *                         @OA\Property(property="title", type="string"),
      *                         @OA\Property(property="type", type="string"),
      *                         @OA\Property(property="description", type="string"),
@@ -806,15 +891,19 @@ class BlockController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=201,
      *         description="Blocks and activities created successfully",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Blocks and activities created successfully"),
      *             @OA\Property(property="data", type="array", @OA\Items(type="object"))
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Unauthenticated"),
      *     @OA\Response(response=403, description="Forbidden"),
      *     @OA\Response(response=422, description="Validation error")
@@ -822,32 +911,32 @@ class BlockController extends Controller
      */
     public function batchStore(Request $request, $templateId)
     {
-        $template = \App\Models\Template::findOrFail($templateId);
-        if ($template->created_by !== \Illuminate\Support\Facades\Auth::id()) {
+        $template = Template::findOrFail($templateId);
+        if ($template->created_by !== Auth::id()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to add blocks to this template',
             ], 403);
         }
-        
+
         // Get the request data and ensure it's properly formatted
         $data = $request->json()->all();
-        
+
         // Check if there's an environment_id in the root level (not part of blocks data)
         $environmentId = null;
         if (isset($data['environment_id'])) {
             $environmentId = $data['environment_id'];
             unset($data['environment_id']); // Remove it from the data array
         }
-        
+
         // Check if the data is in the expected format (array of blocks)
-        if (!is_array($data) || empty($data)) {
+        if (! is_array($data) || empty($data)) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Invalid input format. Expected an array of blocks.'
+                'message' => 'Invalid input format. Expected an array of blocks.',
             ], 422);
         }
-        
+
         // If the data is not numerically indexed (e.g., it's an object with numeric keys),
         // extract just the block data (ignoring any non-block properties)
         $blocksData = [];
@@ -857,20 +946,20 @@ class BlockController extends Controller
                 $blocksData[] = $value;
             }
         }
-        
+
         // If no valid blocks were found, return an error
         if (empty($blocksData)) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'No valid block data found in the request.'
+                'message' => 'No valid block data found in the request.',
             ], 422);
         }
-        
+
         $created = [];
-        \Illuminate\Support\Facades\DB::beginTransaction();
+        DB::beginTransaction();
         try {
             foreach ($blocksData as $blockData) {
-                $blockValidator = \Illuminate\Support\Facades\Validator::make($blockData, [
+                $blockValidator = Validator::make($blockData, [
                     'title' => 'required|string|max:255',
                     'description' => 'nullable|string',
                     'is_required' => 'boolean',
@@ -883,7 +972,8 @@ class BlockController extends Controller
                     'activities.*.is_required' => 'boolean',
                 ]);
                 if ($blockValidator->fails()) {
-                    \Illuminate\Support\Facades\DB::rollBack();
+                    DB::rollBack();
+
                     return response()->json([
                         'status' => 'error',
                         'message' => 'Validation failed for block',
@@ -891,26 +981,26 @@ class BlockController extends Controller
                     ], 422);
                 }
                 // If order is not provided, place the block at the end
-                $order = $blockData['order'] ?? (\App\Models\Block::where('template_id', $templateId)->max('order') + 1);
-                $block = \App\Models\Block::create([
+                $order = $blockData['order'] ?? (Block::where('template_id', $templateId)->max('order') + 1);
+                $block = Block::create([
                     'template_id' => $templateId,
                     'title' => $blockData['title'],
                     'description' => $blockData['description'] ?? null,
                     'is_required' => $blockData['is_required'] ?? false,
                     'order' => $order,
-                    'created_by' => \Illuminate\Support\Facades\Auth::id(),
+                    'created_by' => Auth::id(),
                     'status' => 'active',
                 ]);
                 $blockActivities = [];
-                if (!empty($blockData['activities']) && is_array($blockData['activities'])) {
+                if (! empty($blockData['activities']) && is_array($blockData['activities'])) {
                     foreach ($blockData['activities'] as $activityData) {
                         $activity = $block->activities()->create([
                             'title' => $activityData['title'],
                             'type' => $activityData['type'],
                             'description' => $activityData['description'] ?? null,
                             'is_required' => $activityData['is_required'] ?? false,
-                            'order' => $activityData['order'] ?? (\App\Models\Activity::where('block_id', $block->id)->max('order') + 1),
-                            'created_by' => \Illuminate\Support\Facades\Auth::id(),
+                            'order' => $activityData['order'] ?? (Activity::where('block_id', $block->id)->max('order') + 1),
+                            'created_by' => Auth::id(),
                             'status' => 'active',
                         ]);
                         $blockActivities[] = $activity;
@@ -919,19 +1009,119 @@ class BlockController extends Controller
                 $block->setRelation('activities', collect($blockActivities));
                 $created[] = $block;
             }
-            \Illuminate\Support\Facades\DB::commit();
+            DB::commit();
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Blocks and activities created successfully',
                 'data' => $created,
             ], 201);
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\DB::rollBack();
+            DB::rollBack();
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to create blocks and activities',
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Duplicate a block with its activities and their content.
+     */
+    public function duplicate($id)
+    {
+        $block = Block::findOrFail($id);
+        $template = Template::findOrFail($block->template_id);
+
+        if (! app(TemplateAccess::class)->canWrite($template, Auth::user())) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You do not have permission to duplicate this block',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        $copy = app(TemplateContentCloner::class)->duplicateBlock(
+            $block,
+            (int) Auth::id(),
+            $block->title.' (Copy)',
+        );
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Block duplicated successfully',
+            'data' => $copy->load('activities'),
+        ], Response::HTTP_CREATED);
+    }
+
+    /**
+     * Import activities (with or without their content) from another template
+     * into this block.
+     */
+    public function importActivities(Request $request, $blockId)
+    {
+        $block = Block::findOrFail($blockId);
+        $template = Template::findOrFail($block->template_id);
+        $user = Auth::user();
+        $access = app(TemplateAccess::class);
+
+        if (! $access->canWrite($template, $user)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You do not have permission to modify this block',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        $validated = $request->validate([
+            'source_template_id' => 'required|integer|exists:templates,id',
+            'activity_ids' => 'required|array|min:1',
+            'activity_ids.*' => 'integer',
+            'include_content' => 'sometimes|boolean',
+        ]);
+
+        $source = Template::withoutGlobalScopes()->findOrFail($validated['source_template_id']);
+
+        if ((int) $source->id === (int) $template->id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Choose a different template to import from.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        if (! $access->canRead($source, $user)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You do not have permission to read the source template',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        if ((int) $source->environment_id !== (int) $template->environment_id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Templates must belong to the same academy.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        try {
+            $activities = app(TemplateContentCloner::class)->importActivities(
+                $block,
+                $source,
+                $validated['activity_ids'],
+                (bool) ($validated['include_content'] ?? true),
+                (int) Auth::id(),
+            );
+        } catch (\RuntimeException $exception) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $activities->count().' activity(ies) imported successfully',
+            'data' => $activities->values(),
+        ], Response::HTTP_CREATED);
     }
 }

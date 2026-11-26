@@ -3,7 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\PurchasedTemplate;
 use App\Models\Template;
+use App\Services\Templates\TemplateAccess;
+use App\Services\Templates\TemplateContentCloner;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
@@ -13,6 +16,7 @@ use Illuminate\Support\Facades\Validator;
  * @OA\Schema(
  *     schema="Template",
  *     required={"title", "description", "created_by"},
+ *
  *     @OA\Property(property="id", type="integer", format="int64", example=1),
  *     @OA\Property(property="title", type="string", example="CSL Certification Course Template"),
  *     @OA\Property(property="template_code", type="string", example="CSL-CERT-001", nullable=true),
@@ -26,8 +30,10 @@ use Illuminate\Support\Facades\Validator;
  *     @OA\Property(
  *         property="blocks",
  *         type="array",
+ *
  *         @OA\Items(
  *             type="object",
+ *
  *             @OA\Property(property="id", type="integer", format="int64", example=1),
  *             @OA\Property(property="template_id", type="integer", format="int64", example=1),
  *             @OA\Property(property="title", type="string", example="Introduction Video"),
@@ -45,14 +51,13 @@ use Illuminate\Support\Facades\Validator;
  *     )
  * )
  */
-
 class TemplateController extends Controller
 {
     /**
      * Display a listing of the templates.
      *
-     * @return \Illuminate\Http\Response
-     * 
+     * @return Response
+     *
      * @OA\Get(
      *     path="/templates",
      *     summary="Get list of templates",
@@ -60,11 +65,14 @@ class TemplateController extends Controller
      *     operationId="getTemplatesList",
      *     tags={"Templates"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successful operation",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(
      *                 property="data",
@@ -73,13 +81,16 @@ class TemplateController extends Controller
      *                 @OA\Property(
      *                     property="data",
      *                     type="array",
+     *
      *                     @OA\Items(ref="#/components/schemas/Template")
      *                 ),
+     *
      *                 @OA\Property(property="total", type="integer", example=10),
      *                 @OA\Property(property="per_page", type="integer", example=10)
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=401,
      *         description="Unauthenticated"
@@ -103,7 +114,7 @@ class TemplateController extends Controller
         }
 
         // Fetch templates the user created, purchased, or are public
-        $purchasedTemplateIds = \App\Models\PurchasedTemplate::where('user_id', Auth::id())
+        $purchasedTemplateIds = PurchasedTemplate::where('user_id', Auth::id())
             ->pluck('template_id')
             ->toArray();
 
@@ -155,9 +166,8 @@ class TemplateController extends Controller
     /**
      * Store a newly created template in storage.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
-     * 
+     * @return Response
+     *
      * @OA\Post(
      *     path="/templates",
      *     summary="Create a new template",
@@ -165,10 +175,13 @@ class TemplateController extends Controller
      *     operationId="createTemplate",
      *     tags={"Templates"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\RequestBody(
      *         required=true,
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="title", type="string", example="CSL Certification Course Template"),
      *             @OA\Property(property="description", type="string", example="A template for creating certification courses"),
      *             @OA\Property(property="is_public", type="boolean", example=true),
@@ -177,11 +190,14 @@ class TemplateController extends Controller
      *             @OA\Property(property="settings", type="object", example={"widgets": {"calendar": true, "progress": false}})
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=201,
      *         description="Template created successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Template created successfully"),
      *             @OA\Property(
@@ -190,6 +206,7 @@ class TemplateController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=422,
      *         description="Validation error"
@@ -237,8 +254,8 @@ class TemplateController extends Controller
      * Display the specified template.
      *
      * @param  int  $id
-     * @return \Illuminate\Http\Response
-     * 
+     * @return Response
+     *
      * @OA\Get(
      *     path="/templates/{id}",
      *     summary="Get a template by ID",
@@ -246,17 +263,22 @@ class TemplateController extends Controller
      *     operationId="getTemplateById",
      *     tags={"Templates"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         required=true,
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successful operation",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(
      *                 property="data",
@@ -264,6 +286,7 @@ class TemplateController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=404,
      *         description="Template not found"
@@ -280,11 +303,11 @@ class TemplateController extends Controller
             ->findOrFail($id);
 
         // Check if user has access: creator, public, or purchased
-        $hasPurchased = \App\Models\PurchasedTemplate::where('user_id', Auth::id())
+        $hasPurchased = PurchasedTemplate::where('user_id', Auth::id())
             ->where('template_id', $template->id)
             ->exists();
 
-        if (!$template->is_public && $template->created_by !== Auth::id() && !$hasPurchased) {
+        if (! $template->is_public && $template->created_by !== Auth::id() && ! $hasPurchased) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to view this template',
@@ -305,10 +328,9 @@ class TemplateController extends Controller
     /**
      * Update the specified template in storage.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $id
-     * @return \Illuminate\Http\Response
-     * 
+     * @return Response
+     *
      * @OA\Put(
      *     path="/templates/{id}",
      *     summary="Update a template",
@@ -316,16 +338,21 @@ class TemplateController extends Controller
      *     operationId="updateTemplate",
      *     tags={"Templates"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         required=true,
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\RequestBody(
      *         required=true,
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="name", type="string", example="CSL Certification Course Template"),
      *             @OA\Property(property="description", type="string", example="A template for creating certification courses"),
      *             @OA\Property(property="is_public", type="boolean", example=true),
@@ -334,11 +361,14 @@ class TemplateController extends Controller
      *             @OA\Property(property="settings", type="object", example={"widgets": {"calendar": true, "progress": false}})
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Template updated successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Template updated successfully"),
      *             @OA\Property(
@@ -347,6 +377,7 @@ class TemplateController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=422,
      *         description="Validation error"
@@ -393,7 +424,7 @@ class TemplateController extends Controller
 
             // If trying to update restricted fields, return error
             $restrictedFields = array_diff(array_keys($request->all()), $allowedFields);
-            if (!empty($restrictedFields)) {
+            if (! empty($restrictedFields)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Cannot modify restricted fields on a published template',
@@ -419,8 +450,8 @@ class TemplateController extends Controller
      * Remove the specified template from storage.
      *
      * @param  int  $id
-     * @return \Illuminate\Http\Response
-     * 
+     * @return Response
+     *
      * @OA\Delete(
      *     path="/templates/{id}",
      *     summary="Delete a template",
@@ -428,21 +459,27 @@ class TemplateController extends Controller
      *     operationId="deleteTemplate",
      *     tags={"Templates"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         required=true,
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Template deleted successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Template deleted successfully")
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=404,
      *         description="Template not found"
@@ -477,8 +514,8 @@ class TemplateController extends Controller
      * Duplicate the specified template.
      *
      * @param  int  $id
-     * @return \Illuminate\Http\Response
-     * 
+     * @return Response
+     *
      * @OA\Post(
      *     path="/templates/{id}/duplicate",
      *     summary="Duplicate a template",
@@ -486,17 +523,22 @@ class TemplateController extends Controller
      *     operationId="duplicateTemplate",
      *     tags={"Templates"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="id",
      *         in="path",
      *         required=true,
+     *
      *         @OA\Schema(type="integer", format="int64")
      *     ),
+     *
      *     @OA\Response(
      *         response=201,
      *         description="Template duplicated successfully",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(property="status", type="string", example="success"),
      *             @OA\Property(property="message", type="string", example="Template duplicated successfully"),
      *             @OA\Property(
@@ -505,6 +547,7 @@ class TemplateController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=404,
      *         description="Template not found"
@@ -515,49 +558,101 @@ class TemplateController extends Controller
      *     )
      * )
      */
-    public function duplicate($id)
+    public function duplicate(Request $request, $id)
     {
-        $template = Template::with(['blocks.activities'])->findOrFail($id);
+        $template = Template::findOrFail($id);
+        $user = Auth::user();
 
-        // Check if user has permission: creator, public, or purchased
-        $hasPurchased = \App\Models\PurchasedTemplate::where('user_id', Auth::id())
-            ->where('template_id', $template->id)
-            ->exists();
-
-        if (!$template->is_public && $template->created_by !== Auth::id() && !$hasPurchased) {
+        if (! app(TemplateAccess::class)->canRead($template, $user)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to duplicate this template',
             ], Response::HTTP_FORBIDDEN);
         }
 
-        // Create a new template
-        $newTemplate = $template->replicate();
-        $newTemplate->title = $template->title . ' (Copy)';
-        $newTemplate->created_by = Auth::id();
-        $newTemplate->save();
+        $validated = $request->validate([
+            'title' => 'nullable|string|max:255',
+        ]);
 
-        // Duplicate blocks
-        foreach ($template->blocks as $block) {
-            $newBlock = $block->replicate();
-            $newBlock->template_id = $newTemplate->id;
-            $newBlock->save();
-
-            // Duplicate activities
-            foreach ($block->activities as $activity) {
-                $newActivity = $activity->replicate();
-                $newActivity->block_id = $newBlock->id;
-                $newActivity->save();
-
-                // Note: Content duplication would need to be handled separately
-                // depending on the activity type
-            }
-        }
+        $newTemplate = app(TemplateContentCloner::class)->duplicateTemplate(
+            $template,
+            (int) Auth::id(),
+            $validated['title'] ?? null,
+        );
 
         return response()->json([
             'status' => 'success',
             'message' => 'Template duplicated successfully',
             'data' => $newTemplate->load('blocks.activities'),
+        ], Response::HTTP_CREATED);
+    }
+
+    /**
+     * Import whole blocks (with their activities and, optionally, content)
+     * from another template into this one.
+     */
+    public function importBlocks(Request $request, $id)
+    {
+        $target = Template::findOrFail($id);
+        $user = Auth::user();
+        $access = app(TemplateAccess::class);
+
+        if (! $access->canWrite($target, $user)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You do not have permission to modify this template',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        $validated = $request->validate([
+            'source_template_id' => 'required|integer|exists:templates,id',
+            'block_ids' => 'required|array|min:1',
+            'block_ids.*' => 'integer',
+            'include_content' => 'sometimes|boolean',
         ]);
+
+        $source = Template::withoutGlobalScopes()->findOrFail($validated['source_template_id']);
+
+        if ((int) $source->id === (int) $target->id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Choose a different template to import from.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        if (! $access->canRead($source, $user)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You do not have permission to read the source template',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        if ((int) $source->environment_id !== (int) $target->environment_id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Templates must belong to the same academy.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        try {
+            $blocks = app(TemplateContentCloner::class)->importBlocks(
+                $target,
+                $source,
+                $validated['block_ids'],
+                (bool) ($validated['include_content'] ?? true),
+                (int) Auth::id(),
+            );
+        } catch (\RuntimeException $exception) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $blocks->count().' block(s) imported successfully',
+            'data' => $blocks->map->load('activities')->values(),
+        ], Response::HTTP_CREATED);
     }
 }

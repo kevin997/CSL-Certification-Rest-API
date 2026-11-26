@@ -519,6 +519,7 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     Route::put('/templates/{id}', [TemplateController::class, 'update']);
     Route::delete('/templates/{id}', [TemplateController::class, 'destroy']);
     Route::post('/templates/{id}/duplicate', [TemplateController::class, 'duplicate']);
+    Route::post('/templates/{id}/import-blocks', [TemplateController::class, 'importBlocks']);
     Route::post('/templates/{id}/sell', [MarketplaceController::class, 'sellTemplate']);
 
     // Seller Panel (BFF proxy to Marketplace API)
@@ -553,6 +554,8 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     Route::delete('/blocks/activities/{id}', [ActivityController::class, 'destroy']);
     Route::delete('/blocks/{blockId}/activities/batch', [ActivityController::class, 'batchDestroy']);
     Route::post('/blocks/activities/{id}/duplicate', [ActivityController::class, 'duplicate']);
+    Route::post('/blocks/{id}/duplicate', [BlockController::class, 'duplicate']);
+    Route::post('/blocks/{blockId}/import-activities', [BlockController::class, 'importActivities']);
     Route::post('/blocks/{blockId}/activities/reorder', [ActivityController::class, 'reorder']);
     Route::get('/blocks/activities/{id}/has-content', [ActivityController::class, 'hasContent']);
     Route::patch('/blocks/activities/{id}/change-type', [ActivityController::class, 'changeType']);

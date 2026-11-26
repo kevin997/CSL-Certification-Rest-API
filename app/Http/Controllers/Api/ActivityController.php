@@ -2,21 +2,26 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\ActivityType;
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\Block;
 use App\Models\Template;
+use App\Services\Templates\TemplateAccess;
+use App\Services\Templates\TemplateContentCloner;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\DB;
 
 /**
  * @OA\Schema(
  *     schema="Activity",
  *     required={"block_id", "title", "type", "order"},
+ *
  *     @OA\Property(property="id", type="integer", format="int64", example=1),
  *     @OA\Property(property="block_id", type="integer", format="int64", example=1),
  *     @OA\Property(property="title", type="string", example="Introduction Video"),
@@ -38,23 +43,30 @@ use Illuminate\Support\Facades\DB;
  *     operationId="getBlockActivities",
  *     tags={"Activities"},
  *     security={{"sanctum":{}}},
+ *
  *     @OA\Parameter(
  *         name="blockId",
  *         in="path",
  *         description="Block ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\Response(
  *         response=200,
  *         description="Successful operation",
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="status", type="string", example="success"),
  *             @OA\Property(
  *                 property="data",
  *                 type="array",
+ *
  *                 @OA\Items(
  *                     type="object",
+ *
  *                     @OA\Property(property="id", type="integer", format="int64", example=1),
  *                     @OA\Property(property="block_id", type="integer", format="int64", example=1),
  *                     @OA\Property(property="title", type="string", example="Introduction Video"),
@@ -69,6 +81,7 @@ use Illuminate\Support\Facades\DB;
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=401,
  *         description="Unauthenticated"
@@ -90,17 +103,22 @@ use Illuminate\Support\Facades\DB;
  *     operationId="createActivity",
  *     tags={"Activities"},
  *     security={{"sanctum":{}}},
+ *
  *     @OA\Parameter(
  *         name="blockId",
  *         in="path",
  *         description="Block ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\RequestBody(
  *         required=true,
+ *
  *         @OA\JsonContent(
  *             required={"name", "type"},
+ *
  *             @OA\Property(property="name", type="string", example="Introduction Video"),
  *             @OA\Property(property="description", type="string", example="Watch this introduction video to understand the certification process"),
  *             @OA\Property(property="type", type="string", enum={"text", "video", "quiz", "lesson", "assignment", "documentation", "event", "certificate", "feedback"}, example="video"),
@@ -109,10 +127,13 @@ use Illuminate\Support\Facades\DB;
  *             @OA\Property(property="settings", type="object", example={"duration": 300, "autoplay": false})
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=201,
  *         description="Activity created successfully",
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="status", type="string", example="success"),
  *             @OA\Property(property="message", type="string", example="Activity created successfully"),
  *             @OA\Property(
@@ -131,6 +152,7 @@ use Illuminate\Support\Facades\DB;
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=401,
  *         description="Unauthenticated"
@@ -156,17 +178,22 @@ use Illuminate\Support\Facades\DB;
  *     operationId="getActivity",
  *     tags={"Activities"},
  *     security={{"sanctum":{}}},
+ *
  *     @OA\Parameter(
  *         name="id",
  *         in="path",
  *         description="Activity ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\Response(
  *         response=200,
  *         description="Successful operation",
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="status", type="string", example="success"),
  *             @OA\Property(
  *                 property="data",
@@ -189,6 +216,7 @@ use Illuminate\Support\Facades\DB;
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=401,
  *         description="Unauthenticated"
@@ -210,16 +238,21 @@ use Illuminate\Support\Facades\DB;
  *     operationId="updateActivity",
  *     tags={"Activities"},
  *     security={{"sanctum":{}}},
+ *
  *     @OA\Parameter(
  *         name="id",
  *         in="path",
  *         description="Activity ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\RequestBody(
  *         required=true,
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="name", type="string", example="Updated Introduction Video"),
  *             @OA\Property(property="description", type="string", example="Updated description for the introduction video"),
  *             @OA\Property(property="is_required", type="boolean", example=false),
@@ -227,10 +260,13 @@ use Illuminate\Support\Facades\DB;
  *             @OA\Property(property="settings", type="object", example={"duration": 450, "autoplay": true})
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=200,
  *         description="Activity updated successfully",
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="status", type="string", example="success"),
  *             @OA\Property(property="message", type="string", example="Activity updated successfully"),
  *             @OA\Property(
@@ -249,6 +285,7 @@ use Illuminate\Support\Facades\DB;
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=401,
  *         description="Unauthenticated"
@@ -274,21 +311,27 @@ use Illuminate\Support\Facades\DB;
  *     operationId="deleteActivity",
  *     tags={"Activities"},
  *     security={{"sanctum":{}}},
+ *
  *     @OA\Parameter(
  *         name="id",
  *         in="path",
  *         description="Activity ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\Response(
  *         response=200,
  *         description="Activity deleted successfully",
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="status", type="string", example="success"),
  *             @OA\Property(property="message", type="string", example="Activity deleted successfully")
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=401,
  *         description="Unauthenticated"
@@ -310,41 +353,53 @@ use Illuminate\Support\Facades\DB;
  *     operationId="reorderActivities",
  *     tags={"Activities"},
  *     security={{"sanctum":{}}},
+ *
  *     @OA\Parameter(
  *         name="blockId",
  *         in="path",
  *         description="Block ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\RequestBody(
  *         required=true,
+ *
  *         @OA\JsonContent(
  *             required={"activities"},
+ *
  *             @OA\Property(
  *                 property="activities",
  *                 type="array",
  *                 description="Array of activity data with new order",
+ *
  *                 @OA\Items(
  *                     type="object",
  *                     required={"id", "order"},
+ *
  *                     @OA\Property(property="id", type="integer", example=1),
  *                     @OA\Property(property="order", type="integer", example=1)
  *                 )
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=200,
  *         description="Activities reordered successfully",
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="status", type="string", example="success"),
  *             @OA\Property(property="message", type="string", example="Activities reordered successfully"),
  *             @OA\Property(
  *                 property="data",
  *                 type="array",
+ *
  *                 @OA\Items(
  *                     type="object",
+ *
  *                     @OA\Property(property="id", type="integer", format="int64", example=1),
  *                     @OA\Property(property="block_id", type="integer", format="int64", example=1),
  *                     @OA\Property(property="title", type="string", example="Introduction Video"),
@@ -359,6 +414,7 @@ use Illuminate\Support\Facades\DB;
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=401,
  *         description="Unauthenticated"
@@ -384,21 +440,27 @@ use Illuminate\Support\Facades\DB;
  *     operationId="batchDeleteActivities",
  *     tags={"Activities"},
  *     security={{"sanctum":{}}},
+ *
  *     @OA\Parameter(
  *         name="blockId",
  *         in="path",
  *         description="Block ID",
  *         required=true,
+ *
  *         @OA\Schema(type="integer")
  *     ),
+ *
  *     @OA\RequestBody(
  *         required=true,
+ *
  *         @OA\JsonContent(
  *             required={"activity_ids"},
+ *
  *             @OA\Property(
  *                 property="activity_ids",
  *                 type="array",
  *                 description="Array of activity IDs to delete",
+ *
  *                 @OA\Items(
  *                     type="integer",
  *                     example=1
@@ -406,15 +468,19 @@ use Illuminate\Support\Facades\DB;
  *             )
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=200,
  *         description="Activities deleted successfully",
+ *
  *         @OA\JsonContent(
+ *
  *             @OA\Property(property="status", type="string", example="success"),
  *             @OA\Property(property="message", type="string", example="Activities deleted successfully"),
  *             @OA\Property(property="deleted_count", type="integer", example=1)
  *         )
  *     ),
+ *
  *     @OA\Response(
  *         response=401,
  *         description="Unauthenticated"
@@ -433,14 +499,13 @@ use Illuminate\Support\Facades\DB;
  *     )
  * )
  */
-
 class ActivityController extends Controller
 {
     /**
      * Display a listing of activities for a specific block.
      *
      * @param  int  $blockId
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function index($blockId)
     {
@@ -448,7 +513,7 @@ class ActivityController extends Controller
         $template = Template::findOrFail($block->template_id);
 
         // Check if user has access to this template
-        if (!$template->is_public && $template->created_by !== Auth::id()) {
+        if (! $template->is_public && $template->created_by !== Auth::id()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to view activities for this block',
@@ -468,9 +533,8 @@ class ActivityController extends Controller
     /**
      * Store a newly created activity in storage.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $blockId
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function store(Request $request, $blockId)
     {
@@ -493,7 +557,6 @@ class ActivityController extends Controller
         //     ], Response::HTTP_FORBIDDEN);
         // }
 
-
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
@@ -513,7 +576,7 @@ class ActivityController extends Controller
         }
 
         // If order is not provided, place the activity at the end
-        if (!$request->has('order')) {
+        if (! $request->has('order')) {
             $maxOrder = Activity::where('block_id', $blockId)->max('order') ?? 0;
             $request->merge(['order' => $maxOrder + 1]);
         }
@@ -542,13 +605,13 @@ class ActivityController extends Controller
      * Display the specified activity.
      *
      * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function show($id)
     {
         try {
             // Add detailed logging to identify where the error occurs
-            Log::info('Activity show method called with ID: ' . $id);
+            Log::info('Activity show method called with ID: '.$id);
 
             $activity = Activity::findOrFail($id);
             Log::info('Activity found', ['activity_id' => $activity->id, 'block_id' => $activity->block_id]);
@@ -560,11 +623,11 @@ class ActivityController extends Controller
             Log::info('Template found', ['template_id' => $template->id, 'is_public' => $template->is_public]);
 
             // Check if user has access to this template
-            if (!$template->is_public && $template->created_by !== Auth::id()) {
+            if (! $template->is_public && $template->created_by !== Auth::id()) {
                 Log::warning('Permission denied for user to access activity', [
                     'user_id' => Auth::id(),
                     'template_owner' => $template->created_by,
-                    'is_public' => $template->is_public
+                    'is_public' => $template->is_public,
                 ]);
 
                 return response()->json([
@@ -585,7 +648,7 @@ class ActivityController extends Controller
                 // Just log a warning if the relationship doesn't exist
                 Log::warning('Relationship does not exist on Activity model', [
                     'relation' => $contentRelation,
-                    'available_relations' => get_class_methods($activity)
+                    'available_relations' => get_class_methods($activity),
                 ]);
             }
 
@@ -595,17 +658,17 @@ class ActivityController extends Controller
             ]);
         } catch (\Exception $e) {
             // Log the detailed error
-            Log::error('Error in ActivityController@show: ' . $e->getMessage(), [
+            Log::error('Error in ActivityController@show: '.$e->getMessage(), [
                 'exception' => $e,
                 'trace' => $e->getTraceAsString(),
-                'activity_id' => $id
+                'activity_id' => $id,
             ]);
 
             // Return a more informative error response
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to retrieve activity: ' . $e->getMessage(),
-                'error_code' => $e->getCode()
+                'message' => 'Failed to retrieve activity: '.$e->getMessage(),
+                'error_code' => $e->getCode(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
@@ -613,9 +676,8 @@ class ActivityController extends Controller
     /**
      * Update the specified activity in storage.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function update(Request $request, $id)
     {
@@ -669,7 +731,7 @@ class ActivityController extends Controller
      * Remove the specified activity from storage.
      *
      * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function destroy($id)
     {
@@ -715,9 +777,8 @@ class ActivityController extends Controller
     /**
      * Reorder activities within a block.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $blockId
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function reorder(Request $request, $blockId)
     {
@@ -783,58 +844,44 @@ class ActivityController extends Controller
      * Duplicate an existing activity.
      *
      * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function duplicate($id)
     {
-        // Find the activity to duplicate
         $activity = Activity::findOrFail($id);
-
-        // Get the block
         $block = Block::findOrFail($activity->block_id);
-
-        // Check if user has permission to duplicate this activity
         $template = Template::findOrFail($block->template_id);
-        if ($template->created_by !== Auth::id()) {
+
+        if (! app(TemplateAccess::class)->canWrite($template, Auth::user())) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You do not have permission to duplicate this activity',
             ], Response::HTTP_FORBIDDEN);
         }
 
-        // Create a duplicate activity
-        $newActivity = $activity->replicate();
-        $newActivity->title = $activity->title . ' (Copy)';
+        // Deep copy: the new activity opens with the same content (text, quiz
+        // questions/options, lesson parts, attachments, sessions...) while
+        // learner data (responses, submissions, progress) is never copied.
+        $newActivity = app(TemplateContentCloner::class)->duplicateActivity(
+            $activity,
+            (int) Auth::id(),
+            $activity->title.' (Copy)',
+        );
 
-        // Get the highest order in the block and add 1
-        $maxOrder = Activity::where('block_id', $block->id)->max('order');
-        $newActivity->order = $maxOrder + 1;
-
-        $newActivity->save();
-
-        // Note: Content duplication would need to be handled separately
-        // depending on the activity type
         $contentRelationship = $this->getContentRelationship($activity->type);
-        if ($contentRelationship && $activity->$contentRelationship) {
-            $content = $activity->$contentRelationship;
-            $newContent = $content->replicate();
-            $newContent->activity_id = $newActivity->id;
-            $newContent->save();
-        }
 
         return response()->json([
             'status' => 'success',
             'message' => 'Activity duplicated successfully',
-            'data' => $newActivity->load($contentRelationship ?? []),
-        ]);
+            'data' => $newActivity->load($contentRelationship ? [$contentRelationship] : []),
+        ], Response::HTTP_CREATED);
     }
 
     /**
      * Batch delete multiple activities from a block.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $blockId
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function batchDestroy(Request $request, $blockId)
     {
@@ -895,14 +942,14 @@ class ActivityController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => count($activities) . ' activities deleted successfully',
+                'message' => count($activities).' activities deleted successfully',
                 'deleted_count' => count($activities),
             ]);
         } catch (\Exception $e) {
             Log::error('Error in batch delete activities', [
                 'block_id' => $blockId,
                 'activity_ids' => $activityIds,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return response()->json([
@@ -921,9 +968,9 @@ class ActivityController extends Controller
     private function getContentRelationship($type)
     {
         // Convert enum to string if it's an enum object
-        if ($type instanceof \App\Enums\ActivityType) {
+        if ($type instanceof ActivityType) {
             $type = $type->value;
-        } else if (is_object($type)) {
+        } elseif (is_object($type)) {
             // If it's another type of object, try to convert to string
             $type = (string) $type;
         }
@@ -931,7 +978,7 @@ class ActivityController extends Controller
         // Log the type for debugging
         Log::info('Activity type in getContentRelationship', [
             'type' => $type,
-            'type_class' => is_object($type) ? get_class($type) : gettype($type)
+            'type_class' => is_object($type) ? get_class($type) : gettype($type),
         ]);
 
         $contentRelationships = [
@@ -949,8 +996,9 @@ class ActivityController extends Controller
         ];
 
         // Check if the type exists in our mapping
-        if (!isset($contentRelationships[$type])) {
+        if (! isset($contentRelationships[$type])) {
             Log::warning('Unknown activity type encountered', ['type' => $type]);
+
             return null;
         }
 
@@ -961,7 +1009,7 @@ class ActivityController extends Controller
      * Check if an activity has content created.
      *
      * @param  int  $id
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function hasContent($id)
     {
@@ -999,7 +1047,7 @@ class ActivityController extends Controller
         } catch (\Exception $e) {
             Log::error('Error checking activity content', [
                 'activity_id' => $id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return response()->json([
@@ -1012,9 +1060,8 @@ class ActivityController extends Controller
     /**
      * Change the type of an activity (only if no content exists).
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  int  $id
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function changeType(Request $request, $id)
     {
@@ -1066,7 +1113,7 @@ class ActivityController extends Controller
                 'activity_id' => $id,
                 'old_type' => $oldType,
                 'new_type' => $request->type,
-                'user_id' => Auth::id()
+                'user_id' => Auth::id(),
             ]);
 
             return response()->json([
@@ -1077,7 +1124,7 @@ class ActivityController extends Controller
         } catch (\Exception $e) {
             Log::error('Error changing activity type', [
                 'activity_id' => $id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return response()->json([
