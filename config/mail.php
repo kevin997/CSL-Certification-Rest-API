@@ -14,7 +14,7 @@ return [
     |
     */
 
-    'default' => 'smtp',
+    'default' => env('MAIL_MAILER', 'smtp'),
 
     /*
     |--------------------------------------------------------------------------
@@ -130,7 +130,7 @@ return [
     */
 
     'from' => [
-        'address' => env('PHPMAILER_USERNAME', 'no.reply@okenlysolutions.com'),
+        'address' => env('MAIL_FROM_ADDRESS', env('PHPMAILER_USERNAME', 'no.reply@okenlysolutions.com')),
         'name' => env('MAIL_FROM_NAME', 'KURSA'),
     ],
 
