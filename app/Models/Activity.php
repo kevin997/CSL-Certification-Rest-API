@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Activity extends Model
 {
-    use HasFactory, SoftDeletes, HasCreatedBy;
+    use HasCreatedBy, HasFactory, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -89,6 +89,54 @@ class Activity extends Model
     public function quizContent(): HasOne
     {
         return $this->hasOne(QuizContent::class);
+    }
+
+    /**
+     * Get the text content associated with this activity.
+     */
+    public function textContent(): HasOne
+    {
+        return $this->hasOne(TextContent::class);
+    }
+
+    /**
+     * Get the documentation content associated with this activity.
+     */
+    public function documentationContent(): HasOne
+    {
+        return $this->hasOne(DocumentationContent::class);
+    }
+
+    /**
+     * Get the assignment content associated with this activity.
+     */
+    public function assignmentContent(): HasOne
+    {
+        return $this->hasOne(AssignmentContent::class);
+    }
+
+    /**
+     * Get the certificate content associated with this activity.
+     */
+    public function certificateContent(): HasOne
+    {
+        return $this->hasOne(CertificateContent::class);
+    }
+
+    /**
+     * Get the feedback content associated with this activity.
+     */
+    public function feedbackContent(): HasOne
+    {
+        return $this->hasOne(FeedbackContent::class);
+    }
+
+    /**
+     * Get the video hand-in content associated with this activity.
+     */
+    public function videoHandInContent(): HasOne
+    {
+        return $this->hasOne(VideoHandInContent::class);
     }
 
     /**
