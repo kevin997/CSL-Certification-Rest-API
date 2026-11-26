@@ -87,7 +87,7 @@ RUN docker-php-ext-install -j$(nproc) \
         exif \
         pcntl \
         bcmath \
-        zip \
+        zip
 
 # Configure and install GD with dependencies (rarely change - cached layer)
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
