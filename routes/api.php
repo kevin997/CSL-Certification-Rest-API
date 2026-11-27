@@ -802,6 +802,8 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders/{id}', [OrderController::class, 'show']);
+    Route::post('/orders/{orderId}/payment-link', \App\Http\Controllers\Api\OrderPaymentLinkController::class)
+        ->whereNumber('orderId');
     Route::put('/orders/{id}/status', [OrderController::class, 'updateStatus']);
     Route::get('/my-orders', [OrderController::class, 'myOrders']);
 
