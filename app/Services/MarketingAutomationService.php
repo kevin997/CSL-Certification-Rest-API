@@ -10,6 +10,7 @@ use App\Models\Order;
 use App\Models\SalesFormSubmission;
 use App\Services\Sales\OrderContinueUrl;
 use App\Services\Sales\ShortLinkService;
+use App\Services\WhatsApp\AcademyWhatsApp;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -113,7 +114,10 @@ class MarketingAutomationService
         ], in_array($trigger, [
             MarketingAutomation::TRIGGER_ORDER_PLACED,
             MarketingAutomation::TRIGGER_ORDER_ABANDONED,
-        ], true) ? $order->id : null, $onlyChannel);
+        ], true) ? $order->id : null, $onlyChannel,
+            $trigger === MarketingAutomation::TRIGGER_PAYMENT_CONFIRMED
+                && $automation->recipient === MarketingAutomation::RECIPIENT_CUSTOMER ? $order->id : null,
+        );
     }
 
     /**
@@ -128,6 +132,7 @@ class MarketingAutomationService
         array $customer,
         ?int $pendingOrderId = null,
         ?string $onlyChannel = null,
+        ?int $completedPaymentOrderId = null,
     ): bool {
         [$toEmail, $toPhone] = $this->resolveRecipient($automation, $environment, $customer);
 
@@ -147,8 +152,10 @@ class MarketingAutomationService
 
             $reminder = $automation->trigger === MarketingAutomation::TRIGGER_ORDER_ABANDONED;
             $phone = $this->normalizePhone($toPhone);
-            if (filled($message) && (! $reminder || (WachapNotificationService::wahaConfigured() && preg_match('/^[1-9][0-9]{6,14}$/D', $phone)))) {
-                SendWhatsAppNotification::dispatch($phone, $message, $pendingOrderId, $reminder)->afterCommit();
+            if (filled($message) && (! $reminder || ((WachapNotificationService::wahaConfigured() || app(AcademyWhatsApp::class)->available()) && preg_match('/^[1-9][0-9]{6,14}$/D', $phone)))) {
+                SendWhatsAppNotification::dispatch($phone, $message, $pendingOrderId, $reminder, $completedPaymentOrderId,
+                    $reminder ? $automation->recipient : null,
+                )->afterCommit();
                 $dispatched = true;
             }
         }

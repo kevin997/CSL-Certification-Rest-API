@@ -2,12 +2,17 @@
 
 namespace Tests\Feature\Api;
 
+use App\Jobs\SendWhatsAppNotification;
 use App\Models\Environment;
 use App\Models\EnvironmentLicence;
+use App\Models\MarketingAutomation;
+use App\Models\Order;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\WachapNotificationService;
 use App\Services\WhatsApp\AcademyWhatsApp;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -75,7 +80,7 @@ class AcademyWhatsAppTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_pairing_is_nonce_free_owner_only_and_uses_the_resolved_academy_not_request_data(): void
+    public function test_pairing_is_owner_only_and_uses_the_resolved_academy_not_request_data(): void
     {
         $academy = $this->academy();
         $other = $this->academy();
@@ -129,7 +134,56 @@ class AcademyWhatsAppTest extends TestCase
         $router = app(AcademyWhatsApp::class);
         $this->assertNull($router->senderFor($academy));
         $this->assertSame('kursa-academy-'.$academy->id, $router->senderFor($academy));
-        $this->expectException(\Illuminate\Http\Client\RequestException::class);
+        $this->expectException(RequestException::class);
         $router->senderFor($academy);
+    }
+
+    public function test_payment_confirmation_uses_tenant_and_only_uses_admin_if_known_disconnected(): void
+    {
+        $academy = $this->academy();
+        $this->paid($academy);
+        $automation = MarketingAutomation::withoutGlobalScopes()->create([
+            'environment_id' => $academy->id,
+            'trigger' => MarketingAutomation::TRIGGER_PAYMENT_CONFIRMED,
+            'recipient' => MarketingAutomation::RECIPIENT_CUSTOMER,
+            'channels' => ['whatsapp'],
+            'enabled' => true,
+        ]);
+        $order = Order::withoutGlobalScopes()->create([
+            'environment_id' => $academy->id,
+            'user_id' => $academy->owner_id,
+            'status' => Order::STATUS_COMPLETED,
+            'type' => Order::TYPE_STOREFRONT,
+            'total_amount' => 5000,
+            'order_number' => 'CONFIRM-'.Str::random(8),
+            'currency' => 'XAF',
+        ]);
+        $order->forceFill(['phone_number' => '+237699000001'])->saveQuietly();
+        config(['services.waha.base_url' => 'https://admin-waha.test', 'services.waha.api_key' => 'private', 'services.waha.session' => 'admin']);
+        Http::fake([
+            'https://tenant-waha.test/api/sessions/kursa-academy-'.$academy->id => Http::sequence()
+                ->push($this->sessionPayload($academy, 'WORKING'))->push($this->sessionPayload($academy, 'STOPPED'))
+                ->push($this->sessionPayload($academy, 'WORKING')),
+            'https://tenant-waha.test/api/contacts/check-exists*' => Http::response(['numberExists' => true, 'chatId' => '1239@lid']),
+            'https://tenant-waha.test/api/sendText' => Http::sequence()->push([], 201)->push([], 502),
+            'https://admin-waha.test/api/sessions/admin' => Http::response(['status' => 'WORKING']),
+            'https://admin-waha.test/api/sendText' => Http::response([], 201),
+        ]);
+        $job = new SendWhatsAppNotification('237699000001', 'Payment confirmation', completedPaymentOrderId: $order->id);
+        $job->handle(app(WachapNotificationService::class));
+        Http::assertSentCount(3);
+        Http::assertSent(fn ($request) => $request->url() === 'https://tenant-waha.test/api/sendText'
+            && $request['session'] === 'kursa-academy-'.$academy->id && $request['chatId'] === '1239@lid');
+        $job->handle(app(WachapNotificationService::class));
+        Http::assertSentCount(6);
+        Http::assertSent(fn ($request) => $request->url() === 'https://admin-waha.test/api/sendText' && $request['session'] === 'admin');
+
+        $job->handle(app(WachapNotificationService::class));
+        Http::assertSentCount(9);
+        $this->assertCount(1, Http::recorded(fn ($request) => $request->url() === 'https://admin-waha.test/api/sendText'));
+
+        $automation->update(['enabled' => false]);
+        $job->handle(app(WachapNotificationService::class));
+        Http::assertSentCount(9);
     }
 }

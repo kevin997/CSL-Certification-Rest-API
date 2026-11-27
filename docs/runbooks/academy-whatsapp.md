@@ -1,17 +1,17 @@
 # Academy WhatsApp sender
 
 The release is off by default. To enable it, provide a dedicated internal WAHA
-Core gateway with multi-session support (2026.6.1 or newer; pin a tested image)
+Core gateway running the GOWS engine with multi-session support (2026.6.1 or newer; pin a tested image digest)
 and a durable session store. Do not add client sessions to the existing
 platform WhatsApp or Eshu instances. Keep the gateway inaccessible from public
-networks and put the API key only in the API/worker configuration.
+networks. Do not publish a host port or expose the WAHA Dashboard or Swagger; put the API key only in the API/worker configuration.
 
 - `WAHA_TENANT_ENABLED=true`
 - `WAHA_TENANT_BASE_URL` set to the private gateway origin
 - `WAHA_TENANT_API_KEY` configured as a secret
 
 Before enabling for real accounts, use two test academies and unshared
-test handsets. Verify owner-only pairing, wrong-host rejection, one account
+test handsets with their owners’ consent. Verify owner-only pairing, wrong-host rejection, one account
 per academy, restart persistence, contact lookup, unlinked
 admin fallback only when enabled, and fallback after licence expiry/refund.
 Use test recipients; do not replay historical payments. QR endpoints must
