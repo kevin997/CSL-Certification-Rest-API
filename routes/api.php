@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AcademyWorkflowController;
 use App\Http\Controllers\Api\ActivityCompletionController;
 use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\Admin\AuditLogController;
@@ -802,6 +803,16 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     // "Notify me" interest in coming-soon integrations
     Route::get('/integration-interests', [IntegrationInterestController::class, 'index']);
     Route::post('/integration-interests', [IntegrationInterestController::class, 'store']);
+
+    Route::prefix('academy-workflows')->middleware('throttle:60,1')->controller(AcademyWorkflowController::class)->group(function () {
+        Route::get('/', 'index');
+        Route::post('/', 'store');
+        Route::post('/simulate', 'simulate');
+        Route::put('/{workflow}', 'update')->whereNumber('workflow');
+        Route::post('/{workflow}/publish', 'publish')->whereNumber('workflow');
+        Route::post('/{workflow}/pause', 'pause')->whereNumber('workflow');
+        Route::get('/{workflow}/runs', 'runs')->whereNumber('workflow');
+    });
 
     // Order routes
     Route::get('/orders', [OrderController::class, 'index']);
