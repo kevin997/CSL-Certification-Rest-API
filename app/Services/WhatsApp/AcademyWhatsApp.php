@@ -30,13 +30,22 @@ class AcademyWhatsApp
                     EnvironmentLicence::STATUS_WHITE_LABEL_ACTIVE,
                     EnvironmentLicence::STATUS_CANCEL_AT_PERIOD_END,
                 ])
-                ->whereExists(fn ($transaction) => $transaction->selectRaw('1')->from('transactions')
-                    ->whereColumn('transactions.id', 'environment_licences.activated_by_transaction_id')
-                    ->where('transactions.status', Transaction::STATUS_COMPLETED)
-                    ->where('transactions.amount', '>', 0)
-                    ->whereNull('transactions.refunded_at')
-                    ->whereNull('transactions.deleted_at'))
                 ->where('ends_at', '>', now())
+                ->where(fn ($proof) => $proof
+                    ->whereExists(fn ($transaction) => $transaction->selectRaw('1')->from('transactions')
+                        ->whereColumn('transactions.id', 'environment_licences.activated_by_transaction_id')
+                        ->where('transactions.status', Transaction::STATUS_COMPLETED)
+                        ->where('transactions.amount', '>', 0)
+                        ->whereNull('transactions.refunded_at')
+                        ->whereNull('transactions.deleted_at'))
+                    ->orWhere(fn ($grantOnly) => $grantOnly
+                        ->whereNull('activated_by_transaction_id')
+                        ->whereExists(fn ($grant) => $grant->selectRaw('1')->from('environment_licence_grants')
+                            ->whereColumn('environment_licence_grants.environment_id', 'environment_licences.environment_id')
+                            ->whereColumn('environment_licence_grants.plan_type', 'environment_licences.plan_type')
+                            ->whereNull('environment_licence_grants.revoked_at')
+                            ->where('environment_licence_grants.starts_at', '<=', now())
+                            ->where('environment_licence_grants.ends_at', '>', now()))))
                 ->exists();
     }
 

@@ -80,6 +80,54 @@ class AcademyWhatsAppTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_recording_two_admin_terms_extends_white_label_and_eligibility_without_a_payment(): void
+    {
+        $academy = $this->academy();
+        $other = $this->academy();
+        $starts = now()->subMonths(3)->startOfSecond();
+        $end = $starts->copy()->addYear();
+        $extension = $end->copy()->addYear();
+        foreach ([$academy, $other] as $environment) {
+            EnvironmentLicence::query()->updateOrCreate(['environment_id' => $environment->id], [
+                'plan_type' => EnvironmentLicence::PLAN_WHITE_LABEL,
+                'status' => EnvironmentLicence::STATUS_WHITE_LABEL_ACTIVE,
+                'starts_at' => $starts, 'ends_at' => $end, 'activated_by_transaction_id' => null,
+            ]);
+        }
+        $service = app(AcademyWhatsApp::class);
+        $this->assertFalse($service->eligible($academy));
+        $command = ['domain' => $academy->primary_domain, 'expected-end' => $end->toDateTimeString(), 'reference' => 'test-owner-authorization', '--apply' => true];
+        $this->artisan('licences:record-admin-grant-extension', [...$command, 'expected-end' => $end->copy()->addDay()->toDateTimeString()])->assertFailed();
+        $this->assertDatabaseCount('environment_licence_grants', 0);
+        $this->artisan('licences:record-admin-grant-extension', $command)->assertSuccessful();
+        $this->artisan('licences:record-admin-grant-extension', $command)->assertSuccessful();
+        $this->assertDatabaseCount('environment_licence_grants', 2);
+        $this->assertDatabaseCount('transactions', 0);
+        $this->assertDatabaseHas('environment_licence_grants', [
+            'environment_id' => $academy->id, 'starts_at' => $starts->toDateTimeString(), 'ends_at' => $end->toDateTimeString(),
+        ]);
+        $this->assertDatabaseHas('environment_licence_grants', [
+            'environment_id' => $academy->id, 'starts_at' => $end->toDateTimeString(), 'ends_at' => $extension->toDateTimeString(),
+        ]);
+        $this->assertDatabaseHas('environment_licences', [
+            'environment_id' => $academy->id, 'ends_at' => $extension->toDateTimeString(), 'activated_by_transaction_id' => null,
+        ]);
+        $this->assertTrue($service->eligible($academy));
+        $this->assertFalse($service->eligible($other));
+        config(['services.academy_whatsapp.enabled' => false]);
+        Sanctum::actingAs(User::findOrFail($academy->owner_id));
+        $this->getJson('/api/academy-whatsapp', ['X-Frontend-Domain' => $academy->primary_domain])
+            ->assertOk()->assertJsonPath('eligible', true)->assertJsonPath('available', false);
+        $this->travelTo($end);
+        $this->assertTrue($service->eligible($academy));
+        DB::table('environment_licence_grants')->where('environment_id', $academy->id)->where('starts_at', $end)
+            ->update(['revoked_at' => now()]);
+        $this->assertFalse($service->eligible($academy));
+        $this->travelTo($extension);
+        $this->assertFalse($service->eligible($academy));
+        Http::assertNothingSent();
+    }
+
     public function test_pairing_is_owner_only_and_uses_the_resolved_academy_not_request_data(): void
     {
         $academy = $this->academy();
