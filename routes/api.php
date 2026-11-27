@@ -571,6 +571,8 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     Route::post('/activities/{activityId}/video', [VideoContentController::class, 'store']);
     Route::get('/activities/{activityId}/video', [VideoContentController::class, 'show']);
     Route::put('/activities/{activityId}/video', [VideoContentController::class, 'update']);
+    Route::put('/activities/{activityId}/video/order', \App\Http\Controllers\Api\ReorderVideoCatalogueController::class)
+        ->whereNumber('activityId');
     Route::delete('/activities/{activityId}/video', [VideoContentController::class, 'destroy']);
     Route::delete('/activities/{activityId}/video/{videoContentId}', [VideoContentController::class, 'destroyVideo']);
 
