@@ -7,6 +7,7 @@ use App\Models\Environment;
 use App\Services\WhatsApp\AcademyWhatsApp;
 use App\Support\Tenancy\EnvironmentContext;
 use App\Support\Tenancy\EnvironmentResolver;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Throwable;
@@ -27,7 +28,12 @@ class AcademyWhatsAppController extends Controller
             }
         }
 
-        return $this->reply(['eligible' => $eligible, 'available' => $available, 'status' => $status]);
+        return $this->reply([
+            'eligible' => $eligible,
+            'available' => $available,
+            'status' => $status,
+            'phone_pairing' => $eligible && $available,
+        ]);
     }
 
     public function connect(Request $request, AcademyWhatsApp $whatsApp): JsonResponse
@@ -53,6 +59,28 @@ class AcademyWhatsAppController extends Controller
             $qr = $whatsApp->qr($academy);
 
             return $qr ? $this->reply(['qr' => $qr]) : $this->reply(['status' => 'NOT_READY'], 409);
+        } catch (Throwable) {
+            return $this->reply(['status' => 'UNAVAILABLE'], 503);
+        }
+    }
+
+    public function pairingCode(Request $request, AcademyWhatsApp $whatsApp): JsonResponse
+    {
+        $academy = $this->academy($request);
+        abort_unless($whatsApp->eligible($academy), 403);
+        abort_unless($whatsApp->available(), 503);
+        $data = $request->validate(['phone' => ['required', 'string', 'regex:/^\+[1-9][0-9]{7,14}$/D']]);
+
+        try {
+            $code = $whatsApp->pairingCode($academy, substr($data['phone'], 1));
+
+            return $code ? $this->reply(['code' => $code]) : $this->reply(['status' => 'NOT_READY'], 409);
+        } catch (RequestException $exception) {
+            return match ($exception->response->status()) {
+                400, 409, 422 => $this->reply(['status' => 'NOT_READY'], 409),
+                429 => $this->reply(['status' => 'RATE_LIMITED'], 429),
+                default => $this->reply(['status' => 'UNAVAILABLE'], 503),
+            };
         } catch (Throwable) {
             return $this->reply(['status' => 'UNAVAILABLE'], 503);
         }

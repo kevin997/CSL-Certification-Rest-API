@@ -795,6 +795,7 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     Route::get('/academy-whatsapp', [AcademyWhatsAppController::class, 'show'])->middleware('throttle:30,1');
     Route::post('/academy-whatsapp', [AcademyWhatsAppController::class, 'connect'])->middleware('throttle:6,1');
     Route::get('/academy-whatsapp/qr', [AcademyWhatsAppController::class, 'qr'])->middleware('throttle:30,1');
+    Route::post('/academy-whatsapp/pairing-code', [AcademyWhatsAppController::class, 'pairingCode'])->middleware('throttle:5,1,academy-whatsapp-code');
     Route::delete('/academy-whatsapp', [AcademyWhatsAppController::class, 'disconnect'])->middleware('throttle:6,1');
     Route::get('/marketing-automations', [MarketingAutomationController::class, 'index']);
     Route::post('/marketing-automations/{trigger}/generate-copy', [MarketingAutomationController::class, 'generateCopy'])->middleware('licence.feature:marketing_automations');

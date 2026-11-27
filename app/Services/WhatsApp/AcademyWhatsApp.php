@@ -110,6 +110,23 @@ class AcademyWhatsApp
         return 'data:image/png;base64,'.base64_encode($image);
     }
 
+    public function pairingCode(Environment $environment, string $phone): ?string
+    {
+        if ($this->status($environment) !== 'SCAN_QR_CODE') {
+            return null;
+        }
+
+        $code = $this->http()->post($this->base().'/api/'.$this->name($environment).'/auth/request-code', [
+            'phoneNumber' => $phone,
+        ])->throw()->json('code');
+
+        if (! is_string($code) || ! preg_match('/^[A-Z0-9]{4}-?[A-Z0-9]{4}$/Di', $code)) {
+            throw new RuntimeException('Invalid WhatsApp pairing code.');
+        }
+
+        return strtoupper(substr($code, 0, 4).'-'.substr($code, -4));
+    }
+
     /**
      * Null means there is no connected eligible academy sender; only then may
      * callers use the admin sender. Any uncertain response throws instead.
