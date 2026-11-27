@@ -117,7 +117,7 @@ class SalesFormConsentCaptureTest extends TestCase
 
         return $this->postJson("/api/sales-forms/public/{$form->slug}/submit", array_merge([
             'name' => 'Jane Learner', 'email' => 'jane@example.com', 'password' => 'password123',
-            'answers' => ['phone' => '677 12 34 56'], 'marketing_consent' => $consent,
+            'answers' => ['phone' => '+237 677 12 34 56'], 'marketing_consent' => $consent,
             'marketing_terms_version' => '2026-09',
         ], $overrides));
     }

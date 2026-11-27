@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\Admin\EnvironmentPaymentConfigController;
 use App\Http\Controllers\Api\Admin\PasswordLinkController;
 use App\Http\Controllers\Api\Admin\SystemDashboardController;
 use App\Http\Controllers\Api\Admin\WahaSessionController;
+use App\Http\Controllers\Api\AcademyWhatsAppController;
 use App\Http\Controllers\Api\Admin\WithdrawalRequestController;
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AnalyticsWidgetsController;
@@ -790,6 +791,10 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     Route::post('/sales-forms/orders/{orderId}/complete', [SalesFormSubmissionController::class, 'completeOrder']);
 
     // Marketing automations (Email/WhatsApp triggers — /settings/integrations/automations)
+    Route::get('/academy-whatsapp', [AcademyWhatsAppController::class, 'show'])->middleware('throttle:30,1');
+    Route::post('/academy-whatsapp', [AcademyWhatsAppController::class, 'connect'])->middleware('throttle:6,1');
+    Route::get('/academy-whatsapp/qr', [AcademyWhatsAppController::class, 'qr'])->middleware('throttle:30,1');
+    Route::delete('/academy-whatsapp', [AcademyWhatsAppController::class, 'disconnect'])->middleware('throttle:6,1');
     Route::get('/marketing-automations', [MarketingAutomationController::class, 'index']);
     Route::post('/marketing-automations/{trigger}/generate-copy', [MarketingAutomationController::class, 'generateCopy'])->middleware('licence.feature:marketing_automations');
     Route::put('/marketing-automations/{trigger}', [MarketingAutomationController::class, 'upsert'])->middleware('licence.feature:marketing_automations');

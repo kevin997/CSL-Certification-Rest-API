@@ -8,6 +8,7 @@ use App\Models\MarketingConsent;
 use App\Models\Order;
 use App\Models\SalesFormSubmission;
 use App\Services\Sales\ShortLinkService;
+use App\Services\WhatsApp\AcademyWhatsApp;
 use App\Support\Sales\SalesFormPhone;
 use Illuminate\Support\Facades\Mail;
 
@@ -35,7 +36,7 @@ class SalesFormPendingReminderService
         if ($channel === 'whatsapp') {
             $phone = SalesFormPhone::normalize($submission->phone);
             if ($phone === null || ! MarketingConsent::isGranted($submission, 'whatsapp')
-                || ! WachapNotificationService::wahaConfigured()) {
+                || (! WachapNotificationService::wahaConfigured() && ! app(AcademyWhatsApp::class)->available())) {
                 return false;
             }
         }

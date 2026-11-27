@@ -29,6 +29,9 @@ services:
       WAHA_BASE_URL: ${WAHA_BASE_URL:-}
       WAHA_API_KEY: ${WAHA_API_KEY:-}
       WAHA_SESSION: ${WAHA_SESSION:-kursa}
+      WAHA_TENANT_ENABLED: ${WAHA_TENANT_ENABLED:-false}
+      WAHA_TENANT_BASE_URL: ${WAHA_TENANT_BASE_URL:-}
+      WAHA_TENANT_API_KEY: ${WAHA_TENANT_API_KEY:-}
     ports:
       - "${APP_HOST_PORT:-8080}:80"
     networks:
@@ -80,6 +83,9 @@ services:
       WAHA_BASE_URL: ${WAHA_BASE_URL:-}
       WAHA_API_KEY: ${WAHA_API_KEY:-}
       WAHA_SESSION: ${WAHA_SESSION:-kursa}
+      WAHA_TENANT_ENABLED: ${WAHA_TENANT_ENABLED:-false}
+      WAHA_TENANT_BASE_URL: ${WAHA_TENANT_BASE_URL:-}
+      WAHA_TENANT_API_KEY: ${WAHA_TENANT_API_KEY:-}
     # The image healthcheck curls a web port this container does not serve, so
     # check the work instead. Not supervisord itself: it stays up and reports
     # healthy with zero programs configured, which is exactly how this container

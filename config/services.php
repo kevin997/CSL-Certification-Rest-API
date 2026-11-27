@@ -105,6 +105,12 @@ return [
     ],
 
     // WhatsApp sending via the Wachap API (same platform account as shopikat).
+    'academy_whatsapp' => [
+        'enabled' => env('WAHA_TENANT_ENABLED', false),
+        'base_url' => env('WAHA_TENANT_BASE_URL'),
+        'api_key' => env('WAHA_TENANT_API_KEY'),
+    ],
+
     'waha' => [
         'base_url' => env('WAHA_BASE_URL'),
         'api_key' => env('WAHA_API_KEY'),
