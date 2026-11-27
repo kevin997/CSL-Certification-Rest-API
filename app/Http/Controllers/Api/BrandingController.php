@@ -707,6 +707,8 @@ class BrandingController extends Controller
                     'logo_url' => $branding->logo_path ?: null,
                     'favicon_url' => $branding->favicon_path ?: null,
                     'banner_url' => $branding->banner_path ?: null,
+                    'seo_title' => $branding->seo_title,
+                    'seo_description' => $branding->seo_description,
                     'primary_color' => $branding->primary_color,
                     'secondary_color' => $branding->secondary_color,
                     'accent_color' => $branding->accent_color,
@@ -738,6 +740,7 @@ class BrandingController extends Controller
                         'id' => $environment->id,
                         'name' => $environment->name,
                         'primary_domain' => $environment->primary_domain,
+                        'domain_verified_at' => $environment->domain_verified_at?->toIso8601String(),
                     ],
                 ]);
             }
@@ -775,6 +778,7 @@ class BrandingController extends Controller
                     'id' => $environment->id,
                     'name' => $environment->name,
                     'primary_domain' => $environment->primary_domain,
+                    'domain_verified_at' => $environment->domain_verified_at?->toIso8601String(),
                 ] : null,
             ]);
         }
@@ -786,6 +790,8 @@ class BrandingController extends Controller
             'logo_url' => $branding->logo_path ?: null,
             'favicon_url' => $branding->favicon_path ?: null,
             'banner_url' => $branding->banner_path ?: null,
+            'seo_title' => $branding->seo_title,
+            'seo_description' => $branding->seo_description,
             'primary_color' => $branding->primary_color,
             'secondary_color' => $branding->secondary_color,
             'accent_color' => $branding->accent_color,
@@ -808,6 +814,7 @@ class BrandingController extends Controller
                 'id' => $environment->id,
                 'name' => $environment->name,
                 'primary_domain' => $environment->primary_domain,
+                'domain_verified_at' => $environment->domain_verified_at?->toIso8601String(),
             ] : null,
         ]);
     }

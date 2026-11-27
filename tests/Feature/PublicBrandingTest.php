@@ -75,6 +75,9 @@ class PublicBrandingTest extends TestCase
             'user_id' => $owner->id,
             'environment_id' => $environment->id,
             'company_name' => 'My Academy',
+            'landing_page_enabled' => false,
+            'seo_title' => 'Learn with My Academy',
+            'seo_description' => 'Official courses and certificates.',
             'primary_color' => '#e41b1c',
             'is_active' => true,
         ]);
@@ -83,6 +86,8 @@ class PublicBrandingTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('data.company_name', 'My Academy')
+            ->assertJsonPath('data.seo_title', 'Learn with My Academy')
+            ->assertJsonPath('data.seo_description', 'Official courses and certificates.')
             ->assertJsonPath('data.primary_color', '#e41b1c')
             ->assertJsonPath('data.environment_id', $environment->id)
             ->assertJsonPath('environment.id', $environment->id);
