@@ -21,12 +21,19 @@ class SendWhatsAppNotification implements ShouldQueue
 
     public int $tries = 3;
 
+    public ?int $pendingOrderId = null;
+
+    public bool $paymentReminder = false;
+
     public function __construct(
         public string $phoneNumber,
         public string $message,
-        public ?int $pendingOrderId = null,
-        public bool $paymentReminder = false,
-    ) {}
+        ?int $pendingOrderId = null,
+        bool $paymentReminder = false,
+    ) {
+        $this->pendingOrderId = $pendingOrderId;
+        $this->paymentReminder = $paymentReminder;
+    }
 
     public function backoff(): array
     {
