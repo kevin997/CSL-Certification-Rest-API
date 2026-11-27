@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\SalesFormSubmission;
-use App\Services\Sales\OrderContinueUrl;
+use App\Services\Sales\ShortLinkService;
 use App\Support\Tenancy\EnvironmentContext;
 use App\Support\Tenancy\EnvironmentResolver;
 use Illuminate\Http\JsonResponse;
@@ -13,7 +13,7 @@ use Illuminate\Http\Request;
 
 class OrderPaymentLinkController extends Controller
 {
-    public function __invoke(Request $request, int $orderId, OrderContinueUrl $links): JsonResponse
+    public function __invoke(Request $request, int $orderId, ShortLinkService $links): JsonResponse
     {
         // Use only the host or verified token binding, not environment_id from
         // query/body. A payment link is not ordinary order metadata: a sales
@@ -47,7 +47,7 @@ class OrderPaymentLinkController extends Controller
             );
         }
 
-        return response()->json(['data' => ['url' => $links->for($order)]])
+        return response()->json(['data' => ['url' => $links->forOrder($order)]])
             ->header('Cache-Control', 'no-store, private');
     }
 }

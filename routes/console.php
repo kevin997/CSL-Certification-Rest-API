@@ -162,10 +162,10 @@ Schedule::command(SendLearnerWeeklyDigest::class)
         Log::error('Learner weekly digest failed');
     });
 
-// Marketing automations: abandoned-order reminders - hourly
+// Marketing automations: abandoned-order reminders - check every five minutes
 Schedule::command(ProcessAbandonedOrdersCommand::class)
-    ->hourly()
-    ->withoutOverlapping(3600)
+    ->everyFiveMinutes()
+    ->withoutOverlapping(10)
     ->onOneServer()
     ->runInBackground()
     ->onFailure(function () {

@@ -19,6 +19,7 @@ use App\Models\SalesFormSubmission;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Support\Sales\SalesFormCheckoutToken;
+use App\Support\Sales\SalesFormPhone;
 use App\Support\Tenancy\TenantUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -87,11 +88,23 @@ class SalesFormSubmissionController extends Controller
 
         // Build dynamic validation rules from the form fields.
         $rules = ['answers' => 'required|array'];
+        $answers = $request->input('answers');
         foreach ($form->fields as $field) {
             $key = 'answers.'.$field->field_key;
             $fieldRules = $field->is_required ? ['required'] : ['nullable'];
             if ($field->type === 'email') {
                 $fieldRules[] = 'email';
+            }
+            if ($field->type === 'phone') {
+                $fieldRules[] = static function ($attribute, $value, $fail): void {
+                    if (SalesFormPhone::normalize($value) === null) {
+                        $fail(__('Enter a valid phone number with its country code.'));
+                    }
+                };
+                if (is_array($answers) && array_key_exists($field->field_key, $answers)) {
+                    $answers[$field->field_key] = SalesFormPhone::normalize($answers[$field->field_key])
+                        ?? $answers[$field->field_key];
+                }
             }
             $rules[$key] = $fieldRules;
         }
@@ -133,6 +146,8 @@ class SalesFormSubmissionController extends Controller
                 'errors' => $validator->errors(),
             ], 422);
         }
+
+        $request->merge(['answers' => $answers]);
 
         // Resolve which products to enroll into. A product_select field may carry
         // selected ids; otherwise default to all products attached to the form.

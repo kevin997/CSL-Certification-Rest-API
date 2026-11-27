@@ -2,9 +2,10 @@
 
 namespace Tests\Feature;
 
-use App\Events\OrderPlaced;
 use App\Events\OrderCompleted;
+use App\Events\OrderPlaced;
 use App\Listeners\ProcessOrderItems;
+use App\Mail\WelcomeToEnvironment;
 use App\Models\AssetDelivery;
 use App\Models\Block;
 use App\Models\Course;
@@ -15,7 +16,6 @@ use App\Models\Product;
 use App\Models\ProductAsset;
 use App\Models\SalesForm;
 use App\Models\SalesFormField;
-use App\Mail\WelcomeToEnvironment;
 use App\Models\SalesFormSubmission;
 use App\Models\Template;
 use App\Models\User;
@@ -471,13 +471,21 @@ class SalesFormWorkflowTest extends TestCase
             'order' => 1,
         ]);
 
+        $this->postJson("/api/sales-forms/public/{$form->slug}/submit", [
+            'name' => 'Invalid Number',
+            'email' => 'invalid-number@example.com',
+            'answers' => ['phone_whatsapp_1' => '+376699000001'],
+        ])->assertUnprocessable()->assertJsonValidationErrors('answers.phone_whatsapp_1');
+
+        $this->assertDatabaseMissing('users', ['email' => 'invalid-number@example.com']);
+
         $response = $this->withHeader('User-Agent', 'MetaTest/1.0')
             ->postJson("/api/sales-forms/public/{$form->slug}/submit", [
                 'name' => 'Guest Learner',
                 'email' => 'guest-password@example.com',
                 'answers' => [
                     'city' => 'Douala',
-                    'phone_whatsapp_1' => '+237681685901',
+                    'phone_whatsapp_1' => '+237 6 81 68 59 01',
                 ],
                 'meta' => [
                     'fbp' => 'fb.1.1700000000000.111111111.ABCDEF',
@@ -493,6 +501,10 @@ class SalesFormWorkflowTest extends TestCase
         $user = User::where('email', 'guest-password@example.com')->firstOrFail();
         $this->assertNotEmpty($user->password);
         $this->assertSame('+237681685901', $user->whatsapp_number);
+        $order = Order::withoutGlobalScopes()->findOrFail($response->json('orders.0.order_id'));
+        $this->assertSame('+237681685901', $order->phone_number);
+        $this->assertSame('+237681685901', $order->salesFormSubmission->phone);
+        $this->assertSame('+237681685901', $order->salesFormSubmission->answers['phone_whatsapp_1']);
 
         Mail::assertQueued(WelcomeToEnvironment::class, function (WelcomeToEnvironment $mail) use ($user) {
             return $mail->hasTo($user->email)
