@@ -123,6 +123,54 @@ class AcademyWhatsAppTest extends TestCase
         Http::assertSentCount(3);
     }
 
+    public function test_phone_pairing_requires_owner_paid_plan_valid_number_and_owned_ready_session(): void
+    {
+        $academy = $this->academy();
+        $other = $this->academy();
+        $headers = ['X-Frontend-Domain' => $academy->primary_domain];
+        $endpoint = '/api/academy-whatsapp/pairing-code';
+        $body = ['phone' => '+237699000001', 'environment_id' => $other->id, 'session' => 'other'];
+        Sanctum::actingAs(User::findOrFail($other->owner_id));
+        $this->postJson($endpoint, $body, $headers)->assertForbidden();
+        Sanctum::actingAs(User::findOrFail($academy->owner_id));
+        $this->postJson($endpoint, $body, $headers)->assertForbidden();
+        $this->paid($academy);
+        $this->postJson($endpoint, ['phone' => '699000001'], $headers)->assertUnprocessable();
+        Http::assertNothingSent();
+
+        $session = 'https://tenant-waha.test/api/sessions/kursa-academy-'.$academy->id;
+        $codeUrl = 'https://tenant-waha.test/api/kursa-academy-'.$academy->id.'/auth/request-code';
+        Http::fake([
+            $session => Http::sequence()->push($this->sessionPayload($academy, 'NOT_CREATED'), 404)
+                ->push($this->sessionPayload($academy, 'SCAN_QR_CODE', $other->id))
+                ->push($this->sessionPayload($academy, 'SCAN_QR_CODE')),
+            $codeUrl => Http::response(['code' => 'ABCD-1234']),
+        ]);
+        $this->postJson($endpoint, $body, $headers)->assertConflict()->assertJsonMissingPath('code');
+        $this->postJson($endpoint, $body, $headers)->assertServiceUnavailable()->assertJsonMissingPath('code');
+        $this->postJson($endpoint, $body, $headers)->assertOk()
+            ->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('code', 'ABCD-1234')->assertJsonPath('environment.id', $academy->id);
+        $this->postJson($endpoint, $body, $headers)->assertTooManyRequests();
+        Http::assertSentCount(4);
+        Http::assertSent(fn ($request) => $request->url() === $codeUrl
+            && $request->method() === 'POST' && $request->data() === ['phoneNumber' => '237699000001']);
+    }
+
+    public function test_phone_pairing_is_advertised_only_with_eligible_plan_and_gateway(): void
+    {
+        $academy = $this->academy();
+        $headers = ['X-Frontend-Domain' => $academy->primary_domain];
+        Sanctum::actingAs(User::findOrFail($academy->owner_id));
+        config(['services.academy_whatsapp.enabled' => false]);
+        $this->getJson('/api/academy-whatsapp', $headers)->assertOk()->assertJsonPath('phone_pairing', false);
+        $this->paid($academy);
+        $this->postJson('/api/academy-whatsapp/pairing-code', ['phone' => '+237699000001'], $headers)->assertServiceUnavailable();
+        Http::assertNothingSent();
+        config(['services.academy_whatsapp.enabled' => true]);
+        Http::fake(['https://tenant-waha.test/api/sessions/kursa-academy-'.$academy->id => Http::response([], 404)]);
+        $this->getJson('/api/academy-whatsapp', $headers)->assertOk()->assertJsonPath('phone_pairing', true);
+    }
+
     public function test_only_known_unconnected_status_allows_fallback(): void
     {
         $academy = $this->academy();
