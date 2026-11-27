@@ -87,6 +87,36 @@ class WachapNotificationService
     }
 
     /**
+     * Resolve the recipient through WAHA instead of assuming every phone has a
+     * routable @c.us identifier. An unverified contact is never a fallback send.
+     */
+    public function sendVerifiedPaymentReminder(string $phoneNumber, string $message, callable $stillEligible): ?Response
+    {
+        if (! self::wahaConnected()) {
+            throw new \RuntimeException('WhatsApp reminder gateway is unavailable.');
+        }
+
+        $response = Http::withHeader('X-Api-Key', (string) config('services.waha.api_key'))
+            ->acceptJson()->connectTimeout(5)->timeout(10)
+            ->get(rtrim((string) config('services.waha.base_url'), '/').'/api/contacts/check-exists', [
+                'session' => config('services.waha.session'),
+                'phone' => $phoneNumber,
+            ])->throw();
+
+        $chatId = $response->json('chatId');
+        if ($response->json('numberExists') !== true || ! is_string($chatId)
+            || ! preg_match('/^[0-9]+@(?:c\.us|lid)$/D', $chatId) || ! $stillEligible()) {
+            return null;
+        }
+
+        return $this->wahaPost('/api/sendText', [
+            'session' => config('services.waha.session'),
+            'chatId' => $chatId,
+            'text' => $message,
+        ]);
+    }
+
+    /**
      * Send an image message via WhatsApp.
      *
      * @param  array{url: string, caption?: string}  $imageData

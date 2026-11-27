@@ -62,10 +62,10 @@ class MarketingAutomationService
     /**
      * Run an order-based automation (order_placed | payment_confirmed | order_abandoned).
      */
-    public function handleOrderTrigger(Order $order, string $trigger): void
+    public function handleOrderTrigger(Order $order, string $trigger, ?string $onlyChannel = null): bool
     {
         if ($trigger === MarketingAutomation::TRIGGER_ORDER_ABANDONED && $order->status !== Order::STATUS_PENDING) {
-            return;
+            return false;
         }
 
         // Sales-form checkout already sends the account/set-password message with
@@ -76,12 +76,12 @@ class MarketingAutomationService
             && $order->type === Order::TYPE_SALES_FORM
             && $order->created_at
             && $order->created_at->gt(now()->subMinutes(10))) {
-            return;
+            return false;
         }
 
         $automation = MarketingAutomation::enabledFor($order->environment_id, $trigger);
         if (! $automation) {
-            return;
+            return false;
         }
 
         $order->loadMissing(['environment', 'user', 'salesFormSubmission', 'items.product']);
@@ -106,14 +106,14 @@ class MarketingAutomationService
             '{{continue_url}}' => $this->shortLinks->forOrder($order) ?: $this->continueUrls->for($order),
         ];
 
-        $this->dispatchSends($automation, $order->environment, $variables, [
+        return $this->dispatchSends($automation, $order->environment, $variables, [
             'email' => $order->billing_email ?? $order->user?->email,
             'phone' => $order->phone_number ?: ($order->user?->whatsapp_number ?: $order->salesFormSubmission?->phone),
             'name' => $order->billing_name ?? $order->user?->name,
         ], in_array($trigger, [
             MarketingAutomation::TRIGGER_ORDER_PLACED,
             MarketingAutomation::TRIGGER_ORDER_ABANDONED,
-        ], true) ? $order->id : null);
+        ], true) ? $order->id : null, $onlyChannel);
     }
 
     /**
@@ -127,23 +127,29 @@ class MarketingAutomationService
         array $variables,
         array $customer,
         ?int $pendingOrderId = null,
-    ): void {
+        ?string $onlyChannel = null,
+    ): bool {
         [$toEmail, $toPhone] = $this->resolveRecipient($automation, $environment, $customer);
 
-        if (config('marketing.email_enabled') && $automation->usesChannel(MarketingAutomation::CHANNEL_EMAIL) && filled($toEmail)) {
+        $dispatched = false;
+        if ($onlyChannel !== MarketingAutomation::CHANNEL_WHATSAPP && config('marketing.email_enabled') && $automation->usesChannel(MarketingAutomation::CHANNEL_EMAIL) && filled($toEmail)) {
             $subject = $this->substitute((string) $automation->email_subject, $variables);
             $body = $this->substitute((string) $automation->email_body, $variables);
 
             if (filled($subject) && filled($body)) {
                 Mail::to($toEmail)->send(new AutomationMail($subject, $body, $environment));
+                $dispatched = true;
             }
         }
 
-        if ($automation->usesChannel(MarketingAutomation::CHANNEL_WHATSAPP) && filled($toPhone)) {
+        if ($onlyChannel !== MarketingAutomation::CHANNEL_EMAIL && $automation->usesChannel(MarketingAutomation::CHANNEL_WHATSAPP) && filled($toPhone)) {
             $message = $this->substitute((string) $automation->whatsapp_template, $variables);
 
-            if (filled($message)) {
-                SendWhatsAppNotification::dispatch($this->normalizePhone($toPhone), $message, $pendingOrderId)->afterCommit();
+            $reminder = $automation->trigger === MarketingAutomation::TRIGGER_ORDER_ABANDONED;
+            $phone = $this->normalizePhone($toPhone);
+            if (filled($message) && (! $reminder || (WachapNotificationService::wahaConfigured() && preg_match('/^[1-9][0-9]{6,14}$/D', $phone)))) {
+                SendWhatsAppNotification::dispatch($phone, $message, $pendingOrderId, $reminder)->afterCommit();
+                $dispatched = true;
             }
         }
 
@@ -154,6 +160,8 @@ class MarketingAutomationService
             'email' => filled($toEmail),
             'whatsapp' => filled($toPhone),
         ]);
+
+        return $dispatched;
     }
 
     /**

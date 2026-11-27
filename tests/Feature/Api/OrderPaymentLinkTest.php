@@ -41,7 +41,7 @@ class OrderPaymentLinkTest extends TestCase
     {
         $owner = User::factory()->create();
         $customer = User::factory()->create();
-        $academy = Environment::factory()->create(['primary_domain' => 'my-academy.example', 'owner_id' => $owner->id]);
+        $academy = Environment::factory()->create(['primary_domain' => 'my-academy.example', 'domain_verified_at' => now(), 'owner_id' => $owner->id]);
         $form = SalesForm::withoutGlobalScopes()->create([
             'title' => 'Form', 'slug' => 'form', 'environment_id' => $academy->id,
             'created_by' => $owner->id, 'status' => SalesForm::STATUS_PUBLISHED,
@@ -59,9 +59,12 @@ class OrderPaymentLinkTest extends TestCase
         Sanctum::actingAs($owner);
         $link = $this->link($order, $academy)->assertOk()
             ->assertHeader('Cache-Control', 'no-store, private')->json('data.url');
-        parse_str(parse_url($link, PHP_URL_QUERY), $query);
+        $this->assertMatchesRegularExpression('~^https://my-academy\.example/p/[a-z0-9]{10}$~', $link);
+        $this->assertSame($link, $this->link($order, $academy)->assertOk()->json('data.url'));
+        $longLink = $this->getJson('/api/short-links/'.basename(parse_url($link, PHP_URL_PATH)))->assertOk()->json('data.url');
+        parse_str(parse_url($longLink, PHP_URL_QUERY), $query);
 
-        $this->assertSame("/checkout/continue-payment/{$order->id}", parse_url($link, PHP_URL_PATH));
+        $this->assertSame("/checkout/continue-payment/{$order->id}", parse_url($longLink, PHP_URL_PATH));
         $this->assertSame((string) $submission->id, $query['registration']);
         $this->assertSame('tara', $query['payment_gateway']);
         $this->assertTrue(SalesFormCheckoutToken::valid($query['checkout_token'], $order));
@@ -75,6 +78,8 @@ class OrderPaymentLinkTest extends TestCase
         $order = $this->order($academy);
         Sanctum::actingAs($owner);
         $link = $this->link($order, $academy)->assertOk()->json('data.url');
+        $this->assertMatchesRegularExpression('~^/p/[a-z0-9]{10}$~', parse_url($link, PHP_URL_PATH));
+        $link = $this->getJson('/api/short-links/'.basename(parse_url($link, PHP_URL_PATH)))->assertOk()->json('data.url');
         $this->assertSame("/checkout/continue-payment/{$order->id}", parse_url($link, PHP_URL_PATH));
         $this->assertStringNotContainsString('checkout_token', $link);
     }

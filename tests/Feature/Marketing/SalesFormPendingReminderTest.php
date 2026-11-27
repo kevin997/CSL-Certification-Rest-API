@@ -5,6 +5,7 @@ namespace Tests\Feature\Marketing;
 use App\Jobs\SendWhatsAppNotification;
 use App\Mail\AutomationMail;
 use App\Models\Environment;
+use App\Models\MarketingAutomation;
 use App\Models\MarketingConsent;
 use App\Models\Order;
 use App\Models\SalesForm;
@@ -14,6 +15,7 @@ use App\Models\User;
 use App\Services\WachapNotificationService;
 use App\Support\Sales\SalesFormCheckoutToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
@@ -28,6 +30,7 @@ class SalesFormPendingReminderTest extends TestCase
 
         // These suites exercise marketing email delivery, which is off by default.
         config()->set('marketing.email_enabled', true);
+        config()->set('services.waha', ['base_url' => 'https://waha.test', 'api_key' => 'test', 'session' => 'kursa']);
         config()->set('services.wachap.base_url', 'https://example.test');
         config()->set('services.wachap.token', 'test-token');
         config()->set('services.wachap.account_id', 'test-account');
@@ -38,6 +41,13 @@ class SalesFormPendingReminderTest extends TestCase
         $owner = User::factory()->create();
         $customer = User::factory()->create();
         $environment = Environment::factory()->create(['owner_id' => $owner->id]);
+        MarketingAutomation::withoutGlobalScopes()->create([
+            'environment_id' => $environment->id,
+            'trigger' => MarketingAutomation::TRIGGER_ORDER_ABANDONED,
+            'enabled' => true,
+            'channels' => ['whatsapp'],
+            'recipient' => MarketingAutomation::RECIPIENT_CUSTOMER,
+        ]);
         $form = SalesForm::withoutGlobalScopes()->create([
             'environment_id' => $environment->id,
             'created_by' => $owner->id,
@@ -95,7 +105,10 @@ class SalesFormPendingReminderTest extends TestCase
             $this->assertSame($order->id, $job->pendingOrderId);
             $this->assertStringContainsString('en attente de paiement', $job->message);
             preg_match('~https://[^\s]+~', $job->message, $matches);
-            parse_str((string) parse_url(rtrim($matches[0] ?? '', '.'), PHP_URL_QUERY), $params);
+            $shortUrl = rtrim($matches[0] ?? '', '.');
+            $this->assertMatchesRegularExpression('~^/p/[a-z0-9]{10}$~', parse_url($shortUrl, PHP_URL_PATH));
+            $destination = $this->getJson('/api/short-links/'.basename(parse_url($shortUrl, PHP_URL_PATH)))->assertOk()->json('data.url');
+            parse_str((string) parse_url($destination, PHP_URL_QUERY), $params);
             $this->assertTrue(SalesFormCheckoutToken::valid($params['checkout_token'] ?? null, $order));
 
             return true;
@@ -150,6 +163,90 @@ class SalesFormPendingReminderTest extends TestCase
         $this->assertNull($order->fresh()->abandoned_reminder_sent_at);
     }
 
+    public function test_whatsapp_starts_at_thirty_minutes_without_accelerating_email(): void
+    {
+        $this->freezeTime();
+        Mail::fake();
+        Queue::fake();
+        $order = $this->makeOrder('Congo');
+        $order->forceFill(['created_at' => now()->subMinutes(29)])->saveQuietly();
+
+        $this->artisan('automations:process-abandoned-orders')->assertSuccessful();
+        Queue::assertNotPushed(SendWhatsAppNotification::class);
+
+        $this->travel(1)->minute();
+        $this->artisan('automations:process-abandoned-orders')->assertSuccessful();
+        Queue::assertPushed(SendWhatsAppNotification::class, fn ($job) => $job->pendingOrderId === $order->id);
+        Mail::assertNothingOutgoing();
+    }
+
+    public function test_disabled_whatsapp_automation_does_not_queue_sales_form_reminders(): void
+    {
+        Mail::fake();
+        Queue::fake();
+        $order = $this->makeOrder('Congo');
+        MarketingAutomation::withoutGlobalScopes()->where('environment_id', $order->environment_id)
+            ->update(['enabled' => false]);
+
+        $this->artisan('automations:process-abandoned-orders')->assertSuccessful();
+
+        Queue::assertNotPushed(SendWhatsAppNotification::class);
+        $this->assertNull($order->fresh()->abandoned_whatsapp_attempted_at);
+    }
+
+    public function test_expired_order_never_queues_or_sends_a_reminder(): void
+    {
+        $this->freezeTime();
+        Mail::fake();
+        Queue::fake();
+        $order = $this->makeOrder('Congo');
+        $order->forceFill(['created_at' => now()->subDays(7)])->saveQuietly();
+
+        $this->artisan('automations:process-abandoned-orders')->assertSuccessful();
+        Mail::assertNothingOutgoing();
+        Queue::assertNotPushed(SendWhatsAppNotification::class);
+
+        $wachap = $this->mock(WachapNotificationService::class);
+        $wachap->shouldNotReceive('sendWhatsApp');
+        $wachap->shouldNotReceive('sendVerifiedPaymentReminder');
+        (new SendWhatsAppNotification('242050330038', 'Reminder', $order->id, true))->handle($wachap);
+    }
+
+    public function test_reminder_uses_verified_chat_id_and_only_marks_success_once(): void
+    {
+        $order = $this->makeOrder('Congo');
+        config()->set('services.waha', ['base_url' => 'https://waha.test', 'api_key' => 'test', 'session' => 'kursa']);
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://waha.test/api/sessions/kursa' => Http::response(['status' => 'WORKING']),
+            'https://waha.test/api/contacts/check-exists*' => Http::response(['numberExists' => true, 'chatId' => '123456789@lid']),
+            'https://waha.test/api/sendText' => Http::response(['id' => 'sent']),
+        ]);
+        $job = new SendWhatsAppNotification('242050330038', 'Reminder', $order->id, true);
+        $job->handle(app(WachapNotificationService::class));
+        $this->assertNotNull($order->fresh()->abandoned_whatsapp_sent_at);
+        $job->handle(app(WachapNotificationService::class));
+        Http::assertSentCount(3);
+        Http::assertSent(fn ($request) => $request->url() === 'https://waha.test/api/sendText'
+            && $request['chatId'] === '123456789@lid');
+    }
+
+    public function test_unregistered_number_is_not_sent_or_marked_sent(): void
+    {
+        $order = $this->makeOrder('Congo');
+        config()->set('services.waha', ['base_url' => 'https://waha.test', 'api_key' => 'test', 'session' => 'kursa']);
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://waha.test/api/sessions/kursa' => Http::response(['status' => 'WORKING']),
+            'https://waha.test/api/contacts/check-exists*' => Http::response(['numberExists' => false]),
+        ]);
+
+        (new SendWhatsAppNotification('242050330038', 'Reminder', $order->id, true))->handle(app(WachapNotificationService::class));
+
+        Http::assertSentCount(2);
+        $this->assertNull($order->fresh()->abandoned_whatsapp_sent_at);
+    }
+
     public function test_queued_whatsapp_does_not_send_after_order_completes(): void
     {
         $order = $this->makeOrder('Congo');
@@ -160,6 +257,7 @@ class SalesFormPendingReminderTest extends TestCase
         config()->set('services.wachap.account_id', 'test-account');
         $wachap = $this->mock(WachapNotificationService::class);
         $wachap->shouldNotReceive('sendWhatsApp');
+        $wachap->shouldNotReceive('sendVerifiedPaymentReminder');
 
         $job->handle($wachap);
     }

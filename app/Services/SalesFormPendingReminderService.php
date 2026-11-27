@@ -8,6 +8,7 @@ use App\Models\MarketingConsent;
 use App\Models\Order;
 use App\Models\SalesFormSubmission;
 use App\Services\Sales\ShortLinkService;
+use App\Support\Sales\SalesFormPhone;
 use Illuminate\Support\Facades\Mail;
 
 class SalesFormPendingReminderService
@@ -16,13 +17,27 @@ class SalesFormPendingReminderService
         private readonly ShortLinkService $shortLinks,
     ) {}
 
-    public function send(Order $order): bool
+    public function send(Order $order, string $channel): bool
     {
         $order->loadMissing(['salesFormSubmission.salesForm.fields', 'environment', 'items.product']);
         $submission = $order->salesFormSubmission;
 
         if ($order->status !== Order::STATUS_PENDING || ! $submission || $submission->status !== SalesFormSubmission::STATUS_PENDING) {
             return false;
+        }
+
+        $phone = null;
+        if ($channel === 'email' && (! config('marketing.email_enabled') || ! filled($submission->email)
+            || ! MarketingConsent::isGranted($submission, 'email'))) {
+            return false;
+        }
+
+        if ($channel === 'whatsapp') {
+            $phone = SalesFormPhone::normalize($submission->phone);
+            if ($phone === null || ! MarketingConsent::isGranted($submission, 'whatsapp')
+                || ! WachapNotificationService::wahaConfigured()) {
+                return false;
+            }
         }
 
         $language = $this->languageFor($submission);
@@ -36,30 +51,31 @@ class SalesFormPendingReminderService
             ->implode(', ');
         $productLabel = $productName !== '' ? $productName : $form;
         $url = $this->shortLinks->forOrder($order);
+        if ($url === '') {
+            return false;
+        }
 
         if ($language === 'fr') {
             $subject = 'Votre paiement pour '.$productLabel.' est en attente';
-            $message = "Bonjour {$name}, votre commande {$order->order_number} pour {$productLabel} est en attente de paiement. Terminez votre paiement ici : {$url}. Si vous avez déjà payé, contactez-nous avec votre numéro de commande.";
+            $message = "Bonjour {$name}, votre commande {$order->order_number} pour {$productLabel} est en attente de paiement. Terminez votre paiement ici :\n{$url}\nSi vous avez déjà payé, contactez-nous avec votre numéro de commande.";
         } else {
             $subject = 'Your payment for '.$productLabel.' is awaiting payment';
-            $message = "Hello {$name}, your order {$order->order_number} for {$productLabel} is awaiting payment. Complete your payment here: {$url}. If you have already paid, contact us with your order number.";
+            $message = "Hello {$name}, your order {$order->order_number} for {$productLabel} is awaiting payment. Complete your payment here:\n{$url}\nIf you have already paid, contact us with your order number.";
         }
 
-        $sent = false;
-        if (config('marketing.email_enabled') && filled($submission->email) && MarketingConsent::isGranted($submission, 'email')) {
+        if ($channel === 'email') {
             Mail::to($submission->email)->send(new AutomationMail($subject, $message, $order->environment));
-            $sent = true;
+
+            return true;
         }
 
-        if (filled($submission->phone) && MarketingConsent::isGranted($submission, 'whatsapp') && WachapNotificationService::isConfigured()) {
-            $phone = preg_replace('/[^0-9]/', '', $submission->phone);
-            if (filled($phone)) {
-                SendWhatsAppNotification::dispatch($phone, $message, $order->id)->afterCommit();
-                $sent = true;
-            }
+        if ($phone !== null) {
+            SendWhatsAppNotification::dispatch(substr($phone, 1), $message, $order->id, true)->afterCommit();
+
+            return true;
         }
 
-        return $sent;
+        return false;
     }
 
     private function languageFor(SalesFormSubmission $submission): string

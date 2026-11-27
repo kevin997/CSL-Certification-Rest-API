@@ -247,6 +247,7 @@ class MarketingAutomationTest extends TestCase
             'billing_name' => $submission->name,
             'billing_email' => $submission->email,
         ]);
+        $order->forceFill(['created_at' => now()->subMinutes(11)]);
         $order->phone_number = $submission->phone;
         $order->save();
 
