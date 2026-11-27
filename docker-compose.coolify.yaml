@@ -1,6 +1,6 @@
 # Deployment descriptor for Coolify.
 #
-# Three containers, where the previous deployment ran seven. That is deliberate.
+# Three application roles, plus an isolated, no-public-port academy WhatsApp gateway.
 #
 # CONTAINER_ROLE selects the workload. Each role copies its own supervisor
 # config in before starting supervisord, so a role starts its programs and no
@@ -29,13 +29,17 @@ services:
       WAHA_BASE_URL: ${WAHA_BASE_URL:-}
       WAHA_API_KEY: ${WAHA_API_KEY:-}
       WAHA_SESSION: ${WAHA_SESSION:-kursa}
-      WAHA_TENANT_ENABLED: ${WAHA_TENANT_ENABLED:-false}
-      WAHA_TENANT_BASE_URL: ${WAHA_TENANT_BASE_URL:-}
-      WAHA_TENANT_API_KEY: ${WAHA_TENANT_API_KEY:-}
+      WAHA_TENANT_ENABLED: ${WAHA_TENANT_ENABLED:-true}
+      WAHA_TENANT_BASE_URL: http://academy-gateway:3000
+      WAHA_TENANT_API_KEY_FILE: /run/secrets/academy_whatsapp_key
+      WAHA_TENANT_PILOT_ENVIRONMENT_ID: "15"
+    secrets:
+      - academy_whatsapp_key
     ports:
       - "${APP_HOST_PORT:-8080}:80"
     networks:
       - csl-shared-network
+      - academy-wa-private
 
   reverb:
     build:
@@ -83,9 +87,12 @@ services:
       WAHA_BASE_URL: ${WAHA_BASE_URL:-}
       WAHA_API_KEY: ${WAHA_API_KEY:-}
       WAHA_SESSION: ${WAHA_SESSION:-kursa}
-      WAHA_TENANT_ENABLED: ${WAHA_TENANT_ENABLED:-false}
-      WAHA_TENANT_BASE_URL: ${WAHA_TENANT_BASE_URL:-}
-      WAHA_TENANT_API_KEY: ${WAHA_TENANT_API_KEY:-}
+      WAHA_TENANT_ENABLED: ${WAHA_TENANT_ENABLED:-true}
+      WAHA_TENANT_BASE_URL: http://academy-gateway:3000
+      WAHA_TENANT_API_KEY_FILE: /run/secrets/academy_whatsapp_key
+      WAHA_TENANT_PILOT_ENVIRONMENT_ID: "15"
+    secrets:
+      - academy_whatsapp_key
     # The image healthcheck curls a web port this container does not serve, so
     # check the work instead. Not supervisord itself: it stays up and reports
     # healthy with zero programs configured, which is exactly how this container
@@ -102,9 +109,54 @@ services:
       start_period: 60s
     networks:
       - csl-shared-network
+      - academy-wa-private
+
+  academy-gateway:
+    image: devlikeapro/waha@sha256:2fc1787ddbd343ed2e7d59482846d1b22aa5ca134e29aa8d42d0e88c54e24779
+    restart: unless-stopped
+    labels:
+      traefik.enable: "false"
+    environment:
+      WHATSAPP_DEFAULT_ENGINE: GOWS
+      WAHA_RUN_XVFB: "false"
+      WAHA_DASHBOARD_ENABLED: "false"
+      WHATSAPP_SWAGGER_ENABLED: "false"
+      WAHA_EVENTS_DOWNLOAD_MEDIA: "false"
+    entrypoint: ["/usr/bin/tini", "--", "/bin/sh", "-ec"]
+    command:
+      - |
+        export WAHA_API_KEY="$$(cat /run/secrets/academy_whatsapp_key)"
+        test "$${#WAHA_API_KEY}" -eq 64
+        exec /entrypoint.sh
+    secrets:
+      - academy_whatsapp_key
+    volumes:
+      - academy-whatsapp-sessions:/app/.sessions
+    networks:
+      - academy-wa-private
+    healthcheck:
+      test: ["CMD", "node", "-e", "const k=require('fs').readFileSync('/run/secrets/academy_whatsapp_key','utf8').trim();fetch('http://127.0.0.1:3000/api/version',{headers:{'X-Api-Key':k},signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 25s
+      timeout: 7s
+      start_period: 90s
+      retries: 3
+    mem_limit: 1536m
+    cpus: 1.5
 
 networks:
   # Owned by the CSL-DevOps stack, which holds csl-mysql-certification and
   # csl-kafka. External means join it, never create it.
   csl-shared-network:
     external: true
+
+  # A private bridge for just the gateway and its callers. Keep outbound access
+  # for WhatsApp, but do not attach the gateway to proxy or shared service nets.
+  academy-wa-private:
+    driver: bridge
+
+volumes:
+  academy-whatsapp-sessions:
+
+secrets:
+  academy_whatsapp_key:
+    file: /opt/kursa-academy-whatsapp/api-key

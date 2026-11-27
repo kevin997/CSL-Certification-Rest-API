@@ -219,6 +219,38 @@ class AcademyWhatsAppTest extends TestCase
         $this->getJson('/api/academy-whatsapp', $headers)->assertOk()->assertJsonPath('phone_pairing', true);
     }
 
+    public function test_private_gateway_pilot_never_opens_a_session_for_another_academy(): void
+    {
+        $pilot = $this->academy();
+        $other = $this->academy();
+        $this->paid($pilot);
+        $this->paid($other);
+        $keyFile = tempnam(sys_get_temp_dir(), 'test-academy-wa-');
+        file_put_contents($keyFile, "simulated-pilot-key\n");
+        config([
+            'services.academy_whatsapp.pilot_environment_id' => $pilot->id,
+            'services.academy_whatsapp.api_key' => '',
+            'services.academy_whatsapp.api_key_file' => $keyFile,
+        ]);
+        try {
+            $api = '/api/academy-whatsapp';
+            $otherHost = ['X-Frontend-Domain' => $other->primary_domain];
+            Sanctum::actingAs(User::findOrFail($other->owner_id));
+            $this->getJson($api, $otherHost)->assertOk()->assertJsonPath('eligible', true)->assertJsonPath('available', false);
+            $this->postJson($api, [], $otherHost)->assertServiceUnavailable();
+            $this->assertNull(app(AcademyWhatsApp::class)->senderFor($other));
+            Http::assertNothingSent();
+
+            $pilotHost = ['X-Frontend-Domain' => $pilot->primary_domain];
+            Sanctum::actingAs(User::findOrFail($pilot->owner_id));
+            Http::fake(['https://tenant-waha.test/api/sessions/kursa-academy-'.$pilot->id => Http::response([], 404)]);
+            $this->getJson($api, $pilotHost)->assertOk()->assertJsonPath('available', true)->assertJsonPath('status', 'NOT_CREATED');
+            Http::assertSent(fn ($request) => $request->hasHeader('X-Api-Key', 'simulated-pilot-key'));
+        } finally {
+            unlink($keyFile);
+        }
+    }
+
     public function test_only_known_unconnected_status_allows_fallback(): void
     {
         $academy = $this->academy();

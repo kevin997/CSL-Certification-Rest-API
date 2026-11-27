@@ -17,7 +17,14 @@ class AcademyWhatsApp
     {
         return (bool) config('services.academy_whatsapp.enabled')
             && filled(config('services.academy_whatsapp.base_url'))
-            && filled(config('services.academy_whatsapp.api_key'));
+            && $this->apiKey() !== '';
+    }
+
+    public function availableFor(Environment $environment): bool
+    {
+        $pilot = config('services.academy_whatsapp.pilot_environment_id');
+
+        return (blank($pilot) || (string) $pilot === (string) $environment->id) && $this->available();
     }
 
     public function eligible(Environment $environment): bool
@@ -142,7 +149,7 @@ class AcademyWhatsApp
      */
     public function senderFor(Environment $environment): ?string
     {
-        return $this->available() && $this->eligible($environment) && $this->status($environment) === 'WORKING'
+        return $this->availableFor($environment) && $this->eligible($environment) && $this->status($environment) === 'WORKING'
             ? $this->name($environment)
             : null;
     }
@@ -197,9 +204,25 @@ class AcademyWhatsApp
         return rtrim((string) config('services.academy_whatsapp.base_url'), '/');
     }
 
+    private function apiKey(): string
+    {
+        $value = trim((string) config('services.academy_whatsapp.api_key'));
+        if ($value !== '') {
+            return $value;
+        }
+
+        $file = config('services.academy_whatsapp.api_key_file');
+        if (! is_string($file) || ! is_readable($file) || ! is_file($file)) {
+            return '';
+        }
+
+        // Read at runtime; never embed the mounted secret in Laravel's config cache.
+        return trim((string) @file_get_contents($file, false, null, 0, 512));
+    }
+
     private function http(): PendingRequest
     {
-        return Http::withHeader('X-Api-Key', (string) config('services.academy_whatsapp.api_key'))
+        return Http::withHeader('X-Api-Key', $this->apiKey())
             ->withOptions(['allow_redirects' => false])
             ->acceptJson()->connectTimeout(3)->timeout(8);
     }

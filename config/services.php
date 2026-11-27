@@ -109,6 +109,8 @@ return [
         'enabled' => env('WAHA_TENANT_ENABLED', false),
         'base_url' => env('WAHA_TENANT_BASE_URL'),
         'api_key' => env('WAHA_TENANT_API_KEY'),
+        'api_key_file' => env('WAHA_TENANT_API_KEY_FILE'),
+        'pilot_environment_id' => env('WAHA_TENANT_PILOT_ENVIRONMENT_ID'),
     ],
 
     'waha' => [

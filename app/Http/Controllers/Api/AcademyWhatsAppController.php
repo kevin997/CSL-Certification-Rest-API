@@ -18,7 +18,7 @@ class AcademyWhatsAppController extends Controller
     {
         $academy = $this->academy($request);
         $eligible = $whatsApp->eligible($academy);
-        $available = $whatsApp->available();
+        $available = $whatsApp->availableFor($academy);
         $status = 'NOT_CREATED';
         if ($available) {
             try {
@@ -40,7 +40,7 @@ class AcademyWhatsAppController extends Controller
     {
         $academy = $this->academy($request);
         abort_unless($whatsApp->eligible($academy), 403);
-        abort_unless($whatsApp->available(), 503);
+        abort_unless($whatsApp->availableFor($academy), 503);
 
         try {
             return $this->reply(['status' => $whatsApp->connect($academy)]);
@@ -52,7 +52,7 @@ class AcademyWhatsAppController extends Controller
     public function qr(Request $request, AcademyWhatsApp $whatsApp): JsonResponse
     {
         $academy = $this->academy($request);
-        abort_unless($whatsApp->available(), 503);
+        abort_unless($whatsApp->availableFor($academy), 503);
         abort_unless($whatsApp->eligible($academy), 403);
 
         try {
@@ -68,7 +68,7 @@ class AcademyWhatsAppController extends Controller
     {
         $academy = $this->academy($request);
         abort_unless($whatsApp->eligible($academy), 403);
-        abort_unless($whatsApp->available(), 503);
+        abort_unless($whatsApp->availableFor($academy), 503);
         $data = $request->validate(['phone' => ['required', 'string', 'regex:/^\+[1-9][0-9]{7,14}$/D']]);
 
         try {
@@ -89,7 +89,7 @@ class AcademyWhatsAppController extends Controller
     public function disconnect(Request $request, AcademyWhatsApp $whatsApp): JsonResponse
     {
         $academy = $this->academy($request);
-        abort_unless($whatsApp->available(), 503);
+        abort_unless($whatsApp->availableFor($academy), 503);
 
         // A former subscriber may still unlink their device.
         try {
