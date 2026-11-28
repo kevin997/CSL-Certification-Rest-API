@@ -25,6 +25,18 @@ class SessionAuthController extends Controller
 {
     public function login(Request $request, EnvironmentLearnerMembership $memberships)
     {
+        // This endpoint creates a browser session and must run inside
+        // Sanctum's stateful middleware (including its CSRF protection).
+        // A stateless client should fail before any credential or login work,
+        // not crash after credentials have been accepted.
+        if (! $request->hasSession()) {
+            return response()->json([
+                'success' => false,
+                'code' => 'browser_session_required',
+                'message' => 'Could not start a browser session. Reopen the sign-in page and try again.',
+            ], 419);
+        }
+
         $request->validate([
             'email' => 'required|email',
             'password' => 'required',
