@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\EnsureAcademyStaff;
 use App\Models\Course;
 use App\Models\Enrollment;
 use App\Models\EnvironmentUser;
@@ -70,7 +71,7 @@ class EnrollmentController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $environmentId = session("current_environment_id");
+        $environmentId = $request->attributes->get(EnsureAcademyStaff::ACADEMY_ID);
 
         $query = Enrollment::query();
 
