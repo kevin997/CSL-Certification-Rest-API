@@ -16,6 +16,10 @@ class EnvironmentUsersSeeder extends Seeder
      */
     public function run(): void
     {
+        if (!app()->environment('local', 'development')) {
+            return;
+        }
+
         if (!Environment::where('primary_domain', 'learning.csl-brands.com')->exists()) {
 
             // 1. Create users with specific roles (or find them if they already exist)

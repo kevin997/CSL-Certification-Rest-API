@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Models\User;
-use Database\Seeders\AdminSeeder;
 use Database\Seeders\PlanSeeder;
 use Database\Seeders\DemoPlanSeeder;
 use Database\Seeders\EnvironmentUsersSeeder;
@@ -22,12 +21,10 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Call the admin seeder
+        // Startup and restores seed reference data, never production accounts.
         $this->call([
-            AdminSeeder::class,
             PlanSeeder::class,
             DemoPlanSeeder::class,
-            EnvironmentUsersSeeder::class,
             ThirdPartyServiceSeeder::class,
             TaxZoneSeeder::class,
             AfricanTaxZoneSeeder::class,
@@ -37,6 +34,8 @@ class DatabaseSeeder extends Seeder
 
         // Development test user
         if (app()->environment('local', 'development')) {
+            $this->call(EnvironmentUsersSeeder::class);
+
             User::firstOrCreate(
                 ['email' => 'test@example.com'],
                 ['name' => 'Test User', 'password' => 'password']
