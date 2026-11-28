@@ -272,7 +272,10 @@ class SessionAuthRoleConsistencyTest extends TestCase
             'owner_id' => User::factory()->create()->id,
         ]);
 
-        $response = $this->withSession(['current_environment_id' => $existingEnvironment->id])
+        $response = $this->withHeaders([
+            'Origin' => 'http://localhost:3000',
+            'Referer' => 'http://localhost:3000/login',
+        ])->withSession(['current_environment_id' => $existingEnvironment->id])
             ->actingAs($existingUser)
             ->postJson('/api/session/login', [
                 'email' => 'missing@example.com',
