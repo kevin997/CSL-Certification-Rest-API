@@ -7,6 +7,7 @@ use App\Events\OrderPlaced;
 use App\Events\SalesFormSubmitted;
 use App\Events\UserCreatedDuringCheckout;
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\EnsureAcademyStaff;
 use App\Models\Enrollment;
 use App\Models\Environment;
 use App\Models\EnvironmentUser;
@@ -452,9 +453,10 @@ class SalesFormSubmissionController extends Controller
      *
      * POST /api/sales-forms/orders/{orderId}/complete
      */
-    public function completeOrder($orderId)
+    public function completeOrder(Request $request, $orderId)
     {
         $order = Order::with(['items.product.courses', 'salesFormSubmission'])
+            ->where('environment_id', $request->attributes->get(EnsureAcademyStaff::ACADEMY_ID))
             ->where('type', Order::TYPE_SALES_FORM)
             ->findOrFail($orderId);
 

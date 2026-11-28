@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\EnsureAcademyStaff;
 use App\Models\AcademyVisitEvent;
 use App\Models\AcademyVisitor;
 use App\Models\Invoice;
@@ -244,7 +245,7 @@ class AnalyticsWidgetsController extends Controller
 
     public function financialWidgets(Request $request): JsonResponse
     {
-        $environmentId = $this->getEnvironmentId($request);
+        $environmentId = $request->attributes->get(EnsureAcademyStaff::ACADEMY_ID);
         if (! $environmentId) {
             return response()->json([
                 'success' => false,
@@ -290,7 +291,7 @@ class AnalyticsWidgetsController extends Controller
 
     public function trafficWidgets(Request $request): JsonResponse
     {
-        $environmentId = $this->getEnvironmentId($request);
+        $environmentId = $request->attributes->get(EnsureAcademyStaff::ACADEMY_ID);
         if (! $environmentId) {
             return response()->json([
                 'success' => false,

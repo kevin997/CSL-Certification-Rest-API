@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\EnsureAcademyStaff;
 use App\Models\Activity;
 use App\Models\ActivityCompletion;
 use App\Models\Course;
@@ -61,7 +62,7 @@ class DashboardController extends Controller
     public function getDashboardData(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = session()->get('current_environment_id');
+        $environmentId = $request->attributes->get(EnsureAcademyStaff::ACADEMY_ID);
 
         // Optional date-range filtering for windowed stats. Both start_date and
         // end_date must be provided (as YYYY-MM-DD) and valid for the range to
