@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\EnsureAcademyStaff;
 use App\Models\Course;
 use App\Models\Enrollment;
 use App\Models\Environment;
@@ -24,7 +25,7 @@ class AnalyticsController extends Controller
     public function overview(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = session('current_environment_id');
+        $environmentId = $request->attributes->get(EnsureAcademyStaff::ACADEMY_ID);
         
         if (!$environmentId) {
             return response()->json([
@@ -346,7 +347,7 @@ class AnalyticsController extends Controller
     public function userEngagement(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = session('current_environment_id');
+        $environmentId = $request->attributes->get(EnsureAcademyStaff::ACADEMY_ID);
         
         if (!$environmentId) {
             return response()->json([
@@ -425,7 +426,7 @@ class AnalyticsController extends Controller
     public function courseAnalytics(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = session('current_environment_id');
+        $environmentId = $request->attributes->get(EnsureAcademyStaff::ACADEMY_ID);
         
         if (!$environmentId) {
             return response()->json([
@@ -547,7 +548,7 @@ class AnalyticsController extends Controller
     public function certificateAnalytics(Request $request)
     {
         // Get the environment ID from the authenticated user
-        $environmentId = session('current_environment_id');
+        $environmentId = $request->attributes->get(EnsureAcademyStaff::ACADEMY_ID);
         
         if (!$environmentId) {
             return response()->json([

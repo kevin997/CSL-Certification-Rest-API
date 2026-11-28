@@ -9,6 +9,7 @@ use App\Http\Middleware\CheckPlanLimit;
 use App\Http\Middleware\ConfigureTenantCorsAndSanctum;
 use App\Http\Middleware\DetectEnvironment;
 use App\Http\Middleware\EnforceHttps;
+use App\Http\Middleware\EnsureAcademyStaff;
 use App\Http\Middleware\EnsureEnvironmentResolved;
 use App\Http\Middleware\EnsureLearnerDevice;
 use App\Http\Middleware\FixXsrfCookieDomain;
@@ -106,6 +107,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
             // Tenant routes refuse (or, in log mode, log) when no environment resolved.
             'environment.required' => EnsureEnvironmentResolved::class,
+            'academy.staff' => EnsureAcademyStaff::class,
 
             // Learners may use a bounded number of devices per academy.
             'device.active' => EnsureLearnerDevice::class,

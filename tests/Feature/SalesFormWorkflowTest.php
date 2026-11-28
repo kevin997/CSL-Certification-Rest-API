@@ -264,6 +264,7 @@ class SalesFormWorkflowTest extends TestCase
         $order = Order::withoutGlobalScopes()->where('user_id', $user->id)->firstOrFail();
 
         $this->actingAs($this->trainer)
+            ->withHeader('X-Frontend-Domain', $this->environment->primary_domain)
             ->postJson("/api/sales-forms/orders/{$order->id}/complete")
             ->assertStatus(200)
             ->assertJson(['success' => true]);

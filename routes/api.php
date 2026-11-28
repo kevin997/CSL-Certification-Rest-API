@@ -447,7 +447,7 @@ Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
 // Dashboard Routes
 Route::middleware(['auth:sanctum', 'environment.required'])->group(function () {
     // Dashboard data
-    Route::get('/dashboard', [DashboardController::class, 'getDashboardData']);
+    Route::get('/dashboard', [DashboardController::class, 'getDashboardData'])->middleware('academy.staff');
 });
 
 // Sales Dashboard Routes
@@ -775,21 +775,23 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     Route::get('/enrollment-codes/{id}', [EnrollmentCodeController::class, 'show']);
 
     // Sales Forms routes (Marketing > Sales Forms builder & admin)
-    Route::get('/sales-forms/attachable-products', [SalesFormController::class, 'attachableProducts']);
-    Route::get('/sales-forms/course-structure/{courseId}', [SalesFormController::class, 'courseStructure']);
-    Route::get('/sales-forms/analytics/summary', [SalesFormController::class, 'analyticsSummary']);
-    Route::get('/sales-forms', [SalesFormController::class, 'index']);
-    Route::post('/sales-forms', [SalesFormController::class, 'store'])->middleware('licence.feature:sales_forms');
-    Route::post('/sales-forms/{form}/campaigns/audience-preview', [SalesFormCampaignAudienceController::class, 'preview'])
-        ->middleware('licence.feature:marketing_automations');
-    Route::get('/sales-forms/{id}', [SalesFormController::class, 'show']);
-    Route::put('/sales-forms/{id}', [SalesFormController::class, 'update'])->middleware('licence.feature:sales_forms');
-    Route::delete('/sales-forms/{id}', [SalesFormController::class, 'destroy'])->middleware('licence.feature:sales_forms');
-    Route::post('/sales-forms/{id}/publish', [SalesFormController::class, 'publish'])->middleware('licence.feature:sales_forms');
-    Route::get('/sales-forms/{id}/analytics', [SalesFormController::class, 'analytics']);
-    Route::get('/sales-forms/{id}/submissions', [SalesFormController::class, 'submissions']);
-    Route::get('/sales-forms/{id}/submissions/export', [SalesFormController::class, 'exportSubmissions'])->middleware('licence.feature:data_exports');
-    Route::post('/sales-forms/orders/{orderId}/complete', [SalesFormSubmissionController::class, 'completeOrder']);
+    Route::middleware('academy.staff')->group(function () {
+        Route::get('/sales-forms/attachable-products', [SalesFormController::class, 'attachableProducts']);
+        Route::get('/sales-forms/course-structure/{courseId}', [SalesFormController::class, 'courseStructure']);
+        Route::get('/sales-forms/analytics/summary', [SalesFormController::class, 'analyticsSummary']);
+        Route::get('/sales-forms', [SalesFormController::class, 'index']);
+        Route::post('/sales-forms', [SalesFormController::class, 'store'])->middleware('licence.feature:sales_forms');
+        Route::post('/sales-forms/{form}/campaigns/audience-preview', [SalesFormCampaignAudienceController::class, 'preview'])
+            ->middleware('licence.feature:marketing_automations');
+        Route::get('/sales-forms/{id}', [SalesFormController::class, 'show']);
+        Route::put('/sales-forms/{id}', [SalesFormController::class, 'update'])->middleware('licence.feature:sales_forms');
+        Route::delete('/sales-forms/{id}', [SalesFormController::class, 'destroy'])->middleware('licence.feature:sales_forms');
+        Route::post('/sales-forms/{id}/publish', [SalesFormController::class, 'publish'])->middleware('licence.feature:sales_forms');
+        Route::get('/sales-forms/{id}/analytics', [SalesFormController::class, 'analytics']);
+        Route::get('/sales-forms/{id}/submissions', [SalesFormController::class, 'submissions']);
+        Route::get('/sales-forms/{id}/submissions/export', [SalesFormController::class, 'exportSubmissions'])->middleware('licence.feature:data_exports');
+        Route::post('/sales-forms/orders/{orderId}/complete', [SalesFormSubmissionController::class, 'completeOrder']);
+    });
 
     // Marketing automations (Email/WhatsApp triggers — /settings/integrations/automations)
     Route::get('/academy-whatsapp', [AcademyWhatsAppController::class, 'show'])->middleware('throttle:30,1');
@@ -816,7 +818,7 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     });
 
     // Order routes
-    Route::get('/orders', [OrderController::class, 'index']);
+    Route::get('/orders', [OrderController::class, 'index'])->middleware('academy.staff');
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders/{id}', [OrderController::class, 'show']);
     Route::post('/orders/{orderId}/payment-link', \App\Http\Controllers\Api\OrderPaymentLinkController::class)
@@ -928,7 +930,7 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
 
     // Finance routes — full-commerce finance is a Creator+ feature (doc §4.4).
     // Free (financial_reports=basic) is blocked from these full endpoints.
-    Route::middleware('licence.feature:financial_reports,full')->group(function () {
+    Route::middleware(['academy.staff', 'licence.feature:financial_reports,full'])->group(function () {
         Route::get('/finance/overview', [FinanceController::class, 'overview']);
         Route::get('/finance/subscription', [FinanceController::class, 'subscription']);
         Route::get('/finance/orders', [FinanceController::class, 'orders']);
@@ -982,18 +984,18 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     });
 
     // Analytics routes
-    Route::get('/analytics/overview', [AnalyticsController::class, 'overview']);
-    Route::get('/analytics/user-engagement', [AnalyticsController::class, 'userEngagement']);
-    Route::get('/analytics/course-analytics', [AnalyticsController::class, 'courseAnalytics']);
-    Route::get('/analytics/certificate-analytics', [AnalyticsController::class, 'certificateAnalytics']);
+    Route::get('/analytics/overview', [AnalyticsController::class, 'overview'])->middleware('academy.staff');
+    Route::get('/analytics/user-engagement', [AnalyticsController::class, 'userEngagement'])->middleware('academy.staff');
+    Route::get('/analytics/course-analytics', [AnalyticsController::class, 'courseAnalytics'])->middleware('academy.staff');
+    Route::get('/analytics/certificate-analytics', [AnalyticsController::class, 'certificateAnalytics'])->middleware('academy.staff');
 
     // Unified environment-scoped analytics (audience, learning, commerce,
     // subscriptions, payouts, engagement, traffic) — EnvironmentAnalyticsService.
-    Route::get('/analytics/environment/overview', [EnvironmentAnalyticsController::class, 'overview']);
+    Route::get('/analytics/environment/overview', [EnvironmentAnalyticsController::class, 'overview'])->middleware('academy.staff');
 
     // Analytics widgets (financial + traffic)
-    Route::get('/analytics/financial-widgets', [AnalyticsWidgetsController::class, 'financialWidgets']);
-    Route::get('/analytics/traffic-widgets', [AnalyticsWidgetsController::class, 'trafficWidgets']);
+    Route::get('/analytics/financial-widgets', [AnalyticsWidgetsController::class, 'financialWidgets'])->middleware('academy.staff');
+    Route::get('/analytics/traffic-widgets', [AnalyticsWidgetsController::class, 'trafficWidgets'])->middleware('academy.staff');
 
     // File routes
     Route::post('/files', [FileController::class, 'store']);
@@ -1281,7 +1283,7 @@ Route::middleware(['auth:sanctum', 'environment.required'])->prefix('chat/search
 
 // Chat Instructor Routes
 // auth:sanctum comes from DiscussionController::middleware(); see above.
-Route::middleware(['auth:sanctum', 'environment.required'])->prefix('chat/instructor')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required', 'academy.staff'])->prefix('chat/instructor')->group(function () {
     // Get all discussions for instructor (across all their courses)
     Route::get('discussions', [DiscussionController::class, 'instructorDiscussions']);
 
@@ -1398,7 +1400,7 @@ Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
 });
 
 // Instructor API Endpoints for Earnings and Withdrawals
-Route::middleware(['auth:sanctum', 'environment.required'])->prefix('instructor')->group(function () {
+Route::middleware(['auth:sanctum', 'environment.required', 'academy.staff'])->prefix('instructor')->group(function () {
     // Earnings Management
     Route::prefix('earnings')->group(function () {
         Route::get('/', [EarningsController::class, 'index']);

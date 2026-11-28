@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\EnsureAcademyStaff;
 use App\Services\EnvironmentAnalyticsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,7 +21,7 @@ class EnvironmentAnalyticsController extends Controller
      */
     public function overview(Request $request): JsonResponse
     {
-        $environmentId = session('current_environment_id');
+        $environmentId = $request->attributes->get(EnsureAcademyStaff::ACADEMY_ID);
         if (! $environmentId) {
             return response()->json([
                 'success' => false,
