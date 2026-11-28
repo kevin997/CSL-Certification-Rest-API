@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\EnsureAcademyStaff;
 use App\Models\ActivityCompletion;
 use App\Models\AssetDelivery;
 use App\Models\Enrollment;
@@ -22,12 +23,21 @@ class LearnerController extends Controller
      * @param  int  $userId
      * @return \Illuminate\Http\JsonResponse
      */
-    public function show($userId)
+    public function show(Request $request, $userId)
     {
-        $environmentId = session("current_environment_id");
+        $environmentId = $request->attributes->get(EnsureAcademyStaff::ACADEMY_ID);
 
-        // Get the user (profile_photo_path is the actual column, profile_photo_url is an accessor)
+        // An instructor may only inspect a learner belonging to this academy.
         $user = User::select('id', 'name', 'email', 'profile_photo_path', 'created_at')
+            ->where(function ($query) use ($environmentId) {
+                $query->whereHas('environments', fn ($membership) => $membership->where('environments.id', $environmentId))
+                    ->orWhereExists(function ($enrollment) use ($environmentId) {
+                        $enrollment->selectRaw('1')->from('enrollments')
+                            ->whereColumn('enrollments.user_id', 'users.id')
+                            ->where('enrollments.environment_id', $environmentId)
+                            ->whereNull('enrollments.deleted_at');
+                    });
+            })
             ->findOrFail($userId);
 
         // Get all enrollments for this user in the current environment
@@ -130,9 +140,9 @@ class LearnerController extends Controller
      * @param  int  $enrollmentId
      * @return \Illuminate\Http\JsonResponse
      */
-    public function getEnrollmentSubmissions($userId, $enrollmentId)
+    public function getEnrollmentSubmissions(Request $request, $userId, $enrollmentId)
     {
-        $environmentId = session("current_environment_id");
+        $environmentId = $request->attributes->get(EnsureAcademyStaff::ACADEMY_ID);
 
         // Get the enrollment
         $enrollment = Enrollment::where('id', $enrollmentId)

@@ -52,6 +52,9 @@ class InstructorRouteAuthorizationTest extends TestCase
             '/chat/instructor/discussions',
             '/sales-forms',
             '/orders',
+            '/enrollments',
+            '/learners/'.$learner->id,
+            '/learners/'.$learner->id.'/enrollments/1/submissions',
             '/finance/overview',
         ] as $path) {
             $this->getJson('https://'.self::HOST.'/api'.$path)
@@ -72,6 +75,19 @@ class InstructorRouteAuthorizationTest extends TestCase
             ->getJson('https://'.self::HOST.'/api/dashboard')
             ->assertForbidden()
             ->assertJsonPath('code', 'academy_staff_required');
+    }
+
+    public function test_staff_lookup_cannot_read_a_profile_outside_their_academy(): void
+    {
+        $owner = User::factory()->create(['role' => 'company_teacher']);
+        $academy = $this->academy($owner);
+        $local = User::factory()->create(['role' => 'learner']);
+        $outside = User::factory()->create(['role' => 'learner']);
+        $this->member($academy, $local, 'learner');
+        $this->actingAs($owner)->withSession(['current_environment_id' => $academy->id]);
+
+        $this->getJson('https://'.self::HOST.'/api/learners/'.$local->id)->assertOk();
+        $this->getJson('https://'.self::HOST.'/api/learners/'.$outside->id)->assertNotFound();
     }
 
     public function test_owner_and_instructor_use_the_authorized_academy_context(): void

@@ -712,7 +712,7 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     Route::post('/courses/{courseId}/sections/reorder', [CourseSectionController::class, 'reorder']);
 
     // Enrollment routes
-    Route::get('/enrollments', [EnrollmentController::class, 'index']);
+    Route::get('/enrollments', [EnrollmentController::class, 'index'])->middleware('academy.staff');
     Route::post('/enrollments', [EnrollmentController::class, 'store'])->middleware('licence.limit:active_learners');
     Route::get('/enrollments/{id}', [EnrollmentController::class, 'show']);
     Route::put('/enrollments/{id}', [EnrollmentController::class, 'update']);
@@ -721,8 +721,8 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     Route::get('/courses/{courseId}/enrollments', [EnrollmentController::class, 'courseEnrollments']);
 
     // Learner routes
-    Route::get('/learners/{userId}', [LearnerController::class, 'show']);
-    Route::get('/learners/{userId}/enrollments/{enrollmentId}/submissions', [LearnerController::class, 'getEnrollmentSubmissions']);
+    Route::get('/learners/{userId}', [LearnerController::class, 'show'])->middleware('academy.staff');
+    Route::get('/learners/{userId}/enrollments/{enrollmentId}/submissions', [LearnerController::class, 'getEnrollmentSubmissions'])->middleware('academy.staff');
 
     // Learner device slots: the learner reads their own; an instructor manages
     // a learner of their own academy.
