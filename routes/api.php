@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AcademyActivityController;
 use App\Http\Controllers\Api\AcademyWorkflowController;
 use App\Http\Controllers\Api\ActivityCompletionController;
 use App\Http\Controllers\Api\ActivityController;
@@ -1014,6 +1015,9 @@ Route::middleware(['auth:sanctum', 'environment.required', 'device.active'])->gr
     Route::post('/media/{id}/download', [MediaAssetController::class, 'download'])->middleware('throttle:30,1');
     Route::get('/media/{id}', [MediaAssetController::class, 'show']);
     Route::delete('/media/{id}', [MediaAssetController::class, 'destroy']); // Deletion
+
+    Route::get('/notifications/academy-activity', AcademyActivityController::class)
+        ->middleware(['academy.staff', 'throttle:60,1']);
 
     // User Notification routes
     Route::get('/environments/{environmentId}/notifications', [UserNotificationController::class, 'index']);
